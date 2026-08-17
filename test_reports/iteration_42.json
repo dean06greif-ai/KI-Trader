@@ -1,0 +1,32 @@
+{
+  "summary": "Full backend + frontend verification of the new 'Verlauf' tab (Equity-Kurve der KI-Trades) in AITradingPanel. All 8 review acceptance criteria met. Endpoint GET /api/ai/equity-curve returns correct shape (points+summary) on empty dev DB, mode fallback + days clamp work. Frontend: lazy-load confirmed (no equity-curve request before clicking tab), empty-state shown, mode + days changes trigger new requests, tab exclusivity with Setup works both ways, second click on active Verlauf-Tab returns to chat, Guard-Cockpit + stale/regime selects regression still functional. No LLM analyses triggered, KI-Trader stays disabled.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_evidence": {
+    "public_api": "GET /api/ai/equity-curve on REACT_APP_BACKEND_URL: days=0&mode=all -> 200 {days:0,mode:all,points:[],summary:{trades:0,wins:0,winrate:0.0,total_pnl:0.0,peak_equity:0.0,max_drawdown:0.0,fees:0}} (Dev-DB leer). mode=live/collection -> mode echoed, empty. days=9999&mode=quatsch -> days=365, mode=all (Klemme + Fallback). days=-5 -> days=0. days=30 -> days=30. Kein 500, keine Auth nötig.",
+    "internal_test_script": "python /app/tests/test_ai_equity_curve.py -> PASS 1 (leere DB), PASS 2 (Kumulation eq=[5,3,6,2,3], winrate 60%, peak 6, dd 4, fees 2.5), PASS 3 (mode=live -> 3 Trades/+9.0; mode=collection -> 2 Trades/-6.0), PASS 4 (days=7 -> 3 Trades; days=9999 -> 365 geklemmt, mode=quatsch -> all). Cleanup OK.",
+    "pytest_api": "/app/backend/tests/test_ai_equity_curve_api.py -> 8/8 PASS via REACT_APP_BACKEND_URL (shape+summary keys, all 3 valid modes, invalid mode fallback, days high clamp 9999->365, days low clamp -5->0, days=30 pass-through).",
+    "frontend_flow": "Admin login (Admin / ADMIN_PASSWORD aus .env) -> strategy-tab-ai_trader -> edit-strategy-params-btn -> AITradingPanel. Vor Klick auf ai-equity-toggle: 0 Requests an /api/ai/equity-curve (LAZY-LOAD BESTÄTIGT). Nach Klick: ai-equity-panel sichtbar, ai-equity-empty enthält 'Noch keine geschlossenen KI-Trades…', alle Controls (ai-equity-mode-all/live/collection, ai-equity-days-select, ai-equity-reload-btn) sichtbar. Klick auf ai-equity-mode-live -> neuer Request mit mode=live. Wechsel days-select auf 30 -> neuer Request mit days=30. ai-setup-toggle geöffnet -> ai-equity-panel verschwindet, ai-guard-cockpit + ai-stale-price-select + ai-regime-block-select sichtbar (Regression grün). ai-equity-toggle erneut -> Setup weg, Verlauf wieder da. Zweiter Klick auf aktive Verlauf-Tab -> Panel schließt sich, Chat wieder sichtbar."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ai_equity_curve_api.py",
+    "/app/test_reports/pytest/iter42_ai_equity_curve_api.xml",
+    "/app/tests/test_ai_equity_curve.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AITradingPanel.js jetzt 1978 Zeilen – langfristig aufteilen (SetupSection, TabHeader, EquityPanel-Wrapper etc.), overshoots die 700-Zeilen-Empfehlung deutlich.",
+    "AIEquityPanel: useEffect(load, [mode, days, load]) verursacht potenziell 2 Requests direkt hintereinander, wenn User schnell mode UND days ändert. Für aktuelles Datenvolumen (Dev leer, prod klein) irrelevant, aber ein einfaches Debounce oder ein Ref-Guard würde unnötige Netzwerk-Roundtrips vermeiden.",
+    "AIEquityPanel money() nutzt (v ?? 0).toFixed(2) – wenn Backend einen String liefert (sollte nicht passieren, ist float), wirft toFixed. Kein aktiver Bug, aber ein Number()-Cast wäre robuster.",
+    "Backend /api/ai/equity-curve gibt fees als int 0 zurück wenn n=0 (kein round-Aufruf, weil sum(...) leer=0); alle anderen Summary-Felder sind float. Inkonsistenz kosmetisch, aber tolerabel.",
+    "Bekannte Dev-Overlay-Hydration-Warning (<span> in <option>) laut review_request 'kein Bug' – unverändert."
+  ],
+  "updated_files": ["/app/backend/tests/test_ai_equity_curve_api.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / ADMIN_PASSWORD aus /app/backend/.env (siehe /app/memory/test_credentials.md)",
+  "seed_data_creation": "Keine dauerhaften Seeds. tests/test_ai_equity_curve.py legt ephemere DB crypto_scanner_dev_test_equity an und dropped sie am Ende. PROD_MONGO_URL nicht angefasst. Auf Dev-DB (auto_trades) wurden KEINE Trades eingefügt – Empty-State wird durch tatsächlich leere DB verifiziert.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Neuer Endpoint GET /api/ai/equity-curve?days=0..365&mode=all|live|collection ist PUBLIC (keine Auth), days außerhalb 0..365 wird geklemmt, mode fällt auf 'all' zurück. Response {days,mode,points:[{ts,symbol,side,pnl,equity,dc}],summary:{trades,wins,winrate,total_pnl,peak_equity,max_drawdown,fees}}. Frontend-Komponente /app/frontend/src/components/AIEquityPanel.js wird lazy nur gerendert wenn showCurve=true (AITradingPanel), Fetch passiert im useEffect nach Mount -> Netzwerk-Verhalten strikt lazy. Reusable API-Regression-Pytest: /app/backend/tests/test_ai_equity_curve_api.py.",
+  "rca of the issue": "N/A – Feature funktioniert exakt wie im Review beschrieben, keine Bugs."
+}

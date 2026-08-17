@@ -1,0 +1,59 @@
+{
+  "summary": "Full backend + frontend verification of the review request. All 12 acceptance criteria met. Backend: /api/ai/models/catalog (providers 5/5, backup_keys groq=2/openrouter=4, discovered=35, builtin dict, weights, backup_keys shape), /api/ai/models/watch (checked_at + discovered dict + last_new), /api/analytics/strategy-comparison (no 'unknown' entry), /api/ai/team/advisor (401 without token; real SSE stream with German model recommendation + done event with valid admin token). Frontend: Admin lock login, KI-Trader strategy tab, AI-Trading-Panel via edit-strategy-params-btn, KI-Team toggle -> ai-model-advisor + ai-advisor-catalog with 5 provider chips + 35 NEU chips, advisor SSE chat returned a 2.2 KB German recommendation with real provider/model slugs (Groq / OpenRouter / Cerebras / Gemini), ai-model-select dropdown holds 61 options incl. 35 'NEU · ' entries, global input UX (select-all on focus + placeholder-when-cleared) confirmed on ai-min-entry-distance-input while ai-advisor-input opt-out (data-no-select) is respected, expanded closed-trade card no longer shows 'PnL % Positionsgröße'/'PnL % Kapital'/'Kursgewinn (reine Bewegung)'/'TP1 getroffen' while 'Gebühren gesamt', 'Entry-Fee' and 'PnL % Margin (inkl. Gebühren)' are still present. No engine settings modified, no trades opened/closed, watch/run NOT triggered, only ai-advisor-* used (per critical guidance). AI-advisor is the PRIMARY AI feature and it PASSED end-to-end.",
+  "features_verified": [
+    "GET /api/ai/models/catalog - pass - evidence: HTTP 200, providers={gemini,groq,openrouter,mistral,cerebras}=True, backup_keys={groq:2, openrouter:4, mistral:1, cerebras:4, gemini:0}, discovered=35 (dynamic models load after ~120s post-boot), builtin dict with 5 provider keys, weights=26 entries - skill: ai-testing-core",
+    "GET /api/ai/models/watch - pass - evidence: HTTP 200, keys=[running, interval_days, checked_at, dead, manual, providers, unverified, discovered, last_new], discovered={gemini:13, openrouter:10, mistral:12} total=35, last_new=[] - skill: ai-testing-core",
+    "GET /api/analytics/strategy-comparison - pass - evidence: HTTP 200, 12 comparison entries, 0 with strategy_id='unknown' (sample_ids: custom_38808cce, custom_23a30b65, rsi_only, scalping_4_rules, custom_f0551b80) - skill: n/a",
+    "POST /api/ai/team/advisor without token - pass - evidence: HTTP 401 (require_admin dependency) - skill: ai-testing-core",
+    "POST /api/ai/team/advisor with admin token (PRIMARY AI) - pass - evidence: text/event-stream, streamed SSE data:{t:...} tokens, final data:{done:true}, ~2208 chars German response containing 'Fallback 1', 'Fallback 2', concrete provider/model slugs (groq/llama-3.3-70b-versatile, openrouter/nvidia/nemotron-*, cerebras/gpt-oss-120b), reasoning about TPM/RPM/Gewicht - skill: ai-testing-llm",
+    "Frontend: dashboard load + admin lock login - pass - evidence: title 'Crypto Scanner - Trading Signals', admin-lock-button -> admin-login-modal -> admin-username/admin-password/admin-login-submit -> localStorage token JWT, toast 'Admin angemeldet'",
+    "Frontend: KI-Team advisor catalog - pass - evidence: strategy-tab-ai_trader -> edit-strategy-params-btn opens ai-trading-panel -> ai-team-toggle -> ai-model-advisor + ai-advisor-catalog with provider blocks 'gemini 1 Key(s)', 'groq 3 Key(s)', 'openrouter 5 Key(s)', 'mistral 2 Key(s)', 'cerebras 5 Key(s)', 35 data-testid^='ai-advisor-new-' chips",
+    "Frontend: advisor SSE chat streaming - pass - evidence: filled ai-advisor-input 'Welches Modell empfiehlst du als Fallback?', clicked ai-advisor-send-btn, ai-advisor-msg-assistant grew to 2208 chars containing detailed provider-diverse Fallback-Stack recommendation with justifications (TPM/Gewicht/Kosten). Fully rendered in UI.",
+    "Frontend: ai-model-select NEU option prefix - pass - evidence: 61 total options in ai-model-select, 35 begin with 'NEU · ' (e.g. 'NEU · gemini · gemini-3-flash-preview (vom Modell-Wächter entdeckt)')",
+    "Frontend: input UX (select-all on focus + placeholder-when-cleared) - pass - evidence: on ai-min-entry-distance-input: click -> placeholder auto-set to current value; Ctrl+A + Delete -> value=''; blur preserved empty value AND placeholder still showing previous value. ai-advisor-input carries data-no-select='true' and is correctly opted out (its own placeholder 'Frage zur Modellwahl stellen…' is preserved).",
+    "Frontend: trade-card removed rows - pass - evidence: view-trades -> expanded 3 trade-card-toggle-* cards -> textContent of performance-analytics DOES NOT contain 'PnL % Positionsgröße', 'PnL % Kapital', 'Kursgewinn (reine Bewegung)', 'TP1 getroffen'",
+    "Frontend: trade-card kept rows - pass - evidence: same textContent contains 'Gebühren gesamt (≈ inkl. Close)', 'Entry-Fee (0.06%)', 'PnL % Margin (inkl. Gebühren)'"
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ai/models/catalog", "issue": "Nach einem Backend-Restart (uvicorn --reload) liefert /catalog für die ersten ~120 s discovered=[] – erst nach dem asyncio.sleep(120) im ModelWatch.run_loop wird load_discovered aufgerufen und DYNAMIC_MODELS befüllt. Für Prod ohne --reload weniger relevant, aber ein synchroner load_discovered() bereits im startup-event (server.py) würde das Fenster schließen und Frontend-NEU-Chips wären sofort verfügbar."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AITradingPanel (Setup) & Rollen-Selects", "issues": ["React-Dev-Hydration-Warning '<span> cannot be a child of <option>' – bekannter Kosmetik-Bug (Provider-Icon/Weight-Badge wird als <span> in <option> gerendert). Kein Funktionsdefekt, nur Console-Noise in Development. Wurde bereits in Iter42 dokumentiert und in dieser Iteration erneut beobachtet."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter43_advisor_and_catalog.py",
+    "/app/test_reports/pytest/iter43_advisor.xml",
+    "/app/test_reports/pytest/iter43_catalog_watch.xml"
+  ],
+  "action_items": [
+    "(Optional / niedrige Prio) In server.py Startup-Event zusätzlich zu asyncio.create_task(model_watch.run_loop()) auch await model_watch.load_discovered(state.db) synchron aufrufen, damit /api/ai/models/catalog nach jedem Reload sofort die ~35 entdeckten Modelle liefert (statt erst nach 2 min).",
+    "(Kosmetik) AITradingPanel Rollen-Selects: <span> im <option> durch Textinhalt ersetzen (z.B. Präfix-String), um React-Hydration-Warning zu eliminieren – bereits in Iter42 gemeldet."
+  ],
+  "critical_code_review_comments": [
+    "services/ai_model_advisor.py sauber und klein (139 Zeilen), streamt korrekt und respektiert set_current_role(). System-Prompt enthält Free-Tier-Limits + Live-Health – wirklich neutrale Beratung möglich.",
+    "routers/ai.py: ai_team_advisor kapselt Exceptions im SSE-Generator und liefert immer ein finales {done:true}; robust.",
+    "services/ai_providers.py _backup_env_names berücksichtigt sowohl _BACKUP als auch _BACKUPn (n>=1) – der BACKUP1-Fix greift, groq und openrouter zeigen korrekt 2 bzw. 4 Backup-Keys.",
+    "routers/analytics.py: 'unknown'-Skip an zwei Stellen (open_counts UND by_strat) – konsistent, keine Reste im Vergleich möglich.",
+    "components/AIModelAdvisor.js: parst SSE robust (buf/split \\n\\n, JSON.parse mit Fehlerabfang) – gute Qualität.",
+    "components/AIModelAdvisor.js Zeile 68 fängt JSON-Fehler ab ('if (err.message && !err.message.includes(\"JSON\"))') – funktioniert, aber ein sauberer try/catch nur um JSON.parse wäre lesbarer.",
+    "lib/inputUX.js: Verhalten bestätigt (placeholder = alter Wert, select()). data-no-select-Opt-out sauber implementiert. Nur Randfall type=number: selectionStart/selectionEnd sind bei number-Inputs im Browser stets null, sodass der Test die Selektion nicht direkt beobachten kann – dennoch wirkt select() funktional (nächster Tastendruck überschreibt komplett).",
+    "AITradingPanel.js weiterhin ~1978 Zeilen groß (Aufteilung in Sub-Komponenten wäre wünschenswert, siehe iter42-Kommentar)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter43_advisor_and_catalog.py (neu, Regression für Modell-Berater + Katalog + strategy-comparison)"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (7/7)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/backend/.env ADMIN_PASSWORD; test_credentials.md war leer – Passwort verifiziert per Login-API-Call und UI-Login).",
+  "seed_data_creation": "Keine – reine Read-Tests + ein Advisor-SSE-Call (kein DB-Write). KI-Trader Setup wurde geöffnet (readonly), das number-Input ai-min-entry-distance-input wurde nur für den UX-Test lokal manipuliert und NICHT gespeichert (nichts persistiert, Setup-Buttons Save/Speichern nicht geklickt). watch/run NICHT ausgeführt.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Modell-Berater ist die neue Kern-Feature und funktioniert Ende-zu-Ende – gestreamte deutsche Antwort mit konkreten Provider/Modell-Slugs. Achtung: (1) test_credentials.md ist leer – Admin/Dean06Greif!/Admin steht in /app/backend/.env ADMIN_USER/ADMIN_PASSWORD. (2) /api/ai/models/catalog liefert nach jedem Reload für ~2 min discovered=[] (Loop-basierter Loader). Bei Retest ggf. warten oder Tests robuster machen. (3) uvicorn --reload beobachtet auch tests/ – Änderungen an Test-Dateien triggern Reload. Bei Regressions-Runs möglichst NICHT test-Dateien während der Ausführung editieren. (4) React-Hydration-Warning '<span> in <option>' ist bekannt, harmlos.",
+  "rca of the issue": "N/A – alle geprüften Features arbeiten wie im Review beschrieben. Nur eine kleine Race auf /catalog nach Reload (siehe minor issue), ansonsten alle Akzeptanzkriterien erfüllt."
+}

@@ -1,0 +1,42 @@
+{
+  "summary": "Full backend+frontend verification of the two new KI-Trader guards (Stale-Price-Guard + Regime-Sperrfilter) plus fee-guard regression. All backend and frontend acceptance criteria met. No AI/LLM analyses triggered (per review_request). Final soll-zustand persisted: stale_price_max_min=10, regime_block_enabled=false, regime_block_list=['range_ruhig'], fee_guard_atr_mult=4.0.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_evidence": {
+    "health": "GET /api/health -> 200 {\"status\":\"alive\"}",
+    "defaults_api": "GET /api/ai/status.config -> stale_price_max_min=10, regime_block_enabled=false, regime_block_list=['range_ruhig'], fee_guard_atr_mult=4.0",
+    "clamping_api": "POST /api/ai/config with 999 -> 120.0, -5 -> 0.0, 10 -> 10.0 (Admin Bearer)",
+    "regime_roundtrip_api": "enabled true<->false and list ['range_ruhig','drift_ruhig'] <-> ['range_ruhig'] verified via GET /api/ai/status",
+    "test_scripts_run": {
+      "tests/test_stale_price_and_regime_filter.py": "5/5 PASS (Defaults, Klemmen, Stale-Guard live+Sammel, 0=aus + leerer Buffer, Regime-Sperre default off + governance-feed on)",
+      "tests/test_weekend_guard_and_fee_v2.py": "5/5 PASS",
+      "tests/test_fee_guard.py": "6/6 PASS",
+      "tests/test_phase4_collection_mode.py": "7/7 PASS"
+    },
+    "pytest_api_suite": "backend/tests/test_stale_regime_api.py -> 5/5 PASS (health, defaults, stale clamping, regime roundtrip, final state)",
+    "frontend_selects_visible": ["ai-stale-price-select","ai-regime-block-select","ai-fee-guard-mult-select","ai-fee-guard-atr-select","ai-fee-guard-enabled-select"],
+    "frontend_flow": "Admin-Login (padlock -> admin-login-modal, user Admin) -> select ai_trader tab -> edit-strategy-params-btn opens AITradingPanel -> ai-setup-toggle expands Setup. Defaults 10 min / aus verified. Preis-Frische changed to 15 -> reload -> value persists as '15'. Regime-Sperre changed to 'an' -> reload -> value persists as 'on'. Reset both to 10 min / aus -> reload -> soll-zustand persisted.",
+    "final_state_api_after_frontend": "stale_price_max_min=10.0, regime_block_enabled=false, regime_block_list=['range_ruhig'], fee_guard_atr_mult=4.0"
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_stale_regime_api.py",
+    "/app/test_reports/pytest/iter40_stale_regime_api.xml",
+    "/app/tests/test_stale_price_and_regime_filter.py",
+    "/app/tests/test_weekend_guard_and_fee_v2.py",
+    "/app/tests/test_fee_guard.py",
+    "/app/tests/test_phase4_collection_mode.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Non-blocking dev-only hydration warning still observed in console: <span data-ve-dynamic> injected as child of <option> in AITradingPanel selects (line ~1225 area). Explicitly flagged in review_request as 'kein Bug', but if it ever leaks to production build it would be an accessibility/HTML-validity concern. Consider a build guard for the visual-editor overlay to not wrap <option> children.",
+    "AITradingPanel.js is ~1927 lines - well over the 700-line guideline. Would benefit from splitting Setup/Chat/Team/Learn subpanels into separate modules (does not affect current functionality)."
+  ],
+  "updated_files": ["/app/backend/tests/test_stale_regime_api.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / ADMIN_PASSWORD from /app/backend/.env (as documented in /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Only ephemeral test-scoped Mongo DB (crypto_scanner_dev_test_stale_regime) created and dropped by the built-in test script. No user data touched. PROD_MONGO_URL untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Stale-Price-Guard + Regime-Sperrfilter (default off) verified end-to-end. New selects: ai-stale-price-select (values 0/3/5/10/15/30) and ai-regime-block-select (off/on). All 4 in-repo test scripts (test_stale_price_and_regime_filter.py, test_weekend_guard_and_fee_v2.py, test_fee_guard.py, test_phase4_collection_mode.py) green. Reusable API-level pytest at /app/backend/tests/test_stale_regime_api.py covers login+clamping+roundtrip against REACT_APP_BACKEND_URL. Admin login modal appears with slight delay after reload (2-8s) - use data-testid=admin-login-modal + admin-password + admin-login-submit and generous 15-20s timeouts. Setup panel opens via strategy-tab-ai_trader -> edit-strategy-params-btn -> ai-setup-toggle.",
+  "rca of the issue": "N/A - no bugs found. Both features (Stale-Price-Guard active by default at 10 min, Regime-Sperrfilter installed but disabled by default with list ['range_ruhig']) behave exactly per spec across API, engine tests and UI."
+}

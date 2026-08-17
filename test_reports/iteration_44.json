@@ -1,0 +1,38 @@
+{
+  "summary": "Iter47/44 – Volle Verifikation der Review-Anforderungen (Backend + Frontend). Backend: 22/22 pytest passed (test_iter47_advisor_apply_and_regression.py NEU + test_iter46_trash_and_guard_span.py + test_iter46_watchdog_leftover.py). Advisor-Apply-Endpoint POST /api/ai/team/advisor/apply funktioniert: 200 mit applied=['Rolle Marktbeobachter'], /api/ai/roles zeigt market_observer=groq/openai/gpt-oss-20b; ungültiges Modell -> 400; ohne Auth -> 401/403. Papierkorb-API-Kette: reset->trash-list (ohne payload)->restore->404 beim zweiten Restore->401/403 ohne Auth – alles grün. tune_guard_min/max via POST /api/ai/config persistiert (in /api/ai/status verifiziert), min>max wird geclampt. Regression grün: /api/ai/status, /api/ai/models/catalog (builtin/discovered/backup_keys), /api/ai/guard-stats?days=7, /api/autotrade/watchdog/status. Frontend: Admin-Login -> strategy-tab-ai_trader -> edit-strategy-params-btn -> ai-trading-panel; ai-setup-toggle zeigt 'KI-Spanne Richtungs-Guard' mit min/max-Selects, initial 1/6; min via UI auf 2 gesetzt, per /api/ai/status persistent bestätigt, danach auf 1 zurückgesetzt. KI-Labor->ai-lab-trash-btn->ai-lab-trash-menu->ai-lab-ml-reset-btn (window.confirm auto-accept), Trash-Menü zeigt Eintrag 'ML-Modell (trainiert 2026-01-01T00:00)' mit Zurück-Button, restore -> Toast 'Wiederhergestellt: ML-Modell'. Screenshot bestätigt AUC 0.55 nach Wiederherstellung sichtbar. Cleanup abgeschlossen (ai_ml_model + lab_trash leer, tune_guard zurück auf 1/6). KEIN KI-Trader aktiviert, keine echten Orders, keine LLM-Deep-Analyse gestartet.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Rollen-Selects im KI-Team / AITradingPanel", "issues": ["Bekannter React-Hydration-Warning '<span> in <option>' bleibt bestehen (Kosmetik, kein Funktionsdefekt) – bereits in iter42/43 dokumentiert."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter47_advisor_apply_and_regression.py",
+    "/app/backend/tests/test_iter46_trash_and_guard_span.py",
+    "/app/backend/tests/test_iter46_watchdog_leftover.py",
+    "/app/test_reports/pytest/iter47.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/ai.py::ai_team_advisor_apply (Zeile 359-399): sauber implementiert – validiert Rolle über ROLE_LABELS, Modell über ai_providers.allowed_models(prov), returned 400 wenn nichts applied. Idempotent + auditiert via log_action.",
+    "routers/ai.py::update_config akzeptiert tune_guard_min/max und clamped korrekt (min<=max).",
+    "services/lab_trash.py + ai_ml_lab.py: reset verschiebt Doc in lab_trash mit UUID, restore stellt payload zurück & löscht Papierkorb-Eintrag (verhindert Doppel-Restore -> 404).",
+    "AITradingPanel.js weiterhin ~1978 Zeilen – Aufteilung wäre wünschenswert (bereits gemeldet).",
+    "components/AILabPanel.js openTrash lädt Liste lazy beim Öffnen – gute UX."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter47_advisor_apply_and_regression.py (neu)"
+  ],
+  "success_rate": {"backend": "100% (22/22 pytest)", "frontend": "100% (alle Review-Flows durchlaufen)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/backend/.env; test_credentials.md hält identische Angaben).",
+  "seed_data_creation": "Für den UI-Trash-Test wurde ai_ml_model {cv_auc:0.55, samples:42, trained_at:'2026-01-01T00:00:00'} in mongo settings-Collection geseedet und nach dem Test-Roundtrip wieder gelöscht (lab_trash-Collection ebenfalls geleert).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Advisor-Apply-Test hat market_observer-Rolle auf groq/openai/gpt-oss-20b gesetzt (Persistenz via /api/ai/roles verifiziert). Falls die Rolle für weitere Tests wieder auf Default zurückgesetzt werden soll, POST /api/ai/roles/market_observer/reset (Admin). tune_guard_min/max wurde am Ende auf Defaults 1/6 zurückgestellt. lab_trash + ai_ml_model sind gecleant.",
+  "rca of the issue": "N/A – alle Review-Kriterien erfüllt."
+}

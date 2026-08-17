@@ -1,0 +1,38 @@
+{
+  "summary": "Full backend+frontend verification of the new Guard-Cockpit feature (GET /api/ai/guard-stats + Cockpit block in AITradingPanel Setup). All 6 acceptance criteria met. No LLM analyses triggered, KI-Trader remains disabled. Dev-DB stays empty -> guards all count=0, would_block_live=0.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_evidence": {
+    "guard_stats_shape": "GET /api/ai/guard-stats -> 200 {days:7,total_blocked:0,guards:[10 items with keys weekend,stale,regime,correlation,direction,cluster,playbook,master,fee,other; each {key,label,count:int,collection:int,last}],regime_shadow:{enabled:false,list:['range_ruhig'],would_block_live:0}} - PUBLIC, no auth needed",
+    "days_clamp": "GET ?days=999 -> days=90; ?days=0 -> days=1",
+    "fee_guard_stats_regression": "GET /api/ai/fee-guard/stats?days=7 -> 200 with days=7,blocked_total=0,blocked_collection=0,est_fees_saved_usdt=0,recent=[]",
+    "internal_test_scripts": {
+      "tests/test_guard_cockpit.py": "PASS 1-3 (Kategorisierung 10 Guards + Fee + Sonstige, Regime-Schatten live-only, days-Klemme)",
+      "tests/test_stale_price_and_regime_filter.py": "PASS 1-5 (Defaults, Klemmen, Stale-Guard live+Sammel, 0=aus + leerer Buffer, Regime-Sperre)",
+      "tests/test_weekend_guard_and_fee_v2.py": "PASS 1-5 (market_hours, fee_guard V2, atr_mult clamp, weekend-block, be_mode=crv default)"
+    },
+    "pytest_api": "/app/backend/tests/test_guard_cockpit_api.py -> 6/6 PASS via REACT_APP_BACKEND_URL (health, no-auth, shape+order of guards, days clamp high 999->90, days clamp low 0->1, fee-guard regression)",
+    "frontend_flow": "Admin login (admin-lock-button -> admin-login-modal -> admin-username 'Admin' + admin-password from .env -> admin-login-submit) -> strategy-tab-ai_trader -> edit-strategy-params-btn opens AITradingPanel -> ai-setup-toggle opens Setup. ai-guard-cockpit visible below Token-Verbrauch. ai-guard-cockpit-empty shows 'Keine Blocks im Zeitraum.' (Dev-DB leer). ai-guard-regime-shadow shows 'Regime-Sperre (aus): hätte 0 Live-Einstiege geblockt (range_ruhig)'. Title text 'Guard-Cockpit – geblockte Einstiege (7 Tage)' present. Regression selects ai-fee-guard-mult-select, ai-fee-guard-atr-select, ai-stale-price-select, ai-regime-block-select and ai-fee-guard-stats all visible."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_guard_cockpit_api.py",
+    "/app/test_reports/pytest/iter41_guard_cockpit_api.xml",
+    "/app/tests/test_guard_cockpit.py",
+    "/app/tests/test_stale_price_and_regime_filter.py",
+    "/app/tests/test_weekend_guard_and_fee_v2.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Same dev-only hydration warning already documented in iter_40 still present (<span data-ve-dynamic> injected as child of <option> in AITradingPanel selects). Explicitly declared 'kein Bug' by review_request; only concerns dev overlay/hot-reload build.",
+    "AITradingPanel.js now ~1957 lines. Guard-Cockpit UI (~24 lines) is a good candidate to extract together with Token-Verbrauch and Fee-Guard-Stats into a small SetupStatsSection component in future refactor.",
+    "Guard-cockpit endpoint groups by string substring on blocked_by (pat in why). Works today because all block messages are stable German prefixes, but is brittle -- a future rename of e.g. 'Korrelations-Guard:' to 'Korrelation:' would silently reclassify the block as 'Sonstige'. Consider tagging blocks with an explicit guard_key alongside blocked_by."
+  ],
+  "updated_files": ["/app/backend/tests/test_guard_cockpit_api.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / ADMIN_PASSWORD from /app/backend/.env (documented in /app/memory/test_credentials.md)",
+  "seed_data_creation": "None on Dev-DB. test_guard_cockpit.py creates+drops its own ephemeral DB (crypto_scanner_dev_test_guard_cockpit). PROD_MONGO_URL untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Guard-Cockpit endpoint /api/ai/guard-stats is public (no auth), keeps 10 guard entries in fixed order [weekend,stale,regime,correlation,direction,cluster,playbook,master,fee,other] + regime_shadow with would_block_live counting only live signals (data_collection!=True) whose entry_market_snapshot.features.regime is in ai_engine.config.regime_block_list. days clamped 1..90. Frontend fetches it via loadInsights when Setup opens; block appears just before <AITraderReset/>. Reusable API pytest at /app/backend/tests/test_guard_cockpit_api.py.",
+  "rca of the issue": "N/A - feature works as specified end-to-end. No bugs."
+}
