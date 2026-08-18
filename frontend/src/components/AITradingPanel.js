@@ -113,6 +113,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
   const [insights, setInsights] = useState(null);
   const [feeGuardStats, setFeeGuardStats] = useState(null);
   const [guardStats, setGuardStats] = useState(null);
+  const [makerStats, setMakerStats] = useState(null);
   const [showLearn, setShowLearn] = useState(false);
   const [learning, setLearning] = useState(false);
   // KI-Team (Rollen-Konfiguration)
@@ -291,6 +292,10 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
     try {
       const gs = await fetch(`${API_URL}/api/ai/guard-stats?days=7`).then(r => r.json());
       setGuardStats(gs && typeof gs === 'object' ? gs : null);
+    } catch (e) { /* silent */ }
+    try {
+      const ms = await fetch(`${API_URL}/api/ai/maker-stats`).then(r => r.json());
+      setMakerStats(ms && typeof ms === 'object' ? ms : null);
     } catch (e) { /* silent */ }
   }, []);
 
@@ -1329,6 +1334,17 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                   {[15, 30, 45, 60, 90, 120].map(v => <option key={v} value={v}>{v}s</option>)}
                 </select>
               </label>
+            )}
+            {(cfg.maker_mode || (makerStats && (makerStats.live.trades > 0 || makerStats.paper.trades > 0))) && makerStats && (
+              <div className="ai-maker-savings" data-testid="ai-maker-savings-row"
+                title="Real gesparte Entry-Gebühren durch den Maker-Modus: Differenz zwischen Taker-Satz und tatsächlich gezahltem Maker-Satz, summiert über alle Trades mit Limit/Post-Only-Entry. Fallbacks = Limit nicht gefüllt, automatisch als Market ausgeführt (keine Ersparnis). Fill-Quote = Anteil der letzten Maker-Versuche, die gefüllt wurden.">
+                <span>
+                  Maker-Ersparnis: <b>{makerStats.live.saved_usdt.toFixed(4)} $</b> live ({makerStats.live.trades} Entries)
+                  {makerStats.paper.trades > 0 && <> · {makerStats.paper.saved_usdt.toFixed(4)} $ Paper ({makerStats.paper.trades})</>}
+                  {makerStats.fallback_trades > 0 && <> · {makerStats.fallback_trades} Fallbacks</>}
+                  {makerStats.fill_rate != null && <> · Fill-Quote {Math.round(makerStats.fill_rate * 100)}%</>}
+                </span>
+              </div>
             )}
             {cfg.maker_mode && cfg.maker_suspended_until && (
               <div className="ai-maker-suspended" data-testid="ai-maker-suspended-row"

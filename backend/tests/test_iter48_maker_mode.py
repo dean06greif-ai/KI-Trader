@@ -173,6 +173,29 @@ def auth_headers():
 
 
 class TestMakerApi:
+    def test_maker_stats_math(self, auth_headers):
+        from pymongo import MongoClient
+        db = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))[
+            os.environ.get("DB_NAME", "crypto_scanner")]
+        db.auto_trades.delete_many({"symbol": "MKSTATUSDT"})
+        db.auto_trades.insert_many([
+            {"id": "mks-1", "symbol": "MKSTATUSDT", "mode": "live", "status": "closed",
+             "order_kind": "maker", "entry": 100, "qty": 0.5,
+             "fee_percent": 0.06, "entry_fee_percent": 0.02},
+            {"id": "mks-2", "symbol": "MKSTATUSDT", "mode": "live", "status": "closed",
+             "order_kind": "taker_fallback", "entry": 50, "qty": 1,
+             "fee_percent": 0.06, "entry_fee_percent": 0.06}])
+        try:
+            r = requests.get(f"{BASE_URL}/api/ai/maker-stats", timeout=15)
+            assert r.status_code == 200
+            d = r.json()
+            # 100 * 0.5 * (0.06-0.02)/100 = 0.02 $ Ersparnis
+            assert d["live"]["saved_usdt"] >= 0.02
+            assert d["live"]["trades"] >= 1
+            assert d["fallback_trades"] >= 1
+        finally:
+            db.auto_trades.delete_many({"symbol": "MKSTATUSDT"})
+
     def test_toggle_wait_and_resume(self, auth_headers):
         r = requests.post(f"{BASE_URL}/api/ai/config", headers=auth_headers,
                           json={"maker_mode": True, "maker_wait_sec": 60}, timeout=15)

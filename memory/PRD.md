@@ -374,8 +374,12 @@ Teil B (diese Session neu):
   / Limit→Market-Fallback" + Hinweis Close = Trigger/Market (Taker); Alt-Trades defaulten auf market.
 - Bitunix-Client erweitert: place_order effect-Param (POST_ONLY), get_order_detail,
   get_pending_orders, cancel_orders.
-- Tests NEU: tests/test_iter48_maker_mode.py (13: parse_order_fill, Fake-Börse Fill/Timeout/
-  Partial/Reject/Exception, Engine-Aussetzung, Leitplanken, API-Clamps).
+- Tests NEU: tests/test_iter48_maker_mode.py (14: parse_order_fill, Fake-Börse Fill/Timeout/
+  Partial/Reject/Exception, Engine-Aussetzung, Leitplanken, API-Clamps, Sparstatistik-Mathe).
+- Maker-Sparstatistik (18.06.2026): GET /api/ai/maker-stats aggregiert real gesparte Entry-Gebühren
+  (Taker- minus Maker-Satz) über alle order_kind=maker-Trades, getrennt live/paper, plus
+  Fallback-Anzahl und Fill-Quote (maker_mode_stats). Anzeige als grüne Zeile im KI-Setup
+  (data-testid ai-maker-savings-row), sichtbar wenn Modus an oder Ersparnis vorhanden.
 
 ## Nächste Aufgaben (Kandidaten)
 - Optional Limit-Order-Modus (Maker-Fee) für nicht-zeitkritische KI-Entries ✅ erledigt (Iter 47)

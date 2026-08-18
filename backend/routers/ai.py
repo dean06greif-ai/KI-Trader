@@ -1,5 +1,6 @@
 """KI Trader (AI Trading Engine) Endpoints."""
 import json
+import logging
 from typing import Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -13,6 +14,7 @@ from services.ai_roles import role_manager, ROLE_LABELS
 from services.news_feed import news_feed
 
 router = APIRouter(tags=["ai"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/api/ai/status")
@@ -41,6 +43,56 @@ async def ai_fee_guard_stats(days: int = 7):
             "est_fees_saved_usdt": round(sum(float(r.get("est_fees_usdt") or 0)
                                              for r in rows), 2),
             "recent": rows[:10]}
+
+
+@router.get("/api/ai/maker-stats")
+async def ai_maker_stats():
+    """Maker-Sparstatistik: real gesparte Entry-Gebühren (Taker- minus
+    Maker-Satz) aller Trades mit Maker-Entry, getrennt nach live/paper;
+    plus Fallback-Anzahl und Fill-Quote der letzten Maker-Versuche."""
+    pipeline = [
+        {"$match": {"order_kind": {"$in": ["maker", "taker_fallback"]}}},
+        {"$project": {
+            "mode": {"$ifNull": ["$mode", "paper"]},
+            "is_maker": {"$eq": ["$order_kind", "maker"]},
+            "saved": {"$cond": [
+                {"$eq": ["$order_kind", "maker"]},
+                {"$multiply": [
+                    {"$multiply": [{"$ifNull": ["$entry", 0]},
+                                   {"$ifNull": ["$qty", 0]}]},
+                    {"$divide": [{"$subtract": [
+                        {"$ifNull": ["$fee_percent", 0.06]},
+                        {"$ifNull": ["$entry_fee_percent", 0.02]}]}, 100]}]},
+                0]}}},
+        {"$group": {"_id": {"mode": "$mode", "is_maker": "$is_maker"},
+                    "saved": {"$sum": "$saved"}, "count": {"$sum": 1}}},
+    ]
+    out = {"live": {"saved_usdt": 0.0, "trades": 0},
+           "paper": {"saved_usdt": 0.0, "trades": 0},
+           "fallback_trades": 0, "total_saved_usdt": 0.0,
+           "fill_rate": None, "attempts": 0}
+    try:
+        async for row in ai_engine.db.auto_trades.aggregate(pipeline):
+            key = row["_id"]
+            mode = "live" if key.get("mode") == "live" else "paper"
+            if key.get("is_maker"):
+                out[mode]["saved_usdt"] += float(row.get("saved") or 0)
+                out[mode]["trades"] += int(row.get("count") or 0)
+            else:
+                out["fallback_trades"] += int(row.get("count") or 0)
+        stats = await ai_engine.db.settings.find_one({"_id": "maker_mode_stats"}) or {}
+        attempts = stats.get("attempts") or []
+        out["attempts"] = len(attempts)
+        if attempts:
+            out["fill_rate"] = round(
+                sum(1 for a in attempts if a.get("filled")) / len(attempts), 3)
+    except Exception as e:
+        logger.warning(f"maker-stats fehlgeschlagen: {e}")
+    for m in ("live", "paper"):
+        out[m]["saved_usdt"] = round(out[m]["saved_usdt"], 4)
+    out["total_saved_usdt"] = round(out["live"]["saved_usdt"]
+                                    + out["paper"]["saved_usdt"], 4)
+    return out
 
 
 @router.get("/api/ai/guard-stats")
