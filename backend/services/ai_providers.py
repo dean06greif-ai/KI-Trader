@@ -648,7 +648,7 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                                  f"Prompt ~{est_tokens} Tokens zu groß (413)")
                     break  # nächstes Modell – gleicher Prompt scheitert bei jedem Key
                 if is_rate_limit_error(e) or is_payment_error(e):
-                    reason = ("Kontingent erschöpft/Guthaben nötig (402)"
+                    reason = ("Free-Kontingent erschöpft (402) – Backup übernimmt"
                               if is_payment_error(e) else "rate-limited")
                     logger.warning(f"{provider}/{model} {reason} (Key {i + 1}/{len(keys)}), weiter…")
                     record_result(provider, model, "rate_limited", str(e), key_index=i)
@@ -751,7 +751,7 @@ async def stream_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                                   f"Prompt ~{est_tokens} Tokens zu groß (413)", key_index=i)
                     break
                 if is_rate_limit_error(e) or is_payment_error(e):
-                    reason = ("Kontingent erschöpft/Guthaben nötig (402)"
+                    reason = ("Free-Kontingent erschöpft (402) – Backup übernimmt"
                               if is_payment_error(e) else "rate-limited")
                     logger.warning(f"{provider}/{model} chat {reason} (Key {i + 1}), weiter…")
                     record_result(provider, model, "rate_limited", str(e), key_index=i)

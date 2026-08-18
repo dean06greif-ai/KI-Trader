@@ -398,6 +398,17 @@ Teil B (diese Session neu):
   "Kontingent erschöpft/Guthaben nötig (402)" statt "rate-limited" gelabelt (Verhalten gleich).
 - Tests NEU: tests/test_iter49_empty_response_retry.py (5, LLM gemockt).
 
+## Iteration 50 — Guthaben-Schutz verifiziert & festgeschrieben (18.06.2026, 10/10 grün)
+- User-Vorgabe: nur Free-Tiers; Guthaben (OpenRouter/Gemini) NUR für explizit gewählte
+  Paid-Only-Modelle (DeepSeek & Co.), Limits fängt die Backup-/Fallback-Kette ab.
+- Verifiziert (war bereits korrekt designt): PAID_MODELS_NO_FALLBACK nie in FALLBACK_ORDER;
+  Rollen-Ketten aller Presets enthalten nie Paid-Modelle; Modell-Wächter schaltet bei
+  OpenRouter nur :free-Modelle frei; Paid-Modelle in Dropdowns mit Preis + "bezahlt" gelabelt;
+  explizite Paid-Auswahl bleibt möglich (nur Auto-Ausweichen verboten).
+- 402-Label angepasst (User-Wunsch): "Free-Kontingent erschöpft (402) – Backup übernimmt"
+  statt "Guthaben nötig" (Free-Tier-Sicht, Verhalten unverändert).
+- Tests NEU: tests/test_iter50_free_tier_protection.py (5) schreiben die Garantien dauerhaft fest.
+
 ## Nächste Aufgaben (Kandidaten)
 - Optional Limit-Order-Modus (Maker-Fee) für nicht-zeitkritische KI-Entries ✅ erledigt (Iter 47)
 - Span-in-option React-Dev-Warning (kosmetisch, vorbestehend aus Iter42) bereinigen
