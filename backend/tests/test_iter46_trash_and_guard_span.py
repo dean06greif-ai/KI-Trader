@@ -101,6 +101,31 @@ class TestLabTrash:
                           json={"id": "egal"}, timeout=15)
         assert r.status_code in (401, 403)
 
+    def test_discard_forever(self, auth_headers, db):
+        db.settings.replace_one(
+            {"_id": "ai_ml_model"},
+            {"trained_at": "2026-02-02T00:00:00", "cv_auc": 0.5}, upsert=True)
+        requests.post(f"{BASE_URL}/api/ai/ml/reset", headers=auth_headers, timeout=20)
+        items = requests.get(f"{BASE_URL}/api/ai/lab/trash", timeout=15).json()["items"]
+        tid = [i for i in items if i["kind"] == "ml"][0]["id"]
+        # ohne Auth verboten
+        r = requests.post(f"{BASE_URL}/api/ai/lab/trash/discard",
+                          json={"id": tid}, timeout=15)
+        assert r.status_code in (401, 403)
+        r = requests.post(f"{BASE_URL}/api/ai/lab/trash/discard", headers=auth_headers,
+                          json={"id": tid}, timeout=15)
+        assert r.status_code == 200
+        ids = [i["id"] for i in requests.get(
+            f"{BASE_URL}/api/ai/lab/trash", timeout=15).json()["items"]]
+        assert tid not in ids, "Eintrag muss endgültig weg sein"
+        # danach weder Restore noch zweites Discard möglich
+        r = requests.post(f"{BASE_URL}/api/ai/lab/trash/restore", headers=auth_headers,
+                          json={"id": tid}, timeout=15)
+        assert r.status_code == 404
+        r = requests.post(f"{BASE_URL}/api/ai/lab/trash/discard", headers=auth_headers,
+                          json={"id": tid}, timeout=15)
+        assert r.status_code == 404
+
     def test_ml_reset_restore_roundtrip(self, auth_headers, db):
         db.settings.replace_one(
             {"_id": "ai_ml_model"},

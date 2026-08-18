@@ -173,6 +173,15 @@ async def lab_trash_restore(body: Dict, _: bool = Depends(require_admin)):
     return {"status": "success", "kind": doc.get("kind"), "label": doc.get("label")}
 
 
+@router.post("/api/ai/lab/trash/discard")
+async def lab_trash_discard(body: Dict, _: bool = Depends(require_admin)):
+    """Papierkorb-Eintrag endgültig löschen (nicht wiederherstellbar)."""
+    from services import lab_trash
+    if not await lab_trash.discard(ai_engine.db, str(body.get("id") or "")):
+        raise HTTPException(status_code=404, detail="Papierkorb-Eintrag nicht gefunden")
+    return {"status": "success"}
+
+
 @router.get("/api/ai/ml/dataset")
 async def ml_dataset():
     """Datenlage für das Training (ohne Training zu starten)."""

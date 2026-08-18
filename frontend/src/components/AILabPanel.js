@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Flask, Brain, ChartLine, Database, ArrowsClockwise, Lightbulb, Cpu, Trash, ArrowCounterClockwise } from '@phosphor-icons/react';
+import { Flask, Brain, ChartLine, Database, ArrowsClockwise, Lightbulb, Cpu, Trash, ArrowCounterClockwise, X } from '@phosphor-icons/react';
 import { toast } from '../lib/toast';
 import { authHeaders } from '../auth';
 import { fmtShort } from '../lib/time';
@@ -157,6 +157,21 @@ const AILabPanel = () => {
     } catch (e) { toast.error(e.message); } finally { setBusy(''); }
   };
 
+  const discardTrash = async (it) => {
+    if (!window.confirm(`"${it.label || it.kind}" endgültig löschen? Das kann NICHT rückgängig gemacht werden.`)) return;
+    try {
+      const res = await fetch(`${API_URL}/api/ai/lab/trash/discard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ id: it.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Löschen fehlgeschlagen');
+      setTrashItems(items => items.filter(x => x.id !== it.id));
+      toast.success('Endgültig gelöscht');
+    } catch (e) { toast.error(e.message); }
+  };
+
   const saveMl = async (updates) => {
     const res = await fetch(`${API_URL}/api/ai/ml/settings`, {
       method: 'POST',
@@ -220,6 +235,11 @@ const AILabPanel = () => {
                           data-testid={`ai-lab-trash-restore-${it.id}`}
                           title="Diesen Stand wiederherstellen">
                           <ArrowCounterClockwise size={12} weight="bold" /> Zurück
+                        </button>
+                        <button className="ai-lab-trash-discard" onClick={() => discardTrash(it)}
+                          data-testid={`ai-lab-trash-discard-${it.id}`}
+                          title="Endgültig löschen (nicht wiederherstellbar)">
+                          <X size={12} weight="bold" />
                         </button>
                       </div>
                     ))}

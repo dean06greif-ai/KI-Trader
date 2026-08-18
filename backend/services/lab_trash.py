@@ -39,3 +39,9 @@ async def pop(db, tid: str) -> Optional[Dict]:
         await db.lab_trash.delete_one({"id": tid})
         doc.pop("_id", None)
     return doc
+
+
+async def discard(db, tid: str) -> bool:
+    """Eintrag endgültig löschen (ohne Wiederherstellung)."""
+    res = await db.lab_trash.delete_one({"id": tid})
+    return res.deleted_count > 0
