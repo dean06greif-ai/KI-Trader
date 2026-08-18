@@ -304,7 +304,10 @@ async def trade_explain(trade_id: str):
     comp = t.get("computed") or {}
     trade_state = {"status": t.get("status"),
                    "r_multiple": comp.get("r_multiple"),
-                   "duration_seconds": comp.get("duration_seconds")}
+                   "duration_seconds": comp.get("duration_seconds"),
+                   "order_kind": t.get("order_kind") or "market",
+                   "entry_fee_percent": t.get("entry_fee_percent",
+                                              t.get("fee_percent", 0.06))}
     if t.get("status") == "open":
         trade_state.update({
             "current_price": comp.get("current_price"),

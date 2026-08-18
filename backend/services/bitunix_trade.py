@@ -56,6 +56,43 @@ def effective_fee_percent(cfg: Dict) -> float:
         return coin_fee
 
 
+def effective_maker_fee_percent(cfg: Dict) -> float:
+    """Maker-Gebühr (%/Seite) für Post-Only-Limit-Entries (Maker-Order-Modus):
+    global aus den Haupteinstellungen (futures_maker_fee_pct, Standard 0,02%)."""
+    try:
+        from core import state
+        return float(state.scanner.settings.get("futures_maker_fee_pct", 0.02) or 0.02)
+    except Exception:
+        return 0.02
+
+
+def parse_order_fill(res) -> Dict:
+    """get_order_detail -> {status, filled_qty, avg_price} (rein, testbar)."""
+    data = (res or {}).get("data") if isinstance(res, dict) else None
+    if not isinstance(data, dict):
+        return {"status": "", "filled_qty": 0.0, "avg_price": 0.0}
+
+    def _fv(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+    status = str(data.get("status") or data.get("orderStatus") or "").upper()
+    filled = 0.0
+    for k in ("dealAmount", "tradeQty", "dealQty", "executedQty", "filledQty"):
+        if data.get(k) not in (None, ""):
+            filled = abs(_fv(data[k]))
+            if filled:
+                break
+    avg = 0.0
+    for k in ("avgPrice", "dealAvgPrice", "averagePrice", "price"):
+        v = _fv(data.get(k))
+        if v > 0:
+            avg = v
+            break
+    return {"status": status, "filled_qty": filled, "avg_price": avg}
+
+
 def fee_guard_min_sl_pct(fee_percent: float, mult: float,
                          atr_pct: float = 0.0, atr_mult: float = 0.0) -> float:
     """Mindest-SL-Distanz in % = max(mult × Roundtrip-Fees, atr_mult × ATR%).
@@ -331,7 +368,8 @@ class BitunixTradeClient:
         return _round_step(price, tick, mode)
 
     async def place_order(self, symbol, side, qty, order_type="MARKET", price=None,
-                          tp_price=None, sl_price=None, reduce_only=False):
+                          tp_price=None, sl_price=None, reduce_only=False,
+                          effect=None):
         b_symbol = self.to_bitunix_symbol(symbol)
         # Direction-aware rounding for TP/SL. For LONG (BUY):
         #   * TP must be ABOVE mark, so round UP to the next tick.
@@ -346,6 +384,8 @@ class BitunixTradeClient:
                 "tradeSide": "OPEN", "orderType": order_type}
         if order_type == "LIMIT" and price:
             body["price"] = self._fmt_price(b_symbol, price)
+        if effect:
+            body["effect"] = str(effect)
         if tp_price:
             body.update({"tpPrice": self._fmt_price(b_symbol, tp_price, tp_dir),
                          "tpStopType": "MARK_PRICE", "tpOrderType": "MARKET"})
@@ -427,6 +467,23 @@ class BitunixTradeClient:
         return await self._post("/api/v1/futures/tpsl/cancel_order",
                                 {"symbol": self.to_bitunix_symbol(symbol),
                                  "orderId": str(order_id)})
+
+    async def get_order_detail(self, order_id):
+        """Order-Status/Fills einer normalen Order (Maker-Order-Modus)."""
+        return await self._get("/api/v1/futures/trade/get_order_detail",
+                               {"orderId": str(order_id)})
+
+    async def get_pending_orders(self, symbol):
+        """Offene (ungefüllte) normale Orders eines Symbols."""
+        return await self._get("/api/v1/futures/trade/get_pending_orders",
+                               {"symbol": self.to_bitunix_symbol(symbol)})
+
+    async def cancel_orders(self, symbol, order_ids):
+        """Normale Orders stornieren (Maker-Order-Modus: Timeout-Cancel)."""
+        return await self._post(
+            "/api/v1/futures/trade/cancel_orders",
+            {"symbol": self.to_bitunix_symbol(symbol),
+             "orderList": [{"orderId": str(o)} for o in order_ids]})
 
     async def adjust_position_margin(self, symbol, amount: float,
                                      position_id: Optional[str] = None,
@@ -901,6 +958,110 @@ class AutoTradeManager:
                 logger.warning(f"_current_mark failed: {e}")
         return None
 
+    async def _maker_entry(self, symbol: str, side: str, qty: float,
+                           mark: float, wait_sec: int,
+                           tpf: float, sl: float) -> Dict:
+        """Maker-Order-Modus: Post-Only-Limit knapp neben dem Mark platzieren
+        und auf den Fill warten. Ergebnis-Dict:
+          kind='maker'         voll gefüllt (Maker-Fee)
+          kind='maker_partial' Teil-Fill, Rest storniert (Maker-Fee)
+          kind='fallback'      nicht gefüllt/abgelehnt -> Aufrufer schickt Market
+        Wirft NIE: jede Exception endet im sicheren Market-Fallback."""
+        side_order = "BUY" if side == "LONG" else "SELL"
+        offset = mark * 0.0002  # 0,02% passiv -> Post-Only wird nicht verworfen
+        price = mark - offset if side == "LONG" else mark + offset
+        try:
+            res = await self.client.place_order(
+                symbol, side_order, qty, order_type="LIMIT", price=price,
+                tp_price=tpf, sl_price=sl, effect="POST_ONLY")
+        except Exception as e:
+            # Antwort verloren: evtl. liegt die Limit-Order trotzdem im Buch.
+            logger.error(f"{symbol}: Maker-Limit EXCEPTION: {e}")
+            await asyncio.sleep(1.5)
+            try:
+                untracked = await self._untracked_qty(symbol, side)
+                if untracked is not None and untracked >= qty * 0.5:
+                    return {"kind": "maker", "qty": untracked, "entry": price,
+                            "res": {"code": 0, "data": {},
+                                    "recovered_after_exception": True}}
+                await self._cancel_pending_entry_orders(symbol, side_order, qty)
+            except Exception as e2:
+                logger.warning(f"{symbol}: Maker-Cleanup fehlgeschlagen: {e2}")
+            return {"kind": "fallback", "reason": f"exception: {str(e)[:80]}"}
+        if not (isinstance(res, dict) and res.get("code") == 0):
+            return {"kind": "fallback",
+                    "reason": f"abgelehnt: {str((res or {}).get('msg') or res)[:80]}"}
+        order_id = _extract_order_id(res)
+        if not order_id:
+            # Angenommen, aber keine orderId -> nicht stornierbar; wie Fill behandeln
+            logger.warning(f"{symbol}: Maker-Limit ohne orderId angenommen")
+            return {"kind": "maker", "qty": qty, "entry": price, "res": res}
+        deadline = time.time() + max(10, int(wait_sec))
+        fill = {"status": "", "filled_qty": 0.0, "avg_price": 0.0}
+        while time.time() < deadline:
+            await asyncio.sleep(3)
+            try:
+                fill = parse_order_fill(await self.client.get_order_detail(order_id))
+            except Exception as e:
+                logger.warning(f"{symbol}: get_order_detail fehlgeschlagen: {e}")
+                continue
+            if fill["status"].startswith("FILL") or fill["status"] == "ALL_FILLED":
+                return {"kind": "maker", "qty": fill["filled_qty"] or qty,
+                        "entry": fill["avg_price"] or price,
+                        "order_id": order_id, "res": res}
+            if fill["status"] in ("CANCELED", "CANCELLED", "EXPIRED", "REJECTED"):
+                # Post-Only von der Börse verworfen (hätte sofort gefüllt)
+                return {"kind": "fallback", "reason": f"status {fill['status']}"}
+        # Timeout: stornieren, dann letzten Stand prüfen (Race: Fill vor Cancel)
+        try:
+            await self.client.cancel_orders(symbol, [order_id])
+        except Exception as e:
+            logger.warning(f"{symbol}: Maker-Cancel fehlgeschlagen: {e}")
+        try:
+            fill = parse_order_fill(await self.client.get_order_detail(order_id))
+        except Exception:
+            pass
+        filled = float(fill.get("filled_qty") or 0)
+        if fill.get("status", "").startswith("FILL") or filled >= qty * 0.999:
+            return {"kind": "maker", "qty": filled or qty,
+                    "entry": fill.get("avg_price") or price,
+                    "order_id": order_id, "res": res}
+        if filled > 0:
+            return {"kind": "maker_partial", "qty": filled,
+                    "entry": fill.get("avg_price") or price,
+                    "order_id": order_id, "res": res}
+        return {"kind": "fallback", "reason": "timeout (nicht gefüllt)"}
+
+    async def _cancel_pending_entry_orders(self, symbol: str, side_order: str,
+                                           qty: float):
+        """Best-Effort: passende offene LIMIT-Entry-Order stornieren (nach
+        verlorener Antwort), damit sie nicht später ZUSÄTZLICH füllt."""
+        res = await self.client.get_pending_orders(symbol)
+        data = (res or {}).get("data") if isinstance(res, dict) else None
+        rows = (data.get("orderList") if isinstance(data, dict) else data) or []
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            if (str(row.get("side") or "").upper() == side_order
+                    and str(row.get("tradeSide") or "OPEN").upper() == "OPEN"):
+                oid = row.get("orderId") or row.get("id")
+                if oid:
+                    await self.client.cancel_orders(symbol, [oid])
+                    logger.info(f"{symbol}: verwaiste Maker-Order {oid} storniert")
+
+    async def _record_maker_attempt(self, kind: str):
+        """Fill-Statistik für die Auto-Aussetzung des Maker-Modus (KI-Trader)."""
+        try:
+            await self.db.settings.update_one(
+                {"_id": "maker_mode_stats"},
+                {"$push": {"attempts": {
+                    "$each": [{"ts": datetime.now(timezone.utc).isoformat(),
+                               "filled": kind in ("maker", "maker_partial")}],
+                    "$slice": -30}},
+                 "$inc": {"total": 1}}, upsert=True)
+        except Exception as e:
+            logger.warning(f"Maker-Statistik fehlgeschlagen: {e}")
+
     async def on_signal(self, signal: Dict, candles: List[Dict]) -> Optional[Dict]:
         symbol = signal["symbol"]
         strategy_id = signal.get("strategy_id")
@@ -1136,6 +1297,13 @@ class AutoTradeManager:
                 capital = free_alloc
         qty = round((capital * lev_used) / entry, 6)
 
+        # Maker-Order-Modus: unkritische KI-Entries als Post-Only-Limit
+        # (Flag kommt vom KI-Trader; Datensammel-/manuelle Trades nie).
+        # Paper-Trades simulieren den Maker-Fill (reale Kostenbasis).
+        maker_requested = (bool(signal.get("ai_maker_ok"))
+                           and not signal.get("manual_trade"))
+        order_kind = "maker" if maker_requested else "market"
+
         # ---- LIVE MODE: hit the exchange FIRST; only persist on success ----
         if mode == "live" and self.client.configured():
             # Guard: if the calculated qty is below the exchange minimum and
@@ -1183,9 +1351,28 @@ class AutoTradeManager:
                 await self.client.set_leverage(symbol, max(int(round(lev_used)), 1),
                                                cfg["margin_mode"])
                 side_order = "BUY" if side == "LONG" else "SELL"
-                res = await self.client.place_order(symbol, side_order, qty,
-                                                    order_type=cfg["order_type"],
-                                                    tp_price=tpf, sl_price=sl)
+                res = None
+                if maker_requested:
+                    m = await self._maker_entry(
+                        symbol, side, qty,
+                        (mark if mark and mark > 0 else entry),
+                        int(signal.get("ai_maker_wait_sec") or 45), tpf, sl)
+                    await self._record_maker_attempt(m.get("kind"))
+                    if m.get("kind") in ("maker", "maker_partial"):
+                        res = m["res"]
+                        order_kind = "maker"
+                        if m.get("qty"):
+                            qty = float(m["qty"])
+                        if m.get("entry"):
+                            entry = float(m["entry"])
+                    else:
+                        order_kind = "taker_fallback"
+                        logger.info(f"{symbol}: Maker-Entry nicht gefüllt "
+                                    f"({m.get('reason')}) -> Market-Fallback")
+                if res is None:
+                    res = await self.client.place_order(symbol, side_order, qty,
+                                                        order_type=cfg["order_type"],
+                                                        tp_price=tpf, sl_price=sl)
             except Exception as e:
                 # BUGFIX (ADA/DOT ohne SL): Ein Timeout/Netzfehler kann auftreten,
                 # NACHDEM Bitunix die Order bereits angenommen hat. Vorher wurde
@@ -1304,7 +1491,11 @@ class AutoTradeManager:
         # Gebührensatz wird am Trade gespeichert – spätere Änderungen der
         # Haupteinstellungen betreffen nur NEUE Trades.
         fee_pct_used = effective_fee_percent(cfg)
-        entry_fee = round(entry * qty * fee_pct_used / 100, 6)
+        # Maker-Entry: günstigere Maker-Fee auf die Entry-Seite; Close bleibt
+        # immer Market/Trigger -> Taker (fee_percent).
+        entry_fee_pct = (effective_maker_fee_percent(cfg)
+                         if order_kind == "maker" else fee_pct_used)
+        entry_fee = round(entry * qty * entry_fee_pct / 100, 6)
 
         # Liquidationspreis (Isolated Margin): ~ Entry * (1 ± (1/Hebel - MMR))
         lev = max(lev_used, 1.0)
@@ -1335,6 +1526,7 @@ class AutoTradeManager:
             "tp1_crv": cfg["tp1_crv"], "tp_full_crv": cfg["tp_full_crv"],
             "tp1_close_percent": cfg["tp1_close_percent"],
             "breakeven_enabled": cfg["breakeven_enabled"], "fee_percent": fee_pct_used,
+            "order_kind": order_kind, "entry_fee_percent": entry_fee_pct,
             "be_mode": (cfg.get("be_mode") or ("tp1" if cfg.get("breakeven_enabled", True) else "off")),
             "be_trigger_crv": float(cfg.get("be_trigger_crv", 1.0) or 1.0),
             "be_trigger_profit_pct": float(cfg.get("be_trigger_profit_pct", 30.0) or 30.0),

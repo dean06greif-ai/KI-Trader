@@ -354,7 +354,30 @@ Teil B (diese Session neu):
 - Offen für Render-EnvVars: GROQ_API_KEY_BACKUP2 (Key aus Vorsession, gsk_dbT5...ghgl) fehlt
   noch in Render UND in der Dev-.env – ohne ihn erwartet test_iter43 catalog 2 Groq-Backups (1 vorhanden).
 
+## Iteration 47 — Maker-Order-Modus (18.06.2026, testing_agent iteration_45 grün, 13/13 Unit + E2E)
+- Setup-Toggle "Maker-Order-Modus" (Default aus) + "Maker-Wartezeit" (15–120s, Default 45s):
+  unkritische KI-Entries laufen als Post-Only-Limit (Maker-Fee, futures_maker_fee_pct Default 0,02%).
+  Ausgenommen: Datensammel-Trades (sofortige Fills fürs Lernen) und manuelle Trades.
+- Ausführung (bitunix_trade._maker_entry): Post-Only-Limit 0,02% passiv neben Mark, Poll auf Fill
+  (get_order_detail), Timeout -> cancel_orders + Market-Fallback (Ausführung garantiert),
+  Teil-Fill -> Rest storniert & Teilmenge übernommen, Post-Only-Reject/Exception -> sicherer
+  Market-Fallback inkl. Orphan-Order-Cleanup (get_pending_orders) und Untracked-Recovery.
+- Gebühren korrekt: Trade-Doc trägt order_kind (market|maker|taker_fallback) + entry_fee_percent;
+  Entry-Fee mit Maker-Satz, Close bleibt immer Trigger/Market -> Taker (fee_percent unverändert).
+  Paper-Trades simulieren den Maker-Fill (gleiche Kostenbasis).
+- KI-Autonomie: virtueller Engine-Key maker_suspend_hours (1–72h direkt, 0/>72 nur als Vorschlag);
+  maker_mode/maker_wait_sec/maker_suspended_until sind FORBIDDEN für die KI. Auto-Aussetzung:
+  Fill-Quote < 30% über die letzten >=8 Maker-Versuche -> 24h aussetzen + Glocke/Telegram-Meldung
+  (maker_mode_stats, letzte 30 Versuche). Trader reaktiviert per "Wieder aktivieren"-Button
+  (gelbe Zeile im Setup) oder Toggle.
+- Erweiterte Trade-Infos (Details-Modal): Zeile "Order: Market (Taker x%) / Limit Post-Only (Maker x%)
+  / Limit→Market-Fallback" + Hinweis Close = Trigger/Market (Taker); Alt-Trades defaulten auf market.
+- Bitunix-Client erweitert: place_order effect-Param (POST_ONLY), get_order_detail,
+  get_pending_orders, cancel_orders.
+- Tests NEU: tests/test_iter48_maker_mode.py (13: parse_order_fill, Fake-Börse Fill/Timeout/
+  Partial/Reject/Exception, Engine-Aussetzung, Leitplanken, API-Clamps).
+
 ## Nächste Aufgaben (Kandidaten)
-- Optional Limit-Order-Modus (Maker-Fee) für nicht-zeitkritische KI-Entries
+- Optional Limit-Order-Modus (Maker-Fee) für nicht-zeitkritische KI-Entries ✅ erledigt (Iter 47)
 - Span-in-option React-Dev-Warning (kosmetisch, vorbestehend aus Iter42) bereinigen
 - Papierkorb optional: Einträge endgültig löschen (Discard-Button)

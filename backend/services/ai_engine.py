@@ -112,6 +112,10 @@ DEFAULT_AI_CONFIG = {
     # innerhalb dieser Grenzen selbst setzen (außerhalb/0 = nur Vorschlag)
     "tune_guard_min": 1,
     "tune_guard_max": 6,
+    # Maker-Order-Modus: unkritische KI-Entries als Post-Only-Limit (Maker-Fee)
+    "maker_mode": False,
+    "maker_wait_sec": 45,
+    "maker_suspended_until": None,
     # ---- Datensammel-Modus (Phase 4): Entscheidungen unterhalb der
     # Live-Schwelle (aber >= collection_min_confidence) werden als PAPER-
     # Trades ausgeführt und mit data_collection=true markiert – nie live,
@@ -614,6 +618,22 @@ class AIEngine:
             self.config["tune_guard_max"] = max(1, min(10, int(updates["tune_guard_max"])))
         if self.config.get("tune_guard_min", 1) > self.config.get("tune_guard_max", 6):
             self.config["tune_guard_min"] = self.config["tune_guard_max"]
+        if "maker_mode" in updates:
+            self.config["maker_mode"] = bool(updates["maker_mode"])
+        if "maker_wait_sec" in updates:
+            self.config["maker_wait_sec"] = max(10, min(300, int(updates["maker_wait_sec"])))
+        if "maker_suspended_until" in updates:
+            v = updates["maker_suspended_until"]
+            self.config["maker_suspended_until"] = str(v) if v else None
+        if "maker_suspend_hours" in updates:
+            # virtueller Key (KI/Autonomie): X Stunden aussetzen, 0 = aufheben
+            try:
+                h = max(0.0, min(72.0, float(updates["maker_suspend_hours"])))
+            except (TypeError, ValueError):
+                h = 0.0
+            self.config["maker_suspended_until"] = (
+                (datetime.now(timezone.utc) + timedelta(hours=h)).isoformat()
+                if h > 0 else None)
         if "fee_guard_enabled" in updates:
             self.config["fee_guard_enabled"] = bool(updates["fee_guard_enabled"])
         if "fee_guard_mult" in updates:
@@ -1525,6 +1545,14 @@ class AIEngine:
         if review:
             return "\n\n".join(parts)
         autonomy = self.config.get("autonomy", "suggest")
+        maker_txt = ""
+        if self.config.get("maker_mode"):
+            maker_txt = (
+                "Maker-Order-Modus ist AN: unkritische Entries laufen als Post-Only-Limit (Maker-Fee). "
+                "Läuft er messbar schlecht (schlechte Fills, verpasste Moves), darfst du ihn aussetzen: "
+                '"maker_suspend_hours" (1-72 direkt; 0 = Wieder-Aktivieren nur als Vorschlag an den Trader).'
+                + (f" Aktuell AUSGESETZT bis {self.config.get('maker_suspended_until')}."
+                   if self._maker_suspended() else "") + "\n")
         if autonomy in ("suggest", "auto"):
             mode_txt = ("Deine Änderungen werden SOFORT automatisch übernommen – sei entsprechend konservativ."
                         if autonomy == "auto" else
@@ -1540,6 +1568,7 @@ class AIEngine:
                 f"({int(self.config.get('tune_guard_min', 1) or 1)}-{int(self.config.get('tune_guard_max', 6) or 6)} direkt, "
                 "außerhalb dieser Spanne oder 0/aus nur als Vorschlag an den Trader); "
                 "für Datensammel-Trades ist er ohnehin ausgesetzt.\n"
+                + maker_txt +
                 "STRENG VERBOTEN: max_capital / investierter Betrag / mode (paper/live) – NIE ändern oder vorschlagen.\n"
                 + tunable_spec_text())
         else:
@@ -2314,6 +2343,13 @@ class AIEngine:
         if is_swing:
             # Swing: eigener Timeframe-Schlüssel (Anti-Stacking blockiert Scalps nicht)
             signal["timeframe"] = "swing"
+        # Maker-Order-Modus: unkritische KI-Entries als Post-Only-Limit;
+        # Datensammel-Trades ausgenommen (sollen sofort füllen -> Lernen).
+        if not collection and self.config.get("maker_mode"):
+            await self._maker_check_performance()
+            if not self._maker_suspended():
+                signal["ai_maker_ok"] = True
+                signal["ai_maker_wait_sec"] = int(self.config.get("maker_wait_sec", 45) or 45)
         # Hebel-Modus (global, AI-Panel): coin = Coin-Settings entscheiden
         # (bisheriges Verhalten) | auto = KI wählt pro Trade bis lev_auto_max |
         # fixed = fester Hebel. Swing bleibt immer auf swing_max_leverage gedeckelt.
@@ -2422,6 +2458,61 @@ class AIEngine:
                 return 0
         return ai_validation.sample_size(stats, scope, symbol)
 
+    def _maker_suspended(self) -> bool:
+        """Maker-Order-Modus aktuell ausgesetzt? (abgelaufene Aussetzung
+        wird automatisch aufgehoben)"""
+        until = self.config.get("maker_suspended_until")
+        if not until:
+            return False
+        try:
+            if datetime.now(timezone.utc) >= datetime.fromisoformat(str(until)):
+                self.config["maker_suspended_until"] = None
+                return False
+        except (TypeError, ValueError):
+            self.config["maker_suspended_until"] = None
+            return False
+        return True
+
+    async def _maker_check_performance(self):
+        """Auto-Aussetzung durch den KI-Trader: Fill-Quote der letzten
+        Maker-Versuche zu schlecht (<30% bei >=8 Versuchen) -> Modus 24h
+        aussetzen und den Trader informieren (Glocke + Telegram).
+        Der Trader kann jederzeit über das Setup wieder aktivieren."""
+        if self._maker_suspended():
+            return
+        try:
+            doc = await self.db.settings.find_one({"_id": "maker_mode_stats"}) or {}
+        except Exception:
+            return
+        attempts = (doc.get("attempts") or [])[-10:]
+        if len(attempts) < 8:
+            return
+        fills = sum(1 for a in attempts if a.get("filled"))
+        rate = fills / len(attempts)
+        if rate >= 0.3:
+            return
+        await self.update_config({"maker_suspend_hours": 24})
+        try:
+            await self.db.settings.update_one(
+                {"_id": "maker_mode_stats"}, {"$set": {"attempts": []}})
+        except Exception:
+            pass
+        msg = (f"Maker-Order-Modus für 24h ausgesetzt: nur {fills}/{len(attempts)} "
+               "der letzten Limit-Entries wurden gefüllt – Entries laufen solange "
+               "wieder als Market-Order. Wieder aktivieren: KI-Setup -> Maker-Order-Modus.")
+        try:
+            from services import notifications
+            from core import state
+            await notifications.website_notify(
+                self.db, "maker_mode", "Maker-Modus ausgesetzt", msg,
+                cooldown_min=60, source="KI-Trader")
+            await notifications.telegram_notify(
+                self.db, state.telegram, "maker_mode", f"⚠️ {msg}",
+                cooldown_min=60)
+        except Exception as e:
+            logger.warning(f"Maker-Aussetzungs-Meldung fehlgeschlagen: {e}")
+        logger.info(f"Maker-Modus auto-ausgesetzt (Fill-Quote {rate:.0%})")
+
     def _tuning_guard(self, changes: Dict) -> str:
         """Self-Tuning-Guard: Engine-Änderungen der KI nur innerhalb der vom
         Trader definierten Leitplanken (Spanne einstellbar, KI darf sie nie
@@ -2455,6 +2546,17 @@ class AIEngine:
             if v == 0 or not (g_lo <= v <= g_hi):
                 return (f"Richtungs-Guard auf {v} "
                         f"({'aus' if v == 0 else f'außerhalb der Autonomie-Spanne {g_lo}–{g_hi}'}) "
+                        "– nur der Trader darf das bestätigen")
+        if "maker_suspend_hours" in changes:
+            try:
+                h = float(changes["maker_suspend_hours"])
+            except (TypeError, ValueError):
+                return "maker_suspend_hours kein gültiger Wert"
+            if h <= 0:
+                return ("Maker-Order-Modus wieder aktivieren "
+                        "– nur der Trader darf das bestätigen")
+            if h > 72:
+                return (f"Maker-Aussetzung {h:g}h (> 72h) "
                         "– nur der Trader darf das bestätigen")
         if "correlation_guard" in changes and not changes["correlation_guard"]:
             return "Korrelations-Guard abschalten – nur der Trader darf das bestätigen"

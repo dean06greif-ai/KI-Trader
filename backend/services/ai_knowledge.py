@@ -75,13 +75,16 @@ AI_TUNABLE_ENGINE_KEYS: Dict[str, Dict] = {
                            "desc": "Richtungs-Guard: max. gleichzeitig offene KI-Trades in dieselbe Richtung (0 = aus). Für Datensammel-Trades immer ausgesetzt."},
     "correlation_guard": {"type": "bool",
                           "desc": "Korrelations-Guard: BTC/ETH/SOL zählen als EIN Richtungs-Risiko"},
+    "maker_suspend_hours": {"type": "float", "min": 0, "max": 72,
+                            "desc": "Maker-Order-Modus für X Stunden aussetzen (0 = wieder aktivieren; nur wirksam, wenn der Trader den Modus eingeschaltet hat)"},
 }
 
 # Diese Keys darf die KI unter KEINEN Umständen anfassen.
 FORBIDDEN_KEYS = {"max_capital", "mode", "enabled", "signals_enabled",
                   "order_type", "fee_percent", "margin_mode",
                   "tune_conf_min", "tune_conf_max", "tune_cooldown_max",
-                  "tune_guard_min", "tune_guard_max"}
+                  "tune_guard_min", "tune_guard_max",
+                  "maker_mode", "maker_wait_sec", "maker_suspended_until"}
 
 
 def validate_changes(changes: Dict, scope: str = "coin") -> Tuple[Dict, Dict]:

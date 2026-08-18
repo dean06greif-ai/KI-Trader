@@ -1315,6 +1315,28 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                 </select>
               </span>
             </label>
+            <label title="Maker-Order-Modus: Unkritische KI-Entries werden als Post-Only-Limit-Order platziert (Maker-Fee ~0,02% statt Taker ~0,06% = ca. 2/3 der Entry-Gebühr gespart). Füllt die Order nicht innerhalb der Wartezeit, wird automatisch eine Market-Order nachgeschoben (Ausführung garantiert). Datensammel-Trades und Closes bleiben immer Market. Bei schlechter Fill-Quote setzt der KI-Trader den Modus selbstständig bis max. 72h aus – du kannst ihn hier jederzeit wieder aktivieren.">
+              <span>Maker-Order-Modus</span>
+              <select value={cfg.maker_mode ? 'on' : 'off'} onChange={e => updateConfig({ maker_mode: e.target.value === 'on' })} data-testid="ai-maker-mode-select">
+                <option value="off">aus (immer Market)</option>
+                <option value="on">an (Limit wenn unkritisch)</option>
+              </select>
+            </label>
+            {cfg.maker_mode && (
+              <label title="Wie lange auf den Fill der Post-Only-Limit-Order gewartet wird, bevor automatisch eine Market-Order (Taker) nachgeschoben wird.">
+                <span>Maker-Wartezeit</span>
+                <select value={cfg.maker_wait_sec ?? 45} onChange={e => updateConfig({ maker_wait_sec: Number(e.target.value) })} data-testid="ai-maker-wait-select">
+                  {[15, 30, 45, 60, 90, 120].map(v => <option key={v} value={v}>{v}s</option>)}
+                </select>
+              </label>
+            )}
+            {cfg.maker_mode && cfg.maker_suspended_until && (
+              <div className="ai-maker-suspended" data-testid="ai-maker-suspended-row"
+                title="Der KI-Trader hat den Maker-Modus wegen schlechter Fill-Quote/Performance vorübergehend ausgesetzt – Entries laufen solange als Market-Order. Mit einem Klick hebst du die Aussetzung sofort wieder auf.">
+                <span>Maker-Modus vom KI-Trader ausgesetzt bis {new Date(cfg.maker_suspended_until).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                <button onClick={() => updateConfig({ maker_suspended_until: null })} data-testid="ai-maker-resume-btn">Wieder aktivieren</button>
+              </div>
+            )}
             <label title="Autonomie-Leitplanke: Spanne, in der die KI ihre Min. Konfidenz selbst ändern darf (Autonomie 'automatisch'). Außerhalb wird jede Änderung nur ein Vorschlag, den du bestätigen musst. Die Spanne selbst kann die KI nie ändern.">
               <span>KI-Spanne Konfidenz</span>
               <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>

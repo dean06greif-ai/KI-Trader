@@ -143,6 +143,14 @@ const TradeAIDetails = ({ trade, onChanged }) => {
                         </div>
                       </>
                     )}
+                    <div className="tdx-sub" data-testid={`trade-order-kind-${trade.id}`}
+                      title="Order-Typ des Entries: Market = sofort ausgeführt (Taker-Fee) · Limit/Post-Only = geduldig ins Orderbuch gelegt (günstigere Maker-Fee) · Limit→Market = Limit-Order wurde nicht rechtzeitig gefüllt, automatischer Market-Fallback (Taker-Fee). TP/SL liegen immer als Trigger-Order an der Börse und lösen bei Erreichen als Market aus (Taker).">
+                      Order: {data.state.order_kind === 'maker'
+                        ? <>Limit / Post-Only (<b>Maker</b> {fmt(data.state.entry_fee_percent, 3)}%)</>
+                        : data.state.order_kind === 'taker_fallback'
+                          ? <>Limit → Market-Fallback (Taker {fmt(data.state.entry_fee_percent, 3)}%)</>
+                          : <>Market (Taker {fmt(data.state.entry_fee_percent, 3)}%)</>} · Close: Trigger/Market (Taker)
+                    </div>
                   </Section>
                 )}
                 <Section title="VOLLE KI-BEGRÜNDUNG">
