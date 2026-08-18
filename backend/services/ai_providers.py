@@ -249,6 +249,16 @@ def is_rate_limit_error(err: Exception) -> bool:
                                 "ratelimit", "too many requests"))
 
 
+def is_payment_error(err: Exception) -> bool:
+    """402 Payment Required: Gratis-Kontingent erschöpft / Guthaben nötig
+    (z.B. Cerebras). Verhalten wie Rate-Limit (nächster Key/Modell), aber
+    mit klarer Log-Meldung, damit es nicht wie ein Tageslimit aussieht."""
+    s = str(err).lower()
+    return any(k in s for k in ("error code: 402", "payment required",
+                                "insufficient credit", '"code":402',
+                                "payment_required"))
+
+
 def _backup_env_names(base: str) -> List[str]:
     """Alle Backup-Env-Namen eines Keys: _BACKUP, _BACKUP2, _BACKUP3, … (unbegrenzt).
 
@@ -619,8 +629,10 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                     _fail_detail(provider, model, "skipped_too_large",
                                  f"Prompt ~{est_tokens} Tokens zu groß (413)")
                     break  # nächstes Modell – gleicher Prompt scheitert bei jedem Key
-                if is_rate_limit_error(e):
-                    logger.warning(f"{provider}/{model} rate-limited (Key {i + 1}/{len(keys)}), weiter…")
+                if is_rate_limit_error(e) or is_payment_error(e):
+                    reason = ("Kontingent erschöpft/Guthaben nötig (402)"
+                              if is_payment_error(e) else "rate-limited")
+                    logger.warning(f"{provider}/{model} {reason} (Key {i + 1}/{len(keys)}), weiter…")
                     record_result(provider, model, "rate_limited", str(e), key_index=i)
                     # Ausfall-Meldung erst, wenn ALLE Keys (primär + backup)
                     # dieses Providers erschöpft sind – nicht beim ersten Limit.
@@ -708,8 +720,10 @@ async def stream_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                     record_result(provider, model, "skipped_too_large",
                                   f"Prompt ~{est_tokens} Tokens zu groß (413)", key_index=i)
                     break
-                if is_rate_limit_error(e):
-                    logger.warning(f"{provider}/{model} chat rate-limited (Key {i + 1}), weiter…")
+                if is_rate_limit_error(e) or is_payment_error(e):
+                    reason = ("Kontingent erschöpft/Guthaben nötig (402)"
+                              if is_payment_error(e) else "rate-limited")
+                    logger.warning(f"{provider}/{model} chat {reason} (Key {i + 1}), weiter…")
                     record_result(provider, model, "rate_limited", str(e), key_index=i)
                     continue
                 logger.warning(f"{provider}/{model} chat Fehler: {str(e)[:150]}")
