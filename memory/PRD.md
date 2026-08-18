@@ -387,6 +387,17 @@ Teil B (diese Session neu):
   grau -> rot beim Hover; Toast "Endgültig gelöscht"; danach weder Restore noch Discard (404).
 - Test erweitert: test_iter46_trash_and_guard_span.py::test_discard_forever (Auth, 200, 404-Kette).
 
+## Iteration 49 — Leere-Antwort-Fix + 402-Log (18.06.2026, testing_agent iteration_46 grün)
+- Bug: OpenRouter-Free-Modelle (gpt-oss-20b:free) liefern sporadisch 200 mit leeren choices
+  ("Leere Antwort (keine choices)") -> Modell wurde sofort aufgegeben, Ausfall-Meldung "betroffen: Analyst".
+- Fix (services/ai_providers.py generate_chain): is_empty_response_error(); bei leerer Antwort
+  1x Retry (2s) auf demselben Key, dann Key-Rotation (andere Upstream-Route), erst wenn alle
+  Keys leer -> nächstes Modell; KI-Team-Detail jetzt verständlich ("Free-Modell überlastet,
+  Fallback übernimmt"). Harte Fehler springen weiterhin sofort zum nächsten Modell.
+- is_payment_error(): Cerebras-402 (Payment Required) wird im Log korrekt als
+  "Kontingent erschöpft/Guthaben nötig (402)" statt "rate-limited" gelabelt (Verhalten gleich).
+- Tests NEU: tests/test_iter49_empty_response_retry.py (5, LLM gemockt).
+
 ## Nächste Aufgaben (Kandidaten)
 - Optional Limit-Order-Modus (Maker-Fee) für nicht-zeitkritische KI-Entries ✅ erledigt (Iter 47)
 - Span-in-option React-Dev-Warning (kosmetisch, vorbestehend aus Iter42) bereinigen

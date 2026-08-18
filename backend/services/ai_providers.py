@@ -15,6 +15,7 @@ bei OpenRouter), wird die komplette Modell-Kette mit dem Backup-Key wiederholt.
 """
 import os
 import re
+import asyncio
 import logging
 from collections import deque
 from typing import AsyncIterator, Dict, List, Optional, Tuple
@@ -257,6 +258,13 @@ def is_payment_error(err: Exception) -> bool:
     return any(k in s for k in ("error code: 402", "payment required",
                                 "insufficient credit", '"code":402',
                                 "payment_required"))
+
+
+def is_empty_response_error(err: Exception) -> bool:
+    """Transient: Free-Modell (v.a. OpenRouter) liefert 200 mit leeren
+    choices/Content – typisch Überlastung des Upstream-Providers.
+    Wird mit einem Retry + Key-Wechsel behandelt statt Modell aufzugeben."""
+    return "leere antwort" in str(err).lower()
 
 
 def _backup_env_names(base: str) -> List[str]:
@@ -596,10 +604,20 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
         for i, key in enumerate(keys):
             tried_any = True
             try:
-                if provider == "gemini":
-                    text = await _gemini_generate(model, key, prompt, system, temperature, json_mode)
-                else:
-                    text = await _oai_generate(provider, model, key, prompt, system, temperature, json_mode)
+                async def _gen_once():
+                    if provider == "gemini":
+                        return await _gemini_generate(model, key, prompt, system, temperature, json_mode)
+                    return await _oai_generate(provider, model, key, prompt, system, temperature, json_mode)
+                try:
+                    text = await _gen_once()
+                except Exception as e1:
+                    # Leere Antwort ist meist transient (Free-Tier überlastet):
+                    # einmaliger Retry auf demselben Key, dann Key-Wechsel.
+                    if not is_empty_response_error(e1):
+                        raise
+                    logger.info(f"{provider}/{model}: leere Antwort – einmaliger Retry in 2s…")
+                    await asyncio.sleep(2)
+                    text = await _gen_once()
                 if i > 0:
                     logger.warning(f"AI: Backup-Key für {provider} genutzt ({model})")
                 record_result(provider, model, "ok", key_index=i,
@@ -642,6 +660,18 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                         _fail_detail(provider, model, "rate_limited",
                                      f"alle {len(keys)} Key(s) im Limit: {str(e)[:140]}")
                     continue
+                if is_empty_response_error(e):
+                    logger.warning(f"{provider}/{model}: leere Antwort trotz Retry "
+                                   f"(Modell überlastet) – Key {i + 1}/{len(keys)}, weiter…")
+                    record_result(provider, model, "error",
+                                  "Leere Antwort trotz Retry – Free-Modell aktuell "
+                                  "überlastet, Fallback übernimmt", key_index=i)
+                    if i == len(keys) - 1:
+                        failed_models.append(f"{provider}/{model}")
+                        failed_providers.add(provider)
+                        _fail_detail(provider, model, "empty_response",
+                                     "Leere Antwort (Modell überlastet) trotz Retry auf allen Keys")
+                    continue  # nächster Key = andere Upstream-Route, statt Modell aufgeben
                 failed_models.append(f"{provider}/{model}")
                 failed_providers.add(provider)
                 logger.warning(f"{provider}/{model} Fehler: {str(e)[:150]} – nächstes Modell…")
