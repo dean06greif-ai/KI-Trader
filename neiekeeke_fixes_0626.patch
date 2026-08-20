@@ -1,0 +1,639 @@
+diff --git a/backend/core/utils.py b/backend/core/utils.py
+index 5bc8030..4348626 100644
+--- a/backend/core/utils.py
++++ b/backend/core/utils.py
+@@ -118,6 +118,26 @@ def _enrich_trade(t: Dict, current_price: float = None, exchange: Dict = None) -
+     # margin_used wird bei Margin-/Hebel-Anpassungen gepflegt; sonst Notional/Hebel.
+     lev = float(t.get("leverage") or 1) or 1
+     margin = float(t.get("margin_used") or 0)
++    # Börsen-Wahrheit (Fix 06/26): echte Positions-Margin/Hebel von Bitunix
++    # haben Vorrang – manuelle Margin-/Hebel-Änderungen an der Börse werden
++    # so sofort korrekt angezeigt (nicht erst nach dem Watchdog-Sync).
++    ex_margin = None
++    ex_leverage = None
++    if is_open and exchange:
++        try:
++            v = float(exchange.get("margin") or 0)
++            if v > 0:
++                ex_margin = v
++                margin = v
++        except (TypeError, ValueError):
++            pass
++        try:
++            v = float(exchange.get("leverage") or 0)
++            if v > 0:
++                ex_leverage = v
++                lev = v
++        except (TypeError, ValueError):
++            pass
+     # Geschlossene Trades: qty_remaining ist 0 -> volle qty als Margin-Basis,
+     # sonst wäre pnl_pct_margin None und die UI fiele auf Positions-% zurück
+     # (Bug-Report: DOT +10,18$ bei 99$ Margin zeigte +0,26% statt ~+10,3%).
+@@ -163,6 +183,8 @@ def _enrich_trade(t: Dict, current_price: float = None, exchange: Dict = None) -
+         "pnl_pct_margin": pnl_pct_margin,
+         "upnl_pct_margin": upnl_pct_margin,
+         "margin_used": round(margin, 4) if margin > 0 else None,
++        "exchange_margin": round(ex_margin, 4) if ex_margin else None,
++        "exchange_leverage": ex_leverage,
+         "notional_usdt": round(entry * qty, 2) if (entry and qty) else None,
+         "fee_percent": fee_pct,
+         "entry_fee": entry_fee or None,
+diff --git a/backend/routers/autotrade.py b/backend/routers/autotrade.py
+index 4291c07..f67cb2f 100644
+--- a/backend/routers/autotrade.py
++++ b/backend/routers/autotrade.py
+@@ -57,7 +57,15 @@ async def _live_position_map() -> tuple:
+                         break
+                 if upnl is None or not side:
+                     continue
+-                info = {"upnl": upnl, "qty": qty}
++                def _fnum(v):
++                    try:
++                        f = float(v)
++                        return f if f > 0 else None
++                    except (TypeError, ValueError):
++                        return None
++                info = {"upnl": upnl, "qty": qty,
++                        "margin": _fnum(row.get("margin") or row.get("im")),
++                        "leverage": _fnum(row.get("leverage"))}
+                 pid = row.get("positionId") or row.get("id")
+                 if pid:
+                     by_id[str(pid)] = info
+@@ -475,14 +483,15 @@ async def get_capital_allocation():
+     out = {}
+     for scope in ("live", "paper"):
+         a = autotrader.capital_allocation(scope)
+-        allocated = await autotrader.allocated_capital(
++        st = await autotrader.free_capital_status(
+             scope, total=total if scope == "live" else None)
+-        used = await autotrader.used_margin(scope)
+         out[scope] = {
+             **a,
+-            "allocated": round(allocated, 2) if allocated is not None else None,
+-            "used_margin": round(used, 2),
+-            "free": round(allocated - used, 2) if allocated is not None else None,
++            "allocated": round(st["allocated"], 2) if st["allocated"] is not None else None,
++            "used_margin": round(float(st["used"] or 0), 2),
++            "free": round(st["free"], 2) if st["free"] is not None else None,
++            "available": round(st["available"], 2) if st.get("available") is not None else None,
++            "source": st.get("source"),
+         }
+     return {"allocation": out,
+             "live_total_balance": round(total, 2) if total is not None else None,
+@@ -606,16 +615,16 @@ async def get_balance():
+         alloc_out = {}
+         for scope in ("live", "paper"):
+             a = autotrader.capital_allocation(scope)
+-            allocated = await autotrader.allocated_capital(
++            st = await autotrader.free_capital_status(
+                 scope, total=live_total if scope == "live" else None)
+-            used = await autotrader.used_margin(scope)
+             alloc_out[scope] = {
+                 "mode": a.get("mode", "full"),
+                 "value": a.get("value", 0),
+                 "base_balance": a.get("base_balance"),
+-                "allocated": round(allocated, 2) if allocated is not None else None,
+-                "used_margin": round(used, 2),
+-                "free": round(allocated - used, 2) if allocated is not None else None,
++                "allocated": round(st["allocated"], 2) if st["allocated"] is not None else None,
++                "used_margin": round(float(st["used"] or 0), 2),
++                "free": round(st["free"], 2) if st["free"] is not None else None,
++                "source": st.get("source"),
+             }
+         result["allocation"] = alloc_out
+     except Exception as e:
+diff --git a/backend/services/ai_engine.py b/backend/services/ai_engine.py
+index d70aaea..8d02224 100644
+--- a/backend/services/ai_engine.py
++++ b/backend/services/ai_engine.py
+@@ -1470,14 +1470,18 @@ class AIEngine:
+             pass
+         for scope in ("live", "paper"):
+             try:
+-                alloc = await autotrader.allocated_capital(
++                st = await autotrader.free_capital_status(
+                     scope, total=total if scope == "live" else None)
+-                used = await autotrader.used_margin(scope)
+-                if alloc is not None:
++                alloc, used, free = st.get("allocated"), float(st.get("used") or 0), st.get("free")
++                src = " (Quelle: Bitunix-API)" if st.get("source") == "exchange" else ""
++                if alloc is not None and free is not None:
+                     lines.append(f"{scope.upper()}: zugewiesen {alloc:.2f} USDT | "
+-                                 f"gebunden {used:.2f} | FREI {alloc - used:.2f}")
++                                 f"gebunden {used:.2f} | FREI {free:.2f}{src}")
++                elif free is not None:
++                    lines.append(f"{scope.upper()}: gebunden {used:.2f} USDT | "
++                                 f"FREI {free:.2f}{src}")
+                 else:
+-                    lines.append(f"{scope.upper()}: gebundene Margin {used:.2f} USDT")
++                    lines.append(f"{scope.upper()}: gebundene Margin {used:.2f} USDT{src}")
+             except Exception:
+                 continue
+         try:
+diff --git a/backend/services/bitunix_trade.py b/backend/services/bitunix_trade.py
+index 84925ff..4f57fc9 100644
+--- a/backend/services/bitunix_trade.py
++++ b/backend/services/bitunix_trade.py
+@@ -765,7 +765,8 @@ class AutoTradeManager:
+         base.update((self.config.get("capital_allocation", {}) or {}).get(mode, {}))
+         return base
+ 
+-    async def _live_total_balance(self) -> Optional[float]:
++    async def _live_balance_fields(self) -> Optional[Dict]:
++        """Bitunix-Kontostand: {'available','frozen','margin','total'} oder None."""
+         if not self.client or not self.client.configured():
+             return None
+         try:
+@@ -779,12 +780,19 @@ class AutoTradeManager:
+                         return float(v)
+                     except (TypeError, ValueError):
+                         return 0.0
+-                return (_num(data.get("available") or data.get("availableBalance"))
+-                        + _num(data.get("frozen")) + _num(data.get("margin")))
++                available = _num(data.get("available") or data.get("availableBalance"))
++                frozen = _num(data.get("frozen"))
++                margin = _num(data.get("margin"))
++                return {"available": available, "frozen": frozen, "margin": margin,
++                        "total": available + frozen + margin}
+         except Exception as e:
+-            logger.warning(f"_live_total_balance failed: {e}")
++            logger.warning(f"_live_balance_fields failed: {e}")
+         return None
+ 
++    async def _live_total_balance(self) -> Optional[float]:
++        fields = await self._live_balance_fields()
++        return fields["total"] if fields else None
++
+     async def allocated_capital(self, mode: str, total: Optional[float] = None) -> Optional[float]:
+         """Effective capital cap (USDT) for the bot in the given mode.
+         None = no enforceable cap (e.g. live balance unknown)."""
+@@ -814,6 +822,62 @@ class AutoTradeManager:
+             used += float(t.get("max_capital") or 0)
+         return round(used, 6)
+ 
++    async def live_exchange_used_margin(self) -> Optional[float]:
++        """Source of Truth Börse: tatsächlich gebundene Margin aller offenen
++        Bitunix-Positionen (erfasst auch manuelle Margin-/Hebel-Änderungen
++        und Teilschließungen). None = Börse nicht erreichbar."""
++        if not self.client or not self.client.configured():
++            return None
++        try:
++            from services.position_watchdog import parse_positions
++            res = await self.client.get_positions()
++            if not isinstance(res, dict) or res.get("code") not in (0, "0"):
++                return None
++            return round(sum(float(p.get("margin") or 0)
++                             for p in parse_positions(res)), 6)
++        except Exception as e:
++            logger.warning(f"live_exchange_used_margin failed: {e}")
++            return None
++
++    async def free_capital_status(self, mode: str,
++                                  total: Optional[float] = None) -> Dict:
++        """Freies Kapital pro Modus: {'allocated','used','free','available','source'}.
++
++        LIVE nutzt die Bitunix-API als Source of Truth (Befund 06/26: die
++        DB-Summe der Trade-Margins wurde durch manuelle Margin-/Hebel-
++        Änderungen an der Börse falsch -> scheinbar negatives freies Kapital
++        -> der KI Trader eröffnete keine Live-Trades mehr)."""
++        out = {"allocated": None, "used": 0.0, "free": None,
++               "available": None, "source": "db"}
++        if mode == "live" and self.client and self.client.configured():
++            fields = await self._live_balance_fields()
++            if fields:
++                out["available"] = round(fields["available"], 6)
++                if total is None:
++                    total = fields["total"]
++            out["allocated"] = await self.allocated_capital(mode, total=total)
++            used = await self.live_exchange_used_margin()
++            if used is None and fields is not None:
++                used = round(fields["margin"], 6)
++            if used is not None:
++                out["used"] = used
++                out["source"] = "exchange"
++            else:
++                out["used"] = await self.used_margin(mode)
++            candidates = []
++            if out["allocated"] is not None:
++                candidates.append(out["allocated"] - out["used"])
++            if out["source"] == "exchange" and out["available"] is not None:
++                candidates.append(out["available"])
++            if candidates:
++                out["free"] = round(min(candidates), 6)
++            return out
++        out["allocated"] = await self.allocated_capital(mode, total=total)
++        out["used"] = await self.used_margin(mode)
++        if out["allocated"] is not None:
++            out["free"] = round(out["allocated"] - out["used"], 6)
++        return out
++
+     def coin_cfg(self, symbol: str) -> Dict:
+         c = dict(DEFAULT_COIN_CFG)
+         c.update(self.config.get("coins", {}).get(symbol, {}))
+@@ -1322,25 +1386,31 @@ class AutoTradeManager:
+             pass
+         alloc_note = None
+         try:
+-            alloc_cap = await self.allocated_capital(mode)
++            cap_status = await self.free_capital_status(mode)
+         except Exception as e:
+-            logger.warning(f"allocated_capital({mode}) failed: {e}")
+-            alloc_cap = None
+-        if alloc_cap is not None:
+-            used = await self.used_margin(mode)
+-            free_alloc = round(alloc_cap - used, 6)
++            logger.warning(f"free_capital_status({mode}) failed: {e}")
++            cap_status = {"allocated": None, "used": 0.0, "free": None, "source": "none"}
++        free_alloc = cap_status.get("free")
++        if free_alloc is not None:
++            used = float(cap_status.get("used") or 0)
++            alloc_cap = cap_status.get("allocated")
++            cap_src = "Börse" if cap_status.get("source") == "exchange" else "DB"
++            alloc_txt = f"{alloc_cap:.2f}" if alloc_cap is not None else "?"
+             if free_alloc < 5.0:
+                 logger.info(f"{symbol}: Kapital-Limit erreicht "
+-                            f"({used:.2f}/{alloc_cap:.2f} USDT belegt) -> kein Trade")
++                            f"({used:.2f}/{alloc_txt} USDT belegt, frei "
++                            f"{free_alloc:.2f}, Quelle {cap_src}) -> kein Trade")
+                 signal["_reject_reason"] = (f"Kapital-Limit erreicht: "
+-                                            f"{used:.2f}/{alloc_cap:.2f} USDT belegt")
++                                            f"{used:.2f}/{alloc_txt} USDT belegt "
++                                            f"(frei {free_alloc:.2f}, Quelle {cap_src})")
+                 await self._notify_reject(
+                     symbol, side,
+-                    f"Kapital-Limit erreicht: {used:.2f}/{alloc_cap:.2f} USDT belegt")
++                    f"Kapital-Limit erreicht: {used:.2f}/{alloc_txt} USDT belegt "
++                    f"(frei {free_alloc:.2f}, Quelle: {cap_src})")
+                 return None
+             if capital > free_alloc:
+                 alloc_note = (f"Kapital auf {free_alloc:.2f} USDT begrenzt "
+-                              f"(Limit {alloc_cap:.2f}, belegt {used:.2f})")
++                              f"(Limit {alloc_txt}, belegt {used:.2f}, Quelle {cap_src})")
+                 capital = free_alloc
+         qty = round((capital * lev_used) / entry, 6)
+ 
+@@ -2663,11 +2733,11 @@ class AutoTradeManager:
+     async def _free_capital_ok(self, trade: Dict, extra_margin: float) -> bool:
+         """Zusätzliche Margin nur aus dem freien Kapital-Kontingent (Paper & Live)."""
+         try:
+-            alloc = await self.allocated_capital(trade.get("mode", "paper"))
+-            if alloc is None:
++            st = await self.free_capital_status(trade.get("mode", "paper"))
++            free = st.get("free")
++            if free is None:
+                 return True
+-            used = await self.used_margin(trade.get("mode", "paper"))
+-            return (alloc - used) >= float(extra_margin)
++            return free >= float(extra_margin)
+         except Exception as e:
+             logger.warning(f"_free_capital_ok failed: {e}")
+             return True
+diff --git a/backend/services/position_watchdog.py b/backend/services/position_watchdog.py
+index c853555..aa5c8bd 100644
+--- a/backend/services/position_watchdog.py
++++ b/backend/services/position_watchdog.py
+@@ -210,9 +210,9 @@ class PositionWatchdog:
+         manage=False: nur Sichtbarkeits-Sync (unbekannte Positionen übernehmen),
+         kein SL-/Dust-/Notfall-Management."""
+         status = {"last_run_at": datetime.now(timezone.utc).isoformat(),
+-                  "positions": 0, "adopted": 0, "sl_fixed": 0, "sl_missing": 0,
+-                  "emergency_closed": 0, "dust_closed": 0, "errors": [],
+-                  "mode": "full" if manage else "sync-only"}
++                  "positions": 0, "adopted": 0, "synced": 0, "sl_fixed": 0,
++                  "sl_missing": 0, "emergency_closed": 0, "dust_closed": 0,
++                  "errors": [], "mode": "full" if manage else "sync-only"}
+         if not (self.client and self.client.configured()):
+             status["errors"].append("Bitunix nicht konfiguriert")
+             await self._record(status)
+@@ -257,6 +257,40 @@ class PositionWatchdog:
+                 {**q_base, "symbol": internal, "side": pos["side"]})
+         return local
+ 
++    async def _sync_local_state(self, local: Dict, pos: Dict, internal: str) -> bool:
++        """Börsen-Sync: manuelle Änderungen an der Börse (Margin entnommen/
++        hinzugefügt, Hebel geändert, Teilschließung/Partial-TP) in den lokalen
++        Website-Trade spiegeln – Anzeige und Kapitalrechnung bleiben korrekt.
++        Reine DB-Aktualisierung, KEIN Eingriff an der Börse."""
++        upd, events = {}, []
++        lev = _f(pos.get("leverage"))
++        old_lev = _f(local.get("leverage"))
++        if lev > 0 and abs(lev - old_lev) >= 0.5:
++            upd["leverage"] = lev
++            events.append(f"Hebel {old_lev:g}x → {lev:g}x")
++        margin = _f(pos.get("margin"))
++        old_m = _f(local.get("max_capital"))
++        if margin > 0 and (old_m <= 0 or abs(margin - old_m) > max(old_m * 0.02, 0.5)):
++            upd["max_capital"] = round(margin, 6)
++            upd["margin_used"] = round(margin, 6)
++            events.append(f"Margin {old_m:.2f} → {margin:.2f} USDT")
++        local_qty = _f(local.get("qty_remaining") or local.get("qty"))
++        if local_qty > 0 and 0 < pos["qty"] < local_qty * 0.995:
++            upd["qty_remaining"] = pos["qty"]
++            events.append(f"Menge {local_qty:g} → {pos['qty']:g} "
++                          f"(Teilschließung an der Börse)")
++        if not upd:
++            return False
++        if not local.get("bitunix_position_id"):
++            upd["bitunix_position_id"] = pos["position_id"]
++        upd["exchange_synced_at"] = datetime.now(timezone.utc).isoformat()
++        upd["events"] = (local.get("events", []) +
++                         ["BÖRSEN-SYNC: " + ", ".join(events)])[-20:]
++        await self.db.auto_trades.update_one({"id": local["id"]}, {"$set": upd})
++        local.update(upd)
++        logger.info(f"Watchdog-Sync {internal} {pos['side']}: {', '.join(events)}")
++        return True
++
+     async def _check_position(self, pos: Dict, status: Dict, manage: bool = True):
+         internal = self._reverse_map().get(pos["bitunix_symbol"], pos["bitunix_symbol"])
+         local = await self._find_local(internal, pos)
+@@ -269,10 +303,12 @@ class PositionWatchdog:
+         # -> der Trader hat manuell aufgestockt (Börse führt beides zusammen).
+         # Dann NICHT anfassen, sonst würde der Watchdog den manuellen Anteil
+         # mit-managen (SL setzen / schließen).
++        mixed = False
+         if not is_external and local is not None:
+             local_qty = _f(local.get("qty_remaining") or local.get("qty"))
+             if local_qty > 0 and pos["qty"] > local_qty * 1.05:
+                 is_external = True
++                mixed = True
+                 logger.info(
+                     f"Watchdog: {internal} {pos['side']} enthält manuellen Anteil "
+                     f"(Börse {pos['qty']} > Website {local_qty}) – wird NICHT gemanagt")
+@@ -280,6 +316,14 @@ class PositionWatchdog:
+             local = await self._adopt(internal, pos)
+             if local:
+                 status["adopted"] += 1
++        # Börsen-Sync (Fix 06/26): Margin-/Hebel-Änderungen und Teilschließungen
++        # an der Börse in den lokalen Trade spiegeln (nicht bei Misch-Positionen).
++        if local is not None and not mixed:
++            try:
++                if await self._sync_local_state(local, pos, internal):
++                    status["synced"] = status.get("synced", 0) + 1
++            except Exception as e:
++                logger.warning(f"Watchdog-Sync {internal} fehlgeschlagen: {e}")
+         if not manage:
+             # Watchdog aus: nur sichtbar machen, keinerlei Eingriffe an der Börse
+             self._sl_fail.pop(pos["position_id"], None)
+diff --git a/backend/tests/test_fix_capital_truth_and_sync.py b/backend/tests/test_fix_capital_truth_and_sync.py
+new file mode 100644
+index 0000000..cd36dd5
+--- /dev/null
++++ b/backend/tests/test_fix_capital_truth_and_sync.py
+@@ -0,0 +1,221 @@
++"""Regressionstests Fix 06/26 – drei Bug-Reports:
++
++1. KI Trader machte nur Datensammel-, aber keine Live-Trades mehr:
++   Ursache war das falsch berechnete freie Kapital. Die DB-Summe der
++   Trade-Margins (used_margin) wurde durch manuelle Margin-/Hebel-Änderungen
++   an der Börse ungültig -> scheinbar negatives freies Kapital.
++   Fix: `free_capital_status` nutzt für LIVE die Bitunix-API als Source of
++   Truth (echte Positions-Margin + echtes verfügbares Guthaben).
++2. Bitunix-Live-Anzeige: Margin reduzieren / Hebel erhöhen / Partial-TP an
++   der Börse kamen nicht auf der Website an.
++   Fix: Watchdog `_sync_local_state` spiegelt Margin/Hebel/Menge in die DB.
++3. Mobile-Scroll-Bug: verschachtelte Voll-Scroller entfernt (mobile.css).
++"""
++import asyncio
++from pathlib import Path
++
++import pytest
++
++from services.bitunix_trade import AutoTradeManager
++from services.position_watchdog import PositionWatchdog, parse_positions
++
++
++def run(coro):
++    return asyncio.run(coro)
++
++
++class FakeCursor:
++    def __init__(self, docs):
++        self._docs = docs
++
++    def __aiter__(self):
++        self._it = iter(self._docs)
++        return self
++
++    async def __anext__(self):
++        try:
++            return next(self._it)
++        except StopIteration:
++            raise StopAsyncIteration
++
++
++class FakeCollection:
++    def __init__(self, docs=None):
++        self.docs = docs or []
++        self.updates = []
++
++    def find(self, q):
++        return FakeCursor([d for d in self.docs
++                           if all(d.get(k) == v for k, v in q.items())])
++
++    async def update_one(self, q, upd, **kw):
++        self.updates.append((q, upd))
++        for d in self.docs:
++            if all(d.get(k) == v for k, v in q.items()):
++                d.update(upd.get("$set", {}))
++        return None
++
++
++class FakeDB:
++    def __init__(self, trades=None):
++        self.auto_trades = FakeCollection(trades or [])
++
++
++class FakeClient:
++    def __init__(self, configured=True, balance=None, positions=None,
++                 fail_balance=False, fail_positions=False):
++        self._configured = configured
++        self._balance = balance
++        self._positions = positions or []
++        self.fail_balance = fail_balance
++        self.fail_positions = fail_positions
++
++    def configured(self):
++        return self._configured
++
++    async def get_balance(self):
++        if self.fail_balance:
++            raise RuntimeError("api down")
++        return {"code": 0, "data": self._balance}
++
++    async def get_positions(self, symbol=None):
++        if self.fail_positions:
++            raise RuntimeError("api down")
++        return {"code": 0, "data": self._positions}
++
++
++def _manager(client, trades=None):
++    m = AutoTradeManager(client)
++    m.set_db(FakeDB(trades))
++    return m
++
++
++# ---------- 1. Freies Kapital: Bitunix als Source of Truth (LIVE) ----------
++
++def test_live_free_capital_uses_exchange_not_stale_db():
++    """Manuelle Margin-Reduktion an der Börse: DB sagt 400 USDT gebunden,
++    Börse nur 60 -> frei muss aus der Börse kommen, nicht aus der DB."""
++    client = FakeClient(
++        balance={"available": "500", "frozen": "0", "margin": "100"},
++        positions=[{"symbol": "BTCUSDT", "side": "BUY", "qty": "1",
++                    "avgOpenPrice": "100", "positionId": "p1",
++                    "leverage": "20", "margin": "60"}])
++    stale = {"status": "open", "mode": "live", "max_capital": 400.0, "id": "t1"}
++    m = _manager(client, [stale])
++    st = run(m.free_capital_status("live"))
++    assert st["source"] == "exchange"
++    assert st["used"] == pytest.approx(60.0)
++    assert st["available"] == pytest.approx(500.0)
++    # frei = min(zugewiesen(600) - 60, verfügbar 500) = 500 (nie -X aus der DB)
++    assert st["free"] == pytest.approx(500.0)
++    assert st["free"] > 0
++
++
++def test_live_free_capital_falls_back_to_account_margin():
++    """Positions-Endpoint down -> Konto-Margin der Börse als Fallback."""
++    client = FakeClient(
++        balance={"available": "300", "frozen": "0", "margin": "50"},
++        fail_positions=True)
++    m = _manager(client, [{"status": "open", "mode": "live",
++                           "max_capital": 999.0, "id": "t1"}])
++    st = run(m.free_capital_status("live"))
++    assert st["source"] == "exchange"
++    assert st["used"] == pytest.approx(50.0)
++    assert st["free"] == pytest.approx(300.0)
++
++
++def test_live_free_capital_db_fallback_when_api_down():
++    client = FakeClient(fail_balance=True, fail_positions=True)
++    m = _manager(client, [{"status": "open", "mode": "live",
++                           "max_capital": 40.0, "id": "t1"}])
++    st = run(m.free_capital_status("live"))
++    assert st["source"] == "db"
++    assert st["used"] == pytest.approx(40.0)
++
++
++def test_paper_free_capital_unchanged():
++    """Paper-Verhalten bleibt rückwärtskompatibel (DB-Rechnung)."""
++    m = _manager(FakeClient(configured=False),
++                 [{"status": "open", "mode": "paper", "max_capital": 400.0, "id": "t1"}])
++    st = run(m.free_capital_status("paper"))
++    assert st["source"] == "db"
++    assert st["allocated"] == pytest.approx(1000.0)
++    assert st["free"] == pytest.approx(600.0)
++
++
++def test_live_exchange_used_margin_sums_positions():
++    client = FakeClient(positions=[
++        {"symbol": "BTCUSDT", "side": "BUY", "qty": "1", "avgOpenPrice": "100",
++         "positionId": "p1", "margin": "60"},
++        {"symbol": "ETHUSDT", "side": "SELL", "qty": "2", "avgOpenPrice": "50",
++         "positionId": "p2", "margin": "15.5"}])
++    m = _manager(client)
++    assert run(m.live_exchange_used_margin()) == pytest.approx(75.5)
++
++
++# ---------- 2. Watchdog-Börsen-Sync (Margin/Hebel/Teilschließung) ----------
++
++def _watchdog(local):
++    wd = PositionWatchdog()
++    wd.db = FakeDB([local])
++    return wd
++
++
++def test_sync_local_state_mirrors_margin_leverage_partial_close():
++    local = {"id": "t1", "status": "open", "mode": "live", "symbol": "BTC",
++             "side": "LONG", "leverage": 10.0, "max_capital": 100.0,
++             "qty": 1.0, "qty_remaining": 1.0, "events": []}
++    pos = {"bitunix_symbol": "BTCUSDT", "side": "LONG", "qty": 0.5,
++           "entry": 100.0, "position_id": "p1", "leverage": 25.0, "margin": 40.0}
++    wd = _watchdog(local)
++    changed = run(wd._sync_local_state(local, pos, "BTC"))
++    assert changed is True
++    assert local["leverage"] == 25.0
++    assert local["max_capital"] == pytest.approx(40.0)
++    assert local["qty_remaining"] == pytest.approx(0.5)
++    assert local["bitunix_position_id"] == "p1"
++    assert any("BÖRSEN-SYNC" in e for e in local["events"])
++    assert len(wd.db.auto_trades.updates) == 1
++
++
++def test_sync_local_state_noop_when_unchanged():
++    local = {"id": "t1", "leverage": 20.0, "max_capital": 50.0,
++             "qty": 1.0, "qty_remaining": 1.0, "events": [],
++             "bitunix_position_id": "p1"}
++    pos = {"side": "LONG", "qty": 1.0, "position_id": "p1",
++           "leverage": 20.0, "margin": 50.2}  # 0.4% Abweichung -> kein Churn
++    wd = _watchdog(local)
++    assert run(wd._sync_local_state(local, pos, "BTC")) is False
++    assert wd.db.auto_trades.updates == []
++
++
++def test_sync_never_increases_qty():
++    """Manuelle Aufstockung (Börse > Website) darf qty NICHT hochziehen."""
++    local = {"id": "t1", "leverage": 10.0, "max_capital": 100.0,
++             "qty": 1.0, "qty_remaining": 1.0, "events": [],
++             "bitunix_position_id": "p1"}
++    pos = {"side": "LONG", "qty": 2.0, "position_id": "p1",
++           "leverage": 10.0, "margin": 100.0}
++    wd = _watchdog(local)
++    run(wd._sync_local_state(local, pos, "BTC"))
++    assert local["qty_remaining"] == pytest.approx(1.0)
++
++
++def test_parse_positions_margin_and_leverage():
++    payload = {"code": 0, "data": [{"symbol": "BTCUSDT", "side": "BUY",
++                                    "qty": "0.5", "avgOpenPrice": "60000",
++                                    "positionId": "p1", "leverage": "25",
++                                    "margin": "40.5"}]}
++    out = parse_positions(payload)
++    assert out and out[0]["margin"] == pytest.approx(40.5)
++    assert out[0]["leverage"] == pytest.approx(25.0)
++
++
++# ---------- 3. Mobile-Scroll-Fix (CSS-Regression) ----------
++
++def test_mobile_css_has_scroll_trap_fix():
++    css = (Path(__file__).resolve().parents[2]
++           / "frontend" / "src" / "components" / "mobile.css").read_text(encoding="utf-8")
++    assert "Scroll-Trap-Fix" in css
++    assert ".right-panel" in css
++    assert "overscroll-behavior-y: contain" in css
+diff --git a/frontend/src/components/mobile.css b/frontend/src/components/mobile.css
+index 38ac5ac..b92df17 100644
+--- a/frontend/src/components/mobile.css
++++ b/frontend/src/components/mobile.css
+@@ -433,6 +433,31 @@
+   .view-btn { font-size: 10px; padding: 7px 4px; gap: 4px; }
+ }
+ 
++/* -------- Scroll-Trap-Fix (Bugfix 06/26): Auf Mobile gab es verschachtelte
++   Voll-Scroller (.app-layout mit overflow-y:auto aus extra.css und
++   .right-panel mit max-height:60vh + overflow-y:auto). Beim Hochscrollen
++   blieb die Seite darin "hängen" (iOS Rubber-Banding im inneren Scroller),
++   man musste vom oberen Bildschirmrand wischen. Fix: auf Mobile gibt es nur
++   EINEN Seiten-Scroller – die inneren Bereiche fließen im Seitenfluss mit.
++   Nur die Coin-Sidebar bleibt bewusst intern scrollbar (lange Coin-Liste). */
++@media (max-width: 968px) {
++  .app-layout {
++    overflow-y: visible;
++    height: auto;
++  }
++  .right-panel,
++  .performance-analytics {
++    max-height: none;
++    overflow-y: visible;
++  }
++  .coin-sidebar {
++    overscroll-behavior-y: contain; /* kein Rubber-Band-Übergriff auf die Seite */
++  }
++  .strategy-tabs-scroll {
++    overscroll-behavior-x: contain;
++  }
++}
++
+ /* -------- Touch-Devices generell: Buttons mindestens 36px hoch --- */
+ @media (hover: none) and (pointer: coarse) {
+   .strategy-tab-bell,

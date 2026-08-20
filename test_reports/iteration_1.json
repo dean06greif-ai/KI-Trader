@@ -1,0 +1,43 @@
+{
+  "summary": "Backend-only regression testing for 3 Neiekeeke bug fixes (free_capital_status truth-source, watchdog _sync_local_state, mobile scroll-trap). All 4 target endpoints (/api/autotrade/balance, /capital, /trades, /watchdog/status) return 200 with the expected new fields (used_margin, free, source, available). 52/52 targeted regression tests pass. Auth flow verified (login returns token; unauthenticated GET config=200, POST capital=401). mobile.css contains Scroll-Trap-Fix block at line 436. Bitunix intentionally unconfigured -> live source='db' fallback is the correct expected behavior per review context.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/Neiekeeke/backend/tests/test_fix_capital_truth_and_sync.py",
+    "/app/Neiekeeke/backend/tests/test_live_close_fix.py",
+    "/app/Neiekeeke/backend/tests/test_fallback2_capital_trades.py",
+    "/app/Neiekeeke/backend/tests/test_watchdog_api_review.py",
+    "/app/Neiekeeke/backend/tests/test_iter50_live_endpoints.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Note: paper.free reported as 965.0 (not 1000.0 as review-request assumed). This is CORRECT — DB is not empty; 2 open paper trades hold 35.0 margin (1000 - 35 = 965). Not an issue.",
+    "Live allocation returns free=null and available=null when Bitunix is unconfigured; this matches integration_context expectation (source='db' fallback) but callers/UI must gracefully handle null free/available."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "not tested (scope: backend only)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin -> POST http://localhost:8001/api/auth/login returns JWT token",
+  "seed_data_creation": "None; used existing local Mongo state (2 open paper trades, 1 closed).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Server under test is the Neiekeeke uvicorn instance on http://localhost:8001 (started from /app/Neiekeeke/backend). Do NOT 'supervisorctl restart backend' — the template backend is intentionally stopped. Use localhost:8001 directly (not REACT_APP_BACKEND_URL preview). Bitunix keys intentionally absent; live-source='db' is expected. LLM keys absent — skip real LLM analysis endpoints. Full 1719-test suite already baselined; do NOT rerun in full.",
+  "verified_endpoints": {
+    "GET /api/autotrade/balance": "200, allocation.paper={used_margin:35.0, free:965.0, source:'db', allocated:1000, base_balance:1000}, allocation.live={used_margin:0.0, free:null, source:'db'}, bitunix_configured=false",
+    "GET /api/autotrade/capital": "200, allocation.live and allocation.paper both include new 'available' and 'source' fields",
+    "GET /api/autotrade/trades": "200, trades list returned (non-empty)",
+    "GET /api/autotrade/watchdog/status": "200, configured=false, settings object present",
+    "POST /api/auth/login": "200, returns {token, user}",
+    "GET /api/autotrade/config (no token)": "200 (public read)",
+    "POST /api/autotrade/capital (no token)": "401 (auth required)"
+  },
+  "pytest_targeted_result": "52 passed in 5.98s (test_fix_capital_truth_and_sync + test_live_close_fix + test_fallback2_capital_trades + test_watchdog_api_review + test_iter50_live_endpoints)",
+  "mobile_css_check": "grep 'Scroll-Trap-Fix' /app/Neiekeeke/frontend/src/components/mobile.css -> match at line 436",
+  "rca of the issue": "N/A - all fixes verified as working"
+}
