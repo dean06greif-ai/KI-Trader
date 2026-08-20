@@ -33,6 +33,11 @@ Grundsätze: Originalstruktur 1:1 erhalten (Render), sauber/modular, Regressions
 - Änderungen liegen in /app/Neiekeeke auf Branch `fix/kapital-sync-mobile` (lokal committet, 90fad11)
 - Patch: /app/neiekeeke_fixes_0626.patch (auch komplett im Chat gepostet); User wendet ihn selbst an und pusht
 
+## Deploy-Fixes (20.08. Render-Fehler, Repo dean06greif-ai/KI-Trader Branch main20.8)
+- npm ERESOLVE: date-fns 4.1.0 vs. react-day-picker 8.10.1 (peer ^2.28||^3) → date-fns auf ^3.6.0 + frontend/.npmrc legacy-peer-deps=true (gefixt in /app/frontend, /app/KI-Trader/frontend; Anleitung an User zum Selbst-Pushen)
+- emergentintegrations==0.2.0 aus /app/backend/requirements.txt entfernt (nicht auf public PyPI, kein Import im Code)
+- Verifiziert: testing_agent iteration_2 (100% backend+frontend), deployment_agent pass
+
 ## Backlog / Nächste Schritte
 - P1: Nach Deploy auf Render live verifizieren (Bitunix-Keys vorhanden → source='exchange' in /api/autotrade/balance)
 - P1: Mobile-Scroll auf echtem iPhone/Android verifizieren

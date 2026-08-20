@@ -1,0 +1,31 @@
+{
+  "summary": "Verified Render-Deploy fixes on /app (Emergent default template): (1) 'emergentintegrations' removed from /app/backend/requirements.txt (grep confirms no 'emergent' entries; pip install --dry-run resolves all packages from public PyPI without error). (2) date-fns downgraded to ^3.6.0 in /app/frontend/package.json; /app/frontend/.npmrc contains 'legacy-peer-deps=true'; node_modules/date-fns is version 3.6.0; react-day-picker@8.10.1 peer range 'date-fns ^2.28.0 || ^3.0.0' is satisfied by 3.6.0. Backend GET /api/ returns 200 with {\"message\":\"Hello World\"}. Frontend loads at REACT_APP_BACKEND_URL with title 'Emergent | Fullstack App', renders default template, 0 console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verification_details": {
+    "requirements_txt": "No 'emergent' entries. 27 packages listed, all resolvable via public PyPI (pip install --dry-run succeeded).",
+    "backend_api_check": "GET https://crypto-stable.preview.emergentagent.com/api/ -> 200, body: {\"message\":\"Hello World\"}",
+    "package_json_date_fns": "^3.6.0 at line 40",
+    "npmrc_content": "legacy-peer-deps=true",
+    "node_modules_date_fns_version": "3.6.0",
+    "react_day_picker_peer_deps": "date-fns ^2.28.0 || ^3.0.0 (satisfied by 3.6.0)",
+    "frontend_load": "Page loads 200, title 'Emergent | Fullstack App', 0 console errors, 0 page errors, default template rendered ('Building something incredible ~!')"
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "N/A (default template, no auth)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "This iteration only verified Render-Deploy fixes on the /app default template (not /app/KI-Trader or /app/Neiekeeke). Both fixes work: emergentintegrations removed from backend requirements, date-fns downgraded to 3.6.0 with legacy-peer-deps=true in .npmrc, react-day-picker peer deps satisfied. Same fixes should be applied in the external user repo /app/KI-Trader for Render deploy (not tested here per instructions)."
+}
