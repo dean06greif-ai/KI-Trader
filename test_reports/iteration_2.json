@@ -1,0 +1,36 @@
+{
+  "summary": "Backend-only regression for iteration 50 improvements (orderflow expansion to commodities/indices/FX, dynamic timeframe hint, ML gate size_factor, news dedupe, OpenRouter paid retry). Ran 3 unit-test files (test_improvements_orderflow_ml_news.py, test_orderflow_and_lesson_reeval.py, test_forex_volume_proxy.py) with -n 0 -> 33 passed. Added new live smoke tests test_iter50_live_endpoints.py hitting the running backend via localhost:8001 (Admin-Login) -> 6/6 passed. All acceptance criteria confirmed. Note: external URL https://ml-fx-pro.preview.emergentagent.com timed out during testing (Kubernetes ingress/CDN issue for this preview host); localhost:8001 works fine and is what supervisor actually serves. Frontend not tested (testing_type=backend only).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "external ingress https://ml-fx-pro.preview.emergentagent.com/api/*", "issue": "External preview URL was unreachable (connection timeouts) while backend on localhost:8001 responded normally. Not caused by the iteration-50 changes; likely preview-cluster ingress. Users must be able to reach the app via REACT_APP_BACKEND_URL, so main agent may want to verify from outside."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter50_live_endpoints.py",
+    "/app/backend/tests/test_improvements_orderflow_ml_news.py",
+    "/app/backend/tests/test_orderflow_and_lesson_reeval.py",
+    "/app/backend/tests/test_forex_volume_proxy.py",
+    "/app/test_reports/pytest/iter50_live.xml",
+    "/app/test_reports/pytest/iter50_results.xml"
+  ],
+  "action_items": [
+    "Optional: verify external ingress URL (ml-fx-pro.preview.emergentagent.com) reachability from outside – during this run it timed out.",
+    "Optional: the uvicorn --reload watcher also picks up files under /app/backend/tests, so writing test files triggers a full 60-90s boot_backfill restart. Consider adding --reload-exclude 'tests/*' to backend supervisor cmd to avoid this in future test runs."
+  ],
+  "critical_code_review_comments": [
+    "services/fx_orderflow.py cleanly separates FX CME-futures proxy from the crypto orderflow subscriber – good.",
+    "routers/ai.py orderflow endpoint correctly returns both `text` (real Bitunix) and `fx_futures_proxy` (CME approximation) for GOLD/SILVER/OIL, giving the KI both perspectives.",
+    "services/ml_gate.py size_factor is exposed via /api/ml/gate/status with a human-readable reason – verified live: auc=0.5394 => size_factor 0.5, reason 'Gate-OOS-AUC 0.539 < 0.55 – Positionsgröße auf 50% reduziert'.",
+    "Orderflow WS keeps looping 'no close frame received or sent' + resubscribe every ~1s during shutdown – not a functional bug but noisy in logs; a small reconnect back-off would help."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter50_live_endpoints.py"],
+  "success_rate": {"backend": "100% (39/39 pytest + live)", "frontend": "n/a (skipped per request)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin via POST /api/auth/login (returns Bearer token). Verified working.",
+  "seed_data_creation": "None. Only GET calls + one /api/auth/login POST (as explicitly allowed). No writes to production Mongo.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The uvicorn --reload watches /app/backend recursively, so writing test files under /app/backend/tests forces a ~60-90s restart because of boot_backfill (22 symbols x 14 days). If you need to iterate on tests, either place them elsewhere or expect long waits. Live smoke file: /app/backend/tests/test_iter50_live_endpoints.py – uses localhost:8001 for reliability. External ingress was down during this run.",
+  "rca of the issue": "n/a – no functional issues found in the reviewed changes."
+}

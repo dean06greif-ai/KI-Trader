@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 3 acceptance: (A) BUGFIX max_trades_per_day=0 semantics, (B) fee guard V3 with CRV relax, (C) manual lesson approval endpoint + UI button, (D) ai_manage default off in strategy trade settings, (E) new NumInput number-field UX. All backend tests green (34/34 unit + 5/5 live). All frontend spot-checks green (sat-ai-manage visible & default false, NumInput UX correct, ai-lesson-candidates section with 17 approve buttons visible). No writes to production Mongo (only GET + auth login + one 404 POST with fake key).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_improvements_fee_lessons_aimanage.py",
+    "/app/backend/tests/test_improvements_orderflow_ml_news.py",
+    "/app/tests/test_iter3_live_bugfix.py",
+    "/app/test_reports/pytest/iter3_unit.xml",
+    "/app/test_reports/pytest/iter3_live.xml"
+  ],
+  "verifications": {
+    "bugfix_rules_text": "services.ai_master_prompt.rules_text({'max_trades_per_day':0,'max_open_trades':0,'max_daily_loss_usdt':0}) -> contains 'UNBEGRENZT (0 = kein Limit, KEINE Deaktivierung)' and 'KEINES' -> PASS",
+    "bugfix_check_day_rules": "check_day_rules({'max_trades_per_day':0}, day_pnl=0, day_trades=100) -> (True, '') no block -> PASS",
+    "unit_tests": "pytest tests/test_improvements_fee_lessons_aimanage.py tests/test_improvements_orderflow_ml_news.py -n 0 -> 34 passed in 0.64s",
+    "live_ai_master_prompt": "GET /api/ai/master-prompt returns {master_prompt:{...,rules:{...}}} -> PASS",
+    "live_ai_status": "GET /api/ai/status 200; day_risk consistent (unlimited => null, not 0) -> PASS",
+    "live_insights_lesson_candidates": "GET /api/ai/insights contains lesson_candidates list -> PASS",
+    "live_candidates_approve_404": "POST /api/ai/lessons/candidates/approve {key:'nicht-existent-xyz-...'} -> 404 with 'nicht gefunden' -> PASS",
+    "live_autotrade_scalping_ai_manage_default_false": "GET /api/autotrade/strategy/scalping shows ai_manage=False in defaults/override -> PASS",
+    "frontend_sat_ai_manage": "StrategyAutoTradeModal (scalping_4_rules): sat-ai-manage checkbox visible, default checked=False, KI-TRADER block with correct German copy visible -> PASS (Abbrechen used, no save)",
+    "frontend_num_input_ux": "sat-fee: original 0.06 -> cleared -> value='', placeholder='0.06' -> blur -> value restored to '0.06' -> PASS",
+    "frontend_lesson_candidates": "AI panel > Lernen tab: ai-lesson-candidates container present, 17 ai-candidate-approve-* buttons rendered, ai-candidate-approve-0 visible (NOT clicked) -> PASS"
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "rules_text (services/ai_master_prompt.py) now renders limits with explicit '0 = kein Limit, KEINE Deaktivierung' – prevents any LLM from misreading 0 as 'off'. Clean fix at the correct layer (prompt rendering, not raw dict).",
+    "routers/ai_governance.py set_master_prompt calls _rules_text(snap['rules']) so all downstream contexts use the same explicit text – no regressions in the returned /api/ai/master-prompt payload (rules dict still shipped for the UI).",
+    "core/defaults.py: ai_manage=False in DEFAULT_STRATEGY_OVERRIDE and DEFAULT_STRATEGY_COIN_CFG – safe default, verified live via GET /api/autotrade/strategy/scalping.",
+    "NumInput component behaviour verified on real page: empty field with grey placeholder = last valid value, blur without input restores value. Consistent with spec (~105 fields).",
+    "Minor: React console warns about invalid <span> child of some parent element ('In HTML, <span> cannot be a child of ...') in AI panel Lernen view – purely a hydration/style warning, no functional impact, but worth cleaning up.",
+    "Cosmetic: bundle.js emits many 'Failed to fetch' errors on first mount before session is ready (fetchSession/fetchNotif etc.). Non-blocking (session picks up on retry), but noisy. Consider guarding these fetches or swallowing the error in the initial 401/no-session case."
+  ],
+  "updated_files": ["/app/tests/test_iter3_live_bugfix.py"],
+  "success_rate": {"backend": "100% (34/34 unit + 5/5 live)", "frontend": "100% on the 3 acceptance spot-checks"},
+  "test_credentials": "Admin / Dean06Greif!/Admin via POST /api/auth/login (works). UI admin-lock-button with password field also works.",
+  "seed_data_creation": "None. Only GET + one /api/auth/login POST + one 404-only POST /api/ai/lessons/candidates/approve with a bogus key. NO writes to production Mongo. Modals opened were closed via Abbrechen/Escape, never Speichern.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file /app/tests/test_iter3_live_bugfix.py hits localhost:8001 and covers the 5 iter-3 acceptance endpoints. StrategyAutoTradeModal only shows the KI-TRADER/ai-manage block after mode is switched to LIVE or PAPER (mode=AUS collapses the body) – if you need to check the checkbox, first click sat-mode-paper or sat-mode-live locally (does not persist until Speichern). The AI panel opens via strategy-tab-ai_trader + edit-strategy-params-btn (requires admin login via admin-lock-button). Insights endpoint currently returns 17 lesson_candidates – do not approve any of them (production DB).",
+  "rca of the issue": "Original bug: KI interpretierte max_trades_per_day=0 im Roh-Dict als Deaktivierung. Root cause = ai_governance.set_master_prompt gab das rohe rules-Dict in den LLM-Prompt. Fix: rules_text() rendert Limits jetzt IMMER explizit ('UNBEGRENZT (0 = kein Limit, KEINE Deaktivierung)'), ai_governance nutzt rules_text statt raw dict, day_risk-Status liefert null statt 0. Es gab NIE eine technische Sperre – check_day_rules(0,...) liefert weiterhin (True,'')."
+}

@@ -1,0 +1,25 @@
+{
+  "summary": "All 7 review items PASS. Backend: pytest 50/50 green on the 4 requested files. /api/autotrade/capital and /api/autotrade/balance return HTTP 200 with consistent allocation block (live: allocated=47.24, used_margin=7.72, free=39.52, free==exchange_available>=0; paper: base_balance=1000). ImportError 'cannot import name autotrader' NO LONGER occurs after the fix - POST /api/ai/trade/action with source=ki returns HTTP 200 blocked-status (expected for external_adopted trade), and grep confirms NO new ImportError entries in backend.err.log since the fix. Live BTCUSDT trade in DB has margin_used=7.72 matching Bitunix, only 2 SYNC events initially and 4 after 3-min wait - growth is NOT flapping: each event corresponds to a genuine external change (user did a real partial-close + margin/leverage change on the exchange during the wait window). test_sync_no_flapping_with_leverage_setting unit test also protects against setting-vs-effective leverage regression. Frontend Mobile 390x800: .right-panel max-height=none overflow-y=visible; .performance-analytics max-height=none overflow-y=visible; scroll roundtrip works (scrolled to 1088 then back to 0). Header widget shows LIVE/USDT/FREI values non-negative (FREI 1.07). Desktop 1920x800 unchanged: .right-panel remains sticky with overflow-y=auto width=320px, grid-template-columns='280px 1320px 320px' (3-column layout intact), chart visible.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_capital_sync_fixes.py",
+    "/app/backend/tests/test_bugreport_fixes.py",
+    "/app/backend/tests/test_fix_custom_ai_trades.py",
+    "/app/backend/tests/test_comparison_and_ram_iter2.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The 12 historical ImportError entries in /var/log/supervisor/backend.err.log are pre-fix tracebacks; grep on the log tail after our test calls shows 0 new occurrences, confirming ai_trade_manager.py line 412 now correctly uses self.autotrader.",
+    "The 'events' array in auto_trades stores plain strings; consider migrating to structured dicts {ts, type, msg} for easier querying (currently the review-request script expected dicts).",
+    "AutoTradeManager.trade_bound_margin correctly scales with qty_remaining/leverage and prefers effective leverage over setting-leverage (avoids Bitunix 200x-setting flap; validated by test_sync_no_flapping_with_leverage_setting)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin/Dean06Greif!/Admin used to obtain JWT via POST /api/auth/login (200 OK)",
+  "seed_data_creation": "None - used existing external_adopted BTCUSDT live trade in DB",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The real Bitunix BTCUSDT position CAN change between test runs because the user may manage it manually on the exchange (during this test we observed a partial close + leverage change that added 2 legitimate SYNC events). Consequently, exact margin_used/leverage/qty values are non-deterministic; only invariants are stable: free==exchange_available>=0 (full mode), free>=0 (fixed mode), no duplicate/back-and-forth SYNC events within a single watchdog cycle. All 7 review items were verified: capital-api, balance-api, live-trade-margin-consistency, no-flapping (3-min wait), no ImportError on /api/ai/trade/action, backend unit tests, mobile scroll css + desktop layout, header LIVE widget non-negative FREI.",
+  "rca of the issue": "N/A - all 3 bugfixes verified working. (1) ai_trade_manager.py now uses self.autotrader (line 412) instead of the broken 'from services.bitunix_trade import autotrader' - singleton lives in core.state. (2) trade_bound_margin/used_margin/free_capital scale correctly with qty_remaining/leverage and, for live+full mode, use exchange_available as truth (validated by 8 dedicated unit tests). (3) Mobile CSS: .right-panel and .performance-analytics get max-height:none + overflow-y:visible on <=968px viewports so page scrolls whole (verified via computed styles + scroll roundtrip)."
+}

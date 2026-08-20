@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend-only layout/overflow regression test for mobile horizontal-scroll bugfix in /app/frontend/src/components/mobile.css. Verified via JS DOM probe across 4 viewports (390x844, 360x740, 768x1024, 1920x800). ALL PASS: 0 elements overflow the viewport horizontally, scrollWidth === clientWidth on every viewport, body touch-action='pan-y pinch-zoom' on mobile/tablet, html+body overflow-x:hidden active, vertical scroll roundtrip works (scrollY reaches 0 after scrolling to bottom and back). Desktop grid unchanged (grid-template-columns='280px 1320px 320px', 3-column layout intact). The user-reported horizontal wobble and 'cannot scroll up' issue is reproducibly fixed on the tested viewports.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Desktop html overflow-x is 'visible' while body is 'hidden' - not a bug (desktop had no overflow), but inconsistent with mobile rules. Acceptable since mobile.css scopes the html {overflow-x:hidden} inside @media(max-width:968px)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "Not required - public dashboard view",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Layout overflow probe results per viewport: 390->badCount=0 sw=cw=390 touchAction='pan-y pinch-zoom'; 360->badCount=0 sw=cw=360; 768->badCount=0 sw=cw=768; 1920->badCount=0 sw=cw=1920 gtc='280px 1320px 320px'. Scroll roundtrip at 390: bottomY=1344 topY=0. Chart canvas needed ~6s to load before probing. iOS-specific rubber-banding/pinch gestures cannot be reproduced in Playwright headless; verified proxy conditions (no horizontal overflow + touch-action:pan-y) as agreed.",
+  "rca of the issue": "Original bug: on mobile the .app-layout used grid-template-columns:1fr which implicitly means minmax(auto,1fr); wide monospace numbers in sidebar/panels forced tracks to intrinsic ~448px width on a 390px viewport, causing horizontal overflow -> iOS rubber-band -> zoom-in state where user cannot scroll up. Fix (mobile.css @media<=968px): html/body overflow-x:hidden + max-width:100%, body touch-action:pan-y pinch-zoom, .app-layout grid-template-columns:minmax(0,1fr), min-width:0 on .coin-sidebar/.signal-panel/.performance-analytics, and max-width:100vw + overflow-x:hidden on .main-chart/.chart-header/.strategy-tabs-bar. Verified: 0 overflow elements, scrollWidth==clientWidth on 360/390/768."
+}

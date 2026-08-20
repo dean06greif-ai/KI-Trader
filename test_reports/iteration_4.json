@@ -1,0 +1,23 @@
+{
+  "summary": "Verified new 'reject lesson candidate' feature end-to-end: backend endpoint POST /api/ai/lessons/candidates/delete (401 without auth, 404 for unknown key, 200 success roundtrip with synthetic key 'testagent-reject-demo' – candidate removed AND key persisted in settings.ai_lesson_rejects.keys). Unit-checked ai_learning._bump_lesson_candidate returns None when key is in ai_lesson_rejects. Frontend UI: admin token injected, opened KI Trader panel via strategy-tab-ai_trader + edit-strategy-params-btn, expanded Lernen, confirmed 17/17 lesson candidates render BOTH data-testid='ai-candidate-approve-<i>' and data-testid='ai-candidate-reject-<i>' with tooltip 'Endgültig verwerfen – …'. No real candidates were clicked. All cleanup performed (test key removed from ai_lesson_candidates and ai_lesson_rejects.keys).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/tests/test_iter4_lesson_reject.py",
+    "/app/test_reports/pytest/iter4_lesson_reject.xml",
+    "/app/test_reports/iter4_reject_ui.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/ai.py delete_lesson_candidate: dedupe & cap logic (keys[-300:]) is correct; consider using $addToSet + $push with $slice for atomicity, but current implementation is safe for a single-admin workflow.",
+    "AITradingPanel.js is 2200+ lines – consider splitting into sub-components (learn view, chat view, health dropdown) for maintainability (>700-line guideline).",
+    "Hydration warning observed in console: 'In HTML, <div> cannot be a child of <span>' inside QueryClientProvider tree – unrelated to this feature but should be cleaned up."
+  ],
+  "updated_files": ["/app/tests/test_iter4_lesson_reject.py"],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100%"},
+  "test_credentials": "Admin/Dean06Greif!/Admin via POST /api/auth/login",
+  "seed_data_creation": "Synthetic candidate 'testagent-reject-demo' inserted and fully cleaned up (removed from ai_lesson_candidates and from settings.ai_lesson_rejects.keys). No real production candidates were touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file /app/tests/test_iter4_lesson_reject.py can be reused; it seeds+cleans its own synthetic key. UI selectors: strategy-tab-ai_trader → edit-strategy-params-btn → ai-learn-toggle → ai-candidate-{approve|reject}-<index>."
+}
