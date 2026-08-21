@@ -1544,6 +1544,13 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                 <option value="off">aus</option>
               </select>
             </label>
+            <label title="Setup-Reife-Gate: Live-Trades nur für Setups, zu denen bereits genug echte Daten gesammelt wurden (Playbook-Urteil 'bewährt' oder 'neutral'). Neue/unreife Setups laufen auch bei hoher Konfidenz zuerst als Paper-Datensammlung, bis genug Trades vorliegen. Greift nur im Live-Modus.">
+              <span>Live nur reife Setups</span>
+              <select value={cfg.setup_live_gate === false ? 'off' : 'on'} onChange={e => updateConfig({ setup_live_gate: e.target.value === 'on' })} data-testid="ai-setup-live-gate-select">
+                <option value="on">an</option>
+                <option value="off">aus</option>
+              </select>
+            </label>
             <label title="Sammel-Schwelle: Mindest-Konfidenz für Datensammel-Paper-Trades (unabhängig von der Live-Schwelle oben).">
               <span>Sammel-Konfidenz</span>
               <select value={cfg.collection_min_confidence ?? 60} onChange={e => updateConfig({ collection_min_confidence: Number(e.target.value) })} data-testid="ai-collection-conf-select">

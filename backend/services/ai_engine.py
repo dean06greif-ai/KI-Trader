@@ -126,6 +126,11 @@ DEFAULT_AI_CONFIG = {
     "collection_cooldown_min": 30,
     "collection_max_same_direction": 5,
     "collection_max_per_coin": 2,
+    # Setup-Reife-Gate: LIVE nur für Setups mit genug echten Daten (Playbook-
+    # Urteil 'bewährt'/'neutral'). Neue/unreife Setups laufen auch bei hoher
+    # Konfidenz zuerst als Paper-Datensammlung weiter. Greift nur, wenn der
+    # Trade wirklich live liefe (Modus live) – Paper-Modus bleibt unverändert.
+    "setup_live_gate": True,
     # ---- Fee-Wächter: Physik-Grenze statt Stil-Vorgabe. Ein KI-Trade wird
     # nur eröffnet, wenn seine SL-Distanz mind. fee_guard_mult × Roundtrip-
     # Fees (2 × fee_percent des Coins, Standard 0,12%) beträgt. Blockt nur
@@ -671,6 +676,8 @@ class AIEngine:
             self.config["collection_max_same_direction"] = max(0, min(10, int(updates["collection_max_same_direction"])))
         if "collection_max_per_coin" in updates:
             self.config["collection_max_per_coin"] = max(1, min(5, int(updates["collection_max_per_coin"])))
+        if "setup_live_gate" in updates:
+            self.config["setup_live_gate"] = bool(updates["setup_live_gate"])
         if "max_trades_per_coin" in updates:
             self.config["max_trades_per_coin"] = max(1, min(5, int(updates["max_trades_per_coin"])))
         if "max_capital_per_trade" in updates:
@@ -2071,10 +2078,16 @@ class AIEngine:
                     if (action in ("LONG", "SHORT")
                             and dec["confidence"] >= self.config["min_confidence"]
                             and self.scanner.is_trading_session("ai_trader")):
-                        ok = await self._emit_signal(dec)
-                        if ok:
-                            dec["signaled"] = True
-                            emitted.append(f"{sym} {action}")
+                        gate_note = await self._setup_live_gate(dec)
+                        if gate_note is None:
+                            ok = await self._emit_signal(dec)
+                            if ok:
+                                dec["signaled"] = True
+                                emitted.append(f"{sym} {action}")
+                        else:
+                            # Setup noch nicht live-reif -> fällt unten in die
+                            # Paper-Datensammlung statt live zu gehen
+                            dec["live_gate"] = gate_note
                     # Datensammel-Modus (Phase 4): unterhalb der Live-Schwelle,
                     # aber über der Sammel-Schwelle -> Paper-Trade (data_collection)
                     if (not dec["signaled"]
@@ -2208,6 +2221,30 @@ class AIEngine:
             if blocked:
                 return False, blocked
         return True, ""
+
+    async def _setup_live_gate(self, dec: Dict) -> Optional[str]:
+        """Setup-Reife-Gate: None = live ok, sonst Begründung fürs Umleiten in
+        die Datensammlung. Greift NUR, wenn der Trade wirklich live liefe –
+        im Paper-Modus bleibt alles wie bisher."""
+        if not bool(self.config.get("setup_live_gate", True)):
+            return None
+        setup = dec.get("setup")
+        if not setup:
+            return None
+        try:
+            from core.state import autotrader
+            if autotrader.effective_mode("ai_trader", dec.get("symbol")) != "live":
+                return None
+            stats = await ai_playbook.cached_setup_stats(self.db)
+            ok, why = ai_playbook.live_ready(stats.get(setup))
+            if ok:
+                return None
+            note = f"Setup '{setup}' noch nicht live-reif: {why}"
+            logger.info(f"{dec.get('symbol')}: Live-Gate -> Datensammlung ({note})")
+            return note
+        except Exception as e:
+            logger.warning(f"Setup-Live-Gate übersprungen: {e}")
+            return None
 
     async def _emit_signal(self, dec: Dict, collection: bool = False) -> bool:
         sym = dec["symbol"]

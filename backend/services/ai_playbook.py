@@ -85,6 +85,38 @@ def verdict_for(trades: int, wins: int, pnl: float) -> str:
     return "neutral"
 
 
+def live_ready(stats: Optional[Dict]) -> Tuple[bool, str]:
+    """Setup-Reife-Gate (rein & testbar): darf ein Setup LIVE gehandelt werden?
+
+    Idee: Live-Trades nur für Setups, zu denen bereits genug echte Daten
+    gesammelt wurden ('bewährt'/'neutral'). Neue/unreife Setups ('test' oder
+    ohne Daten) laufen zuerst als Paper-Datensammlung weiter – auch bei hoher
+    Konfidenz. 'schwach' ist ohnehin komplett gesperrt (disabled_reason)."""
+    if not stats or not int(stats.get("trades") or 0):
+        return False, "neues Setup – noch keine echten Daten gesammelt"
+    trades = int(stats.get("trades") or 0)
+    v = stats.get("verdict") or verdict_for(trades, int(stats.get("wins") or 0),
+                                            float(stats.get("pnl") or 0))
+    if v in ("bewährt", "neutral"):
+        return True, v
+    if v == "test":
+        return False, f"erst {trades}/{MIN_TRADES_FOR_VERDICT} Trades gesammelt"
+    return False, f"Setup-Urteil '{v}'"
+
+
+_stats_cache: Dict = {"ts": 0.0, "stats": {}}
+STATS_CACHE_SEC = 300
+
+
+async def cached_setup_stats(db) -> Dict[str, Dict]:
+    """setup_stats mit 5-Minuten-Cache (für das Live-Gate im Analyse-Loop)."""
+    import time as _time
+    if _time.time() - _stats_cache["ts"] > STATS_CACHE_SEC:
+        _stats_cache["stats"] = await setup_stats(db)
+        _stats_cache["ts"] = _time.time()
+    return _stats_cache["stats"]
+
+
 # Korrelierte Coins zählen als EIN Richtungs-Risiko (Basis-Symbol, ohne USDT)
 CORRELATED_GROUPS = [("BTC", "ETH", "SOL")]
 

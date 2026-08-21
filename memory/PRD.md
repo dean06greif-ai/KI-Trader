@@ -42,6 +42,18 @@ Grundsatz: sauber, modular, rückwärtskompatibel; Originalstruktur beibehalten.
    Getestet: Testing-Agent 100% backend+frontend (iteration_6.json), inkl. Live-Verifikation
    gegen echten Bitunix-Account (Sync realer externer Änderungen beobachtet).
 
+## Umgesetzt (21.06.2026) – Setup-Reife-Gate
+- Feature: KI-Trader macht Live-Trades nur für Setups mit genug echten Daten
+  (Playbook-Urteil 'bewährt'/'neutral'); neue/unreife Setups ('test'/ohne Daten) werden
+  auch über der Live-Konfidenz-Schwelle in die Paper-Datensammlung umgeleitet.
+- `ai_playbook.py`: `live_ready()` (pur) + `cached_setup_stats()` (5-min-Cache).
+- `ai_engine.py`: Config-Key `setup_live_gate` (default true, per /api/ai/config schaltbar),
+  `_setup_live_gate()` – greift NUR wenn effective_mode('ai_trader')=='live'; Paper-Modus unverändert.
+  Umgeleitete Entscheidungen tragen `live_gate`-Begründung (sichtbar in /api/ai/status).
+- Frontend: Toggle "Live nur reife Setups" (data-testid `ai-setup-live-gate-select`) im
+  AITradingPanel neben Datensammlung.
+- Tests: `tests/test_setup_live_gate.py` (6 Tests); Testing-Agent 100% (iteration_7.json).
+
 ## Bekannte Umgebungs-Hinweise
 - Lokale Test-DB ist frisch (Produktion nutzt Mongo Atlas); viele alte Integrationstests des
   Repos benötigen geseedete Produktionsdaten und schlagen lokal fehl (dokumentiert in

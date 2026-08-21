@@ -1,0 +1,23 @@
+{
+  "summary": "Setup-Reife-Gate feature fully verified. Backend: (a) GET /api/ai/status returns config.setup_live_gate=true (default). (b) POST /api/ai/config with Admin JWT (obtained via Admin/Dean06Greif!/Admin) toggles the value to false and back to true, each change verified via subsequent /api/ai/status call (status='success' in both POST responses). (c) pytest tests/test_setup_live_gate.py tests/test_capital_sync_fixes.py -q -n0 -> 22/22 green (6 gate + 16 capital-sync, 0.29s). Frontend Desktop 1920x800: KI Trader strategy-tab activated, gear (data-testid=edit-strategy-params-btn) opens Admin-Login modal, credentials work, AITradingPanel opens; clicking 'Setup' toggle expands the config grid; the new select data-testid='ai-setup-live-gate-select' is present directly after data-testid='ai-collection-enabled-select' (both labels on same grid row, gate right of collection - layout intact, no overlap). Label reads 'Live nur reife Setups', options an/aus. UI toggle 'an' -> 'aus' triggers PATCH and API returns setup_live_gate=false; toggle back to 'an' -> API returns setup_live_gate=true. Final /api/ai/status confirms gate=true at test end (as required).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_setup_live_gate.py",
+    "/app/backend/tests/test_capital_sync_fixes.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AITradingPanel.js line 1549: the toggle uses updateConfig({ setup_live_gate: e.target.value === 'on' }) which correctly maps 'on'->true / 'aus'->false; default fallback (=== false ? 'off' : 'on') means undefined defaults to visual 'on', matching the backend default true.",
+    "ai_playbook.live_ready() returns (bool, reason) tuple with clear German reason strings ('keine echten Daten', 'noch 3/N Trades'); reasons are surfaced upstream in ai_engine._setup_live_gate for logging.",
+    "Console emits a benign 'In HTML, <span> cannot be a child of <option>' hydration warning coming from the option-label formatter in existing selects (e.g., min-confidence). Not introduced by this change and does not affect the new gate select (its options are plain 'an'/'aus' strings). Consider cleaning up in a later polish pass."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (POST /api/auth/login -> token, used for /api/ai/config)",
+  "seed_data_creation": "None - toggled setup_live_gate false->true only; ended at default true as required.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "AITradingPanel opens by clicking the gear button [data-testid=edit-strategy-params-btn] while the KI Trader strategy tab is selected (opens Admin-Login modal if not authenticated; after login the panel opens automatically via requireAdmin pending action). Then click [data-testid=ai-setup-toggle] to expand the Setup grid where [data-testid=ai-setup-live-gate-select] lives. The two-clicks-on-active-tab flow described in the review request also works but only triggers requireAdmin; the gear button is the more reliable programmatic entry.",
+  "rca of the issue": "N/A - feature works as specified."
+}
