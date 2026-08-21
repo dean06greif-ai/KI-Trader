@@ -763,6 +763,18 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
         </div>
       );
     }
+    if (m.role === 'playbook') {
+      return (
+        <div key={m.id} className="ai-msg ai-msg-learning" data-testid="ai-playbook-message">
+          <div className="ai-analysis-head">
+            <CheckCircle size={14} weight="fill" />
+            <span>SETUP LIVE-FREIGESCHALTET</span>
+            <span className="ai-msg-time">{fmtTime(m.ts)}</span>
+          </div>
+          {m.text && <div className="ai-analysis-overview">{m.text}</div>}
+        </div>
+      );
+    }
     if (m.role === 'config') {
       return (
         <div key={m.id} className="ai-msg ai-msg-config" data-testid="ai-config-message">

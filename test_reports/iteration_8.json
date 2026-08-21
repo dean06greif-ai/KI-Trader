@@ -1,0 +1,34 @@
+{
+  "summary": "Setup-Reife-Feed + Reife-Übersicht feature fully verified (backend + frontend E2E, no live trades touched, full cleanup verified).",
+  "features_tested": [
+    "GET /api/ai/playbook returns 200 with maturity[] of 10 setup rows (fields: setup/trades/winrate/pnl/verdict/live_ready/reason) - pass - evidence: curl -> 10 rows, first row example: {'setup':'trend_follow','trades':0,'winrate':0,'pnl':0.0,'verdict':'keine Daten','live_ready':False,'reason':'neues Setup – noch keine echten Daten gesammelt'}",
+    "Feed message on transition: seeded live_ready.breakout=False + 6 TEST-MATURITY- closed breakout trades (4x+/2x-, sum=+11.00), then GET /api/ai/playbook -> exactly 1 new ai_chat msg role='playbook' setup='breakout' with 'LIVE-freigeschaltet'; second GET adds NO new msg (idempotent). Cleanup verified: trades=0, msgs=0, live_ready.breakout=False - pass",
+    "Unit-Tests: cd /app/backend && python -m pytest tests/test_setup_live_gate.py -q -n0 -> 10 passed in 0.02s - pass",
+    "Frontend Verlauf tab: Admin login (Admin / Dean06Greif!/Admin) -> gear -> AI Panel -> click Verlauf -> ai-setup-maturity-table shows 10 rows (data-testid ai-maturity-row-*). Without data: all rows show 'sammelt Daten' orange - pass",
+    "Frontend with seeded data: breakout row shows Trades=6, Winrate=67%, PnL=+11.00 $ (green), Urteil='bewährt', Live column '✓ live-reif' green (rgb(0,255,102), font-weight 700). Chat/history area contains ai-playbook-message with 'SETUP LIVE-FREIGESCHALTET' header + body text 'Setup breakout hat genug Daten gesammelt und ist jetzt LIVE-freigeschaltet: 6 Trades, Winrate 67%, PnL +11.00 USDT (Urteil: bewährt).' - pass"
+  ],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_setup_live_gate.py",
+    "/app/backend/tests/test_maturity_feed_e2e.py",
+    "/app/backend/tests/_seed_maturity_helper.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "services/ai_playbook.py refresh(): transition detection uses `prev_ready.get(sid) is False` which requires the previous state to explicitly be False (not None) - correctly avoids spam on first initialisation (verified in test_refresh_no_feed_message_on_first_init and E2E). Nice edge-case handling.",
+    "maturity_overview() sorts by (-live_ready, -trades) so live-ready setups appear first - verified in UI, breakout is at top after seeding.",
+    "AIEquityPanel.js loadMaturity runs on mount only; if the user has Verlauf open when data changes, they need to re-toggle Verlauf or hard-reload. Chat history however polls every 12s, so the ai-playbook-message appears in chat automatically. Minor UX polish opportunity (not a bug)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_maturity_feed_e2e.py (new)",
+    "/app/backend/tests/_seed_maturity_helper.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "Temporary: 6 auto_trades with id prefix TEST-MATURITY- + live_ready.breakout=False + 1 ai_chat playbook msg. Fully cleaned up (verified: trades=0, msgs=0, live_ready.breakout=False). Real Bitunix trades were NOT touched (no open ai_trader trades were found).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The maturity table in Verlauf-tab loads once on mount; to see updates after DB mutation, re-toggle the Verlauf button. Chat history auto-polls every 12s so the ai-playbook-message appears without manual reload. Test helper at /app/backend/tests/_seed_maturity_helper.py has seed/cleanup/verify actions; test_maturity_feed_e2e.py is fully self-cleaning.",
+  "rca of the issue": "N/A - feature works as specified."
+}

@@ -54,6 +54,19 @@ Grundsatz: sauber, modular, rückwärtskompatibel; Originalstruktur beibehalten.
   AITradingPanel neben Datensammlung.
 - Tests: `tests/test_setup_live_gate.py` (6 Tests); Testing-Agent 100% (iteration_7.json).
 
+## Umgesetzt (21.06.2026) – Reife-Feed-Meldung + Reife-Übersicht
+- `ai_playbook.refresh()`: erkennt Übergang "nicht live-reif -> live-reif" pro Setup
+  (Status persistiert in settings-Doc `ai_playbook_state.live_ready`) und postet genau
+  EINE KI-Feed-Meldung (ai_chat, role='playbook', "Setup ... LIVE-freigeschaltet ...");
+  erster Lauf initialisiert still (kein Spam).
+- `maturity_overview()` + GET /api/ai/playbook Feld `maturity`: pro Setup Trades, Winrate,
+  PnL, Urteil, live_ready, Begründung (live-reife zuerst sortiert).
+- Frontend: Reife-Tabelle "Setup-Reife – Live-Freischaltung" im AITradingPanel unter
+  Reiter 'Verlauf' (AIEquityPanel, data-testid ai-setup-maturity-table); Feed-Rendering
+  role='playbook' (data-testid ai-playbook-message, "SETUP LIVE-FREIGESCHALTET").
+- Tests: test_setup_live_gate.py auf 10 Tests erweitert (Übergangs-/Init-/Übersicht-Logik);
+  Testing-Agent 100% backend+frontend (iteration_8.json, inkl. Cleanup der Testdaten).
+
 ## Bekannte Umgebungs-Hinweise
 - Lokale Test-DB ist frisch (Produktion nutzt Mongo Atlas); viele alte Integrationstests des
   Repos benötigen geseedete Produktionsdaten und schlagen lokal fehl (dokumentiert in

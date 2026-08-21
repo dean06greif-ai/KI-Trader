@@ -15,6 +15,7 @@ Fehlverhalten "viele gleichgerichtete Trades / mehrere Einstiege in derselben
 Preiszone" (rein & testbar, technisch in ai_engine._emit_signal erzwungen).
 """
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -301,12 +302,41 @@ async def refresh(db) -> Dict:
             }
             changed = True
             logger.warning(f"Playbook: Setup '{sid}' gesperrt ({disabled[sid]['reason']})")
-    if changed or "disabled" not in doc:
+    # ---- Reife-Status (Live-Freischaltung) + KI-Feed-Meldung bei Übergang ----
+    prev_ready: Dict[str, bool] = dict(doc.get("live_ready") or {})
+    ready_now: Dict[str, bool] = {}
+    for sid in SETUPS:
+        ok, _why = live_ready(stats.get(sid))
+        ready_now[sid] = bool(ok and sid not in disabled)
+    # Meldung nur bei echtem Übergang (vorher explizit NICHT reif) –
+    # beim allerersten Lauf wird der Status still initialisiert (kein Spam).
+    for sid, ok in ready_now.items():
+        if ok and prev_ready.get(sid) is False:
+            st = stats.get(sid) or {}
+            wr = round(st["wins"] / st["trades"] * 100) if st.get("trades") else 0
+            try:
+                await db.ai_chat.insert_one({
+                    "id": str(uuid.uuid4()), "role": "playbook", "setup": sid,
+                    "text": (f"Setup '{sid}' hat genug Daten gesammelt und ist "
+                             f"jetzt LIVE-freigeschaltet: {st.get('trades', 0)} "
+                             f"Trades, Winrate {wr}%, PnL {st.get('pnl', 0):+.2f} "
+                             f"USDT (Urteil: {st.get('verdict', '?')})."),
+                    "stats": {"trades": st.get("trades", 0), "winrate": wr,
+                              "pnl": st.get("pnl", 0),
+                              "verdict": st.get("verdict")},
+                    "ts": _now_iso(),
+                })
+                logger.info(f"Playbook: Setup '{sid}' live-freigeschaltet "
+                            f"({st.get('trades', 0)} Trades, WR {wr}%)")
+            except Exception as e:
+                logger.warning(f"Playbook: Feed-Meldung '{sid}' fehlgeschlagen: {e}")
+    if changed or ready_now != prev_ready or "disabled" not in doc:
         await db.settings.update_one(
             {"_id": STATE_ID},
-            {"$set": {"disabled": disabled, "updated_at": _now_iso()}}, upsert=True)
+            {"$set": {"disabled": disabled, "live_ready": ready_now,
+                      "updated_at": _now_iso()}}, upsert=True)
     _disabled_cache = disabled
-    return {"stats": stats, "disabled": disabled}
+    return {"stats": stats, "disabled": disabled, "live_ready": ready_now}
 
 
 async def context_text(db) -> str:
@@ -343,10 +373,34 @@ async def context_text(db) -> str:
     return "\n".join(lines)
 
 
+def maturity_overview(stats: Dict[str, Dict], disabled: Dict[str, Dict]) -> List[Dict]:
+    """Reife-Status pro Setup für die UI (rein & testbar): gesammelte Trades,
+    Winrate, PnL, Urteil und ob das Setup live-reif ist."""
+    out: List[Dict] = []
+    for sid in SETUPS:
+        st = stats.get(sid)
+        ok, why = live_ready(st)
+        blocked = sid in (disabled or {})
+        trades = int((st or {}).get("trades") or 0)
+        wins = int((st or {}).get("wins") or 0)
+        out.append({
+            "setup": sid,
+            "trades": trades,
+            "winrate": round(wins / trades * 100) if trades else 0,
+            "pnl": round(float((st or {}).get("pnl") or 0), 2),
+            "verdict": (st or {}).get("verdict") or ("test" if trades else "keine Daten"),
+            "live_ready": bool(ok and not blocked),
+            "reason": (f"gesperrt: {disabled[sid].get('reason', '')}" if blocked else why),
+        })
+    out.sort(key=lambda r: (-int(r["live_ready"]), -r["trades"]))
+    return out
+
+
 async def status(db) -> Dict:
-    """Für API/UI: Playbook, Statistik und Sperren."""
+    """Für API/UI: Playbook, Statistik, Sperren und Reife-Status."""
     data = await refresh(db)
     tf_rows = await tf_stats(db)
     return {"setups": SETUPS, "stats": data["stats"], "disabled": data["disabled"],
+            "maturity": maturity_overview(data["stats"], data["disabled"]),
             "tf_stats": tf_rows, "best_tf": best_tf_per_setup(tf_rows),
             "lookback_days": LOOKBACK_DAYS, "retest_days": RETEST_DAYS}

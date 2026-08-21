@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ArrowsClockwise, ChartLineUp } from '@phosphor-icons/react';
+import { ArrowsClockwise, ChartLineUp, ShieldCheck } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -45,6 +45,16 @@ export const AIEquityPanel = () => {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState('all');
   const [days, setDays] = useState(0);
+  const [maturity, setMaturity] = useState(null);
+
+  const loadMaturity = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/ai/playbook`).then(r => r.json());
+      setMaturity(Array.isArray(res?.maturity) ? res.maturity : []);
+    } catch (e) { setMaturity([]); }
+  }, []);
+
+  useEffect(() => { loadMaturity(); }, [loadMaturity]);
 
   const load = useCallback(async (m = mode, d = days) => {
     setLoading(true);
@@ -106,6 +116,50 @@ export const AIEquityPanel = () => {
             {last && <span style={{ opacity: 0.6 }}>Letzter Trade: {String(last.ts || '').slice(0, 16).replace('T', ' ')}</span>}
           </div>
         </>
+      )}
+
+      {/* Setup-Reife: welche Setups sind live-freigeschaltet, welche sammeln noch Daten */}
+      <div className="ai-learn-title" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <ShieldCheck size={14} weight="fill" /> Setup-Reife – Live-Freischaltung
+      </div>
+      <div style={{ fontSize: 11, opacity: 0.55, margin: '2px 0 6px' }}>
+        Live-Trades nur für Setups mit genug echten Daten (Urteil „bewährt"/„neutral").
+        Unreife Setups laufen als Paper-Datensammlung weiter, bis sie freigeschaltet werden.
+      </div>
+      {maturity === null && <div style={{ fontSize: 12, opacity: 0.7 }}>Lade…</div>}
+      {Array.isArray(maturity) && maturity.length > 0 && (
+        <table data-testid="ai-setup-maturity-table"
+          style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+          <thead>
+            <tr style={{ opacity: 0.55, textAlign: 'left' }}>
+              <th style={{ padding: '3px 6px 3px 0' }}>Setup</th>
+              <th style={{ padding: '3px 6px' }}>Trades</th>
+              <th style={{ padding: '3px 6px' }}>Winrate</th>
+              <th style={{ padding: '3px 6px' }}>PnL</th>
+              <th style={{ padding: '3px 6px' }}>Urteil</th>
+              <th style={{ padding: '3px 0 3px 6px' }}>Live</th>
+            </tr>
+          </thead>
+          <tbody>
+            {maturity.map(r => (
+              <tr key={r.setup} data-testid={`ai-maturity-row-${r.setup}`}
+                style={{ borderTop: '1px solid #22252F' }} title={r.reason || ''}>
+                <td style={{ padding: '4px 6px 4px 0', fontWeight: 600 }}>{r.setup}</td>
+                <td style={{ padding: '4px 6px' }}>{r.trades}</td>
+                <td style={{ padding: '4px 6px' }}>{r.trades ? `${r.winrate}%` : '—'}</td>
+                <td style={{ padding: '4px 6px', color: (r.pnl ?? 0) > 0 ? '#00FF66' : (r.pnl ?? 0) < 0 ? '#FF3366' : undefined }}>
+                  {r.trades ? money(r.pnl) : '—'}
+                </td>
+                <td style={{ padding: '4px 6px', opacity: 0.85 }}>{r.verdict}</td>
+                <td style={{ padding: '4px 0 4px 6px' }}>
+                  {r.live_ready
+                    ? <span style={{ color: '#00FF66', fontWeight: 700 }}>✓ live-reif</span>
+                    : <span style={{ color: '#FFB020' }}>sammelt Daten</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );
