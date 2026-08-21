@@ -26,6 +26,17 @@ def fast_sleep(monkeypatch):
     monkeypatch.setattr(ai_providers.asyncio, "sleep", _fast)
 
 
+@pytest.fixture(autouse=True)
+def reset_key_rotation():
+    """Globaler Round-Robin-/Limit-State leckt sonst zwischen Tests
+    (Reihenfolge-abhängige Fehlschläge: k2 statt k1 als erster Key)."""
+    ai_providers._rr_start.clear()
+    ai_providers._key_limited.clear()
+    yield
+    ai_providers._rr_start.clear()
+    ai_providers._key_limited.clear()
+
+
 def _patch(monkeypatch, gen, keys=("k1", "k2")):
     monkeypatch.setattr(ai_providers, "_oai_generate", gen)
     monkeypatch.setattr(ai_providers, "provider_keys", lambda p: list(keys))

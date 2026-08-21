@@ -28,8 +28,13 @@ Bestehende, produktiv laufende Daytrading-Website (GitHub: dean06greif-ai/KI-Tra
 ## Cerebras-Antwort (dokumentiert)
 - Analyst nutzt Cerebras nur als 1. Fallback (primär Groq, 2. Fallback Gemini). Limits gelten pro KONTO, nicht pro Key. 2–3 Keys aus VERSCHIEDENEN Konten reichen völlig; weitere Keys desselben Kontos bringen nichts.
 
+## Umgesetzt (Iteration 2, 21.06.2026)
+- **Setup-Autopilot**: StrategyLab entwickelt automatisch alle X Tage (Default 7) ein neues Setup (_auto_develop_tick im Lab-Tick, Settings auto_develop_enabled/auto_develop_interval_days über POST /api/ai/strategies/settings, geklemmt 1–60 Tage). Status in db.settings _id strategy_lab_autodevelop.
+- **Cerebras "immer ausgereizt" gefixt**: Keys mit TAGES-Quota-Fehlern (tokens/requests per day) werden jetzt bis zum UTC-Tageswechsel gesperrt statt alle 10 min erneut gehämmert (_quota_cooldown_s in ai_providers). key_status zeigt cooldown_left_s.
+- **Testfix**: test_iter49 Reihenfolge-Abhängigkeit (globaler Round-Robin-State) durch Reset-Fixture behoben.
+- **E2E verifiziert (Testing-Agent, iteration_1.json)**: 10/10 pass – develop-Endpoint (echter LLM-Kandidat), Settings-/Config-Clamps, Watchdog-Felder, alle neuen UI-Elemente (ai-runner-secure-toggle/-maxlev, strategy-develop-btn, sat-ps-release-margin/-max-lev).
+
 ## Backlog / Nächste Schritte
-- P1: E2E-Test der neuen UI-Flows via Testing-Agent (Admin-Panel: Runner-Toggle, Labor-Button, Trade-Modal-Checkboxen)
-- P1: Optimizer-Best im Insights-Block: Symbol fehlt bei manchen Runs ("?")
 - P2: Übersicht/Badge im Trade-Detail, wenn Marge freigesetzt wurde
-- P2: learning_memory-Notizen um menschenlesbare Zusammenfassung erweitern
+- P2: Autopilot-Status im Labor-Panel anzeigen (letzter Lauf/Ergebnis)
+- P2: Optimizer-Best im Insights-Block: Symbol fehlt bei manchen Runs ("?")

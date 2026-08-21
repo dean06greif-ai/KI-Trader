@@ -372,9 +372,25 @@ _rr_start: Dict[str, int] = {}                  # provider -> Round-Robin-Zähle
 SAME_ORG_429_STREAK = 3
 
 
+def _quota_cooldown_s(detail: str) -> float:
+    """Cooldown je nach Limit-Art: TAGES-Quota (tokens/requests per day) sperrt
+    den Key bis zum UTC-Tageswechsel statt nur 10 min – vorher wurden erschöpfte
+    Keys den ganzen Tag alle 10 min erneut gehämmert ('immer alle ausgereizt')."""
+    s = str(detail).lower()
+    if any(k in s for k in ("per day", "daily", "tokens_per_day", "requests_per_day",
+                            "_day_", "tpd", "rpd", "quota exceeded for today")):
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=30,
+                                                microsecond=0)
+        return max(30 * 60.0, (nxt - now).total_seconds())
+    return KEY_LIMIT_COOLDOWN_S
+
+
 def mark_key_limited(provider: str, key_index: int, detail: str = ""):
     _key_limited.setdefault(provider, {})[key_index] = {
-        "ts": _now(), "detail": str(detail)[:160]}
+        "ts": _now(), "detail": str(detail)[:160],
+        "cooldown_s": _quota_cooldown_s(detail)}
 
 
 def clear_key_limited(provider: str, key_index: int):
@@ -389,7 +405,8 @@ def usable_key_indices(provider: str, n_keys: int, now: Optional[float] = None) 
     now = _now() if now is None else now
     limited = _key_limited.get(provider) or {}
     fresh = {i for i, info in limited.items()
-             if (now - float(info.get("ts", 0))) < KEY_LIMIT_COOLDOWN_S}
+             if (now - float(info.get("ts", 0)))
+             < float(info.get("cooldown_s") or KEY_LIMIT_COOLDOWN_S)}
     idxs = [i for i in range(n_keys) if i not in fresh]
     idxs = idxs or list(range(n_keys))
     if len(idxs) > 1:
@@ -410,8 +427,10 @@ def key_status() -> Dict[str, Dict]:
         lim = []
         for idx, info in sorted((_key_limited.get(p) or {}).items()):
             age = now - float(info.get("ts", 0))
-            if age < KEY_LIMIT_COOLDOWN_S and idx < n:
+            cd = float(info.get("cooldown_s") or KEY_LIMIT_COOLDOWN_S)
+            if age < cd and idx < n:
                 lim.append({"index": idx + 1, "age_s": int(age),
+                            "cooldown_left_s": int(cd - age),
                             "detail": str(info.get("detail", ""))[:120]})
         out[p] = {"total": n, "limited": len(lim), "limited_keys": lim}
     return out

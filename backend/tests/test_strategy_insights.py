@@ -36,11 +36,26 @@ class FakeColl:
     def find(self, *a, **k):
         return FakeCursor(self.rows)
 
+    async def find_one(self, q, *a, **k):
+        for d in self.rows:
+            if all(d.get(kk) == vv for kk, vv in q.items()):
+                return dict(d)
+        return None
+
+    async def update_one(self, q, u, upsert=False, **k):
+        for d in self.rows:
+            if all(d.get(kk) == vv for kk, vv in q.items()):
+                d.update(u.get("$set", {}))
+                return
+        if upsert:
+            self.rows.append({**q, **u.get("$set", {})})
+
     async def count_documents(self, q):
         return len(self.rows)
 
     async def insert_one(self, doc):
         self.inserted.append(doc)
+        self.rows.append(doc)
 
 
 class FakeDB:
@@ -200,3 +215,47 @@ def test_develop_invalid_rule_definition_is_dropped():
     assert res["status"] == "ok"
     assert res["candidate"]["rule_definition"] is None
     assert res["backtestable"] is False
+
+
+# ---------------- Setup-Autopilot (wöchentliches Auto-Develop) ----------------
+def test_auto_develop_runs_once_and_respects_interval():
+    db = _db()
+    answer = {"should_create": False, "reason": "Datenlage zu dünn"}
+    lab = _lab(db, answer)
+    asyncio.run(lab._auto_develop_tick())
+    st = db._colls["settings"].rows if hasattr(db._colls.get("settings"), "rows") else None
+    doc = asyncio.run(db.settings.find_one({"_id": "strategy_lab_autodevelop"}))
+    assert doc and doc.get("last_ts"), "Autopilot-Zeitstempel fehlt"
+    assert lab.engine.last_prompt is not None  # develop() wurde aufgerufen
+    lab.engine.last_prompt = None
+    asyncio.run(lab._auto_develop_tick())  # innerhalb des Intervalls: kein 2. Lauf
+    assert lab.engine.last_prompt is None
+
+
+def test_auto_develop_disabled():
+    lab = _lab(_db(), {"should_create": False, "reason": "x"})
+    lab.settings["auto_develop_enabled"] = False
+    asyncio.run(lab._auto_develop_tick())
+    assert lab.engine.last_prompt is None
+
+
+# ---------------- Tages-Quota-Cooldown (Cerebras & Co.) ----------------
+def test_daily_quota_cooldown_until_utc_midnight():
+    from services.ai_providers import _quota_cooldown_s, KEY_LIMIT_COOLDOWN_S
+    cd = _quota_cooldown_s("429 rate_limit: tokens_per_day quota exceeded")
+    assert cd > KEY_LIMIT_COOLDOWN_S  # deutlich länger als 10 min
+    assert cd <= 86400 + 60
+    # Minuten-Limit bleibt beim kurzen Standard-Cooldown
+    assert _quota_cooldown_s("429 requests per minute") == KEY_LIMIT_COOLDOWN_S
+
+
+def test_daily_quota_key_skipped_long(monkeypatch):
+    from services import ai_providers as ap
+    ap._key_limited.pop("testprov", None)
+    ap.mark_key_limited("testprov", 0, "tokens_per_day limit reached")
+    ap.mark_key_limited("testprov", 1, "requests per minute")
+    # Nach 11 min: Tages-Key weiter gesperrt, Minuten-Key wieder nutzbar
+    future = ap._now() + 11 * 60
+    idxs = ap.usable_key_indices("testprov", 3, now=future)
+    assert 0 not in idxs and 1 in idxs and 2 in idxs
+    ap._key_limited.pop("testprov", None)

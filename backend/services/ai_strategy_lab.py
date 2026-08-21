@@ -23,6 +23,7 @@ Regel-Definition können zusätzlich als Custom-Strategie registriert werden, da
 Backtester/Optimizer sie rechnen können.
 """
 import logging
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
@@ -50,6 +51,10 @@ DEFAULT_SETTINGS = {
     "promote_to": "paper",          # Ziel-Stufe nach der Freigabe: paper | live
     "max_active_candidates": 5,
     "ghost_timeout_min": 240,        # Ghost-Trade ohne Treffer läuft aus (nicht gewertet)
+    # Setup-Autopilot: die KI entwickelt automatisch alle X Tage ein neues
+    # Setup aus dem Trainingslager (Cross-Strategie-Daten + eigene Lektionen).
+    "auto_develop_enabled": True,
+    "auto_develop_interval_days": 7,
 }
 
 TESTING_NOTE = (
@@ -267,11 +272,12 @@ class StrategyLab:
         return {"status": "ok", "removed": removed, "count": len(removed)}
 
     async def update_settings(self, updates: Dict) -> Dict:
-        for key in ("enabled", "allow_ai_create"):
+        for key in ("enabled", "allow_ai_create", "auto_develop_enabled"):
             if key in updates:
                 self.settings[key] = bool(updates[key])
         for key, lo, hi in (("min_ghost_trades", 3, 200), ("max_active_candidates", 1, 20),
-                            ("ghost_timeout_min", 15, 2880)):
+                            ("ghost_timeout_min", 15, 2880),
+                            ("auto_develop_interval_days", 1, 60)):
             if key in updates:
                 try:
                     self.settings[key] = max(lo, min(hi, int(updates[key])))
@@ -1000,6 +1006,7 @@ class StrategyLab:
             return
         try:
             await self._evaluate_ghosts()
+            await self._auto_develop_tick()
             for cid, cand in list(self._cache.items()):
                 if cand.get("stage") in ("paper", "live"):
                     real = await self.real_stats(cid)
@@ -1010,6 +1017,32 @@ class StrategyLab:
         except Exception as e:
             self.last_error = str(e)[:200]
             logger.error(f"Ghost-Auswertung fehlgeschlagen: {e}")
+
+    async def _auto_develop_tick(self):
+        """Setup-Autopilot: alle X Tage automatisch ein neues Setup entwickeln."""
+        if not self.settings.get("auto_develop_enabled", True):
+            return
+        interval_s = max(1, int(self.settings.get("auto_develop_interval_days", 7))) * 86400
+        doc = await self.db.settings.find_one({"_id": "strategy_lab_autodevelop"}) or {}
+        last = float(doc.get("last_ts") or 0)
+        now = time.time()
+        if now - last < interval_s:
+            return
+        # Zeitstempel VOR dem Lauf setzen: verhindert Mehrfach-Läufe bei Fehlern
+        await self.db.settings.update_one(
+            {"_id": "strategy_lab_autodevelop"},
+            {"$set": {"last_ts": now, "last_at": _now_iso()}}, upsert=True)
+        try:
+            res = await self.develop(focus="Automatischer Wochenlauf (Setup-Autopilot)")
+            await self.db.settings.update_one(
+                {"_id": "strategy_lab_autodevelop"},
+                {"$set": {"last_status": res.get("status"),
+                          "last_detail": str(res.get("reason") or res.get("detail") or "")[:300],
+                          "last_candidate": (res.get("candidate") or {}).get("name")}},
+                upsert=True)
+            logger.info(f"Setup-Autopilot: {res.get('status')}")
+        except Exception as e:
+            logger.error(f"Setup-Autopilot fehlgeschlagen: {e}")
 
     def status(self) -> Dict:
         return {"settings": dict(self.settings), "stages": list(STAGES),
