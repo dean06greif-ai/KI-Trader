@@ -1,0 +1,41 @@
+{
+  "summary": "Alle 7 Punkte des Review-Requests bestätigt. Multi-Position-Fix, MasterPrompt-Regeln (max_leverage=0, block_leverage_lessons=true, require_direction_context=true), include_manual-Default-off, Lesson-Rules und die 5 getrennten Bitunix-Positionen (2x BTC SHORT + 1x BTC LONG + POL SHORT + AVAX SHORT, alle mit eigener bitunix_position_id) sind ende-zu-ende verifiziert (Backend-Endpunkte + Pytest-Regression + Frontend-UI). NUR LESEND getestet – keine Orders, keine Watchdog-Läufe, keine Settings-Änderungen.",
+  "feature_verdicts": [
+    "GET /api/analytics/strategy-comparison (default) - pass - evidence: 200, comparison=[] (0 Strategien, has_manual=false), total_trades=0. Kein 'manual' Eintrag vorhanden.",
+    "GET /api/analytics/strategy-comparison?include_manual=true - pass - evidence: 200, comparison=[{strategy_id:'manual', strategy_name:'Manuell (Bitunix)', is_manual:true, trades:0}]; 'manual' Pseudo-Strategie erscheint wie erwartet (trades=0, weil noch keine geschlossenen manuellen Trades in der DB).",
+    "GET /api/ai/master-prompt (Admin) - pass - evidence: 200, rules.max_leverage=0, rules.block_leverage_lessons=true, rules.require_direction_context=true (curl -H Authorization).",
+    "GET /api/autotrade/trades?status=open - pass - evidence: 5 offene Trades mit je eigener bitunix_position_id: BTCUSDT LONG qty=0.0104 (pos 5296786423982903341), BTCUSDT SHORT qty=0.0169 (pos 5371604752595607835), BTCUSDT SHORT qty=0.0173 (pos 4166461244740258230), POLUSDT SHORT qty=456.0 (pos 290343259140550941), AVAXUSDT SHORT qty=30.0 (pos 2938792110463145930). Alle strategy_id='external', external_adopted=true.",
+    "Backend-Regressionstests - pass - evidence: pytest tests/test_multi_position_and_lesson_quality.py tests/test_watchdog_sync_only.py tests/test_iter46_watchdog_leftover.py tests/test_ai_lessons_merge.py => 23 passed in 1.82s (junit: /app/test_reports/pytest/iter_multi_pos_review.xml).",
+    "check_lesson_rules Unit - pass - evidence: 'Longs nur mit max 20x Hebel handeln' abgelehnt (Grund: Hebel-Deckel-Lektionen sind nicht erlaubt / Marge+SL steuern), 'Shorts generell vermeiden' abgelehnt (Pauschale Richtungs-Lektion ohne Marktkontext), 'Shorts meiden, solange BTC im 4h-Aufwärtstrend über der EMA200 liegt' akzeptiert.",
+    "Frontend: App lädt + Admin-Login - pass - evidence: React-Bundle rendert vollständig (Header, Coin-Liste, Chart, Analyse-Panel); admin-lock-button öffnet admin-login-modal, nach Submit erscheint Toast 'Admin angemeldet' und Icon wechselt auf LockOpen.",
+    "Frontend: Offene Trades zeigt alle 5 Bitunix-Positionen einzeln - pass - evidence: Trades-Tab -> 'OFFEN 5' + 'OFFEN · BTC 3' + Liste zeigt genau: LONG BTC (+43.68), SHORT AVAX (+2.91), SHORT POL (-0.12), SHORT BTC (-2.25), SHORT BTC (+2.79), jeweils gelabelt als 'Manuell (Bitunix)'. Zählweise 2xBTC-SHORT + 1xBTC-LONG + POL-SHORT + AVAX-SHORT stimmt.",
+    "Frontend: 'Performance je Strategie · BTC' enthält KEIN 'Manuell (Bitunix)' - pass - evidence: nur 'KI Trader 0W 0L 0.00' sichtbar; Filter in PerformanceAnalytics.js:427 (t.strategy_id==='external' || t.manual_trade || t.external_adopted) verifiziert.",
+    "Frontend: Strategie-Vergleich-Modal (data-testid=strategy-comparison-modal) - pass - evidence: Modal öffnet über compare-strategies-button, zeigt '0 geschlossene Trades' (keine geschlossenen manuellen Trades vorhanden), Inner-HTML enthält 0x 'Manuell' – Default-Sperre wirkt."
+  ],
+  "skills_loaded": ["ai-testing-core"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_multi_position_and_lesson_quality.py",
+    "/app/backend/tests/test_watchdog_sync_only.py",
+    "/app/backend/tests/test_iter46_watchdog_leftover.py",
+    "/app/backend/tests/test_ai_lessons_merge.py",
+    "/app/test_reports/pytest/iter_multi_pos_review.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/analytics.py:743 strategy_comparison filtert manuelle Trades korrekt (open_counts + by_strat) über _is_manual (external | manual_trade | external_adopted) und include_manual-Flag – Default OFF wie gefordert.",
+    "backend/services/ai_master_prompt.py: DEFAULT_RULES.max_leverage=0 (Zeile 105), block_leverage_lessons=true (118), require_direction_context=true (121). normalize_rules clamped max_leverage 0..200 (182). check_lesson_rules kombiniert Hebel-Deckel-Regex + Richtungs-Bias-Regex sauber.",
+    "backend/routers/autotrade.py:205 /trades listet mode=live external_adopted trades unabhängig vom mode-Filter (Zeile 217 Zusatz-Query) – alle 5 Positionen sichtbar, bitunix_position_id konsequent gesetzt.",
+    "frontend/src/components/PerformanceAnalytics.js:427 Manual-Trade-Filter identisch zu Backend-Logik – Konsistenz zwischen Frontend-Client-Aggregation und /api/analytics/strategy-comparison gegeben.",
+    "Kleinigkeit (kein Bug): /api/analytics/strategy-comparison zählt bei include_manual=true zwar den manual-Bucket, füllt aber open_counts nur wenn schon closed-Trades vorhanden sind – momentan trades=0 obwohl 5 offene manuelle Trades existieren. Sichtbar wird das erst, wenn die Pseudo-Strategie sowohl offene als auch geschlossene Aggregate anzeigen soll. Nicht Testgegenstand, nur Hinweis für Main Agent."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (4/4)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "Keine Seed-Daten erzeugt. Bitunix-Konto NUR gelesen (get_positions, keine Orders). Kein Watchdog-Trigger.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login: admin-lock-button -> admin-login-modal (admin-username / admin-password / admin-login-submit). Öffnen der Trades-Liste rechts oben via Klick auf Tab-Button 'Trades' (im Analyse-Panel). Strategie-Vergleich via Header-Button compare-strategies-button (Trophy-Icon); Modal-Testid: strategy-comparison-modal. Backend-Endpunkt für offene Trades: /api/autotrade/trades?status=open. MasterPrompt-Regeln unter /api/ai/master-prompt (rules-Objekt). Strategy-Comparison-Endpunkt: /api/analytics/strategy-comparison?include_manual=<bool>. Regressionstests unter /app/backend/tests/test_multi_position_and_lesson_quality.py (7 Fälle, alle grün).",
+  "rca of the issue": "N/A – kein Bug gefunden. Alle im Review-Request genannten Verbesserungen sind in Backend und Frontend korrekt umgesetzt."
+}
