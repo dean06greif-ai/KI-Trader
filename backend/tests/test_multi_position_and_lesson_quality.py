@@ -13,7 +13,8 @@ from datetime import datetime, timezone, timedelta
 from services.ai_master_prompt import (DEFAULT_RULES, check_lesson_rules,
                                        check_trade_rules, normalize_rules)
 from services.ai_lessons import active_lessons, is_expired, normalize
-from services.bitunix_trade import AutoTradeManager
+from services.bitunix_trade import (AutoTradeManager, profit_release_plan,
+                                    sl_liq_guard)
 from services.position_watchdog import PositionWatchdog
 
 
@@ -285,3 +286,56 @@ def test_expired_lessons_leave_the_prompt():
     assert is_expired(lessons[3]) is False  # locked verfällt nie
     titles = {l["title"] for l in active_lessons(lessons)}
     assert titles == {"Noch gültig", "Ohne Ablauf", "Trader-Regel"}
+
+
+# ------------- Gewinnsicherung: Regler + SL/Liq-Schutz ---------------------
+
+def test_profit_release_plan_respects_reduce_pct():
+    full = profit_release_plan(1.0, 100.0, 10.0, 100.0, reduce_pct=100)
+    half = profit_release_plan(1.0, 100.0, 10.0, 100.0, reduce_pct=50)
+    assert full["new_leverage"] == 100.0
+    assert abs(half["release"] - full["release"] / 2) < 1e-6
+    assert 10.0 < half["new_leverage"] < 100.0
+    # Ziel-Hebel unter aktuellem Hebel -> nichts freizusetzen
+    assert profit_release_plan(1.0, 100.0, 50.0, 20.0) is None
+
+
+def test_sl_liq_guard_pulls_sl_behind_liq():
+    # LONG, Hebel 100 -> Liq ~99.5; SL 99.0 läge HINTER der Liq
+    needed, liq, ok = sl_liq_guard("LONG", 100.0, 100.0, 101.0, 99.0)
+    assert ok and needed is not None
+    assert needed > liq                     # SL mit Abstand VOR der Liq
+    assert needed < 101.0                   # und unter dem Kurs
+    # SL bereits sicher vor der Liq -> kein Eingriff
+    needed2, _, ok2 = sl_liq_guard("LONG", 100.0, 100.0, 101.0, 99.9)
+    assert ok2 and needed2 is None
+    # SHORT-Spiegelung
+    needed3, liq3, ok3 = sl_liq_guard("SHORT", 100.0, 100.0, 99.0, 101.2)
+    assert ok3 and needed3 is not None and needed3 < liq3
+
+
+def test_sl_liq_guard_blocks_when_too_close_to_price():
+    # Kurs quasi auf der nötigen SL-Höhe -> Änderung ablehnen (zu früh)
+    needed, _, ok = sl_liq_guard("LONG", 100.0, 100.0, 99.85, 99.0)
+    assert not ok and needed is not None
+
+
+def test_release_secured_margin_defers_until_safe():
+    at = AutoTradeManager(FakeClient())
+    at.set_db(FakeDB())
+    t = {"id": "x", "symbol": "BTCUSDT", "side": "LONG", "mode": "paper",
+         "entry": 100.0, "sl": 99.0, "qty": 1.0, "qty_remaining": 1.0,
+         "leverage": 10.0, "profit_secure_max_leverage": 100,
+         "profit_secure_margin_reduce_pct": 100,
+         "profit_secure_sl_liq_buffer_pct": 0.3}
+    # Kurs zu nah an der nötigen SL-Höhe -> verschieben, nichts ändern
+    upd, ev = {}, []
+    asyncio.run(at._release_secured_margin(t, upd, ev, 1.0, price=99.9))
+    assert "profit_margin_released" not in upd and "leverage" not in upd
+    # Kurs weit genug im Gewinn -> freisetzen + SL hinter die neue Liq ziehen
+    upd, ev = {}, []
+    asyncio.run(at._release_secured_margin(t, upd, ev, 1.0, price=103.0))
+    assert upd.get("profit_margin_released") is True
+    assert upd["leverage"] == 100.0
+    assert upd["sl"] > upd["liq_price"]
+    assert any("Marge" in e for e in ev)

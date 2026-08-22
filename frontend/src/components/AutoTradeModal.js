@@ -181,21 +181,37 @@ const AutoTradeModal = ({ symbol, onClose }) => {
           </label>
           {cfg.profit_secure_enabled && (
             <div className="at-section" style={{ marginTop: 10 }}>
-              <div className="at-field"><label>Auslöser: Gewinn % auf Marge</label>
-                <NumInput step={5} min={1} value={cfg.profit_secure_trigger_pct ?? 30} onCommit={(v) => update('profit_secure_trigger_pct', v || 0)} data-testid="at-ps-trigger" /></div>
+              <div className="at-field"><label>Auslöser: Gewinn % auf Marge (min. 5%)</label>
+                <NumInput step={5} min={5} value={Math.max(5, cfg.profit_secure_trigger_pct ?? 30)} onCommit={(v) => update('profit_secure_trigger_pct', Math.max(5, v || 5))} data-testid="at-ps-trigger" /></div>
               <div className="at-field"><label>Gesicherter Gewinn-Anteil %</label>
                 <NumInput step={5} min={1} max={95} value={cfg.profit_lock_pct ?? 50} onCommit={(v) => update('profit_lock_pct', v || 0)} data-testid="at-ps-lock" /></div>
               <label className="at-check">
                 <input type="checkbox" checked={!!cfg.profit_secure_release_margin}
                   onChange={e => update('profit_secure_release_margin', e.target.checked)}
                   data-testid="at-ps-release-margin" />
-                <span>Marge freisetzen – Hebel steigt automatisch (Position bleibt gleich groß, SL ist im Gewinn)</span>
+                <span>Marge freisetzen – Hebel steigt automatisch (Position bleibt gleich groß; SL wird automatisch mit Abstand hinter die neue Liquidation gezogen)</span>
               </label>
               {cfg.profit_secure_release_margin && (
-                <div className="at-field"><label>Ziel-Hebel beim Freisetzen (200 = Marge maximal reduzieren)</label>
-                  <NumInput step={5} min={2} max={200} value={cfg.profit_secure_max_leverage ?? 100}
-                    onCommit={(v) => update('profit_secure_max_leverage', v || 100)}
-                    data-testid="at-ps-max-lev" /></div>
+                <>
+                  <div className="at-field">
+                    <label>Marge reduzieren um {Math.round(cfg.profit_secure_margin_reduce_pct ?? 100)}% der freisetzbaren Marge</label>
+                    <input type="range" min={10} max={100} step={5}
+                      value={cfg.profit_secure_margin_reduce_pct ?? 100}
+                      onChange={e => update('profit_secure_margin_reduce_pct', Number(e.target.value))}
+                      style={{ width: '100%' }} data-testid="at-ps-margin-reduce" />
+                  </div>
+                  <div className="at-field">
+                    <label>Ziel-Hebel beim Freisetzen: {Math.round(cfg.profit_secure_max_leverage ?? 100)}x (bis max. Hebel des Coins)</label>
+                    <input type="range" min={2} max={200} step={1}
+                      value={cfg.profit_secure_max_leverage ?? 100}
+                      onChange={e => update('profit_secure_max_leverage', Number(e.target.value))}
+                      style={{ width: '100%' }} data-testid="at-ps-max-lev" />
+                  </div>
+                  <div className="at-hint" style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
+                    Schutz: Läge der nachgezogene SL zu nah am aktuellen Kurs (zu früher Auslöser),
+                    wird die Freisetzung automatisch verschoben und später erneut versucht.
+                  </div>
+                </>
               )}
             </div>
           )}

@@ -94,21 +94,55 @@ def parse_order_fill(res) -> Dict:
 
 
 def profit_release_plan(qty_rem: float, entry: float, lev_now: float,
-                        max_lev: float) -> Optional[Dict]:
+                        max_lev: float, reduce_pct: float = 100.0) -> Optional[Dict]:
     """Gewinnsicherung: wieviel Marge kann freigesetzt werden? (rein, testbar)
-    Positionsgröße bleibt gleich -> der Hebel steigt auf max_lev (Deckel 200x)."""
+    Positionsgröße bleibt gleich -> der Hebel steigt Richtung max_lev (Deckel 200x).
+    reduce_pct (10-100): Anteil der maximal freisetzbaren Marge, der tatsächlich
+    entnommen wird (Trader-Regler; 100 = maximale Reduzierung)."""
     notional = float(qty_rem or 0) * float(entry or 0)
     lev_now = max(1.0, float(lev_now or 1))
     target = max(1.0, min(200.0, float(max_lev or 0)))
     if notional <= 0 or target <= lev_now + 0.01:
         return None
     margin_now = notional / lev_now
-    new_margin = notional / target
-    release = margin_now - new_margin
+    pct = max(10.0, min(100.0, float(reduce_pct or 100))) / 100
+    release = (margin_now - notional / target) * pct
     if release <= 0 or (margin_now > 0 and release / margin_now < 0.01):
         return None
-    return {"release": round(release, 6), "new_leverage": round(target, 2),
+    new_margin = margin_now - release
+    return {"release": round(release, 6),
+            "new_leverage": round(notional / new_margin, 2),
             "new_margin": round(new_margin, 6), "margin_now": round(margin_now, 6)}
+
+
+def sl_liq_guard(side: str, entry: float, leverage: float, price: float,
+                 cur_sl: Optional[float], mmr_percent: float = 0.5,
+                 buffer_pct: float = 0.3,
+                 min_price_dist_pct: float = 0.2):
+    """Nach einer Hebel-/Margen-Änderung prüfen, ob der SL noch VOR der
+    Liquidation liegt (rein, testbar). Rückgabe (needed_sl, liq, ok):
+      * needed_sl: SL, der `buffer_pct`% (vom Entry) hinter der neuen Liq liegt –
+        None, wenn der aktuelle SL bereits sicher vor der Liq liegt.
+      * ok=False: der nötige SL läge näher als `min_price_dist_pct`% am
+        aktuellen Kurs -> Änderung NICHT ausführen (zu früh / zu eng)."""
+    lev = max(float(leverage or 1), 0.01)
+    mmr = float(mmr_percent) / 100
+    liq_dist = max(1.0 / lev - mmr, 0.0005)
+    long = str(side).upper() == "LONG"
+    liq = entry * (1 - liq_dist) if long else entry * (1 + liq_dist)
+    buf = entry * max(float(buffer_pct), 0.05) / 100
+    needed = liq + buf if long else liq - buf
+    try:
+        sl = float(cur_sl) if cur_sl is not None else None
+    except (TypeError, ValueError):
+        sl = None
+    if sl is not None and ((long and sl >= needed) or (not long and sl <= needed)):
+        return None, round(liq, 6), True  # SL liegt bereits sicher vor der Liq
+    min_dist = float(price or 0) * max(float(min_price_dist_pct), 0.05) / 100
+    if price and ((long and needed >= price - min_dist)
+                  or (not long and needed <= price + min_dist)):
+        return round(needed, 6), round(liq, 6), False
+    return round(needed, 6), round(liq, 6), True
 
 
 def fee_guard_min_sl_pct(fee_percent: float, mult: float,
@@ -669,6 +703,12 @@ DEFAULT_COIN_CFG = {
     # der SL liegt zu diesem Zeitpunkt aber bereits im Gewinn).
     "profit_secure_release_margin": False,
     "profit_secure_max_leverage": 100,   # Ziel-Hebel beim Freisetzen (200 = Marge maximal reduzieren)
+    # Anteil der maximal freisetzbaren Marge, der tatsächlich entnommen wird
+    # (Regler 10-100%; 100 = maximale Reduzierung bis zum Ziel-Hebel)
+    "profit_secure_margin_reduce_pct": 100.0,
+    # Abstand (% vom Entry), den der SL nach dem Freisetzen mindestens
+    # HINTER der neuen Liquidation hält (SL wird ggf. automatisch nachgezogen)
+    "profit_secure_sl_liq_buffer_pct": 0.3,
     # --- Bitunix live-order safety (fix for codes 30016 / 30027) ---
     # Minimum absolute distance (percent of mark price) that TP/SL must keep
     # away from the current mark price when the order hits the exchange.
@@ -1679,10 +1719,10 @@ class AutoTradeManager:
             "realized_pnl": round(-entry_fee, 6), "fees_paid": entry_fee,
             "profit_secure_enabled": bool(cfg.get("profit_secure_enabled", False)
                                           or signal.get("ai_secure_runner")),
-            "profit_secure_trigger_pct": float(
+            "profit_secure_trigger_pct": max(5.0, float(
                 signal.get("ai_secure_runner_trigger")
                 if signal.get("ai_secure_runner")
-                else cfg.get("profit_secure_trigger_pct", 30.0)),
+                else cfg.get("profit_secure_trigger_pct", 30.0))),
             "profit_lock_pct": float(cfg.get("profit_lock_pct", 50.0)),
             "profit_secure_release_margin": bool(cfg.get("profit_secure_release_margin", False)
                                                  or signal.get("ai_secure_runner")),
@@ -1690,6 +1730,10 @@ class AutoTradeManager:
                 signal.get("ai_secure_runner_max_lev")
                 if signal.get("ai_secure_runner")
                 else (cfg.get("profit_secure_max_leverage", 100) or 100)),
+            "profit_secure_margin_reduce_pct": float(
+                cfg.get("profit_secure_margin_reduce_pct", 100.0) or 100.0),
+            "profit_secure_sl_liq_buffer_pct": float(
+                cfg.get("profit_secure_sl_liq_buffer_pct", 0.3) or 0.3),
             "profit_secured": False,
             "strategy_id": ("external" if signal.get("manual_trade")
                             else signal.get("strategy_id")),
@@ -2257,10 +2301,14 @@ class AutoTradeManager:
                     if t.get("mode") == "live":
                         await self._live_move_sl(t, new_sl, qty_rem)
                 updates["profit_secured"] = True
-                # NEU: Marge freisetzen (Hebel steigt automatisch) – der SL
-                # liegt jetzt im Gewinn, das Kapital kann für andere Trades frei.
-                if t.get("profit_secure_release_margin"):
-                    await self._release_secured_margin(t, updates, events, qty_rem)
+
+        # Marge-Freisetzung: retry-fähig (läuft, bis der Abstand SL/Liq/Kurs
+        # passt oder die Entnahme verbucht ist) – so blockiert ein zu früher
+        # Trigger die Freisetzung nicht dauerhaft.
+        if not closed and qty_rem > 0 and t.get("profit_secure_release_margin") \
+                and not t.get("profit_margin_released") \
+                and (t.get("profit_secured") or updates.get("profit_secured")):
+            await self._release_secured_margin(t, updates, events, qty_rem, price)
 
         # Snapshot vor dem Exit: wird gebraucht, falls der Live-Close an der
         # Börse scheitert und der Trade offen bleiben muss (kein Doppelbuchen).
@@ -2891,15 +2939,29 @@ class AutoTradeManager:
             return True
 
     async def _release_secured_margin(self, t: Dict, updates: Dict, events: List,
-                                      qty_rem: float):
+                                      qty_rem: float, price: float = 0.0):
         """Gewinnsicherung: gebundene Marge freisetzen. Die Position bleibt
-        gleich groß, der Hebel steigt auf profit_secure_max_leverage und der
-        Liq-Preis rückt Richtung Entry – sicher, weil der SL bereits im Gewinn
-        liegt. Live wird die Entnahme zuerst von der Börse bestätigt."""
+        gleich groß, der Hebel steigt Richtung profit_secure_max_leverage
+        (anteilig per profit_secure_margin_reduce_pct) und die Liq rückt
+        Richtung Entry. Der SL wird dabei automatisch mit Abstand HINTER die
+        neue Liquidation gezogen; läge er dadurch zu nah am aktuellen Kurs,
+        wird die Freisetzung verschoben (Retry im nächsten Zyklus)."""
         lev_now = float(t.get("leverage", 1) or 1)
-        plan = profit_release_plan(qty_rem, float(t["entry"]), lev_now,
-                                   float(t.get("profit_secure_max_leverage", 100) or 100))
+        plan = profit_release_plan(
+            qty_rem, float(t["entry"]), lev_now,
+            float(t.get("profit_secure_max_leverage", 100) or 100),
+            reduce_pct=float(t.get("profit_secure_margin_reduce_pct", 100) or 100))
         if not plan:
+            updates["profit_margin_released"] = True  # nichts freizusetzen
+            return
+        cur_sl = updates.get("sl", t.get("sl"))
+        needed_sl, liq, ok = sl_liq_guard(
+            t["side"], float(t["entry"]), plan["new_leverage"], float(price or 0),
+            cur_sl, buffer_pct=float(t.get("profit_secure_sl_liq_buffer_pct", 0.3) or 0.3))
+        if not ok:
+            logger.info(f"{t['symbol']}: Gewinnsicherung verschoben – SL müsste "
+                        f"auf {needed_sl} (hinter Liq {liq}), läge aber zu nah "
+                        f"am Kurs {price} (Retry)")
             return
         if t.get("mode") == "live" and self.client.configured():
             try:
@@ -2909,18 +2971,26 @@ class AutoTradeManager:
                 if not (isinstance(res, dict) and res.get("code") == 0):
                     events.append("GEWINNSICHERUNG: Marge-Freisetzung von der "
                                   f"Börse abgelehnt: {str(res)[:120]}")
+                    updates["profit_margin_released"] = True  # keine Endlos-Schleife
                     return
             except Exception as e:
                 events.append(f"GEWINNSICHERUNG: Marge-Freisetzung fehlgeschlagen: "
                               f"{str(e)[:120]}")
+                updates["profit_margin_released"] = True
                 return
-        liq = self.liq_price_for(t["side"], float(t["entry"]), plan["new_leverage"])
         updates["leverage"] = plan["new_leverage"]
         updates["margin_used"] = plan["new_margin"]
         updates["liq_price"] = liq
+        updates["profit_margin_released"] = True
         events.append(f"GEWINNSICHERUNG: Marge -{round(plan['release'], 4)} USDT "
                       f"freigesetzt – Hebel {round(lev_now, 2)}x -> "
                       f"{plan['new_leverage']}x, Liq {liq}")
+        if needed_sl is not None:
+            updates["sl"] = needed_sl
+            events.append(f"GEWINNSICHERUNG: SL automatisch hinter die neue Liq "
+                          f"gezogen -> {needed_sl} (Liq {liq})")
+            if t.get("mode") == "live":
+                await self._live_move_sl(t, needed_sl, qty_rem)
 
     async def adjust_margin(self, trade_id: str, amount: float) -> Optional[Dict]:
         """Margin hinzufügen (amount > 0) oder entnehmen (amount < 0).
@@ -2944,6 +3014,17 @@ class AutoTradeManager:
         new_lev = round(notional / new_margin, 2)
         if amount > 0 and not await self._free_capital_ok(t, amount):
             return {"error": "Zu wenig freies Kapital für zusätzliche Margin"}
+        # SL/Liq-Schutz: bei Margen-ENTNAHME rückt die Liq Richtung Kurs – der
+        # SL muss davor bleiben (mit Abstand), sonst wäre er wirkungslos.
+        needed_sl = None
+        if amount < 0:
+            mark = float(await self._current_mark(t["symbol"]) or t["entry"])
+            needed_sl, _liq, ok = sl_liq_guard(
+                t["side"], float(t["entry"]), new_lev, mark, t.get("sl"))
+            if not ok:
+                return {"error": f"Abgelehnt: der SL müsste auf {needed_sl} hinter "
+                                 f"die neue Liquidation gezogen werden und läge "
+                                 f"damit zu nah am aktuellen Kurs ({mark})"}
         live_note = ""
         if t["mode"] == "live" and self.client.configured():
             try:
@@ -2956,13 +3037,22 @@ class AutoTradeManager:
                 return {"error": f"Margin-Anpassung fehlgeschlagen: {str(e)[:160]}"}
             live_note = " (Börse bestätigt)"
         liq = self.liq_price_for(t["side"], float(t["entry"]), new_lev)
+        sl_set = {}
+        sl_note = []
+        if needed_sl is not None:
+            sl_set["sl"] = needed_sl
+            sl_note = [f"SL automatisch hinter die neue Liq gezogen -> {needed_sl}"]
+            if t["mode"] == "live" and self.client.configured():
+                await self._live_move_sl(t, needed_sl,
+                                         float(t.get("qty_remaining", t["qty"])))
         await self.db.auto_trades.update_one({"id": trade_id}, {"$set": {
             "leverage": new_lev, "margin_used": round(new_margin, 4),
-            "liq_price": liq,
+            "liq_price": liq, **sl_set,
             "events": (t.get("events", []) +
                        [f"MARGIN {'+' if amount > 0 else ''}{round(amount, 4)} USDT{live_note}: "
-                        f"Hebel {lev_now}x -> {new_lev}x, Liq {liq}"])[-20:]}})
-        return {"margin": round(new_margin, 4), "leverage": new_lev, "liq_price": liq}
+                        f"Hebel {lev_now}x -> {new_lev}x, Liq {liq}"] + sl_note)[-20:]}})
+        return {"margin": round(new_margin, 4), "leverage": new_lev, "liq_price": liq,
+                **({"sl": needed_sl} if needed_sl is not None else {})}
 
     async def adjust_leverage(self, trade_id: str, leverage: float) -> Optional[Dict]:
         """Hebel im laufenden Trade ändern – Positionsgröße bleibt erhalten,
@@ -2980,6 +3070,17 @@ class AutoTradeManager:
         if extra > 0 and not await self._free_capital_ok(t, extra):
             return {"error": "Zu wenig freies Kapital für den niedrigeren Hebel "
                              f"(zusätzlich {round(extra, 2)} USDT Margin nötig)"}
+        # SL/Liq-Schutz: bei Hebel-ERHÖHUNG rückt die Liq Richtung Kurs – der
+        # SL wird ggf. automatisch mit Abstand hinter die neue Liq gezogen.
+        needed_sl = None
+        if new_lev > lev_now:
+            mark = float(await self._current_mark(t["symbol"]) or t["entry"])
+            needed_sl, _liq, ok = sl_liq_guard(
+                t["side"], float(t["entry"]), new_lev, mark, t.get("sl"))
+            if not ok:
+                return {"error": f"Abgelehnt: der SL müsste auf {needed_sl} hinter "
+                                 f"die neue Liquidation gezogen werden und läge "
+                                 f"damit zu nah am aktuellen Kurs ({mark})"}
         if t["mode"] == "live" and self.client.configured():
             try:
                 res = await self.client.set_leverage(t["symbol"], int(round(new_lev)))
@@ -2988,11 +3089,20 @@ class AutoTradeManager:
             except Exception as e:
                 return {"error": f"Hebeländerung fehlgeschlagen: {str(e)[:160]}"}
         liq = self.liq_price_for(t["side"], float(t["entry"]), new_lev)
+        sl_set = {}
+        sl_note = []
+        if needed_sl is not None:
+            sl_set["sl"] = needed_sl
+            sl_note = [f"SL automatisch hinter die neue Liq gezogen -> {needed_sl}"]
+            if t["mode"] == "live" and self.client.configured():
+                await self._live_move_sl(t, needed_sl, qty_rem)
         await self.db.auto_trades.update_one({"id": trade_id}, {"$set": {
             "leverage": round(new_lev, 2), "margin_used": round(notional / new_lev, 4),
-            "liq_price": liq,
+            "liq_price": liq, **sl_set,
             "events": (t.get("events", []) +
                        [f"HEBEL {lev_now}x -> {round(new_lev, 2)}x "
-                        f"(Margin {round(notional / new_lev, 2)} USDT, Liq {liq})"])[-20:]}})
+                        f"(Margin {round(notional / new_lev, 2)} USDT, Liq {liq})"]
+                       + sl_note)[-20:]}})
         return {"leverage": round(new_lev, 2), "margin": round(notional / new_lev, 4),
-                "liq_price": liq}
+                "liq_price": liq,
+                **({"sl": needed_sl} if needed_sl is not None else {})}

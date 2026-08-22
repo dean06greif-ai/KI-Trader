@@ -64,6 +64,8 @@ AI_TUNABLE_COIN_KEYS: Dict[str, Dict] = {
     "be_trigger_profit_pct": {"type": "number", "min": 5, "max": 90, "desc": "BE-Trigger (Profit %)"},
     "profit_secure_enabled": {"type": "bool", "desc": "Profit-Secure an/aus"},
     "profit_secure_trigger_pct": {"type": "number", "min": 10, "max": 90, "desc": "Profit-Secure Trigger %"},
+    "profit_secure_margin_reduce_pct": {"type": "number", "min": 10, "max": 100,
+                                        "desc": "Profit-Secure: Anteil der freisetzbaren Marge (%)"},
     "profit_lock_pct": {"type": "number", "min": 10, "max": 90, "desc": "Gesicherter Profit-Anteil %"},
 }
 
