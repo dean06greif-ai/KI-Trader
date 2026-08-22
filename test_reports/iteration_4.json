@@ -1,0 +1,47 @@
+{
+  "summary": "Alle 9 Punkte des Review-Requests grün. Backend startet fehlerfrei (GET / -> 200 {'app':'Crypto Scalping Scanner','status':'running'}, HEAD / -> 200, GET /api/health -> 200 {'status':'alive'}). Marker-Aufteilung sauber: -m unit sammelt 798, -m live sammelt 1003 von 1801 (disjunkt, konsistent zu Erwartung ~798/~1003). Komplette Unit-Suite läuft grün (798 passed, 1 skipped in 17.59s). Neue Regressions-Tests (test_funding_fee_guard.py + test_entry_order_registry.py) 20/20 passed in 0.51s. fee_guard_check mit funding_pct=0.5 blockt enge SL-Distanz (0.15% < Minimum 2.48%) und Reason enthält 'Funding'; fee_guard_min_sl_pct erhöht sich korrekt von 0.24% (funding=0) auf 1.24% (funding=0.5). Legacy AutoTradeModal.js sauber gelöscht; grep in frontend/src zeigt nur StrategyAutoTradeModal + import './AutoTradeModal.css'. Frontend lädt: alle 3 Tabs (Scalping/PBD Model/KI Trader) sichtbar und klickbar, Chart rendert Kerzen, Admin-Login (Admin / Dean06Greif!/Admin) funktioniert (Modal öffnet + schließt nach Submit), 0 Pageerrors, kein Import-Fehler.",
+  "feature_verdicts": [
+    "GET / -> 200 {'app':'Crypto Scalping Scanner','status':'running'} - pass - via localhost:8001 (ingress liefert Frontend-HTML wenn / ohne /api, wie erwartet). Backend selbst antwortet korrekt.",
+    "HEAD / -> 200 - pass - HEAD via localhost:8001 gibt 200 OK (nicht 405). routers/general.py Zeile 19 api_route GET+HEAD verifiziert.",
+    "GET /api/health -> 200 {'status':'alive'} - pass - sowohl über public URL als auch localhost.",
+    "Unit-Testsuite - pass - pytest -m unit -q => 798 passed, 1 skipped, 3 warnings in 17.59s. Junit: /app/test_reports/pytest/iter4_unit.xml.",
+    "Neue Regressionstests - pass - pytest tests/test_funding_fee_guard.py tests/test_entry_order_registry.py -o addopts='' -q => 20 passed in 0.51s. Junit: /app/test_reports/pytest/iter4_new.xml.",
+    "Marker-Aufteilung - pass - -m unit --collect-only => 798/1801, -m live --collect-only => 1003/1801; disjunkt, Summe = 1801.",
+    "fee_guard_check mit funding_pct>0 - pass - fee_guard_check(ai_cfg={fee_percent:0.06, fee_safety_mult:2.0}, entry=100, sl=99.85, funding_pct=0.5) => (False, 'Fee-Wächter: SL-Distanz 0.150% < Minimum 2.48% (4× (Roundtrip-Fees 0.12% + erwartete Funding-Kosten 0.500%))...'). Reason enthält 'Funding' ✓. min_sl_pct steigt von 0.24 auf 1.24 bei funding=0.5.",
+    "Frontend Dashboard - pass - Scalping/PBD Model/KI Trader Tabs alle sichtbar & klickbar, Coin-Liste (BTC/ETH/BNB/SOL/XRP/ADA/DOGE/AVAX/DOT/POL), Chart mit Kerzen und EMA 9/50/200 rendert, Analyse-Panel rechts (Signale/Long/Short/Trades) sichtbar, 0 Pageerrors, kein Import-Fehler zur gelöschten AutoTradeModal-Komponente.",
+    "Admin-Login + Basis-Navigation - pass - admin-lock-button öffnet admin-login-modal; Login mit Admin/Dean06Greif!/Admin schließt Modal; Tab-Switch Scalping -> PBD Model -> KI Trader ohne JS-Crash. KI-Trader-Panel zeigt 'KI-Analyse (KI Trader ist ausgeschaltet)' + 'KI-Richtung (Keine Richtung – KI wartet auf Setup)' – korrekt für Preview ohne AI-Key.",
+    "grep AutoTradeModal - pass - frontend/src Referenzen: App.js (StrategyAutoTradeModal Import + Mount), StrategyAutoTradeModal.js (import './AutoTradeModal.css'), StrategyAutoTradeModal.css (Kommentar zur CSS-Weiterverwendung). Keine Referenz auf gelöschte AutoTradeModal.js."
+  ],
+  "skills_loaded": [],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Initial data fetch on cold start", "issue": "Beim ersten Rendern feuern ~7 Fetch-Aufrufe (fetchSession, fetchNotif, Coin-Details) und geben 'TypeError: Failed to fetch' in der Console – Bundle-Init timing artefakt, App rendert vollständig danach (Chart+Coin-Daten sichtbar). Kein Blocker, kein PageError.", "affected_selectors": []}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/iter4_unit.xml",
+    "/app/test_reports/pytest/iter4_new.xml",
+    "/app/backend/tests/test_funding_fee_guard.py",
+    "/app/backend/tests/test_entry_order_registry.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/general.py:19 nutzt @router.api_route('/', methods=['GET','HEAD']) – sauberes 200 auf HEAD statt vorher 405.",
+    "backend/services/bitunix_trade.py fee_guard_min_sl_pct addiert funding_pct als adverse Component vor der Multiplikation mit fee_safety_mult (4x default) – erzeugt die vom Guard geforderte Mindest-SL-Distanz proportional zu Fees+Funding. Reason-String erwähnt 'erwartete Funding-Kosten' explizit, gute Usability.",
+    "backend/services/funding_fees.py + fee_guard_check-Integration entkoppeln Funding-Rate-Quelle (adverse_funding_pct + check_open_trades) sauber vom Trade-Guard; Import-Check der neuen Registry (entry_order_registry.py) lauffähig.",
+    "backend/tests/conftest.py pytest_collection_modifyitems auto-Markierung führt zu exakt disjunkter unit/live Split (798+1003=1801, keine Überschneidung) – Erwartung des Requests genau getroffen.",
+    "frontend/src – Legacy-Datei AutoTradeModal.js entfernt, .css bleibt für StrategyAutoTradeModal (Klassen .at-* referenziert in StrategyAutoTradeModal.css:2-3 kommentiert). Sauberer Refactor.",
+    "Cosmetic (kein Bug): 7 'Failed to fetch' Errors beim Cold-Start (fetchSession, fetchNotif und weitere) tauchen in Console als error auf, sind aber transient (Chart + Coin-Daten laden danach). Falls störend, könnte man initial-fetches serialisieren oder Retry ohne Console-Error implementieren."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (798/799 unit + 20/20 neue Regression + alle Endpoint-Checks)", "frontend": "100% (Dashboard rendert, Login+Nav ohne PageError)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md) – nur für Basis-Nav-Test benötigt.",
+  "seed_data_creation": "Keine. Nur lesende UI-Interaktion (Login + Tab-Switch). Keine Order, kein Live-Marker-Test, kein Watchdog-Trigger. .env unverändert (keine Bitunix/Telegram/AI-Keys eingetragen wie im Request gefordert).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend läuft via supervisor auf 8001. Öffentliche URL: https://trader-maintenance-1.preview.emergentagent.com (ingress mappt /api/* -> backend, / -> frontend). Für Backend-Root-Test direkt localhost:8001/ verwenden (GET+HEAD => 200 JSON). Marker-Split: -m unit (798) läuft in ~18s ohne Netzwerk. Live-Marker (1003) NICHT ausführen. Für Einzeltests der neuen Regression: pytest tests/test_funding_fee_guard.py tests/test_entry_order_registry.py -o addopts='' -q. fee_guard_check-Signatur: (ai_cfg, cfg, entry, sl, atr=0.0, tp=0.0, funding_pct=0.0). Preview ist absichtlich ohne Bitunix/Telegram/AI-Keys – alle Live-Flows nur via Unit-Fakes prüfbar.",
+  "rca of the issue": "N/A – kein Bug gefunden. Alle 5 im Request genannten Änderungen (Legacy-Modal-Entfernung, Unit/Live-Marker-Split, Funding-Fee-Guard, Entry-Order-Registry, HEAD /) sind korrekt implementiert und ende-zu-ende verifiziert."
+}
