@@ -126,6 +126,12 @@ DEFAULT_AI_CONFIG = {
     "collection_cooldown_min": 30,
     "collection_max_same_direction": 5,
     "collection_max_per_coin": 2,
+    # Live-Gate-Bypass: hochkonfidente Setups dürfen begrenzt live gehen, auch
+    # wenn das Setup noch nicht 'live-reif' ist (paar Live-Trades pro Tag,
+    # statt alles in die Paper-Datensammlung umzuleiten).
+    "live_gate_bypass_enabled": True,
+    "live_gate_bypass_margin": 5,    # Konfidenz-Aufschlag über min_confidence
+    "live_gate_bypass_per_day": 2,   # max. Bypass-Live-Trades pro Tag
     # Setup-Reife-Gate: LIVE nur für Setups mit genug echten Daten (Playbook-
     # Urteil 'bewährt'/'neutral'). Neue/unreife Setups laufen auch bei hoher
     # Konfidenz zuerst als Paper-Datensammlung weiter. Greift nur, wenn der
@@ -447,6 +453,21 @@ def _is_rate_limit_error(err: Exception) -> bool:
     return any(k in s for k in ("429", "resource_exhausted", "quota", "rate limit", "ratelimit"))
 
 
+def live_gate_bypass_ok(confidence, min_confidence, opened_today, cfg: Dict) -> bool:
+    """Setup-Gate-Bypass (rein, testbar): hochkonfidente Setups dürfen begrenzt
+    live gehen, auch wenn das Setup noch nicht 'live-reif' ist."""
+    if not cfg.get("live_gate_bypass_enabled", True):
+        return False
+    try:
+        margin = float(cfg.get("live_gate_bypass_margin", 5) or 0)
+        per_day = int(cfg.get("live_gate_bypass_per_day", 2) or 0)
+        conf = float(confidence or 0)
+    except (TypeError, ValueError):
+        return False
+    return (per_day > 0 and int(opened_today) < per_day
+            and conf >= float(min_confidence or 0) + margin)
+
+
 class AIEngine:
     def __init__(self):
         self.config = dict(DEFAULT_AI_CONFIG)
@@ -688,6 +709,12 @@ class AIEngine:
             self.config["collection_max_same_direction"] = max(0, min(10, int(updates["collection_max_same_direction"])))
         if "collection_max_per_coin" in updates:
             self.config["collection_max_per_coin"] = max(1, min(5, int(updates["collection_max_per_coin"])))
+        if "live_gate_bypass_enabled" in updates:
+            self.config["live_gate_bypass_enabled"] = bool(updates["live_gate_bypass_enabled"])
+        if "live_gate_bypass_margin" in updates:
+            self.config["live_gate_bypass_margin"] = max(0, min(30, int(updates["live_gate_bypass_margin"])))
+        if "live_gate_bypass_per_day" in updates:
+            self.config["live_gate_bypass_per_day"] = max(0, min(10, int(updates["live_gate_bypass_per_day"])))
         if "setup_live_gate" in updates:
             self.config["setup_live_gate"] = bool(updates["setup_live_gate"])
         if "max_trades_per_coin" in updates:
@@ -1430,6 +1457,31 @@ class AIEngine:
                 continue
             twr = round(t["wins"] / t["trades"] * 100) if t["trades"] else 0
             lines.append(f"- {sid}: Trades: {t['trades']}, PnL {float(t.get('pnl') or 0):+.2f} USDT, Winrate {twr}%")
+        # Gesamt-Verlauf des Kontos: die letzten Trades ALLER Quellen (auch
+        # manuell/extern und künftig hinzukommende Strategien) mit klarer
+        # Kennzeichnung, welche Trades von der KI selbst stammen.
+        try:
+            recent = await self.db.auto_trades.find(
+                {"status": "closed"},
+                {"_id": 0, "opened_at": 1, "symbol": 1, "side": 1, "mode": 1,
+                 "strategy_id": 1, "strategy_name": 1, "realized_pnl": 1,
+                 "data_collection": 1}
+            ).sort("opened_at", -1).limit(20).to_list(20)
+            if recent:
+                lines.append("Letzte 20 Trades des GESAMTEN Kontos "
+                             "(neueste zuerst; DU SELBST = deine eigenen):")
+                for r in recent:
+                    who = ("DU SELBST" if r.get("strategy_id") == "ai_trader"
+                           else (r.get("strategy_name")
+                                 or r.get("strategy_id") or "?"))
+                    tag = " [Datensammlung]" if r.get("data_collection") else ""
+                    lines.append(
+                        f"  {str(r.get('opened_at') or '')[:16]} "
+                        f"{r.get('symbol')} {r.get('side')} "
+                        f"{str(r.get('mode') or '').upper()}{tag} · {who} · "
+                        f"PnL {float(r.get('realized_pnl') or 0):+.2f} USDT")
+        except Exception as e:
+            logger.debug(f"Konto-Verlauf für KI-Kontext fehlgeschlagen: {e}")
         return "\n".join(lines) or "(noch keine Strategie-Daten)"
 
     async def _deep_report_block(self) -> str:
@@ -2253,6 +2305,7 @@ class AIEngine:
                 return False, blocked
         return True, ""
 
+
     async def _setup_live_gate(self, dec: Dict) -> Optional[str]:
         """Setup-Reife-Gate: None = live ok, sonst Begründung fürs Umleiten in
         die Datensammlung. Greift NUR, wenn der Trade wirklich live liefe –
@@ -2269,6 +2322,25 @@ class AIEngine:
             stats = await ai_playbook.cached_setup_stats(self.db)
             ok, why = ai_playbook.live_ready(stats.get(setup))
             if ok:
+                return None
+            # Bypass: hochkonfidente Setups dürfen begrenzt live gehen (paar
+            # Live-Trades/Tag), statt ALLES in die Datensammlung umzuleiten.
+            try:
+                day_start = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00")
+                opened_today = await self.db.auto_trades.count_documents(
+                    {"strategy_id": "ai_trader", "mode": "live",
+                     "data_collection": {"$ne": True},
+                     "opened_at": {"$gte": day_start}})
+            except Exception:
+                opened_today = 999
+            if live_gate_bypass_ok(dec.get("confidence"),
+                                   self.config.get("min_confidence", 65),
+                                   opened_today, self.config):
+                dec["live_gate_bypass"] = True
+                logger.info(f"{dec.get('symbol')}: Live-Gate-BYPASS – Setup "
+                            f"'{setup}' noch nicht live-reif, aber Konfidenz "
+                            f"{dec.get('confidence')} und erst {opened_today} "
+                            "KI-Live-Trades heute")
                 return None
             note = f"Setup '{setup}' noch nicht live-reif: {why}"
             logger.info(f"{dec.get('symbol')}: Live-Gate -> Datensammlung ({note})")

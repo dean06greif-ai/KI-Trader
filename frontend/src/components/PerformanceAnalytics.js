@@ -170,6 +170,25 @@ const TradeDetailCard = ({ t, stratName, getCoinName, onChanged, onShowChart }) 
 
           <div className="tdc-meta">
             <div className="tdc-meta-item" title="Zeitpunkt, zu dem der Trade eröffnet wurde."><span>Eröffnet</span><b className="mono">{fmtTime(t.opened_at)}</b></div>
+            {(() => {
+              const isManual = t.manual_trade || t.strategy_id === 'external';
+              const origin = isManual
+                ? 'Manuell (Bitunix)'
+                : t.adopted_from_limit
+                  ? `Website · ${t.strategy_name || t.strategy_id || 'Bot'} (Limit-Fill · Watchdog)`
+                  : `Website · ${t.strategy_name || t.strategy_id || 'Bot'}`;
+              return (
+                <div className="tdc-meta-item" title={isManual
+                  ? 'Diese Position wurde NICHT von der Website eröffnet (kein KIT-clientId-Tag an der Börse) – z.B. Bitunix-App, Copy-Trading oder externes Tool. Der Watchdog hat sie übernommen und überwacht sie.'
+                  : `Von der Website platziert${t.bitunix_client_id ? ` – Börsen-clientId: ${t.bitunix_client_id}` : ''}. Jede Bot-Order trägt eine KIT-…-clientId, damit die Herkunft an der Börse beweisbar ist.`}
+                  data-testid={`trade-origin-${t.id}`}>
+                  <span>Herkunft</span>
+                  <b className="mono" style={{ color: isManual ? '#f0b90b' : 'var(--long, #0ecb81)' }}>
+                    {origin}{!isManual && t.bitunix_client_id ? ` · ${t.bitunix_client_id}` : ''}
+                  </b>
+                </div>
+              );
+            })()}
             {closed && <div className="tdc-meta-item" title="Zeitpunkt, zu dem der Trade komplett geschlossen wurde."><span>Geschlossen</span><b className="mono">{fmtTime(t.closed_at)}</b></div>}
             {!closed && c.current_price != null && (
               <div className="tdc-meta-item" title="Letzter Live-Preis des Coins – Basis für den unrealisierten PnL." data-testid={`trade-current-price-${t.id}`}><span>Aktueller Kurs</span><b className="mono">{c.current_price}</b></div>

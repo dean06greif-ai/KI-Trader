@@ -790,6 +790,56 @@ def parse_closed_position(res, position_id) -> Optional[Dict]:
     return None
 
 
+def find_swing_levels(candles: List[Dict], lookback: int = 3) -> Dict[str, List[float]]:
+    """Bestätigte Swing-Hochs/-Tiefs (Key-Levels) aus Kerzen (rein, testbar)."""
+    highs: List[float] = []
+    lows: List[float] = []
+    n = len(candles)
+    for i in range(lookback, n - lookback):
+        try:
+            h = float(candles[i].get("high") or 0)
+            lo = float(candles[i].get("low") or 0)
+        except (TypeError, ValueError):
+            continue
+        window = range(i - lookback, i + lookback + 1)
+        if h > 0 and all(h >= float(candles[j].get("high") or 0)
+                         for j in window if j != i):
+            highs.append(h)
+        if lo > 0 and all(lo <= float(candles[j].get("low") or 1e18)
+                          for j in window if j != i):
+            lows.append(lo)
+    return {"highs": highs, "lows": lows}
+
+
+def key_level_trail_sl(candles: List[Dict], side: str, entry: float,
+                       cur_sl: float, price: float, risk: float,
+                       lookback: int = 3, buffer_pct: float = 0.15,
+                       min_r: float = 1.0) -> Optional[float]:
+    """Key-Level-Trailing: SL hinter das zuletzt DURCHBROCHENE Level ziehen.
+    LONG: höchstes bestätigtes Swing-Tief zwischen Entry und Kurs (Zone des
+    durchbrochenen Widerstands/Retests) -> SL knapp darunter.
+    SHORT: tiefstes Swing-Hoch zwischen Kurs und Entry -> SL knapp darüber.
+    Greift erst ab min_r × R Buchgewinn; None = kein besserer SL (rein, testbar)."""
+    if not candles or len(candles) < lookback * 2 + 3 or risk <= 0:
+        return None
+    in_profit = (price - entry) if side == "LONG" else (entry - price)
+    if in_profit < min_r * risk:
+        return None
+    lv = find_swing_levels(candles, lookback)
+    buf = max(buffer_pct, 0.01) / 100.0
+    if side == "LONG":
+        broken = [lo for lo in lv["lows"] if entry < lo < price]
+        if not broken:
+            return None
+        new_sl = round(max(broken) * (1 - buf), 8)
+        return new_sl if cur_sl < new_sl < price else None
+    broken = [h for h in lv["highs"] if price < h < entry]
+    if not broken:
+        return None
+    new_sl = round(min(broken) * (1 + buf), 8)
+    return new_sl if price < new_sl < cur_sl else None
+
+
 def make_client_id(strategy_id: Optional[str]) -> str:
     """Eigene clientId für jede Website-Entry-Order: macht die Herkunft an der
     Börse eindeutig nachweisbar (manuelle App-Orders tragen keine KIT-...-ID)."""
@@ -865,6 +915,7 @@ class AutoTradeManager:
         "max_leverage": 200.0,      # Ziel-Hebel beim Freisetzen (200 = Maximum)
         "margin_reduce_pct": 100.0,
         "sl_liq_buffer_pct": 0.3,   # SL bleibt sicher VOR der neuen Liq
+        "level_trail": True,        # Key-Level-Trailing (SL hinter durchbrochene Levels)
     }
 
     async def ai_protection_policy(self, force: bool = False) -> Dict:
@@ -1206,7 +1257,8 @@ class AutoTradeManager:
             res = await self.client.place_order(
                 symbol, side_order, qty, order_type="LIMIT", price=price,
                 tp_price=tpf, sl_price=sl, effect="POST_ONLY",
-                client_id=make_client_id((meta or {}).get("strategy_id")))
+                client_id=((meta or {}).get("client_id")
+                           or make_client_id((meta or {}).get("strategy_id"))))
         except Exception as e:
             # Antwort verloren: evtl. liegt die Limit-Order trotzdem im Buch.
             logger.error(f"{symbol}: Maker-Limit EXCEPTION: {e}")
@@ -1696,6 +1748,7 @@ class AutoTradeManager:
                     "ai_confidence": signal.get("ai_confidence"),
                     "signal_id": signal.get("id"),
                     "decision_id": signal.get("decision_id"),
+                    "client_id": make_client_id(strategy_id),
                 }
                 if maker_requested:
                     m = await self._maker_entry(
@@ -1736,7 +1789,7 @@ class AutoTradeManager:
                         symbol, side_order, qty,
                         order_type=cfg["order_type"],
                         tp_price=tpf, sl_price=sl,
-                        client_id=make_client_id(strategy_id))
+                        client_id=entry_meta["client_id"])
             except Exception as e:
                 # BUGFIX (ADA/DOT ohne SL): Ein Timeout/Netzfehler kann auftreten,
                 # NACHDEM Bitunix die Order bereits angenommen hat. Vorher wurde
@@ -1854,6 +1907,7 @@ class AutoTradeManager:
 
             trade_extra = {"bitunix_order_id": order_id, "bitunix_response": res,
                            "bitunix_position_id": position_id,
+                           "bitunix_client_id": entry_meta.get("client_id"),
                            "bitunix_tpsl_order_id": tpsl_order_id,
                            "tp1_exchange_placed": tp1_placed,
                            "sl_exchange_missing": sl_missing}
@@ -1961,17 +2015,19 @@ class AutoTradeManager:
         if (strategy_id == "ai_trader" and not collection
                 and not trade["manual_trade"]):
             pol = await self.ai_protection_policy()
-            if pol.get("enabled", True) and not trade["profit_secure_enabled"]:
-                trade.update({
-                    "profit_secure_enabled": True,
-                    "profit_secure_trigger_pct": max(5.0, float(pol["trigger_pct"])),
-                    "profit_lock_pct": float(pol["lock_pct"]),
-                    "profit_secure_release_margin": bool(pol["release_margin"]),
-                    "profit_secure_max_leverage": float(pol["max_leverage"]),
-                    "profit_secure_margin_reduce_pct": float(pol["margin_reduce_pct"]),
-                    "profit_secure_sl_liq_buffer_pct": float(pol["sl_liq_buffer_pct"]),
-                    "ai_protection_policy": True,
-                })
+            if pol.get("enabled", True):
+                trade["ai_protection_policy"] = True
+                trade["key_level_trail"] = bool(pol.get("level_trail", True))
+                if not trade["profit_secure_enabled"]:
+                    trade.update({
+                        "profit_secure_enabled": True,
+                        "profit_secure_trigger_pct": max(5.0, float(pol["trigger_pct"])),
+                        "profit_lock_pct": float(pol["lock_pct"]),
+                        "profit_secure_release_margin": bool(pol["release_margin"]),
+                        "profit_secure_max_leverage": float(pol["max_leverage"]),
+                        "profit_secure_margin_reduce_pct": float(pol["margin_reduce_pct"]),
+                        "profit_secure_sl_liq_buffer_pct": float(pol["sl_liq_buffer_pct"]),
+                    })
 
         if collection:
             trade["data_collection"] = True
@@ -2511,6 +2567,28 @@ class AutoTradeManager:
                 # wieder verschlechtert werden.
                 if improved and t.get("mode") == "live":
                     await self._live_move_sl(t, be_p, qty_rem)
+
+        # Key-Level-Trailing (KI-Gewinnschutz): SL hinter zuletzt durchbrochene
+        # Widerstände/Unterstützungen ziehen – nicht nur nach %-Gewinn.
+        if not closed and qty_rem > 0 and t.get("key_level_trail"):
+            candles = []
+            try:
+                from core import state
+                candles = ((getattr(state.scanner, "candle_buffer", {}) or {})
+                           .get(t["symbol"]) or [])[-180:]
+            except Exception as e:
+                logger.debug(f"{t['symbol']}: Key-Level-Kerzen fehlen: {e}")
+            risk_kl = float(t.get("risk")
+                            or abs(t["entry"] - t.get("initial_sl", t["sl"])) or 0)
+            new_kl_sl = key_level_trail_sl(
+                candles, side, t["entry"], updates.get("sl", t["sl"]),
+                price, risk_kl)
+            if new_kl_sl is not None:
+                updates["sl"] = new_kl_sl
+                events.append(f"KEY-LEVEL-TRAIL: SL -> {new_kl_sl} "
+                              "(hinter durchbrochenem Level)")
+                if t.get("mode") == "live":
+                    await self._live_move_sl(t, new_kl_sl, qty_rem)
 
         # Gewinnsicherung: SL in den Gewinn ziehen sobald Trigger erreicht
         if not closed and qty_rem > 0 and t.get("profit_secure_enabled") \
