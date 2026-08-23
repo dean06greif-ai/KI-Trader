@@ -5,7 +5,7 @@
 """
 from core.utils import _enrich_trade
 from routers.autotrade import _chart_interval
-from services.bitunix_trade import BitunixTradeClient, update_peak
+from services.bitunix_trade import BitunixTradeClient, update_peak, update_trough
 
 
 # ---------- update_peak (MFE) ----------
@@ -24,6 +24,18 @@ def test_update_peak_handles_missing_values():
     assert update_peak("LONG", None, None) is None
     assert update_peak("LONG", None, 100.0) == 100.0
     assert update_peak("SHORT", None, "abc", 100.0) == 100.0
+
+
+# ---------- update_trough (MAE) ----------
+
+def test_update_trough_long_takes_lowest():
+    assert update_trough("LONG", 97.0, 100.0, 98.0) == 97.0
+    assert update_trough("LONG", 97.0, 100.0, 95.0) == 95.0
+
+
+def test_update_trough_short_takes_highest():
+    assert update_trough("SHORT", 103.0, 100.0, 102.0) == 103.0
+    assert update_trough("SHORT", 103.0, 100.0, 106.0) == 106.0
 
 
 # ---------- _enrich_trade Peak-Felder ----------
@@ -68,6 +80,48 @@ def test_enrich_closed_with_stored_peak():
     c = t["computed"]
     assert c["peak_price"] == 112.5
     assert c["mfe_pct"] == 12.5
+
+
+def test_enrich_open_long_trough_uses_live_price():
+    t = _enrich_trade(_base_trade(trough_price=98.0), current_price=96.5)
+    c = t["computed"]
+    assert c["trough_price"] == 96.5
+    assert c["mae_pct"] == -3.5  # 3.5% Gegenlauf
+
+
+def test_enrich_short_trough_is_highest_adverse():
+    t = _enrich_trade(_base_trade(side="SHORT", status="closed",
+                                  exit_price=95.0, trough_price=102.0,
+                                  qty_remaining=0,
+                                  closed_at="2026-06-01T12:00:00+00:00"))
+    c = t["computed"]
+    assert c["trough_price"] == 102.0
+    assert c["mae_pct"] == -2.0
+
+
+def test_enrich_closed_without_stored_trough_is_none():
+    t = _enrich_trade(_base_trade(status="closed", exit_price=110.0,
+                                  qty_remaining=0,
+                                  closed_at="2026-06-01T12:00:00+00:00"))
+    assert t["computed"]["trough_price"] is None
+    assert t["computed"]["mae_pct"] is None
+
+
+def test_enrich_open_without_stored_trough_never_positive_mae():
+    """Regression (Iteration 11): Alt-Trade ohne gespeicherten trough im Gewinn
+    darf keinen positiven 'Gegenlauf' oberhalb des Entry melden."""
+    t = _enrich_trade(_base_trade(), current_price=106.0)
+    c = t["computed"]
+    assert c["trough_price"] == 100.0  # Entry ist der schlechteste bekannte Stand
+    assert c["mae_pct"] == 0.0
+    assert str(c["mae_pct"]) == "0.0"  # kein -0.0
+
+
+def test_enrich_open_without_stored_peak_never_negative_mfe():
+    t = _enrich_trade(_base_trade(), current_price=97.0)
+    c = t["computed"]
+    assert c["peak_price"] == 100.0
+    assert c["mfe_pct"] == 0.0
 
 
 # ---------- Voll-Close: Menge aufrunden (Watchdog-Fix) ----------

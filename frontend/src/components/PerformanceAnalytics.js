@@ -173,6 +173,8 @@ const TradeDetailCard = ({ t, stratName, getCoinName, onChanged, onShowChart }) 
                 ? [{ k: 'exit', label: 'Exit', value: t.exit_price, pct: c.exit_distance_pct, cls: 'lvl-exit' }] : []),
               ...(c.peak_price != null
                 ? [{ k: 'peak', label: t.side === 'LONG' ? 'Höchststand im Trade' : 'Tiefststand im Trade', value: c.peak_price, pct: c.peak_distance_pct, cls: 'lvl-peak' }] : []),
+              ...(c.trough_price != null
+                ? [{ k: 'trough', label: t.side === 'LONG' ? 'Tiefster Gegenlauf' : 'Höchster Gegenlauf', value: c.trough_price, pct: c.trough_distance_pct, cls: 'lvl-trough' }] : []),
               { k: 'sl', label: `SL${c.sl_moved ? ' (aktuell)' : ''}`, value: t.sl, pct: c.sl_distance_pct, cls: 'lvl-sl' },
               ...(c.sl_moved
                 ? [{ k: 'sl0', label: 'SL initial', value: t.initial_sl, pct: c.initial_sl_distance_pct, cls: 'lvl-sl-init' }] : []),
@@ -221,6 +223,14 @@ const TradeDetailCard = ({ t, stratName, getCoinName, onChanged, onShowChart }) 
               <b className="mono" data-testid={`trade-peak-${t.id}`}>
                 {c.peak_price != null
                   ? `${c.peak_price}${c.mfe_pct != null ? ` (${c.mfe_pct >= 0 ? '+' : ''}${c.mfe_pct}% max)` : ''}`
+                  : '—'}
+              </b>
+            </div>
+            <div className="tdc-meta-item" title={`Schlechtester Stand innerhalb des Trades (MAE): wie weit der Kurs maximal GEGEN die Trade-Richtung gelaufen ist. Zusammen mit dem Best-Stand zeigt das die Qualität des Entry-Timings. Ältere Trades ohne Aufzeichnung zeigen „—“.`}>
+              <span>{t.side === 'LONG' ? 'Tiefster Gegenlauf' : 'Höchster Gegenlauf'}</span>
+              <b className="mono" data-testid={`trade-trough-${t.id}`}>
+                {c.trough_price != null
+                  ? `${c.trough_price}${c.mae_pct != null ? ` (${c.mae_pct >= 0 ? '+' : ''}${c.mae_pct}%)` : ''}`
                   : '—'}
               </b>
             </div>

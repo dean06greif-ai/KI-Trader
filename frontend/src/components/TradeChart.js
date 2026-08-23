@@ -45,7 +45,7 @@ const TradeChart = ({ trade }) => {
     const t = d.trade || {};
     // Trade-Level in die Auto-Skalierung einbeziehen, sonst sind SL/TP-Linien
     // außerhalb der Kerzen-Range unsichtbar (Testing-Agent-Finding)
-    const levels = [t.entry, t.sl, t.initial_sl, t.tp1, t.tpf, t.exit_price, t.peak_price]
+    const levels = [t.entry, t.sl, t.initial_sl, t.tp1, t.tpf, t.exit_price, t.peak_price, t.trough_price]
       .map(Number).filter(v => v > 0);
     const series = chart.addSeries(CandlestickSeries, {
       upColor: '#0ecb81', downColor: '#f6465d', borderUpColor: '#0ecb81',
@@ -74,6 +74,7 @@ const TradeChart = ({ trade }) => {
     if (t.initial_sl && t.initial_sl !== t.sl) addLine(t.initial_sl, '#8A5560', 'SL initial', LineStyle.Dotted);
     addLine(t.exit_price, '#FFB800', 'Exit', LineStyle.Solid);
     if (t.peak_price) addLine(t.peak_price, '#E4E6EE', t.side === 'LONG' ? 'Hoch im Trade' : 'Tief im Trade', LineStyle.Dotted);
+    if (t.trough_price) addLine(t.trough_price, '#C97A8A', t.side === 'LONG' ? 'Tief im Trade' : 'Hoch im Trade', LineStyle.Dotted);
     chart.timeScale().fitContent();
     const ro = new ResizeObserver(() => {
       if (boxRef.current) chart.applyOptions({ width: boxRef.current.clientWidth });

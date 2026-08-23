@@ -164,13 +164,32 @@ def _enrich_trade(t: Dict, current_price: float = None, exchange: Dict = None) -
     except (TypeError, ValueError):
         peak = None
     if is_open and cur:
-        cand = [v for v in (peak, cur) if v]
+        cand = [v for v in (peak, cur, entry) if v]
         if cand:
             peak = max(cand) if side == "LONG" else min(cand)
     peak_pct = pct_from_entry(peak) if peak else None
     mfe_pct = None
     if peak_pct is not None:
-        mfe_pct = peak_pct if side == "LONG" else round(-peak_pct, 3)
+        mfe_pct = round((peak_pct if side == "LONG" else -peak_pct) + 0.0, 3)
+
+    # ---- Schlechtester Stand im Trade (MAE): LONG = Tief, SHORT = Hoch ----
+    # mae_pct ist wie mfe_pct in Trade-Richtung signiert (negativ = Gegenlauf).
+    trough = None
+    try:
+        trough = float(t.get("trough_price")) if t.get("trough_price") else None
+    except (TypeError, ValueError):
+        trough = None
+    if is_open and cur:
+        # Entry immer als Kandidat (wie der Tick-Tracker): sonst würde bei
+        # Trades ohne gespeicherten Wert der aktuelle (Gewinn-)Kurs als
+        # "schlechtester Stand" gemeldet und MAE positiv (Testing-Finding).
+        cand_t = [v for v in (trough, cur, entry) if v]
+        if cand_t:
+            trough = min(cand_t) if side == "LONG" else max(cand_t)
+    trough_pct = pct_from_entry(trough) if trough else None
+    mae_pct = None
+    if trough_pct is not None:
+        mae_pct = round((trough_pct if side == "LONG" else -trough_pct) + 0.0, 3)
 
     t["computed"] = {
         "duration_seconds": dur,
@@ -192,6 +211,9 @@ def _enrich_trade(t: Dict, current_price: float = None, exchange: Dict = None) -
         "peak_price": round(peak, 8) if peak else None,
         "peak_distance_pct": peak_pct,
         "mfe_pct": mfe_pct,
+        "trough_price": round(trough, 8) if trough else None,
+        "trough_distance_pct": trough_pct,
+        "mae_pct": mae_pct,
         "current_price": round(cur, 6) if cur else None,
         "price_distance_pct": pct_from_entry(cur) if cur else None,
         "unrealized_pnl": unrealized_pnl,

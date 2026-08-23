@@ -305,6 +305,7 @@ async def get_trade_chart(trade_id: str):
             "sl": t.get("sl"), "initial_sl": t.get("initial_sl"),
             "tp1": t.get("tp1"), "tpf": t.get("tpf"),
             "exit_price": t.get("exit_price"), "peak_price": t.get("peak_price"),
+            "trough_price": t.get("trough_price"),
             "opened_ts": int(opened.timestamp()),
             "closed_ts": int(closed_dt.timestamp()) if t.get("closed_at") else None,
             "status": t.get("status"),

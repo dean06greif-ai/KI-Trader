@@ -657,6 +657,9 @@
 /* Bester Stand im Trade (MFE) in der Preis-Leiter */
 .lvl-peak .lvl-label, .lvl-peak .lvl-value { color: #E4E6EE; font-style: italic; }
 
+/* Schlechtester Stand / Gegenlauf (MAE) in der Preis-Leiter */
+.lvl-trough .lvl-label, .lvl-trough .lvl-value { color: #C97A8A; font-style: italic; }
+
 /* Strategie-Filter in den Trade-Listen */
 .trade-filter-strat { flex-shrink: 0; margin-left: 6px; max-width: 170px; background: #14161D; border: 1px solid #23262F; border-radius: 8px; padding: 3px 8px; color: #A1A4B0; font-size: 10px; font-weight: 700; cursor: pointer; }
 .trade-filter-strat:hover { border-color: #33374A; }

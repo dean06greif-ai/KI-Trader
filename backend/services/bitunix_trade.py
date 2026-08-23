@@ -302,6 +302,13 @@ def update_peak(side: str, prev_peak, *prices):
     return max(vals) if str(side).upper() == "LONG" else min(vals)
 
 
+def update_trough(side: str, prev_trough, *prices):
+    """Schlechtester Stand im Trade (MAE): LONG = tiefster, SHORT = höchster
+    Kurs seit Entry – Spiegelbild von update_peak."""
+    return update_peak("SHORT" if str(side).upper() == "LONG" else "LONG",
+                       prev_trough, *prices)
+
+
 class BitunixTradeClient:
     """Live Bitunix USDT-M futures client (signed private endpoints).
 
@@ -2517,6 +2524,11 @@ class AutoTradeManager:
         if new_peak is not None and new_peak != t.get("peak_price"):
             updates["peak_price"] = round(new_peak, 8)
             t["peak_price"] = updates["peak_price"]
+        # MAE-Tracking: schlechtesten Stand (Gegenlauf) ebenfalls festhalten
+        new_trough = update_trough(side, t.get("trough_price"), t.get("entry"), price)
+        if new_trough is not None and new_trough != t.get("trough_price"):
+            updates["trough_price"] = round(new_trough, 8)
+            t["trough_price"] = updates["trough_price"]
 
         # ---- Liquidations-Check (Isolated Margin): hat Vorrang vor allem ----
         liq = t.get("liq_price")
@@ -2738,6 +2750,9 @@ class AutoTradeManager:
             peak_x = update_peak(side, t.get("peak_price"), exit_price)
             if peak_x is not None and peak_x != t.get("peak_price"):
                 updates["peak_price"] = round(peak_x, 8)
+            trough_x = update_trough(side, t.get("trough_price"), exit_price)
+            if trough_x is not None and trough_x != t.get("trough_price"):
+                updates["trough_price"] = round(trough_x, 8)
 
         updates["fees_paid"] = round(fees_paid, 6)
         updates["realized_pnl"] = round(realized, 6)
@@ -3184,9 +3199,11 @@ class AutoTradeManager:
         realized = round(t.get("realized_pnl", 0.0) + pnl - fee, 6)
         result = "win" if realized > 0 else ("breakeven" if realized == 0 else "loss")
         peak_mc = update_peak(side, t.get("peak_price"), t.get("entry"), price)
+        trough_mc = update_trough(side, t.get("trough_price"), t.get("entry"), price)
         await self.db.auto_trades.update_one({"id": trade_id}, {"$set": {
             "status": "closed", "exit_price": price, "result": result,
             **({"peak_price": round(peak_mc, 8)} if peak_mc is not None else {}),
+            **({"trough_price": round(trough_mc, 8)} if trough_mc is not None else {}),
             "realized_pnl": realized, "qty_remaining": 0,
             "fees_paid": round(float(t.get("fees_paid", 0.0)) + fee, 6),
             "live_close_failed": False,

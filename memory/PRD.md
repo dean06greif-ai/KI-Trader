@@ -28,6 +28,11 @@ Bestehende, produktiv laufende Daytrading-Website (GitHub: dean06greif-ai/KI-Tra
 5. **Watchdog-Fix (unvollständige Closes, XRP)**: Root Cause: `_fmt_qty` rundete beim Voll-Close AB auf die Step-Size → bis zu 1 Step blieb auf Bitunix offen. Fix: `flash_close(full=True)` rundet AUF (`_fmt_qty(round_up=True)`), reduceOnly schützt vor Überschließen; `close_live_position` reicht `full` durch; Watchdog nutzt an 3 Stellen `full=True`.
 - Tests: `backend/tests/test_trade_improvements.py` (11), `test_iter10_trade_improvements_api.py` (10, vom Testing-Agent).
 
+### 23.06.2026 – MAE-Tracking + Analyse Live-vs.-Paper ✅ (Testing-Agent verifiziert)
+- **MAE ("Tiefster/Höchster Gegenlauf")**: `update_trough()` (Spiegelbild von update_peak) in bitunix_trade.py, Tracking im Tick von `_manage_trade` + Exit-Fill + manual_close. `_enrich_trade`: `trough_price/trough_distance_pct/mae_pct`. UI: Meta-Feld `trade-trough-{id}`, `lvl-trough`-Zeile (#C97A8A) in der Preis-Leiter, gepunktete Trough-Linie im Trade-Chart. Chart-Endpoint liefert `trough_price`.
+- **Bugfix nach Testing (HIGH)**: `_enrich_trade` nahm bei offenen Trades ohne gespeicherten Wert nur den aktuellen Kurs als Kandidat → positives MAE / "Gegenlauf über Entry". Fix: Entry immer als Kandidat (wie Tick-Tracker), symmetrisch auch beim Peak; `-0.0`-Normalisierung. Tests: 18 Unit + 9 API (test_iter11_mae_api.py) grün.
+- **Analyse/Plan**: `UMSETZUNGSPLAN_LIVE_QUALITAET.md` aktualisiert – Ist-Stand: Baustein C (Key-Level-Limits) + D (ehrliches Paper) + E (MFE/MAE) fertig; OFFEN: Baustein A (ATR-Market-Block, Schwelle 0,10% default konfigurierbar – vom User bestätigt) und Baustein B (Slippage-/Fill-Qualitäts-Messung inkl. slippage-stats-Endpoint + MFE/MAE-Auswertung je order_kind). Empfohlene Reihenfolge: A → B → 2-4 Wochen Messphase → erst dann über Option 3 (1m-Hybrid) entscheiden.
+
 ## Backlog
 - P1: Trade-Chart-Button für Symbole ohne Bitunix-Kline (Forex, z.B. GBPUSD) ausblenden oder Grund im Response melden (aktuell: sauberer Hinweistext "Keine Kerzendaten")
 - P1: Kennzeichnung "Not-Fallback außerhalb des Teams" in KI-Warnungen (UI-Hinweis)
