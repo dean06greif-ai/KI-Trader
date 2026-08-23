@@ -285,6 +285,23 @@ def _precision_to_step(prec) -> float:
     return f
 
 
+def update_peak(side: str, prev_peak, *prices):
+    """Bester Stand im Trade (MFE): LONG = höchster, SHORT = niedrigster Kurs.
+    Nimmt den bisherigen Peak plus beliebige neue Preise und liefert den neuen
+    Bestwert (None, wenn gar kein Preis vorliegt)."""
+    vals = []
+    for p in (prev_peak,) + prices:
+        try:
+            f = float(p)
+            if f > 0:
+                vals.append(f)
+        except (TypeError, ValueError):
+            continue
+    if not vals:
+        return None
+    return max(vals) if str(side).upper() == "LONG" else min(vals)
+
+
 class BitunixTradeClient:
     """Live Bitunix USDT-M futures client (signed private endpoints).
 
@@ -417,7 +434,12 @@ class BitunixTradeClient:
                     return {"code": r.status, "msg": txt[:200]}
 
     # --------------------- public API ------------------------------------
-    def _fmt_qty(self, bitunix_symbol: str, qty: float) -> str:
+    def _fmt_qty(self, bitunix_symbol: str, qty: float,
+                 round_up: bool = False) -> str:
+        """`round_up=True` (Voll-Close): Menge auf den nächsten Step AUFrunden.
+        Das ROUND_DOWN ließ beim kompletten Schließen bis zu einen Qty-Step an
+        der Börse zurück (Bug-Report XRP: Watchdog musste den Rest aufräumen).
+        Mit reduceOnly kappt Bitunix die Order sicher auf die Positionsgröße."""
         m = self._pairs_meta.get(bitunix_symbol) or {}
         step = m.get("qty_step") or 0.0
         min_qty = m.get("min_qty") or 0.0
@@ -426,7 +448,7 @@ class BitunixTradeClient:
         if min_qty > 0 and qty < min_qty:
             qty = min_qty
         if step > 0:
-            rounded = _round_step(qty, step, ROUND_DOWN)
+            rounded = _round_step(qty, step, ROUND_UP if round_up else ROUND_DOWN)
             # After rounding down we might dip below min_qty again; round up
             # to the nearest step in that case.
             try:
@@ -482,10 +504,13 @@ class BitunixTradeClient:
             body["reduceOnly"] = True
         return await self._post("/api/v1/futures/trade/place_order", body)
 
-    async def flash_close(self, symbol, position_id, side, qty):
+    async def flash_close(self, symbol, position_id, side, qty, full: bool = False):
+        """`full=True` = die Position soll KOMPLETT zu sein: Menge wird auf den
+        nächsten Step AUFgerundet (reduceOnly verhindert Überschließen), damit
+        kein Rundungs-Rest an der Börse zurückbleibt (Watchdog-Bug XRP)."""
         b_symbol = self.to_bitunix_symbol(symbol)
         order_side = "SELL" if side == "LONG" else "BUY"
-        body = {"symbol": b_symbol, "qty": self._fmt_qty(b_symbol, qty),
+        body = {"symbol": b_symbol, "qty": self._fmt_qty(b_symbol, qty, round_up=full),
                 "side": order_side, "tradeSide": "CLOSE", "orderType": "MARKET",
                 "positionId": position_id, "reduceOnly": True}
         return await self._post("/api/v1/futures/trade/place_order", body)
@@ -2485,6 +2510,14 @@ class AutoTradeManager:
         hit_tpf = (price >= t["tpf"]) if side == "LONG" else (price <= t["tpf"])
         hit_sl = (price <= t["sl"]) if side == "LONG" else (price >= t["sl"])
 
+        # ---- MFE-Tracking: besten Stand im Trade festhalten (LONG: Hoch,
+        # SHORT: Tief). Läuft im ohnehin stattfindenden Tick-Update mit –
+        # kein zusätzlicher DB-Write, kein zusätzlicher Speicher pro Trade.
+        new_peak = update_peak(side, t.get("peak_price"), t.get("entry"), price)
+        if new_peak is not None and new_peak != t.get("peak_price"):
+            updates["peak_price"] = round(new_peak, 8)
+            t["peak_price"] = updates["peak_price"]
+
         # ---- Liquidations-Check (Isolated Margin): hat Vorrang vor allem ----
         liq = t.get("liq_price")
         if liq and qty_rem > 0:
@@ -2701,6 +2734,10 @@ class AutoTradeManager:
                 result = "loss"
             else:
                 result = "breakeven"
+            # Exit-Fill (z.B. voller TP) fließt in den Best-Stand mit ein
+            peak_x = update_peak(side, t.get("peak_price"), exit_price)
+            if peak_x is not None and peak_x != t.get("peak_price"):
+                updates["peak_price"] = round(peak_x, 8)
 
         updates["fees_paid"] = round(fees_paid, 6)
         updates["realized_pnl"] = round(realized, 6)
@@ -2919,7 +2956,8 @@ class AutoTradeManager:
                                     f"Börsen-Menge {live_qty} erweitert (Rest-Schutz)")
                         qty = live_qty
             try:
-                res = await self.client.flash_close(t["symbol"], pid, t["side"], qty)
+                res = await self.client.flash_close(t["symbol"], pid, t["side"], qty,
+                                                    full=full)
             except Exception as e:
                 last = f"Exception: {str(e)[:140]}"
                 await asyncio.sleep(1.0)
@@ -3145,8 +3183,10 @@ class AutoTradeManager:
         pnl = (price - t["entry"]) * qty_rem if side == "LONG" else (t["entry"] - price) * qty_rem
         realized = round(t.get("realized_pnl", 0.0) + pnl - fee, 6)
         result = "win" if realized > 0 else ("breakeven" if realized == 0 else "loss")
+        peak_mc = update_peak(side, t.get("peak_price"), t.get("entry"), price)
         await self.db.auto_trades.update_one({"id": trade_id}, {"$set": {
             "status": "closed", "exit_price": price, "result": result,
+            **({"peak_price": round(peak_mc, 8)} if peak_mc is not None else {}),
             "realized_pnl": realized, "qty_remaining": 0,
             "fees_paid": round(float(t.get("fees_paid", 0.0)) + fee, 6),
             "live_close_failed": False,

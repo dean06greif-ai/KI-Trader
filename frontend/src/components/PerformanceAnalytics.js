@@ -6,6 +6,7 @@ import NewTradeModal from './NewTradeModal';
 import TradeAIDetails, { SETUP_EXPLAIN } from './TradeAIDetails';
 import PendingEntryOrders from './PendingEntryOrders';
 import KeyLevelLimitOrders from './KeyLevelLimitOrders';
+import TradeChart from './TradeChart';
 import './PerformanceAnalytics.css';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -86,6 +87,7 @@ const OpenTradeActions = ({ t, onChanged }) => {
 
 const TradeDetailCard = ({ t, stratName, getCoinName, onChanged, onShowChart }) => {
   const [open, setOpen] = useState(false);
+  const [showTradeChart, setShowTradeChart] = useState(false);
   const c = t.computed || {};
   const isLive = t.mode === 'live';
   const closed = t.status === 'closed';
@@ -140,13 +142,23 @@ const TradeDetailCard = ({ t, stratName, getCoinName, onChanged, onShowChart }) 
 
       {open && (
         <div className="tdc-body" data-testid={`trade-card-body-${t.id}`}>
-          {onShowChart && (
-            <button className="tdc-chart-btn" onClick={() => onShowChart(t.symbol)}
-              title={`Live-Chart von ${getCoinName(t.symbol)} im Hauptfenster öffnen, um den Trade genauer anzusehen`}
-              data-testid={`trade-open-chart-${t.id}`}>
-              <ChartBar size={13} weight="bold" /> Live-Chart {getCoinName(t.symbol)} öffnen
-            </button>
-          )}
+          <div className="tdc-chart-row">
+            {onShowChart && (
+              <button className="tdc-chart-btn" onClick={() => onShowChart(t.symbol)}
+                title={`Live-Chart von ${getCoinName(t.symbol)} im Hauptfenster öffnen, um den Trade genauer anzusehen`}
+                data-testid={`trade-open-chart-${t.id}`}>
+                <ChartBar size={13} weight="bold" /> Live-Chart {getCoinName(t.symbol)} öffnen
+              </button>
+            )}
+            {closed && (
+              <button className="tdc-chart-btn" onClick={() => setShowTradeChart(v => !v)}
+                title="Schlichter Chart des Trade-Zeitraums mit Entry/SL/TP/Exit – Kerzen werden erst beim Öffnen von Bitunix geladen (keine Dauerlast, kein Speicher)"
+                data-testid={`trade-history-chart-btn-${t.id}`}>
+                <ChartBar size={13} weight="bold" /> {showTradeChart ? 'Trade-Chart ausblenden' : 'Trade-Chart'}
+              </button>
+            )}
+          </div>
+          {closed && showTradeChart && <TradeChart trade={t} />}
           <div className="tdc-ladder">
             {/* Preis-Leiter dynamisch nach Kurs sortiert: der aktuelle Kurs
                 (bzw. Exit) rutscht an die Stelle, wo er wirklich steht –
@@ -159,6 +171,8 @@ const TradeDetailCard = ({ t, stratName, getCoinName, onChanged, onShowChart }) 
                 ? [{ k: 'cur', label: 'Aktueller Kurs', value: c.current_price, pct: c.price_distance_pct, cls: 'lvl-current' }] : []),
               ...(closed
                 ? [{ k: 'exit', label: 'Exit', value: t.exit_price, pct: c.exit_distance_pct, cls: 'lvl-exit' }] : []),
+              ...(c.peak_price != null
+                ? [{ k: 'peak', label: t.side === 'LONG' ? 'Höchststand im Trade' : 'Tiefststand im Trade', value: c.peak_price, pct: c.peak_distance_pct, cls: 'lvl-peak' }] : []),
               { k: 'sl', label: `SL${c.sl_moved ? ' (aktuell)' : ''}`, value: t.sl, pct: c.sl_distance_pct, cls: 'lvl-sl' },
               ...(c.sl_moved
                 ? [{ k: 'sl0', label: 'SL initial', value: t.initial_sl, pct: c.initial_sl_distance_pct, cls: 'lvl-sl-init' }] : []),
@@ -202,6 +216,14 @@ const TradeDetailCard = ({ t, stratName, getCoinName, onChanged, onShowChart }) 
               <div className="tdc-meta-item" title="Wie Unrealisierter PnL, aber abzüglich aller schon angefallenen Gebühren (Entry-Fee, ggf. TP1-Teilverkauf) – der ehrliche „was bleibt wirklich übrig“-Wert."><span>Live PnL (inkl. Gebühren)</span><b className={`mono ${c.live_pnl >= 0 ? 'text-long' : 'text-short'}`} data-testid={`trade-live-pnl-${t.id}`}>{c.live_pnl >= 0 ? '+' : ''}{c.live_pnl.toFixed(2)} $</b></div>
             )}
             <div className="tdc-meta-item" title="Wie lange der Trade offen ist bzw. war."><span>Dauer</span><b className="mono">{fmtDur(c.duration_seconds)}</b></div>
+            <div className="tdc-meta-item" title={`Bester Stand innerhalb des Trades (MFE): bei Long der höchste, bei Short der tiefste Kurs seit Entry – zeigt, wie weit der Trade maximal im Plus war. Offene Trades: live berechnet. Geschlossene: wird beim Trade-Management gespeichert (bei vollem TP z.B. der TP-Kurs) – ältere Trades ohne Aufzeichnung zeigen „—“.`}>
+              <span>{t.side === 'LONG' ? 'Höchststand im Trade' : 'Tiefststand im Trade'}</span>
+              <b className="mono" data-testid={`trade-peak-${t.id}`}>
+                {c.peak_price != null
+                  ? `${c.peak_price}${c.mfe_pct != null ? ` (${c.mfe_pct >= 0 ? '+' : ''}${c.mfe_pct}% max)` : ''}`
+                  : '—'}
+              </b>
+            </div>
             <div className="tdc-meta-item" title="PnL gemessen in „R“ = geplantes Risiko (Abstand Entry → initialer SL × Menge). +1R = einen Risiko-Einsatz gewonnen, −1R = SL voll getroffen. Macht Trades unterschiedlicher Größe vergleichbar – die KI wird u.a. daran gemessen."><span>R-Vielfaches</span><b className={`mono ${(c.r_multiple || 0) >= 0 ? 'text-long' : 'text-short'}`}>{c.r_multiple != null ? `${c.r_multiple}R` : '—'}</b></div>
             {!closed && c.upnl_pct_margin != null && (
               <div className="tdc-meta-item" title="Reiner Kurs-PnL in % der Margin, OHNE Gebühren – exakt die Zahl, die Bitunix in der Position anzeigt. Der Hebel wirkt voll: 1% Kursbewegung × Hebel 10 = 10%. Unterschied zu „PnL % Margin (inkl. Gebühren)“ = die Gebühren."><span>uPnL % Margin (ohne Gebühren · wie Bitunix)</span><b className={`mono ${(c.upnl_pct_margin || 0) >= 0 ? 'text-long' : 'text-short'}`} data-testid={`trade-upnl-pct-margin-${t.id}`}>{fmtPct(c.upnl_pct_margin)}</b></div>
@@ -315,6 +337,13 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
   const [clearPreview, setClearPreview] = useState(null);
   const [clearing, setClearing] = useState(false);
   const [pnlFilter, setPnlFilter] = useState('all');
+  // Strategie-Filter für die Trade-Listen ('' = alle Strategien)
+  const [stratFilter, setStratFilter] = useState('');
+  // "Mehr laden" für geschlossene Trades: seitenweise +100 aus der DB
+  const [extraClosed, setExtraClosed] = useState([]);
+  const [closedTotal, setClosedTotal] = useState(null);
+  const [shownClosed, setShownClosed] = useState(30);
+  const [loadingMore, setLoadingMore] = useState(false);
   // Zeit-Analyse: Strategie-Filter ('' = Coin gesamt) + Ansicht (Uhrzeiten/Wochentage/Kombi)
   const [timeStrategy, setTimeStrategy] = useState('');
   const [timeView, setTimeView] = useState('hours');
@@ -407,12 +436,56 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
   // Globaler Live/Paper-Filter (obere Auswahl) für den GESAMTEN Analyse-Bereich
   const filterFn = (t) => pnlFilter === 'all' || (pnlFilter === 'live' ? t.mode === 'live' : t.mode !== 'live');
   const openTrades = trades.filter(t => t.status === 'open' && filterFn(t));
-  const closedTrades = trades.filter(t => t.status === 'closed' && filterFn(t));
+  // Geschlossene: Basis-Fetch + per "Mehr laden" nachgeladene Seiten
+  // (dedupliziert, nur im Frontend-State – kein zusätzlicher DB-Speicher)
+  const mergedClosedRaw = (() => {
+    const seen = new Set();
+    const out = [];
+    for (const t of [...trades.filter(x => x.status === 'closed'), ...extraClosed]) {
+      if (!t.id || seen.has(t.id)) continue;
+      seen.add(t.id);
+      out.push(t);
+    }
+    out.sort((a, b) => new Date(b.closed_at || b.opened_at || 0) - new Date(a.closed_at || a.opened_at || 0));
+    return out;
+  })();
+  const closedTrades = mergedClosedRaw.filter(filterFn);
 
-  // Listen-Filter: optional nur der aktuell ausgewählte Coin (nur Anzeige)
-  const listFilterFn = (t) => !tradeOnlyCoin || t.symbol === selectedCoin;
+  // Listen-Filter: optional nur der ausgewählte Coin + optional nur EINE Strategie
+  const listFilterFn = (t) => (!tradeOnlyCoin || t.symbol === selectedCoin)
+    && (!stratFilter || (t.strategy_id || 'external') === stratFilter);
   const openList = openTrades.filter(listFilterFn);
   const closedList = closedTrades.filter(listFilterFn);
+
+  // Strategie-Optionen aus den vorhandenen Trades (inkl. „Manuell/Extern“)
+  const stratOptions = (() => {
+    const m = new Map();
+    for (const t of [...openTrades, ...closedTrades]) {
+      const id = t.strategy_id || 'external';
+      if (!m.has(id)) m.set(id, id === 'external' ? 'Manuell / Extern' : stratName(t));
+    }
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  })();
+
+  const loadMoreClosed = async () => {
+    setShownClosed(s => s + 100);
+    if (loadingMore) return;
+    if (closedTotal != null && mergedClosedRaw.length >= closedTotal) return;
+    setLoadingMore(true);
+    try {
+      const r = await fetch(`${API_URL}/api/autotrade/trades?status=closed&offset=${mergedClosedRaw.length}&limit=100`);
+      const d = await r.json();
+      if (d.total != null) setClosedTotal(d.total);
+      const fresh = d.trades || [];
+      setExtraClosed(prev => {
+        const seen = new Set(prev.map(x => x.id));
+        return [...prev, ...fresh.filter(x => x.id && !seen.has(x.id))];
+      });
+    } catch { /* Netzwerkfehler: Button erneut drücken lädt nach */ }
+    setLoadingMore(false);
+  };
+  const canLoadMore = closedList.length > shownClosed
+    || closedTotal == null || mergedClosedRaw.length < closedTotal;
 
   // Coin-specific slices (for currently selected coin)
   const coinClosedTrades = closedTrades.filter(t => t.symbol === selectedCoin);
@@ -710,6 +783,13 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
                 data-testid="trade-filter-coin-toggle">
                 {tradeOnlyCoin ? '☑' : '☐'} Nur {getCoinName(selectedCoin)}
               </button>
+              <select className={`trade-filter-strat ${stratFilter ? 'active' : ''}`}
+                value={stratFilter} onChange={e => setStratFilter(e.target.value)}
+                title="Nur Trades einer bestimmten Strategie anzeigen – gilt für offene UND geschlossene Trades"
+                data-testid="trade-filter-strategy">
+                <option value="">Alle Strategien</option>
+                {stratOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
               <button className="new-trade-plus" title="Neuen Trade eröffnen (Live/Paper)"
                 onClick={() => (isAdmin ? setShowNewTrade(true) : (onNeedAdmin && onNeedAdmin()))}
                 data-testid="open-new-trade-btn">
@@ -730,9 +810,18 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
           <div className="analytics-section">
             <div className="section-title">GESCHLOSSENE TRADES <span className="sec-count">{closedList.length}{closedList.length !== closedTrades.length ? `/${closedTrades.length}` : ''}</span></div>
             {closedList.length === 0 && <div className="no-data">Keine{tradeOnlyCoin ? ' (Coin-Filter aktiv)' : ''}</div>}
-            {closedList.slice(0, 30).map(t => (
+            {closedList.slice(0, shownClosed).map(t => (
               <TradeDetailCard key={t.id} t={t} stratName={stratName} getCoinName={getCoinName} onShowChart={onShowChart} />
             ))}
+            {closedList.length > 0 && canLoadMore && (
+              <button className="load-more-btn" onClick={loadMoreClosed} disabled={loadingMore}
+                title="Lädt jeweils 100 weitere geschlossene Trades aus der Datenbank nach – seitenweise statt alles auf einmal (speicherschonend)"
+                data-testid="load-more-closed-btn">
+                {loadingMore ? 'Lädt…' : 'Mehr laden (+100)'}
+                {closedTotal != null && !stratFilter && !tradeOnlyCoin && pnlFilter === 'all'
+                  ? ` · ${Math.min(shownClosed, closedList.length)} von ${closedTotal}` : ''}
+              </button>
+            )}
           </div>
         </>
       )}

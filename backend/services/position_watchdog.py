@@ -352,7 +352,7 @@ class PositionWatchdog:
         if min_qty > 0 and pos["qty"] < min_qty:
             try:
                 res = await self.client.flash_close(internal, pos["position_id"],
-                                                    pos["side"], pos["qty"])
+                                                    pos["side"], pos["qty"], full=True)
                 if isinstance(res, dict) and res.get("code") == 0:
                     status["dust_closed"] += 1
                     self._sl_fail.pop(pos["position_id"], None)
@@ -425,7 +425,7 @@ class PositionWatchdog:
                                local: Optional[Dict], status: Dict, fails: int):
         try:
             res = await self.client.flash_close(internal, pos["position_id"],
-                                                pos["side"], pos["qty"])
+                                                pos["side"], pos["qty"], full=True)
             closed = isinstance(res, dict) and res.get("code") == 0
         except Exception as e:
             closed = False
@@ -472,7 +472,7 @@ class PositionWatchdog:
             cleaned = False
             try:
                 res = await self.client.flash_close(internal, pos["position_id"],
-                                                    pos["side"], pos["qty"])
+                                                    pos["side"], pos["qty"], full=True)
                 cleaned = isinstance(res, dict) and res.get("code") == 0
             except Exception as e:
                 logger.error(f"Watchdog: Rest-Bereinigung {internal} fehlgeschlagen: {e}")

@@ -1,129 +1,42 @@
-# PRD – KI-Trader (Daytrading-Website, extern auf Render deployt)
+# PRD – KI-Trader (externe Daytrading-Website)
 
 ## Original-Problemstellung
-Bestehende, produktiv laufende Daytrading-Website (GitHub: dean06greif-ai/KI-Trader,
-Branch conflict_220826_1619). Verbesserungen sauber, modular, rückwärtskompatibel,
-Original-Struktur beibehalten (1:1 Render-Deploy). Stack: FastAPI + React (CRA/craco)
-+ MongoDB; Live-Trading über Bitunix; KI-Team (analyst, trade_manager,
-market_observer, news_watcher, learner, …) mit Multi-Provider-Fallback
-(groq/cerebras/openrouter/gemini/mistral, je bis 16 Backup-Keys).
-Preview-Umgebung läuft ABSICHTLICH ohne Bitunix-/Telegram-/AI-Keys
-(keine Kollision mit der produktiven Render-Instanz).
+Bestehende, produktiv laufende Daytrading-Website (GitHub: dean06greif-ai/KI-Trader, Branch `conflict_230826_1950`, Deployment: Render). Verbesserungen sollen sauber, modular und rückwärtskompatibel in die bestehende Architektur eingepflegt werden. Originalstruktur (Ordner/Dateien) beibehalten für Render-Deployment.
 
-## User Persona
-Betreiber (Admin: Admin / Dean06Greif!/Admin) überwacht KI-Trader, Live-Positionen,
-Telegram-Signale. Ziel: autonomer, sich selbst verbessernder "ultimativer Trader".
+## Architektur
+- Backend: FastAPI (`/app/backend/server.py` + `routers/` + `services/` + `core/`), MongoDB Atlas (extern, 500 MB Limit), Bitunix Trading-API (LIVE-Keys!), Multi-LLM-Provider-System (`services/ai_providers.py`, Rollen-Teams in `services/ai_roles.py`)
+- Frontend: React + craco, `PerformanceAnalytics.js` (offene/geschlossene Trades), `AITradingPanel.js` (KI-Team, Warnungen), lightweight-charts v5
+- KI-Rollen laufen parallel (News-Wächter, Deep-Analyst, Chat, Model-Advisor …)
 
-## Umgesetzt – Iteration 1 (22.06.2026)
-1. Legacy Coin-Level-AutoTradeModal.js sauber entfernt (CSS bleibt, wird von
-   StrategyAutoTradeModal genutzt).
-2. Test-Marker-Split: `pytest -m unit` (schnell, offline) vs. `-m live`
-   (E2E gegen laufende Umgebung); Auto-Klassifizierung in tests/conftest.py.
-3. Funding-Fees: services/funding_fees.py (Bitunix funding_rate, 10-min-Cache,
-   fail-open) → fließt in fee_guard_check ein (Haltedauer-Horizont scalp 2h /
-   swing 24h). Funding-Wächter für offene Live-Trades: Warnung ab 20% der Marge,
-   optionaler Auto-Close ab 40% (settings _id=funding_guard, close_enabled
-   Default AUS), Lauf alle 30 min im Monitor.
-4. Entry-Order-Registry (services/entry_order_registry.py, Collection
-   pending_entry_orders): Maker-Limit-Orders registriert; Watchdog übernimmt
-   späte Fills als echten KI-Trade inkl. Telegram-Signal "TRADE ERÖFFNET
-   (Limit-Fill)"; kein Market-Fallback bei unbestätigtem Cancel (kind=orphan).
-5. HEAD / → 200 (routers/general.py); Frontend-Build-Warnungen behoben
-   (eslint 9.39.5, Resolutions, devDeps @babel/core@7, react-is, typescript…).
+## User-Entscheidungen
+- Branch: `conflict_230826_1950`
+- Trade-Chart: Bitunix Kline-API on-demand (kein Mongo-Speicher)
+- MFE/Peak-Tracking: nur neue Trades ab jetzt (alte zeigen "—")
+- Watchdog-Bug: zuletzt beim XRP-Trade (KI-Trader) aufgetreten
 
-## Umgesetzt – Iteration 2 (23.06.2026)
-1. RCA Trade-Herkunft (Live-Diagnose Bitunix + Prod-DB read-only): die als
-   "Manuell (Bitunix)" übernommenen Positionen stammten aus Orders OHNE TP/SL
-   (GTC-Entries) – nicht vom aktuellen Website-Code (Bot hängt immer TP+SL an).
-2. clientId-Tagging: alle Bot-Entry-Orders tragen clientId `KIT-<strategie>-<ts>`
-   (make_client_id) → Herkunft an der Börse beweisbar.
-3. Absturz-Schutz: JEDE Entry-Order (Market/Limit/Maker, alle Strategien) wird
-   nach Order-Annahme registriert, nach DB-Insert aufgelöst → Deploy/Restart
-   zwischen Order und Insert wird korrekt zugeordnet statt "Manuell".
-4. KI-Gewinnschutz intern per Default (ohne Coin-Settings): Gewinnsicherung
-   (SL in den Gewinn, lock 50% ab +30% auf Marge), Marge-Freisetzung +
-   Hebel-Maximierung bis 200x, SL sicher vor Liq. Settings _id=
-   ai_profit_protection; API GET/PATCH /api/autotrade/ai-protection (PATCH Admin).
-5. KI-Priorisierung: live-kritische Rollen (trade_manager, analyst,
-   market_observer, news_watcher) nutzen alle Keys inkl. Backups; Lern-/
-   Datensammel-Rollen (learner, research_analyst, summarizer) nur Primär-Key
-   (ai_providers.role_priority + restrict_indices_for_priority).
+## Umgesetzt
+### 23.06.2026 – Bugfix: Falsche Fallback-Zuordnung in KI-Warnungen ✅ (getestet 5/5)
+- Root Cause: `record_result()` nutzte das globale `_current_role` zum Call-ENDE → parallele Rollen-Calls (News-Wächter triggert Deep-Analyse als Task, Deep-Analyst nutzt OpenRouter) wurden falsch zugeordnet.
+- Fix: `generate_chain()`/`stream_chain()` fixieren die Rolle einmal am Start (`role`-Parameter) und reichen sie an alle `record_result()`-Aufrufe durch. Aufrufer: `ai_engine.generate_for_role`, Chat-Stream (role="chat"), `ai_model_advisor` (role="model_advisor").
+- Tests: `backend/tests/test_role_fallback_attribution.py`, `test_role_attribution_stream_iter9.py`.
 
-## Umgesetzt – Iteration 3 (23.06.2026)
-1. Key-Level-Trailing (intern, ai_profit_protection.level_trail): SL ab +1R
-   hinter das zuletzt durchbrochene Level (find_swing_levels /
-   key_level_trail_sl in bitunix_trade.py, live-sync via _live_move_sl).
-2. Live-Gate-Bypass: max. 2 hochkonfidente KI-Live-Trades/Tag (Konfidenz >=
-   min_confidence+5) trotz noch nicht "live-reifem" Setup; Rest sammelt Paper-
-   Daten (live_gate_bypass_enabled/margin/per_day in KI-Config).
-3. Herkunft in erweiterten Trade-Details (PerformanceAnalytics.js,
-   data-testid trade-origin-<id>): "Website · <Strategie> · KIT-…" (grün) vs.
-   "Manuell (Bitunix)" (gelb); bitunix_client_id am Trade gespeichert.
-4. KI sieht Gesamt-Konto-Verlauf: Analyst-Kontext (_strategy_performance_text)
-   enthält letzte 20 Trades ALLER Quellen inkl. "DU SELBST"-Markierung;
-   dynamisch auch für künftig hinzugefügte Strategien. ML-Lab trainiert bereits
-   auf Signalen aller Strategien.
+### 23.06.2026 – 5 Trade-Verbesserungen ✅ (Testing-Agent: 24/24 Backend, 100% Frontend)
+1. **MFE/Peak-Tracking**: `update_peak()` in `services/bitunix_trade.py`; Tracking im Tick von `_manage_trade` (kein Extra-DB-Write), Exit-Fill fließt beim Schließen ein, `manual_close` ebenfalls. Anzeige via `_enrich_trade` (`core/utils.py`): `computed.peak_price/peak_distance_pct/mfe_pct` – offen live berechnet, geschlossen gespeichert, Alt-Trades → null. UI: Meta-Feld `trade-peak-{id}` + `lvl-peak`-Zeile in der Preis-Leiter.
+2. **Trade-Chart on-demand**: `GET /api/autotrade/trades/{id}/chart` (routers/autotrade.py, `_chart_interval` wählt 1m–1d), Kerzen via `fetch_klines_range()` (`services/bitunix_client.py`, öffentliche Bitunix-Kline-API, kein DB-Speicher). Frontend: `TradeChart.js` (lightweight-charts v5, Preislinien Entry/SL/SL-initial/TP1/TP Full/Exit/Peak, de-DE-Locale-Fix, autoscaleInfoProvider damit TP/SL außerhalb der Kerzen-Range sichtbar sind, ResizeObserver). Button `trade-history-chart-btn-{id}` neben "Live-Chart öffnen", nur geschlossene Trades, lädt erst beim Klick.
+3. **Strategie-Filter**: `<select data-testid="trade-filter-strategy">` neben "Nur BTC" – filtert offene UND geschlossene Trades (inkl. Option "Manuell / Extern").
+4. **Mehr laden (+100)**: Backend `offset`-Param + `total` bei `?status=...` in `GET /api/autotrade/trades`; Frontend seitenweises Nachladen (`load-more-closed-btn`, dedupliziert, "x von y", Button verschwindet am Ende). Kein zusätzlicher Mongo-Speicher.
+5. **Watchdog-Fix (unvollständige Closes, XRP)**: Root Cause: `_fmt_qty` rundete beim Voll-Close AB auf die Step-Size → bis zu 1 Step blieb auf Bitunix offen. Fix: `flash_close(full=True)` rundet AUF (`_fmt_qty(round_up=True)`), reduceOnly schützt vor Überschließen; `close_live_position` reicht `full` durch; Watchdog nutzt an 3 Stellen `full=True`.
+- Tests: `backend/tests/test_trade_improvements.py` (11), `test_iter10_trade_improvements_api.py` (10, vom Testing-Agent).
 
-## Umgesetzt – Iteration 4 (23.06.2026)
-1. Bypass-Feed: Telegram-Meldung (ntype live_gate_bypass) mit Setup, Grund,
-   Konfidenz und Tageszähler, wenn die KI per Setup-Bypass live geht.
-2. Offene-Order-Karte: GET /api/autotrade/pending-entry-orders (Registry inkl.
-   age/expires-Countdown 36h) + Frontend-Karte "Wartende KI-Limit-Orders" im
-   Analyse-Panel > Trades (PendingEntryOrders.js, Poll 15s, versteckt bei leer).
-3. Beratung Live-vs-Paper-Kluft dokumentiert: Empfehlung Reihenfolge
-   ATR-Low-Vol-Market-Block (Option 2) → Limit an Key-Levels mit TTL/Re-Quote
-   (Option 1) → 1m-Hybrid-Trigger (Option 3); zusätzlich Fill-Qualitäts-Messung
-   (Slippage-Logging) und Paper-Slippage-Simulation vorgeschlagen. NOCH NICHT
-   implementiert – wartet auf User-Entscheidung.
+## Backlog
+- P1: Trade-Chart-Button für Symbole ohne Bitunix-Kline (Forex, z.B. GBPUSD) ausblenden oder Grund im Response melden (aktuell: sauberer Hinweistext "Keine Kerzendaten")
+- P1: Kennzeichnung "Not-Fallback außerhalb des Teams" in KI-Warnungen (UI-Hinweis)
+- P2: `PerformanceAnalytics.js` (~1020 Zeilen) modularisieren (TradeDetailCard/Filter in eigene Dateien)
+- P2: Globalen `_current_role`-Fallback in `record_result` entfernen
 
-## Tests
-824 Unit-Tests grün (`pytest -m unit`, ~20s); Live-Suite via `-m live`.
-Neue Testdateien: test_funding_fee_guard.py, test_entry_order_registry.py,
-test_ai_protection_and_priority.py, test_key_level_and_live_gate.py.
-
-## Bekannt / Hinweise
-- eslint-Deprecation aus react-scripts (internes eslint@8) bleibt (nur mit
-  CRA-Ablösung behebbar, kosmetisch); Cerebras-402 = Kontingent, Fallback ok.
-- Frontend Cold-Start: transiente "Failed to fetch" in Console (kein Blocker).
-- Preview-.env ohne Live-Keys; auf Render Env unverändert lassen.
-
-## Backlog / Nächste Aufgaben
-- P1: UI-Panel für Gewinnschutz-Policy + Funding-Wächter-Schwellen
-- P1: Funding-Kosten (funding_est_usdt) in der Trade-Ansicht anzeigen
-- P2: Registry-/Watchdog-Statuskarte (offene Entry-Limit-Orders) im Frontend
-- P2: Coin-Max-Hebel auch im Backtester (effective_leverage) berücksichtigen
-
-## Umgesetzt – Iteration (23.08.2026, Branch conflict_220826_1859)
-1. **Key-Level-Limit-Orders** (services/key_level_limits.py, Collection ai_limit_orders):
-   KI wählt pro Entscheidung entry_type market|limit, limit_price am Key-Level
-   (Order-Block/POC/VAH/VAL/Range-Grenze; LONG darunter, SHORT darüber; max 2.5%
-   scalp / 8% swing) und limit_valid_min (15–480, KI-gewählt). Orders lokal/synthetisch
-   (identisch Paper+Live, keine verwaisten Börsen-Orders), Fill-Check je Scanner-Tick
-   (core/scheduler.py), Fill läuft durch die normale Pipeline (Guards greifen beim Fill),
-   Verfall + Neu-Bewertung je Analyse-Zyklus (reevaluate: cancel_limit / Gegenrichtung /
-   Market-Ersatz; Ersetzen gleicher Richtung via place). Prompt: Schema-Felder + Block
-   "WARTENDE LIMIT-ORDERS". API: GET /api/ai/limit-orders, DELETE …/{id} (Admin).
-   Frontend: KeyLevelLimitOrders.js Karte in PerformanceAnalytics (Countdown, Stornieren).
-2. **Ehrliches Paper** (services/paper_execution.py): Paper-Fills adversarial mit
-   Spread/2 + Slippage. Echter Top-of-Book (Binance→OKX→Bybit, keyless, 20s Cache),
-   Fallback-Tiers (Major 0.01/0.01, Crypto 0.04/0.03, Yahoo 0.06/0.05 %). Integriert in
-   bitunix_trade.py: Entry (on_signal), Exits (_manage_trade TP1/TPF/SL, manual_close,
-   partial_close). Nur mode=paper. Settings: paper_realistic_fills,
-   paper_fallback_spread_pct, paper_slippage_pct. Trade-Doku: paper_exec + PAPER-FILL-Events.
-3. **Größenabhängige Slippage** (Erweiterung zu 2): Sqrt-Impact-Modell
-   size_scaled_slippage – bis Referenz-Notional (Major 100k / Crypto 25k / Other 10k USDT,
-   oder echte Top-of-Book-Tiefe der konsumierten Seite, wenn größer) Basis-Slippage,
-   darüber × sqrt(Notional/Referenz), hart gedeckelt (Default 0.30%). Alle Fill-Aufrufer
-   übergeben die Order-Notional; paper_exec dokumentiert size_mult / notional_usdt /
-   book_depth_usd / base_slippage_pct. Settings: paper_size_slippage_enabled,
-   paper_size_ref_notional, paper_max_slippage_pct.
-Tests: backend/tests/test_key_level_limits.py (8 Blöcke) + test_paper_execution.py
-(8 Blöcke) grün; Regression 826 Unit-Tests grün; E2E via Testing-Agent (iteration_8.json,
-100%). Hinweis: Root-tests test_stale_price_* + test_fix_0_5_* sind am Wochenende
-zeitabhängig rot (pre-existing, auch im Original-Repo).
-
-## Backlog (P1/P2)
-- P1: Limit-Order-Historie als UI-Ansicht mit Fill-Quote-Statistik
-- P1: Telegram-Notification bei Limit-Order-Platzierung/-Fill (eigener Event-Typ)
-- P2: KI-Lernschleife: Fill-Quote & entgangene Moves der Limit-Orders in Lessons
-- P2: Paper-vs-Live-Vergleich derselben Setups (Live-Reife-Ansicht)
+## Wichtige Hinweise
+- backend/.env enthält ECHTE Bitunix-LIVE-Keys – in Tests keine Orders platzieren!
+- Backend braucht nach Restart ~90–120 s (Candle-Backfill) bis Port 8001 antwortet
+- pytest: `-n 0` für serielle Läufe anhängen (pytest.ini erzwingt xdist)
+- Admin-Login: /app/memory/test_credentials.md
+- DB-Stand (23.06.): 390 geschlossene / 26 offene Trades

@@ -1,6 +1,7 @@
 """Autotrade-Endpoints: Konfiguration, Trades, Kapital, Balance."""
 import logging
 import time as _time
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -209,13 +210,20 @@ async def list_strategy_coin_autotrade():
 
 
 @router.get("/api/autotrade/trades")
-async def get_trades(status: str = None, limit: int = 50, mode: str = None):
+async def get_trades(status: str = None, limit: int = 50, mode: str = None,
+                     offset: int = 0):
+    """`offset` + `limit` = seitenweises Nachladen ("Mehr laden" bei
+    geschlossenen Trades) – die DB liefert nur die angefragte Seite, es wird
+    nichts zusätzlich gespeichert. Mit `status` kommt zusätzlich `total`."""
     q = {}
     if status:
         q["status"] = status
     if mode in ("live", "paper"):
         q["mode"] = mode
-    trades = await state.db.auto_trades.find(q).sort("opened_at", -1).limit(limit).to_list(limit)
+    cursor = state.db.auto_trades.find(q).sort("opened_at", -1)
+    if offset > 0:
+        cursor = cursor.skip(offset)
+    trades = await cursor.limit(limit).to_list(limit)
     if not status:
         # Offene Trades (z.B. ältere manuelle Bitunix-Trades) dürfen nie aus dem
         # Limit-Fenster fallen – sonst "verschwinden" sie in der UI (Bug-Report).
@@ -226,11 +234,14 @@ async def get_trades(status: str = None, limit: int = 50, mode: str = None):
     ex_by_id, ex_by_key = ({}, {})
     if any(t.get("status") == "open" and t.get("mode") == "live" for t in trades):
         ex_by_id, ex_by_key = await _live_position_map()
-    return {"trades": [
+    out = {"trades": [
         _enrich_trade(t, scanner.current_price(t["symbol"]) if t.get("status") == "open" else None,
                       exchange=_exchange_pos_for(t, ex_by_id, ex_by_key))
         for t in trades
     ]}
+    if status:
+        out["total"] = await state.db.auto_trades.count_documents(q)
+    return out
 
 
 @router.get("/api/autotrade/trades/{trade_id}")
@@ -244,6 +255,61 @@ async def get_trade_detail(trade_id: str):
         ex_by_id, ex_by_key = await _live_position_map()
         ex = _exchange_pos_for(t, ex_by_id, ex_by_key)
     return {"trade": _enrich_trade(t, cur, exchange=ex)}
+
+
+# Kleinstes Intervall, mit dem der Trade-Zeitraum in <= max_candles passt
+_CHART_INTERVALS = [("1m", 60), ("3m", 180), ("5m", 300), ("15m", 900),
+                    ("30m", 1800), ("1h", 3600), ("2h", 7200), ("4h", 14400),
+                    ("1d", 86400)]
+
+
+def _chart_interval(duration_s: float, max_candles: int = 150) -> tuple:
+    for name, sec in _CHART_INTERVALS:
+        if duration_s <= sec * max_candles:
+            return name, sec
+    return _CHART_INTERVALS[-1]
+
+
+@router.get("/api/autotrade/trades/{trade_id}/chart")
+async def get_trade_chart(trade_id: str):
+    """Schlichter Trade-Chart on-demand: Kerzen kommen direkt von der
+    öffentlichen Bitunix-Kline-API (kein MongoDB-Speicher, keine Dauerlast –
+    lädt nur, wenn der Nutzer den Chart aktiv öffnet), plus die Trade-Level
+    (Entry/SL/TP/Exit/Peak) zum Einzeichnen."""
+    t = await state.db.auto_trades.find_one({"id": trade_id}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Trade not found")
+
+    def _parse(iso):
+        try:
+            return datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+
+    now = datetime.now(timezone.utc)
+    opened = _parse(t.get("opened_at")) or now
+    closed_dt = _parse(t.get("closed_at")) or now
+    dur = max((closed_dt - opened).total_seconds(), 60.0)
+    pad = max(dur * 0.25, 900.0)  # min. 15 Minuten Kontext vor/nach dem Trade
+    interval, _sec = _chart_interval(dur + 2 * pad)
+    start_ms = int((opened.timestamp() - pad) * 1000)
+    end_ms = int(min(closed_dt.timestamp() + pad, now.timestamp()) * 1000)
+    from services.bitunix_client import fetch_klines_range
+    b_symbol = trade_client.to_bitunix_symbol(t["symbol"])
+    candles = await fetch_klines_range(b_symbol, interval,
+                                       start_ms=start_ms, end_ms=end_ms, limit=200)
+    return {
+        "symbol": t["symbol"], "interval": interval, "candles": candles,
+        "trade": {
+            "side": t.get("side"), "entry": t.get("entry"),
+            "sl": t.get("sl"), "initial_sl": t.get("initial_sl"),
+            "tp1": t.get("tp1"), "tpf": t.get("tpf"),
+            "exit_price": t.get("exit_price"), "peak_price": t.get("peak_price"),
+            "opened_ts": int(opened.timestamp()),
+            "closed_ts": int(closed_dt.timestamp()) if t.get("closed_at") else None,
+            "status": t.get("status"),
+        },
+    }
 
 
 @router.post("/api/autotrade/close/{trade_id}")
@@ -639,7 +705,6 @@ async def get_balance():
 @router.get("/api/autotrade/pending-entry-orders")
 async def get_pending_entry_orders():
     """Offene/verwaiste Entry-Limit-Orders der Bots inkl. Rest-Laufzeit."""
-    from datetime import datetime, timezone
     from services.entry_order_registry import MAX_AGE_H
     rows = await state.db.pending_entry_orders.find(
         {}, {"_id": 0}).sort("created_at", -1).to_list(50)

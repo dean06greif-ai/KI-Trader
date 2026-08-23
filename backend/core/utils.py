@@ -154,6 +154,24 @@ def _enrich_trade(t: Dict, current_price: float = None, exchange: Dict = None) -
         move = (ref - entry) / entry * 100
         price_move_pct = round(move if side == "LONG" else -move, 3)
 
+    # ---- Bester Stand im Trade (MFE): LONG = Hoch, SHORT = Tief ----
+    # Offene Trades: live aus gespeichertem Peak + aktuellem Kurs berechnet.
+    # Geschlossene: gespeicherter peak_price (wird seit dem MFE-Update im
+    # Trade-Management getrackt) – ältere Trades ohne Wert zeigen None ("–").
+    peak = None
+    try:
+        peak = float(t.get("peak_price")) if t.get("peak_price") else None
+    except (TypeError, ValueError):
+        peak = None
+    if is_open and cur:
+        cand = [v for v in (peak, cur) if v]
+        if cand:
+            peak = max(cand) if side == "LONG" else min(cand)
+    peak_pct = pct_from_entry(peak) if peak else None
+    mfe_pct = None
+    if peak_pct is not None:
+        mfe_pct = peak_pct if side == "LONG" else round(-peak_pct, 3)
+
     t["computed"] = {
         "duration_seconds": dur,
         "risk_usd": risk_usd,
@@ -171,6 +189,9 @@ def _enrich_trade(t: Dict, current_price: float = None, exchange: Dict = None) -
         "fees_paid": round(fees_paid, 6),
         "fees_total_est": fees_total_est,
         "price_move_pct": price_move_pct,
+        "peak_price": round(peak, 8) if peak else None,
+        "peak_distance_pct": peak_pct,
+        "mfe_pct": mfe_pct,
         "current_price": round(cur, 6) if cur else None,
         "price_distance_pct": pct_from_entry(cur) if cur else None,
         "unrealized_pnl": unrealized_pnl,
