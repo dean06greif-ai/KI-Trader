@@ -41,7 +41,7 @@ class DustClient:
     async def resolve_position_id(self, symbol, side):
         return "p1"
 
-    async def flash_close(self, symbol, position_id, side, qty):
+    async def flash_close(self, symbol, position_id, side, qty, full=False):
         self.calls.append(("flash_close", qty))
         return {"code": 1, "msg": "Insufficient amount"}
 

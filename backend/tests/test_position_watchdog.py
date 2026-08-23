@@ -123,7 +123,7 @@ class FakeClient:
             self.tpsl_rows = [{"slPrice": sl_price}]
         return {"code": self.place_tpsl_code, "data": {"orderId": "tpsl-1"}}
 
-    async def flash_close(self, symbol, position_id, side, qty):
+    async def flash_close(self, symbol, position_id, side, qty, full=False):
         self.calls.append(("flash_close", symbol, position_id, qty))
         return {"code": self.close_code}
 

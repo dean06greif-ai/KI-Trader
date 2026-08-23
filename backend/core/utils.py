@@ -293,3 +293,49 @@ def _rows_to_csv(rows: List[Dict], fieldnames: List[str]) -> str:
     for r in rows:
         w.writerow(r)
     return buf.getvalue()
+
+
+def slippage_aggregate(trades) -> list:
+    """Fill-Qualität (Baustein B): aggregiert Trades mit slippage_pct nach
+    (strategy_id, mode, order_kind) – inkl. Ø MFE/MAE (bester/schlechtester
+    Stand nach dem Fill) als Adverse-Selection-Check je Order-Art."""
+    groups = {}
+    for t in trades:
+        slip = t.get("slippage_pct")
+        if slip is None:
+            continue
+        kind = "limit_fill" if t.get("limit_entry") else (t.get("order_kind") or "market")
+        key = (t.get("strategy_id") or "unknown", t.get("mode") or "?", kind)
+        g = groups.setdefault(key, {"trades": 0, "slip_sum": 0.0, "slip_usdt": 0.0,
+                                    "mfe_sum": 0.0, "mfe_n": 0,
+                                    "mae_sum": 0.0, "mae_n": 0})
+        g["trades"] += 1
+        g["slip_sum"] += float(slip)
+        g["slip_usdt"] += float(t.get("slippage_usdt") or 0)
+        try:
+            entry = float(t.get("entry") or 0)
+        except (TypeError, ValueError):
+            entry = 0.0
+        side = str(t.get("side") or "").upper()
+        for field, s_key, n_key in (("peak_price", "mfe_sum", "mfe_n"),
+                                    ("trough_price", "mae_sum", "mae_n")):
+            try:
+                val = float(t.get(field) or 0)
+            except (TypeError, ValueError):
+                val = 0.0
+            if entry and val:
+                pct = (val - entry) / entry * 100.0
+                g[s_key] += pct if side == "LONG" else -pct
+                g[n_key] += 1
+    rows = []
+    for (sid, mode, kind), g in groups.items():
+        rows.append({
+            "strategy_id": sid, "mode": mode, "order_kind": kind,
+            "trades": g["trades"],
+            "avg_slippage_pct": round(g["slip_sum"] / g["trades"] + 0.0, 4),
+            "total_slippage_usdt": round(g["slip_usdt"] + 0.0, 4),
+            "avg_mfe_pct": round(g["mfe_sum"] / g["mfe_n"] + 0.0, 3) if g["mfe_n"] else None,
+            "avg_mae_pct": round(g["mae_sum"] / g["mae_n"] + 0.0, 3) if g["mae_n"] else None,
+        })
+    rows.sort(key=lambda r: -r["trades"])
+    return rows

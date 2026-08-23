@@ -1,7 +1,7 @@
 """Autotrade-Endpoints: Konfiguration, Trades, Kapital, Balance."""
 import logging
 import time as _time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +10,7 @@ from core import state
 from core.auth import require_admin
 from core.defaults import DEFAULT_STRATEGY_OVERRIDE, DEFAULT_STRATEGY_COIN_CFG
 from core.state import scanner, autotrader, trade_client
-from core.utils import _enrich_trade
+from core.utils import _enrich_trade, slippage_aggregate
 from services.bitunix_trade import DEFAULT_COIN_CFG
 
 logger = logging.getLogger(__name__)
@@ -311,6 +311,21 @@ async def get_trade_chart(trade_id: str):
             "status": t.get("status"),
         },
     }
+
+
+@router.get("/api/autotrade/slippage-stats")
+async def get_slippage_stats(days: int = 30):
+    """Fill-Qualität (Baustein B): Entry-Slippage + Ø MFE/MAE je Strategie ×
+    Modus × Order-Art (market/maker/taker_fallback/limit_fill) über N Tage."""
+    days = max(1, min(int(days or 30), 365))
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    trades = await state.db.auto_trades.find(
+        {"opened_at": {"$gte": cutoff}, "slippage_pct": {"$ne": None}},
+        {"_id": 0, "strategy_id": 1, "mode": 1, "order_kind": 1, "limit_entry": 1,
+         "side": 1, "entry": 1, "slippage_pct": 1, "slippage_usdt": 1,
+         "peak_price": 1, "trough_price": 1}).to_list(5000)
+    return {"days": days, "measured_trades": len(trades),
+            "groups": slippage_aggregate(trades)}
 
 
 @router.post("/api/autotrade/close/{trade_id}")

@@ -34,56 +34,47 @@
   (`update_peak`/`update_trough` in bitunix_trade.py, Anzeige via `_enrich_trade`:
   `mfe_pct`/`mae_pct`, UI: Preis-Leiter + Meta + Trade-Chart-Linien). Datenbasis für
   Entry-Timing-/Adverse-Selection-Auswertung.
-- ⬜ Baustein A (ATR-Market-Block) – NÄCHSTER SCHRITT
-- ⬜ Baustein B (Slippage-/Fill-Qualitäts-Messung) – DANACH
+- ✅ Baustein A (ATR-Market-Block) – **FERTIG 23.06.2026** (Details unten)
+- ✅ Baustein B (Slippage-/Fill-Qualitäts-Messung) – **FERTIG 23.06.2026** (Details unten)
 
-**Reihenfolge:** A → B → 2–4 Wochen Messphase → dann Entscheid über weitere Schritte
-(Option 3 nur, falls die Daten zeigen, dass Limit-Entries allein nicht reichen).
-Nicht alles gleichzeitig ändern – sonst ist nicht zuordenbar, was gewirkt hat.
-
----
-
-## Baustein A: ATR-Market-Block (Low-Vol-Schutz) – OFFEN
-**Ziel:** Bei zu niedriger 1m-Volatilität keine Market-Entries (Gebühren > erwartbare
-Bewegung); nur Maker-/Limit-Entries erlauben.
-
-**Umsetzung (backend/services/bitunix_trade.py):**
-1. Reine, testbare Modul-Funktion: `atr_market_block(atr_pct, threshold_pct) -> bool`
-   (True = Market blocken; atr_pct = 1m-ATR in % vom Preis: atr/entry*100).
-2. Konfig: `low_vol_market_block_enabled` (Default True, NUR `strategy_id == 'ai_trader'`),
-   `low_vol_atr_threshold_pct` (**Default 0.10 – vom User bestätigt**), Handler in
-   `AIEngine.set_config()` (Muster live_gate_bypass_*), Grenzen 0–2%.
-3. In `on_signal()` Live-Pfad VOR Order-Platzierung: Block greift + `maker_requested`
-   False → Maker erzwingen; endet Maker im `fallback` → KEIN Market-Fallback, sondern
-   `_notify_reject(symbol, side, 'Low-Vol-Block: 1m-ATR x.xx% < Schwelle …')` + return None.
-   `orphan`-Pfad NICHT verändern. Feld `low_vol_forced_maker: True` am Trade.
-4. Synergie: Wenn die KI ohnehin `entry_type='limit'` wählt, greift der Block nicht
-   (Limit ist ja das gewünschte Verhalten).
-
-**Tests (`backend/tests/test_atr_market_block.py`):** Schwellen-Logik, erzwungener Maker,
-Ablehnung statt Market-Fallback, Config-Grenzen.
+**Nächster Schritt: 2–4 Wochen MESSPHASE** (nichts weiter ändern!), danach Auswertung
+über `GET /api/autotrade/slippage-stats` und erst dann Entscheid über Option 3
+(1m-Hybrid) oder Feintuning der Schwellen.
 
 ---
 
-## Baustein B: Slippage-/Fill-Qualitäts-Messung – OFFEN
-**Ziel:** Bei jedem Trade messen, was zwischen Signalpreis und Fill verloren geht –
-Datenbasis für alle weiteren Optimierungen (insb. Bewertung der Key-Level-Limits).
+## Baustein A: ATR-Market-Block (Low-Vol-Schutz) – ✅ FERTIG (23.06.2026)
+**Umgesetzt:**
+1. `atr_market_block(atr_pct, threshold_pct)` – reine Funktion in
+   `backend/services/bitunix_trade.py` (fail-open bei ungültigen Werten, Schwelle 0 = aus).
+2. Konfig in `DEFAULT_AI_CONFIG` (ai_engine.py): `low_vol_market_block_enabled`
+   (Default True) + `low_vol_atr_threshold_pct` (**Default 0.10**, Grenzen 0–2%),
+   Handler in `AIEngine.set_config()` (Muster live_gate_bypass_*).
+3. In `on_signal()` (bitunix_trade.py, nach maker_requested): greift nur bei
+   `mode == "live"`, `strategy_id == "ai_trader"`, nicht bei manual/ai_limit_fill.
+   ATR unter Schwelle → Maker-Entry erzwungen (`low_vol_forced_maker: True` am Trade);
+   endet der Maker im Fallback → KEIN Market-Fallback, sondern `_notify_reject`
+   ("Low-Vol-Block …") + return None. `orphan`-Pfad unverändert.
+4. Tests: `backend/tests/test_atr_market_block.py` (4 Tests, grün).
 
-**Umsetzung:**
-1. `on_signal()`: `signal_price` (vor Platzierung), `fill_price` (= entry nach Fill),
-   `slippage_pct` signiert (LONG: (fill−signal)/signal×100, positiv = teurer; SHORT invers),
-   `slippage_usdt`. Live UND Paper einheitlich (Paper: aus `paper_exec` übernehmen).
-2. `GET /api/autotrade/slippage-stats?days=30` (routers/autotrade.py): Aggregation über
-   Trades der letzten N Tage, gruppiert nach `strategy_id` × `order_kind`
-   (market/maker/taker_fallback/limit-fill): Anzahl, Ø slippage_pct, Σ slippage_usdt,
-   Ø Gebühren – **PLUS Ø mfe_pct / Ø mae_pct pro Gruppe** (Adverse-Selection-Check:
-   laufen Limit-Fills nach dem Fill im Schnitt stärker gegen uns als Market-Entries?).
-3. KI-Kontext: Kurzblock in `ai_engine._strategy_performance_text()`
-   („Fill-Qualität 14d: maker Ø x.xx%, market Ø x.xx%, limit-fill MAE Ø y.yy%“).
-4. Optional UI: kleine Karte im Analyse-Panel (nach den Trades), erst wenn Daten da sind.
+---
 
-**Tests (`backend/tests/test_slippage_stats.py`):** Vorzeichen LONG/SHORT, Aggregation
-mit FakeDB, Endpoint-Form.
+## Baustein B: Slippage-/Fill-Qualitäts-Messung – ✅ FERTIG (23.06.2026)
+**Umgesetzt:**
+1. `on_signal()`: `signal_price` wird VOR Maker-/Paper-Fill-Anpassungen fixiert;
+   bei Live-Market-Fills wird der reale avg-Fill-Preis nur zur Messung geholt
+   (`parse_order_fill(get_order_detail)`, Entry/SL/TP unverändert). Am Trade:
+   `signal_price`, `slippage_pct` (signiert via `compute_slippage_pct`, + = teurer),
+   `slippage_usdt`. Gilt live UND paper einheitlich.
+2. `GET /api/autotrade/slippage-stats?days=30` (routers/autotrade.py) →
+   `core/utils.slippage_aggregate()`: Gruppen strategy_id × mode × order_kind
+   (market/maker/taker_fallback/limit_fill): Anzahl, Ø slippage_pct,
+   Σ slippage_usdt, Ø mfe_pct / Ø mae_pct (Adverse-Selection-Check).
+3. KI-Kontext: Fill-Qualitäts-Block in `ai_engine._strategy_performance_text()`
+   (die KI sieht ihre eigenen Ausführungskosten je Order-Art).
+4. Tests: `backend/tests/test_slippage_stats.py` (7 Tests, grün).
+**Hinweis:** Daten laufen erst ab jetzt auf – Auswertung nach der Messphase.
+Optionale UI-Karte im Analyse-Panel bewusst zurückgestellt, bis Daten da sind.
 
 ---
 

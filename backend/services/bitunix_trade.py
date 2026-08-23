@@ -309,6 +309,33 @@ def update_trough(side: str, prev_trough, *prices):
                        prev_trough, *prices)
 
 
+def atr_market_block(atr_pct, threshold_pct) -> bool:
+    """Low-Vol-Market-Block (Baustein A): True = Market-Entry sperren, weil die
+    1m-ATR (% vom Preis) unter der Schwelle liegt – Gebühren wären größer als
+    die erwartbare Bewegung. Fail-open bei ungültigen Werten (kein Block)."""
+    try:
+        thr = float(threshold_pct)
+        pct = float(atr_pct)
+    except (TypeError, ValueError):
+        return False
+    if thr <= 0:
+        return False
+    return pct < thr
+
+
+def compute_slippage_pct(side: str, signal_price, fill_price):
+    """Signierte Entry-Slippage in % (Baustein B): + = schlechterer Fill als
+    der Signalpreis (LONG: teurer gekauft, SHORT: billiger verkauft)."""
+    try:
+        sp, fp = float(signal_price), float(fill_price)
+    except (TypeError, ValueError):
+        return None
+    if sp <= 0 or fp <= 0:
+        return None
+    pct = (fp - sp) / sp * 100.0
+    return round((pct if str(side).upper() == "LONG" else -pct) + 0.0, 4)
+
+
 class BitunixTradeClient:
     """Live Bitunix USDT-M futures client (signed private endpoints).
 
@@ -1712,12 +1739,40 @@ class AutoTradeManager:
                 capital = free_alloc
         qty = round((capital * lev_used) / entry, 6)
 
+        # ---- Fill-Qualitäts-Messung (Baustein B): Referenzpreis festhalten,
+        # BEVOR Maker-/Paper-Fills den Entry verändern.
+        signal_price = float(entry or 0) or None
+        fill_price_real = None
+
         # Maker-Order-Modus: unkritische KI-Entries als Post-Only-Limit
         # (Flag kommt vom KI-Trader; Datensammel-/manuelle Trades nie).
         # Paper-Trades simulieren den Maker-Fill (reale Kostenbasis).
         maker_requested = (bool(signal.get("ai_maker_ok"))
                            and not signal.get("manual_trade"))
         order_kind = "maker" if maker_requested else "market"
+
+        # ---- Low-Vol-Market-Block (Baustein A): liegt die ATR des Signals
+        # unter der Schwelle, sind Market-Entries für den KI-Trader gesperrt –
+        # Maker-Entry wird erzwungen, ohne Market-Fallback (siehe unten).
+        # Key-Level-Limit-Fills (ai_limit_fill) sind bereits Limit-Entries.
+        low_vol_forced = False
+        if (mode == "live" and strategy_id == "ai_trader"
+                and not signal.get("manual_trade")
+                and not signal.get("ai_limit_fill")
+                and (ai_cfg or {}).get("low_vol_market_block_enabled", True)):
+            try:
+                _lv_thr = float((ai_cfg or {}).get("low_vol_atr_threshold_pct", 0.10) or 0)
+            except (TypeError, ValueError):
+                _lv_thr = 0.10
+            atr_pct_sig = (float(atr) / float(entry) * 100.0) if (atr and entry) else 0.0
+            if atr_market_block(atr_pct_sig, _lv_thr):
+                low_vol_forced = True
+                if not maker_requested:
+                    maker_requested = True
+                    order_kind = "maker"
+                logger.info(f"{symbol}: Low-Vol-Block – ATR {atr_pct_sig:.3f}% < "
+                            f"{_lv_thr:g}% -> Maker-Entry erzwungen, "
+                            "kein Market-Fallback")
 
         # Ehrliches Paper: Market-Entries mit simuliertem Spread + Slippage
         # abrechnen (Live-Orderbuch bevorzugt, Fallback konservative Schätzung),
@@ -1830,6 +1885,20 @@ class AutoTradeManager:
                             "vermeiden).")
                         return None
                     else:
+                        if low_vol_forced:
+                            # Baustein A: kein Market-Fallback im Low-Vol-Regime
+                            signal["_reject_reason"] = (
+                                f"Low-Vol-Block: Maker-Entry nicht gefüllt "
+                                f"({m.get('reason')}) – Market-Fallback bei "
+                                "ATR unter Schwelle unterdrückt")
+                            await self._notify_reject(
+                                symbol, side,
+                                "Low-Vol-Block: Volatilität (ATR) unter der "
+                                "Schwelle – Maker-Entry nicht gefüllt "
+                                f"({m.get('reason')}), Market-Fallback "
+                                "unterdrückt (Gebühren wären größer als die "
+                                "erwartbare Bewegung).")
+                            return None
                         order_kind = "taker_fallback"
                         logger.info(f"{symbol}: Maker-Entry nicht gefüllt "
                                     f"({m.get('reason')}) -> Market-Fallback")
@@ -1892,6 +1961,16 @@ class AutoTradeManager:
                         qty=qty, price=entry, meta=entry_meta, kind="entry")
                 except Exception as e:
                     logger.debug(f"{symbol}: Entry-Registrierung fehlgeschlagen: {e}")
+
+            # Fill-Qualität (Baustein B): realen Fill-Preis nur für die
+            # Slippage-Messung holen – Entry/SL/TP bleiben unverändert.
+            if order_id and order_kind != "maker":
+                try:
+                    fi = parse_order_fill(await self.client.get_order_detail(order_id))
+                    if fi.get("avg_price"):
+                        fill_price_real = float(fi["avg_price"])
+                except Exception as e:
+                    logger.debug(f"{symbol}: Fill-Preis für Slippage nicht abrufbar: {e}")
 
             # ----------------------------------------------------------------
             # Entry filled. Now put TP1 (partial, reduce-only) directly on the
@@ -1996,6 +2075,11 @@ class AutoTradeManager:
         except Exception:
             entry_snap = None
 
+        # ---- Fill-Qualität (Baustein B): Slippage Signalpreis -> Fill ----
+        slip_pct = compute_slippage_pct(side, signal_price, fill_price_real or entry)
+        slip_usdt = (round(slip_pct / 100.0 * signal_price * qty, 6)
+                     if (slip_pct is not None and signal_price) else None)
+
         trade = {
             "id": f"{symbol}-{int(time.time()*1000)}",
             "symbol": symbol, "side": side, "mode": mode,
@@ -2007,6 +2091,9 @@ class AutoTradeManager:
             "tp1_close_percent": cfg["tp1_close_percent"],
             "breakeven_enabled": cfg["breakeven_enabled"], "fee_percent": fee_pct_used,
             "order_kind": order_kind, "entry_fee_percent": entry_fee_pct,
+            "low_vol_forced_maker": low_vol_forced,
+            "signal_price": signal_price,
+            "slippage_pct": slip_pct, "slippage_usdt": slip_usdt,
             "paper_exec": paper_exec,
             "limit_entry": bool(signal.get("ai_limit_fill")),
             "ai_limit_order_id": signal.get("ai_limit_order_id"),

@@ -29,7 +29,7 @@ class _FakeClient:
     async def get_mark_price(self, symbol):
         return 1.0
 
-    async def flash_close(self, symbol, position_id, side, qty):
+    async def flash_close(self, symbol, position_id, side, qty, full=False):
         self.close_calls.append((symbol, position_id, side, qty))
         if not self.close_ok:
             raise RuntimeError("simulierter Börsen-Fehler")

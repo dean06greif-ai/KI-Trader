@@ -99,7 +99,7 @@ class FakeClient:
             return {"code": 0, "data": {"orderId": "tpsl-new"}}
         return {"code": code, "msg": "TP/SL amount must be less than the size of the position."}
 
-    async def flash_close(self, symbol, pos_id, side, qty):
+    async def flash_close(self, symbol, pos_id, side, qty, full=False):
         self.calls.append(("flash_close", qty))
         if self.close_code == 0:
             self.live_qty = None

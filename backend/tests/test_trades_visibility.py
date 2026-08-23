@@ -34,6 +34,11 @@ class _Coll:
         return _Cursor([d for d in self.docs
                         if all(d.get(k) == v for k, v in q.items())])
 
+    async def count_documents(self, q=None):
+        q = q or {}
+        return len([d for d in self.docs
+                    if all(d.get(k) == v for k, v in q.items())])
+
 
 class _Db:
     def __init__(self, docs):

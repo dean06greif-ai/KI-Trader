@@ -58,7 +58,7 @@ class FakeClient:
         self.calls.append(("resolve", symbol, side))
         return self.position_id
 
-    async def flash_close(self, symbol, pos_id, side, qty):
+    async def flash_close(self, symbol, pos_id, side, qty, full=False):
         self.calls.append(("flash_close", symbol, pos_id, side, qty))
         if self.close_code == 0:
             return {"code": 0, "msg": "ok"}

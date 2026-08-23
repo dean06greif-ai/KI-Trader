@@ -133,6 +133,11 @@ DEFAULT_AI_CONFIG = {
     "live_gate_bypass_enabled": True,
     "live_gate_bypass_margin": 5,    # Konfidenz-Aufschlag über min_confidence
     "live_gate_bypass_per_day": 2,   # max. Bypass-Live-Trades pro Tag
+    # ---- Low-Vol-Market-Block (Baustein A): liegt die ATR des Signals (% vom
+    # Preis) unter der Schwelle, sind Market-Entries live gesperrt – es wird
+    # ein Maker-Entry erzwungen, OHNE Market-Fallback. Schwelle 0 = aus.
+    "low_vol_market_block_enabled": True,
+    "low_vol_atr_threshold_pct": 0.10,
     # Setup-Reife-Gate: LIVE nur für Setups mit genug echten Daten (Playbook-
     # Urteil 'bewährt'/'neutral'). Neue/unreife Setups laufen auch bei hoher
     # Konfidenz zuerst als Paper-Datensammlung weiter. Greift nur, wenn der
@@ -735,6 +740,14 @@ class AIEngine:
             self.config["live_gate_bypass_margin"] = max(0, min(30, int(updates["live_gate_bypass_margin"])))
         if "live_gate_bypass_per_day" in updates:
             self.config["live_gate_bypass_per_day"] = max(0, min(10, int(updates["live_gate_bypass_per_day"])))
+        if "low_vol_market_block_enabled" in updates:
+            self.config["low_vol_market_block_enabled"] = bool(updates["low_vol_market_block_enabled"])
+        if "low_vol_atr_threshold_pct" in updates:
+            try:
+                self.config["low_vol_atr_threshold_pct"] = max(
+                    0.0, min(2.0, float(updates["low_vol_atr_threshold_pct"] or 0)))
+            except (TypeError, ValueError):
+                pass
         if "setup_live_gate" in updates:
             self.config["setup_live_gate"] = bool(updates["setup_live_gate"])
         if "max_trades_per_coin" in updates:
@@ -1477,6 +1490,32 @@ class AIEngine:
                 continue
             twr = round(t["wins"] / t["trades"] * 100) if t["trades"] else 0
             lines.append(f"- {sid}: Trades: {t['trades']}, PnL {float(t.get('pnl') or 0):+.2f} USDT, Winrate {twr}%")
+        # Fill-Qualität (Baustein B): Entry-Slippage + MFE/MAE je Order-Art –
+        # die KI sieht ihre eigenen Ausführungskosten (Limit vs. Market).
+        try:
+            from core.utils import slippage_aggregate
+            st = await self.db.auto_trades.find(
+                {"opened_at": {"$gte": cutoff}, "slippage_pct": {"$ne": None}},
+                {"_id": 0, "strategy_id": 1, "mode": 1, "order_kind": 1,
+                 "limit_entry": 1, "side": 1, "entry": 1, "slippage_pct": 1,
+                 "slippage_usdt": 1, "peak_price": 1, "trough_price": 1}
+            ).to_list(2000)
+            rows = slippage_aggregate(st)
+            if rows:
+                lines.append("Fill-Qualität der Entries (Slippage: + = teurer als "
+                             "Signalpreis; MFE/MAE = bester/schlechtester Stand "
+                             "nach dem Fill – vergleiche Limit/Maker vs. Market):")
+                for r in rows[:6]:
+                    extra = ""
+                    if r.get("avg_mfe_pct") is not None and r.get("avg_mae_pct") is not None:
+                        extra = (f", Ø MFE {r['avg_mfe_pct']:+.2f}% / "
+                                 f"Ø MAE {r['avg_mae_pct']:+.2f}%")
+                    lines.append(f"  {r['strategy_id']} {r['mode']}/{r['order_kind']}: "
+                                 f"{r['trades']} Trades, Ø Slippage "
+                                 f"{r['avg_slippage_pct']:+.3f}% "
+                                 f"(Σ {r['total_slippage_usdt']:+.2f} USDT){extra}")
+        except Exception as e:
+            logger.debug(f"Fill-Qualität für KI-Kontext fehlgeschlagen: {e}")
         # Gesamt-Verlauf des Kontos: die letzten Trades ALLER Quellen (auch
         # manuell/extern und künftig hinzukommende Strategien) mit klarer
         # Kennzeichnung, welche Trades von der KI selbst stammen.
