@@ -1756,7 +1756,8 @@ class AIEngine:
                     prepend = ai_providers.same_provider_chain(wp, wm)
                     chain = prepend + [c for c in chain if c not in prepend]
         text, provider, model = await ai_providers.generate_chain(
-            chain, prompt, system, temperature=temperature, json_mode=json_mode)
+            chain, prompt, system, temperature=temperature, json_mode=json_mode,
+            priority=ai_providers.role_priority(role))
         self._effective_model = model
         self._effective_provider = provider
         try:

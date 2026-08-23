@@ -50,9 +50,10 @@ class _FakeMakerClient:
 
     async def place_order(self, symbol, side, qty, order_type="MARKET",
                           price=None, tp_price=None, sl_price=None,
-                          reduce_only=False, effect=None):
+                          reduce_only=False, effect=None, client_id=None):
         self.place_calls.append({"order_type": order_type, "price": price,
-                                 "effect": effect, "qty": qty})
+                                 "effect": effect, "qty": qty,
+                                 "client_id": client_id})
         if self.place_code != 0:
             return {"code": self.place_code, "msg": "rejected"}
         return {"code": 0, "data": {"orderId": "ord-1"}}

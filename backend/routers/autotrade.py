@@ -633,3 +633,24 @@ async def get_balance():
         logger.warning(f"balance allocation info failed: {e}")
 
     return result
+
+
+# ---- KI-Trader Gewinnschutz-Policy (intern, dynamisch anpassbar) ----------
+@router.get("/api/autotrade/ai-protection")
+async def get_ai_protection():
+    """Aktive Gewinnschutz-Policy des KI-Traders (Defaults + Overrides)."""
+    return await autotrader.ai_protection_policy(force=True)
+
+
+@router.patch("/api/autotrade/ai-protection")
+async def patch_ai_protection(updates: Dict, _admin=Depends(require_admin)):
+    """Policy dynamisch anpassen/aussetzen (z.B. enabled=false, trigger_pct)."""
+    allowed = set(autotrader.AI_PROTECTION_DEFAULTS)
+    clean = {k: updates[k] for k in updates if k in allowed}
+    if not clean:
+        raise HTTPException(status_code=400,
+                            detail=f"Keine gültigen Felder (erlaubt: {sorted(allowed)})")
+    await state.db.settings.update_one(
+        {"_id": "ai_profit_protection"}, {"$set": clean}, upsert=True)
+    autotrader._ai_prot_cache = None
+    return await autotrader.ai_protection_policy(force=True)

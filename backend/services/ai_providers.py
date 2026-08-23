@@ -498,6 +498,32 @@ def set_current_role(role: Optional[str]):
     _current_role["role"] = role
 
 
+# Live-Priorisierung: Rollen mit direktem Einfluss auf LIVE-Trades dürfen alle
+# Keys (inkl. aller Backups) nutzen; Daten-/Lern-Rollen (Paper/Datensammlung)
+# nur den Primär-Key. So bleibt das Backup-Kontingent für live-kritische
+# Aufrufe reserviert und ein Rate-Limit durch Sammel-Läufe kann keinen
+# Live-Trade unbewacht lassen.
+ROLE_PRIORITY: Dict[str, str] = {
+    "trade_manager": "critical", "analyst": "critical",
+    "market_observer": "critical", "news_watcher": "critical",
+    "chat": "normal", "supervisor": "normal", "deep_analyst": "normal",
+    "research_analyst": "low", "learner": "low", "summarizer": "low",
+}
+LOW_PRIORITY_MAX_KEYS = 1
+
+
+def role_priority(role: Optional[str]) -> str:
+    return ROLE_PRIORITY.get(str(role or ""), "normal")
+
+
+def restrict_indices_for_priority(idxs: List[int], priority: str) -> List[int]:
+    """Niedrig-priorisierte Rollen nutzen nur die ersten LOW_PRIORITY_MAX_KEYS
+    Keys eines Providers (Backup-Kontingent bleibt für Live-Rollen reserviert)."""
+    if priority == "low":
+        return [i for i in idxs if i < LOW_PRIORITY_MAX_KEYS]
+    return idxs
+
+
 def health_status() -> Dict:
     """Aufbereiteter Zustand für /api/ai/status und die UI."""
     now = _now()
@@ -652,7 +678,8 @@ async def _oai_generate(provider: str, model: str, key: str, prompt: str, system
 
 
 async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
-                         temperature: float = 0.4, json_mode: bool = True) -> Tuple[str, str, str]:
+                         temperature: float = 0.4, json_mode: bool = True,
+                         priority: str = "normal") -> Tuple[str, str, str]:
     """Iteriert (provider, model)-Kette; pro Provider alle Keys (primär -> backup).
 
     Rate-Limits führen zum nächsten Key bzw. Modell; andere Fehler zum nächsten
@@ -692,6 +719,7 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
         # probieren, sofort auf die Free-Modell-Fallback-Kette wechseln.
         if model in PAID_MODELS_NO_FALLBACK:
             idxs = [0] if 0 in idxs else []
+        idxs = restrict_indices_for_priority(idxs, priority)
         if not idxs:
             continue
         last_idx = idxs[-1]

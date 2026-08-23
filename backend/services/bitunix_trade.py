@@ -453,7 +453,7 @@ class BitunixTradeClient:
 
     async def place_order(self, symbol, side, qty, order_type="MARKET", price=None,
                           tp_price=None, sl_price=None, reduce_only=False,
-                          effect=None):
+                          effect=None, client_id=None):
         b_symbol = self.to_bitunix_symbol(symbol)
         # Direction-aware rounding for TP/SL. For LONG (BUY):
         #   * TP must be ABOVE mark, so round UP to the next tick.
@@ -468,6 +468,8 @@ class BitunixTradeClient:
                 "tradeSide": "OPEN", "orderType": order_type}
         if order_type == "LIMIT" and price:
             body["price"] = self._fmt_price(b_symbol, price)
+        if client_id:
+            body["clientId"] = str(client_id)[:64]
         if effect:
             body["effect"] = str(effect)
         if tp_price:
@@ -788,6 +790,13 @@ def parse_closed_position(res, position_id) -> Optional[Dict]:
     return None
 
 
+def make_client_id(strategy_id: Optional[str]) -> str:
+    """Eigene clientId für jede Website-Entry-Order: macht die Herkunft an der
+    Börse eindeutig nachweisbar (manuelle App-Orders tragen keine KIT-...-ID)."""
+    tag = "".join(ch for ch in str(strategy_id or "bot") if ch.isalnum())[:10] or "bot"
+    return f"KIT-{tag}-{int(time.time() * 1000) % 10_000_000_000}"
+
+
 def _extract_order_id(res) -> Optional[str]:
     """orderId aus einer Bitunix-Antwort ziehen (Feldname variiert)."""
     if not isinstance(res, dict):
@@ -845,6 +854,35 @@ class AutoTradeManager:
         base = dict(DEFAULT_CAPITAL_ALLOCATION.get(mode, {}))
         base.update((self.config.get("capital_allocation", {}) or {}).get(mode, {}))
         return base
+
+    # Interne Gewinnschutz-Policy für KI-Trader-Live-Trades (kein Coin-Setting
+    # nötig; via settings['ai_profit_protection'] + API dynamisch anpassbar).
+    AI_PROTECTION_DEFAULTS = {
+        "enabled": True,
+        "trigger_pct": 30.0,        # Gewinnsicherung ab +X% Gewinn auf die Marge
+        "lock_pct": 50.0,           # SL sichert X% des erreichten Gewinns
+        "release_margin": True,     # Marge freisetzen (Hebel steigt, Liq rückt ran)
+        "max_leverage": 200.0,      # Ziel-Hebel beim Freisetzen (200 = Maximum)
+        "margin_reduce_pct": 100.0,
+        "sl_liq_buffer_pct": 0.3,   # SL bleibt sicher VOR der neuen Liq
+    }
+
+    async def ai_protection_policy(self, force: bool = False) -> Dict:
+        now = time.time()
+        cached = getattr(self, "_ai_prot_cache", None)
+        if not force and cached and now - cached[0] < 60:
+            return cached[1]
+        pol = dict(self.AI_PROTECTION_DEFAULTS)
+        try:
+            doc = await self.db.settings.find_one(
+                {"_id": "ai_profit_protection"}) or {}
+            for k in pol:
+                if k in doc:
+                    pol[k] = doc[k]
+        except Exception as e:
+            logger.debug(f"ai_profit_protection-Config: {e}")
+        self._ai_prot_cache = (now, pol)
+        return pol
 
     async def _live_total_balance(self) -> Optional[float]:
         if not self.client or not self.client.configured():
@@ -1167,7 +1205,8 @@ class AutoTradeManager:
         try:
             res = await self.client.place_order(
                 symbol, side_order, qty, order_type="LIMIT", price=price,
-                tp_price=tpf, sl_price=sl, effect="POST_ONLY")
+                tp_price=tpf, sl_price=sl, effect="POST_ONLY",
+                client_id=make_client_id((meta or {}).get("strategy_id")))
         except Exception as e:
             # Antwort verloren: evtl. liegt die Limit-Order trotzdem im Buch.
             logger.error(f"{symbol}: Maker-Limit EXCEPTION: {e}")
@@ -1255,8 +1294,11 @@ class AutoTradeManager:
                 await _resolve()
             else:
                 # Rest-Menge liegt evtl. weiter im Buch -> überwacht lassen
-                await entry_order_registry.mark_orphan(
-                    self.db, order_id, "Teil-Fill, Rest-Cancel nicht bestätigt")
+                try:
+                    await entry_order_registry.mark_orphan(
+                        self.db, order_id, "Teil-Fill, Rest-Cancel nicht bestätigt")
+                except Exception as e:
+                    logger.debug(f"{symbol}: mark_orphan fehlgeschlagen: {e}")
             return {"kind": "maker_partial", "qty": filled,
                     "entry": fill.get("avg_price") or price,
                     "order_id": order_id, "res": res}
@@ -1265,8 +1307,11 @@ class AutoTradeManager:
             # Cancel NICHT bestätigt: Order kann später füllen. Kein Market-
             # Fallback (Doppel-Positions-Schutz) – Registry + Watchdog
             # übernehmen einen späteren Fill korrekt als KI-Trade.
-            await entry_order_registry.mark_orphan(
-                self.db, order_id, "Timeout-Cancel nicht bestätigt")
+            try:
+                await entry_order_registry.mark_orphan(
+                    self.db, order_id, "Timeout-Cancel nicht bestätigt")
+            except Exception as e:
+                logger.debug(f"{symbol}: mark_orphan fehlgeschlagen: {e}")
             logger.warning(f"{symbol}: Maker-Order {order_id} nicht stornierbar – "
                            "wird überwacht, kein Market-Fallback")
             return {"kind": "orphan", "reason": "Cancel nicht bestätigt"}
@@ -1638,26 +1683,26 @@ class AutoTradeManager:
                                                cfg["margin_mode"])
                 side_order = "BUY" if side == "LONG" else "SELL"
                 res = None
+                entry_meta = {
+                    "strategy_id": strategy_id,
+                    "strategy_name": signal.get("strategy_name"),
+                    "timeframe": tf, "mode": mode,
+                    "leverage": round(lev_used, 2),
+                    "capital": round(capital, 6),
+                    "sl": sl, "tp1": tp1, "tpf": tpf,
+                    "fee_percent": effective_fee_percent(cfg),
+                    "tp1_close_percent": cfg.get("tp1_close_percent"),
+                    "horizon": signal.get("ai_horizon") or "scalp",
+                    "ai_confidence": signal.get("ai_confidence"),
+                    "signal_id": signal.get("id"),
+                    "decision_id": signal.get("decision_id"),
+                }
                 if maker_requested:
-                    maker_meta = {
-                        "strategy_id": strategy_id,
-                        "strategy_name": signal.get("strategy_name"),
-                        "timeframe": tf, "mode": mode,
-                        "leverage": round(lev_used, 2),
-                        "capital": round(capital, 6),
-                        "sl": sl, "tp1": tp1, "tpf": tpf,
-                        "fee_percent": effective_fee_percent(cfg),
-                        "tp1_close_percent": cfg.get("tp1_close_percent"),
-                        "horizon": signal.get("ai_horizon") or "scalp",
-                        "ai_confidence": signal.get("ai_confidence"),
-                        "signal_id": signal.get("id"),
-                        "decision_id": signal.get("decision_id"),
-                    }
                     m = await self._maker_entry(
                         symbol, side, qty,
                         (mark if mark and mark > 0 else entry),
                         int(signal.get("ai_maker_wait_sec") or 45), tpf, sl,
-                        meta=maker_meta)
+                        meta=entry_meta)
                     await self._record_maker_attempt(m.get("kind"))
                     if m.get("kind") in ("maker", "maker_partial"):
                         res = m["res"]
@@ -1687,9 +1732,11 @@ class AutoTradeManager:
                         logger.info(f"{symbol}: Maker-Entry nicht gefüllt "
                                     f"({m.get('reason')}) -> Market-Fallback")
                 if res is None:
-                    res = await self.client.place_order(symbol, side_order, qty,
-                                                        order_type=cfg["order_type"],
-                                                        tp_price=tpf, sl_price=sl)
+                    res = await self.client.place_order(
+                        symbol, side_order, qty,
+                        order_type=cfg["order_type"],
+                        tp_price=tpf, sl_price=sl,
+                        client_id=make_client_id(strategy_id))
             except Exception as e:
                 # BUGFIX (ADA/DOT ohne SL): Ein Timeout/Netzfehler kann auftreten,
                 # NACHDEM Bitunix die Order bereits angenommen hat. Vorher wurde
@@ -1730,6 +1777,19 @@ class AutoTradeManager:
                 await self._notify_reject(symbol, side, f"code {code}: {reason}")
                 # No local persistence -> no ghost position.
                 return None
+
+            # Absturz-Schutz: Order sofort registrieren. Fällt das Backend
+            # zwischen Order-Annahme und DB-Insert aus (z.B. Render-Deploy),
+            # ordnet der Watchdog die Position über die Registry der richtigen
+            # Strategie zu – statt 'Manuell (Bitunix)'.
+            if order_id:
+                try:
+                    from services import entry_order_registry
+                    await entry_order_registry.register(
+                        self.db, order_id=order_id, symbol=symbol, side=side,
+                        qty=qty, price=entry, meta=entry_meta, kind="entry")
+                except Exception as e:
+                    logger.debug(f"{symbol}: Entry-Registrierung fehlgeschlagen: {e}")
 
             # ----------------------------------------------------------------
             # Entry filled. Now put TP1 (partial, reduce-only) directly on the
@@ -1894,11 +1954,37 @@ class AutoTradeManager:
             **trade_extra,
         }
 
+        # KI-Trader Gewinnschutz: interne Standard-Policy (Gewinnsicherung –
+        # SL in den Gewinn ziehen + Marge freisetzen bei Hebel-Maximierung,
+        # SL sicher vor der Liq). Aktiv OHNE Coin-Einstellungen; dynamisch über
+        # settings['ai_profit_protection'] anpass-/abschaltbar (API vorhanden).
+        if (strategy_id == "ai_trader" and not collection
+                and not trade["manual_trade"]):
+            pol = await self.ai_protection_policy()
+            if pol.get("enabled", True) and not trade["profit_secure_enabled"]:
+                trade.update({
+                    "profit_secure_enabled": True,
+                    "profit_secure_trigger_pct": max(5.0, float(pol["trigger_pct"])),
+                    "profit_lock_pct": float(pol["lock_pct"]),
+                    "profit_secure_release_margin": bool(pol["release_margin"]),
+                    "profit_secure_max_leverage": float(pol["max_leverage"]),
+                    "profit_secure_margin_reduce_pct": float(pol["margin_reduce_pct"]),
+                    "profit_secure_sl_liq_buffer_pct": float(pol["sl_liq_buffer_pct"]),
+                    "ai_protection_policy": True,
+                })
+
         if collection:
             trade["data_collection"] = True
             if signal.get("collection_reason"):
                 trade["collection_reason"] = signal["collection_reason"]
         await self.db.auto_trades.insert_one(dict(trade))
+        if mode == "live" and trade.get("bitunix_order_id"):
+            # Trade lokal verbucht -> Registry-Eintrag auflösen
+            try:
+                from services import entry_order_registry
+                await entry_order_registry.resolve(self.db, trade["bitunix_order_id"])
+            except Exception as e:
+                logger.debug(f"{symbol}: Registry-Resolve fehlgeschlagen: {e}")
         logger.info(f"AutoTrade OPEN {side} {symbol} qty={qty} entry={entry} mode={mode}"
                     + (" [Datensammlung]" if collection else ""))
         trade.pop("_id", None)

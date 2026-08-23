@@ -30,10 +30,11 @@ def _cutoff_iso(hours: float) -> str:
 
 async def register(db, *, order_id: str, symbol: str, side: str, qty: float,
                    price: float, meta: Optional[Dict] = None,
-                   status: str = "waiting") -> None:
+                   status: str = "waiting", kind: str = "limit") -> None:
     doc = {"order_id": str(order_id), "symbol": symbol,
            "side": str(side).upper(), "qty": float(qty), "price": float(price),
-           "meta": dict(meta or {}), "status": status, "created_at": _now_iso()}
+           "meta": dict(meta or {}), "status": status, "kind": kind,
+           "created_at": _now_iso()}
     await db.pending_entry_orders.update_one(
         {"order_id": str(order_id)}, {"$set": doc}, upsert=True)
 
