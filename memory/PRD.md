@@ -92,3 +92,38 @@ test_ai_protection_and_priority.py, test_key_level_and_live_gate.py.
 - P1: Funding-Kosten (funding_est_usdt) in der Trade-Ansicht anzeigen
 - P2: Registry-/Watchdog-Statuskarte (offene Entry-Limit-Orders) im Frontend
 - P2: Coin-Max-Hebel auch im Backtester (effective_leverage) berücksichtigen
+
+## Umgesetzt – Iteration (23.08.2026, Branch conflict_220826_1859)
+1. **Key-Level-Limit-Orders** (services/key_level_limits.py, Collection ai_limit_orders):
+   KI wählt pro Entscheidung entry_type market|limit, limit_price am Key-Level
+   (Order-Block/POC/VAH/VAL/Range-Grenze; LONG darunter, SHORT darüber; max 2.5%
+   scalp / 8% swing) und limit_valid_min (15–480, KI-gewählt). Orders lokal/synthetisch
+   (identisch Paper+Live, keine verwaisten Börsen-Orders), Fill-Check je Scanner-Tick
+   (core/scheduler.py), Fill läuft durch die normale Pipeline (Guards greifen beim Fill),
+   Verfall + Neu-Bewertung je Analyse-Zyklus (reevaluate: cancel_limit / Gegenrichtung /
+   Market-Ersatz; Ersetzen gleicher Richtung via place). Prompt: Schema-Felder + Block
+   "WARTENDE LIMIT-ORDERS". API: GET /api/ai/limit-orders, DELETE …/{id} (Admin).
+   Frontend: KeyLevelLimitOrders.js Karte in PerformanceAnalytics (Countdown, Stornieren).
+2. **Ehrliches Paper** (services/paper_execution.py): Paper-Fills adversarial mit
+   Spread/2 + Slippage. Echter Top-of-Book (Binance→OKX→Bybit, keyless, 20s Cache),
+   Fallback-Tiers (Major 0.01/0.01, Crypto 0.04/0.03, Yahoo 0.06/0.05 %). Integriert in
+   bitunix_trade.py: Entry (on_signal), Exits (_manage_trade TP1/TPF/SL, manual_close,
+   partial_close). Nur mode=paper. Settings: paper_realistic_fills,
+   paper_fallback_spread_pct, paper_slippage_pct. Trade-Doku: paper_exec + PAPER-FILL-Events.
+3. **Größenabhängige Slippage** (Erweiterung zu 2): Sqrt-Impact-Modell
+   size_scaled_slippage – bis Referenz-Notional (Major 100k / Crypto 25k / Other 10k USDT,
+   oder echte Top-of-Book-Tiefe der konsumierten Seite, wenn größer) Basis-Slippage,
+   darüber × sqrt(Notional/Referenz), hart gedeckelt (Default 0.30%). Alle Fill-Aufrufer
+   übergeben die Order-Notional; paper_exec dokumentiert size_mult / notional_usdt /
+   book_depth_usd / base_slippage_pct. Settings: paper_size_slippage_enabled,
+   paper_size_ref_notional, paper_max_slippage_pct.
+Tests: backend/tests/test_key_level_limits.py (8 Blöcke) + test_paper_execution.py
+(8 Blöcke) grün; Regression 826 Unit-Tests grün; E2E via Testing-Agent (iteration_8.json,
+100%). Hinweis: Root-tests test_stale_price_* + test_fix_0_5_* sind am Wochenende
+zeitabhängig rot (pre-existing, auch im Original-Repo).
+
+## Backlog (P1/P2)
+- P1: Limit-Order-Historie als UI-Ansicht mit Fill-Quote-Statistik
+- P1: Telegram-Notification bei Limit-Order-Platzierung/-Fill (eigener Event-Typ)
+- P2: KI-Lernschleife: Fill-Quote & entgangene Moves der Limit-Orders in Lessons
+- P2: Paper-vs-Live-Vergleich derselben Setups (Live-Reife-Ansicht)

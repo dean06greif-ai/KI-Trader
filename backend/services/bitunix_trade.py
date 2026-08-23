@@ -1696,7 +1696,8 @@ class AutoTradeManager:
         if mode == "paper" and order_kind == "market":
             try:
                 from services import paper_execution
-                adj_entry, paper_exec = await paper_execution.entry_fill(symbol, side, entry)
+                adj_entry, paper_exec = await paper_execution.entry_fill(
+                    symbol, side, entry, notional_usdt=capital * lev_used)
                 if paper_exec and adj_entry > 0:
                     entry = adj_entry
                     qty = round((capital * lev_used) / entry, 6)
@@ -2464,15 +2465,16 @@ class AutoTradeManager:
 
         is_paper = t.get("mode") == "paper"
 
-        async def paper_fill(level: float):
+        async def paper_fill(level: float, fill_qty: float):
             """Ehrliches Paper: Trigger-Exits (SL/TP) füllen wie Live-Market-
-            Orders mit Spread + Slippage statt exakt am Level (Trigger-Erkennung
-            bleibt am Level, nur der Abrechnungspreis wird realistisch)."""
+            Orders mit Spread + Slippage (größenabhängig) statt exakt am Level
+            (Trigger-Erkennung bleibt am Level, nur die Abrechnung wird realistisch)."""
             if not is_paper:
                 return level, None
             try:
                 from services import paper_execution
-                p, info = await paper_execution.exit_fill(t["symbol"], side, level)
+                p, info = await paper_execution.exit_fill(
+                    t["symbol"], side, level, notional_usdt=fill_qty * level)
                 if info and p > 0:
                     return p, info
             except Exception as e:
@@ -2530,7 +2532,7 @@ class AutoTradeManager:
         # TP1 partial + break-even
         if not t.get("tp1_hit") and hit_tp1 and not hit_tpf:
             close_qty = round(t["qty"] * t["tp1_close_percent"] / 100, 6)
-            tp1_fill, tp1_pex = await paper_fill(t["tp1"])
+            tp1_fill, tp1_pex = await paper_fill(t["tp1"], close_qty)
             fee = exit_fee(close_qty, tp1_fill)
             realized += pnl(close_qty, tp1_fill) - fee
             fees_paid += fee
@@ -2668,7 +2670,7 @@ class AutoTradeManager:
 
         # Full TP
         if hit_tpf and qty_rem > 0:
-            tpf_fill, tpf_pex = await paper_fill(t["tpf"])
+            tpf_fill, tpf_pex = await paper_fill(t["tpf"], qty_rem)
             fee = exit_fee(qty_rem, tpf_fill)
             realized += pnl(qty_rem, tpf_fill) - fee
             fees_paid += fee
@@ -2680,7 +2682,7 @@ class AutoTradeManager:
         cur_sl = updates.get("sl", t["sl"])
         hit_sl = (price <= cur_sl) if side == "LONG" else (price >= cur_sl)
         if not closed and hit_sl and qty_rem > 0:
-            sl_fill, sl_pex = await paper_fill(cur_sl)
+            sl_fill, sl_pex = await paper_fill(cur_sl, qty_rem)
             fee = exit_fee(qty_rem, sl_fill)
             realized += pnl(qty_rem, sl_fill) - fee
             fees_paid += fee
@@ -3131,7 +3133,8 @@ class AutoTradeManager:
         if t["mode"] == "paper":
             try:
                 from services import paper_execution
-                p_adj, p_info = await paper_execution.exit_fill(t["symbol"], side, price)
+                p_adj, p_info = await paper_execution.exit_fill(
+                    t["symbol"], side, price, notional_usdt=qty_rem * price)
                 if p_info and p_adj > 0:
                     live_note += f" [Paper-Fill {p_adj} statt {price}]"
                     price = p_adj
@@ -3193,7 +3196,9 @@ class AutoTradeManager:
         if t["mode"] == "paper":
             try:
                 from services import paper_execution
-                p_adj, p_info = await paper_execution.exit_fill(t["symbol"], t["side"], price)
+                p_adj, p_info = await paper_execution.exit_fill(
+                    t["symbol"], t["side"], price,
+                    notional_usdt=qty_rem * pct / 100 * price)
                 if p_info and p_adj > 0:
                     price = p_adj
             except Exception as e:
