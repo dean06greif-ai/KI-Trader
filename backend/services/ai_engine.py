@@ -2337,10 +2337,24 @@ class AIEngine:
                                    self.config.get("min_confidence", 65),
                                    opened_today, self.config):
                 dec["live_gate_bypass"] = True
+                dec["live_gate_bypass_reason"] = why
+                per_day = int(self.config.get("live_gate_bypass_per_day", 2) or 0)
                 logger.info(f"{dec.get('symbol')}: Live-Gate-BYPASS – Setup "
                             f"'{setup}' noch nicht live-reif, aber Konfidenz "
                             f"{dec.get('confidence')} und erst {opened_today} "
                             "KI-Live-Trades heute")
+                try:
+                    from core import state
+                    from services import notifications
+                    await notifications.telegram_notify(
+                        self.db, state.telegram, "live_gate_bypass",
+                        f"⚡ *LIVE-BYPASS* {dec.get('symbol')} {dec.get('action')}\n"
+                        f"Setup `{setup}` ist noch nicht live-reif ({why}), "
+                        f"aber Konfidenz {dec.get('confidence')} ≥ Schwelle+"
+                        f"{self.config.get('live_gate_bypass_margin', 5)} – "
+                        f"KI eröffnet Live-Trade {opened_today + 1}/{per_day} heute.")
+                except Exception as e:
+                    logger.warning(f"Live-Bypass-Notify fehlgeschlagen: {e}")
                 return None
             note = f"Setup '{setup}' noch nicht live-reif: {why}"
             logger.info(f"{dec.get('symbol')}: Live-Gate -> Datensammlung ({note})")

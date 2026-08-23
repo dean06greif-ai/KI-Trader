@@ -64,6 +64,18 @@ Telegram-Signale. Ziel: autonomer, sich selbst verbessernder "ultimativer Trader
    dynamisch auch für künftig hinzugefügte Strategien. ML-Lab trainiert bereits
    auf Signalen aller Strategien.
 
+## Umgesetzt – Iteration 4 (23.06.2026)
+1. Bypass-Feed: Telegram-Meldung (ntype live_gate_bypass) mit Setup, Grund,
+   Konfidenz und Tageszähler, wenn die KI per Setup-Bypass live geht.
+2. Offene-Order-Karte: GET /api/autotrade/pending-entry-orders (Registry inkl.
+   age/expires-Countdown 36h) + Frontend-Karte "Wartende KI-Limit-Orders" im
+   Analyse-Panel > Trades (PendingEntryOrders.js, Poll 15s, versteckt bei leer).
+3. Beratung Live-vs-Paper-Kluft dokumentiert: Empfehlung Reihenfolge
+   ATR-Low-Vol-Market-Block (Option 2) → Limit an Key-Levels mit TTL/Re-Quote
+   (Option 1) → 1m-Hybrid-Trigger (Option 3); zusätzlich Fill-Qualitäts-Messung
+   (Slippage-Logging) und Paper-Slippage-Simulation vorgeschlagen. NOCH NICHT
+   implementiert – wartet auf User-Entscheidung.
+
 ## Tests
 824 Unit-Tests grün (`pytest -m unit`, ~20s); Live-Suite via `-m live`.
 Neue Testdateien: test_funding_fee_guard.py, test_entry_order_registry.py,

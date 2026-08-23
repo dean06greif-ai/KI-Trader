@@ -635,6 +635,37 @@ async def get_balance():
     return result
 
 
+# ---- Wartende Bot-Entry-Limit-Orders (Registry) fürs Dashboard ------------
+@router.get("/api/autotrade/pending-entry-orders")
+async def get_pending_entry_orders():
+    """Offene/verwaiste Entry-Limit-Orders der Bots inkl. Rest-Laufzeit."""
+    from datetime import datetime, timezone
+    from services.entry_order_registry import MAX_AGE_H
+    rows = await state.db.pending_entry_orders.find(
+        {}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    now = datetime.now(timezone.utc)
+    out = []
+    for r in rows:
+        age_s = None
+        expires_in_s = None
+        try:
+            created = datetime.fromisoformat(str(r.get("created_at")))
+            age_s = int((now - created).total_seconds())
+            expires_in_s = max(0, int(MAX_AGE_H * 3600 - age_s))
+        except (TypeError, ValueError):
+            pass
+        meta = r.get("meta") or {}
+        out.append({"order_id": r.get("order_id"), "symbol": r.get("symbol"),
+                    "side": r.get("side"), "qty": r.get("qty"),
+                    "price": r.get("price"), "status": r.get("status"),
+                    "kind": r.get("kind"), "created_at": r.get("created_at"),
+                    "strategy_name": meta.get("strategy_name")
+                    or meta.get("strategy_id"),
+                    "sl": meta.get("sl"), "tpf": meta.get("tpf"),
+                    "age_s": age_s, "expires_in_s": expires_in_s})
+    return {"orders": out, "max_age_hours": MAX_AGE_H}
+
+
 # ---- KI-Trader Gewinnschutz-Policy (intern, dynamisch anpassbar) ----------
 @router.get("/api/autotrade/ai-protection")
 async def get_ai_protection():

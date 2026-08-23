@@ -4,6 +4,7 @@ import { toast } from '../lib/toast';
 import { authHeaders, isAdmin } from '../auth';
 import NewTradeModal from './NewTradeModal';
 import TradeAIDetails, { SETUP_EXPLAIN } from './TradeAIDetails';
+import PendingEntryOrders from './PendingEntryOrders';
 import './PerformanceAnalytics.css';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -637,6 +638,8 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
             </div>
             <span className={`mode-pill ${banner.cls}`}>{banner.pill}</span>
           </div>
+
+          <PendingEntryOrders />
 
           <div className="pnl-filter" data-testid="pnl-filter">
             <button className={`pnl-filter-btn ${pnlFilter === 'all' ? 'active' : ''}`} onClick={() => setPnlFilter('all')} data-testid="pnl-filter-all">Alle</button>
