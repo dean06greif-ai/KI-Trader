@@ -1,0 +1,45 @@
+{
+  "summary": "Alle 7 Punkte des Iteration-5-Reviews GRÜN. Backend startet fehlerfrei (GET /api/health -> 200 {'status':'alive'}), Frontend liefert 200. Unit-Suite: 809 passed, 1 skipped, 3 warnings in 18.55s (erwartet 809/1). Neue Regressionstests test_ai_protection_and_priority.py + test_entry_order_registry.py: 18 passed in 0.24s. API-Endpoint /api/autotrade/ai-protection funktioniert wie spezifiziert: GET liefert Default-Policy (enabled=true, trigger_pct=30, lock_pct=50.0, release_margin=true, max_leverage=200.0, margin_reduce_pct=100.0, sl_liq_buffer_pct=0.3). PATCH ohne Admin-Auth wird mit 401 abgelehnt. PATCH mit Admin-Login (POST /api/auth/login {username:'Admin', password:'Dean06Greif!/Admin'} -> token) und Body {trigger_pct:20} liefert 200 mit aktualisierter Policy; per GET verifiziert. PATCH mit ausschließlich unbekannten Feldern ({'foo':1}) -> 400 (Detail: 'Keine gültigen Felder ...'). Am Ende trigger_pct auf 30 zurückgesetzt und via GET verifiziert. Code-Review: bitunix_trade.py:1781 'Absturz-Schutz'-Kommentar + entry_order_registry.register bei order_id (Zeile 1788), Resolve nach DB-Insert (Zeile 1984-1985); make_client_id wird sowohl im Market/Fallback-Pfad (Zeile 1739) als auch im Maker POST_ONLY-Pfad (Zeile 1209) übergeben. ai_engine.generate_for_role (Zeile 1758-1760) gibt priority=ai_providers.role_priority(role) an generate_chain weiter; generate_chain (Zeile 720-722) wendet restrict_indices_for_priority NACH dem PAID_MODELS_NO_FALLBACK-Block an. ROLE_PRIORITY: trade_manager/analyst/market_observer/news_watcher = critical; learner/research_analyst/summarizer = low.",
+  "feature_verdicts": [
+    "Unit-Suite komplett grün - pass - pytest -m unit -q => 809 passed, 1 skipped in 18.55s. Junit: /app/test_reports/pytest/iter5_unit.xml.",
+    "GET /api/autotrade/ai-protection liefert Default-Policy - pass - Response {enabled:true, trigger_pct:30, lock_pct:50.0, release_margin:true, max_leverage:200.0, margin_reduce_pct:100.0, sl_liq_buffer_pct:0.3}.",
+    "PATCH ohne Admin-Auth -> 401/403 - pass - unauthenticated PATCH liefert 401.",
+    "PATCH mit Admin -> updated Policy - pass - Login liefert Token; PATCH {trigger_pct:20} liefert 200 mit trigger_pct=20; GET bestätigt Persistierung.",
+    "PATCH mit unbekannten Feldern -> 400 - pass - {'foo':1} allein liefert 400 mit 'Keine gültigen Felder'-Detail.",
+    "trigger_pct-Reset auf 30 - pass - final PATCH und GET zeigen trigger_pct=30.",
+    "Neue Unit-Tests einzeln grün - pass - pytest tests/test_ai_protection_and_priority.py tests/test_entry_order_registry.py -o addopts='' -q => 18 passed in 0.24s. Junit: /app/test_reports/pytest/iter5_new.xml.",
+    "Code-Review services/bitunix_trade.py - pass - 'Absturz-Schutz'-Registrierung nach Order-Annahme (Zeile 1781-1792) mit kind='entry'; Resolve nach insert_one (Zeile 1984-1985); make_client_id an place_order Market (1739) und Maker POST_ONLY (1209).",
+    "Code-Review services/ai_providers.py + ai_engine.py - pass - generate_for_role gibt priority=role_priority(role) an generate_chain; restrict_indices_for_priority wird NACH PAID_MODELS_NO_FALLBACK-Block (Zeile 720) angewandt. low-priority -> nur idx<1 (Primär-Key); critical/normal -> alle idxs.",
+    "Backend + Frontend Smoke - pass - GET /api/health -> 200 {status:'alive'}; GET / (Frontend) -> 200."
+  ],
+  "skills_loaded": [],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/test_reports/pytest/iter5_unit.xml",
+    "/app/test_reports/pytest/iter5_new.xml",
+    "/app/test_reports/pytest/iter5_api.xml",
+    "/app/backend/tests/test_ai_protection_and_priority.py",
+    "/app/backend/tests/test_entry_order_registry.py",
+    "/app/backend/tests/test_ai_protection_api_e2e.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "services/bitunix_trade.py:1785-1792 registriert Entry-Orders SOFORT nach Order-Annahme mit kind='entry' vor jedem DB-Insert – Absturz-Fenster (Render-Deploy) ist damit sauber vom Watchdog abgedeckt (er findet die Registry und schreibt den Trade als strategy_id='ai_trader', nicht als 'Manuell (Bitunix)').",
+    "services/bitunix_trade.py:793-797 make_client_id nutzt 'KIT-<tag>-<ts10>'-Präfix (<=32 Zeichen); Länge unproblematisch für Bitunix. Manuelle App-Orders tragen KEIN KIT-Präfix -> beweisbare Herkunft.",
+    "services/ai_providers.py:519-524 restrict_indices_for_priority ist reine Filter-Funktion – korrekt idempotent und ohne Nebenwirkung; low-priority mit Primär-Key im Cooldown liefert bewusst [], damit Backups NIE für Lern-/Sammel-Rollen verbraucht werden.",
+    "services/ai_providers.py:720-724 wichtige Reihenfolge: PAID_MODELS_NO_FALLBACK erzwingt zuerst idx=[0], DANACH filtert restrict_indices_for_priority. Für kostenpflichtige Modelle sind Backups schon vorher ausgeschlossen; die Priorisierung reduziert das nicht mehr weiter.",
+    "routers/autotrade.py:645-656 PATCH-Endpoint validiert Whitelist gegen AI_PROTECTION_DEFAULTS.keys(), ignoriert unbekannte Felder still (nicht 400 wenn wenigstens ein gültiges Feld dabei) und wirft 400 nur wenn KEIN gültiges Feld -> saubere Semantik. _ai_prot_cache wird korrekt invalidiert.",
+    "Kleine Beobachtung (kein Bug): AI_PROTECTION_DEFAULTS enthält margin_reduce_pct=100 aber der Router nutzt lediglich set(AI_PROTECTION_DEFAULTS) für die Whitelist – Typ-Validierung (z.B. numerisch/positiv, enabled=bool) wird derzeit NICHT durchgesetzt. Aktuell reine Admin-API, deshalb unkritisch; ggf. Pydantic-Model für zusätzliche Typ-Safety."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ai_protection_api_e2e.py (neu, live-markiert, deckt die neue PATCH/GET-API E2E ab)"
+  ],
+  "success_rate": {"backend": "100% (809/810 unit passed + 1 skipped erwartet; 18/18 neue Unit-Tests; 5/5 E2E-API-Tests)", "frontend": "not tested (per Request 'backend only(skip frontend)')"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md) – für PATCH-Endpoint benötigt.",
+  "seed_data_creation": "Kein persistenter Seed. E2E-Tests updaten kurzfristig settings._id=ai_profit_protection.trigger_pct auf 20, setzen am Ende wieder auf 30 zurück. Verifiziert via finaler GET.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend via supervisor auf 8001. Public URL https://trader-maintenance-1.preview.emergentagent.com (ingress /api/* -> backend). Marker-Setup unverändert: -m unit läuft in ~18s ohne Netzwerk (809/1). Live-Tests NICHT ausführen (Preview ohne Bitunix/Telegram/AI-Keys). Admin-Login: POST /api/auth/login {username:'Admin', password:'Dean06Greif!/Admin'} -> {token, user}; Header: Authorization: Bearer <token> (require_admin akzeptiert das). ai-protection: GET public, PATCH admin-only; Body-Whitelist = AI_PROTECTION_DEFAULTS-Keys, unbekannte Felder werden verworfen; ausschließlich unbekannte Felder -> 400. Neue Regressionstests: test_ai_protection_and_priority.py (12) + test_entry_order_registry.py (6) + test_ai_protection_api_e2e.py (5, -m live).",
+  "rca of the issue": "N/A – kein Bug gefunden. Alle 3 im Request beschriebenen Änderungen (Registry+ClientId-Bugfix Trade-Herkunft, ai-protection Policy + API, KI-Provider-Priorisierung) sind korrekt implementiert und durch Unit-Tests + neue E2E-API-Tests verifiziert."
+}
