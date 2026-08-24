@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 13 verification (READ-ONLY, live-trading app): Backend API tests for the new GET /api/autotrade/slippage-stats (days clamping), chart-guard in GET /api/autotrade/trades/{id}/chart (Forex vs. Krypto), computed.chart_available in GET /api/autotrade/trades, and providers_health.active_fallbacks[].outside_team in GET /api/ai/status -> 13/13 pytest checks green (/app/backend/tests/test_iteration13_api.py). Unit regression tests/test_backlog_p1_p2_fixes.py + test_role_fallback_attribution.py + test_role_attribution_stream_iter9.py -> 10 passed. Frontend: new SlippageStatsCard (empty-state + 7/30/90 switching), TradeDetailCard/TradeFilters regression (expand, Preis-Leiter, peak/trough, pnl-/coin-/strategy-filters, load-more +11..100), Trade-Chart button hidden for closed GBPUSD Forex trade and present + rendering candles for closed BTCUSDT trade, Uebersicht/Zeit tabs render, clear-modal opened with preview and CANCELLED (never confirmed). No console errors in any flow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/autotrade/slippage-stats", "issue": "days=0 returns days=30 (default) instead of the specified clamp to 1, because of `int(days or 30)` (0 is falsy). days=-5 -> 1, days=9999 -> 365 work as specified. Cosmetic only."},
+      {"endpoint": "/api/autotrade/slippage-stats", "issue": "Transient: during the first pytest run two consecutive requests hit a 60s read timeout (~120s block), while a 40x/3s probe loop and curl always answered in ~0.2s. Suggests the event loop was blocked by another task (scan/backfill) at that moment - worth watching, not reproducible on demand."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Header (LIVE/PAPER capital)", "issues": ["During initial load USDT/PnL show '—' (FREI —) for a few seconds without a skeleton/loading hint; resolves after capital fetch"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration13_api.py", "/app/test_reports/pytest/iter13_api.xml"],
+  "action_items": ["Optional: clamp days=0 to 1 in get_slippage_stats (use `days if days is not None else 30` before max/min) to match spec", "Optional: keep an eye on possible event-loop blocking (two 60s API timeouts observed once)"],
+  "critical_code_review_comments": [
+    "get_trade_chart / kline_available guard is correct: Forex (GBPUSD/USDCHF/EURUSD) -> chart_available=false, candles=[], reason contains 'Bitunix'; stock perps (QQQUSDT/SPYUSDT/TRUTHUSDT) correctly return 200 candles.",
+    "TradeDetailCard.js:151 guard `closed && c.chart_available !== false` behaves as intended (button only on expanded closed cards); modularisation kept all data-testids intact - PerformanceAnalytics.js now 705 lines (still slightly above the 700-line guideline, further splitting optional)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration13_api.py"],
+  "success_rate": {"backend": "100% (13/13 API + 10/10 unit)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "none - read-only testing, no trades opened/closed, no analytics deletion confirmed",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / from /app/memory/test_credentials.md (used only to open the clear-modal, cancelled)",
+  "context_for_next_testing_agent": "DB currently: 431 trades in limit=500 response; only 11 non-Bitunix symbols (USDCHF x8, EURUSD x2, GBPUSD x1 - the single closed GBPUSD trade is id GBPUSD-1787329118401, strategy 'KI Trader', paper). Chart button only renders when a CLOSED card is expanded (trade-card-toggle-{id}) - counting buttons on collapsed cards yields 0 (not a bug). active_fallbacks currently has 2 entries, both outside_team=false, so the ai-fallback-outside-team-{role} badge cannot be visually verified. slippage-stats measured_trades=0 (expected empty-state). API test file: /app/backend/tests/test_iteration13_api.py (run with -n 0).",
+  "rca_of_the_issue": "No functional defect found. The only spec deviation is days=0 falling back to the default 30 due to Python falsy handling in `int(days or 30)`."
+}
