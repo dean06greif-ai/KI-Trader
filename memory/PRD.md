@@ -41,9 +41,17 @@ Bestehende, produktiv laufende Daytrading-Website (GitHub: dean06greif-ai/KI-Tra
 5. **Slippage-/Fill-Qualitäts-Karte (NEU)**: `SlippageStatsCard.js` im Analyse-Panel → Trades-View (`slippage-stats-card`), nutzt `GET /api/autotrade/slippage-stats?days=7|30|90`, Empty-State solange `measured_trades=0` (Messphase). days-Clamp-Fix: `days=0 → 1`.
 - Tests: `backend/tests/test_backlog_p1_p2_fixes.py` (5 neu), `test_iteration13_api.py` (13, Testing-Agent). Unit-Suite: 865 passed.
 
+### 24.06.2026 – Fallback-Anzeige-Fix + Modell-Bestätigung nach unten ✅ (Testing-Agent verifiziert)
+- **Bug (User-Report)**: outside_team nutzte `team_chain()` → Provider-interne Ersatzmodelle (z.B. OpenRouter-Nemotron über die OpenRouter-Kette) galten fälschlich als "im Team". Fix: `role_manager.configured_models()` (NUR die 3 explizit gewählten Modelle); `_fallback_team_info()` liefert strikt `outside_team` + `team_model` (konfiguriertes Primärmodell). UI: Badge "NOT-FALLBACK außerhalb des Teams (gewählt: provider/model)" + Erklärtext `ai-active-fallbacks-hint` unter der Überschrift.
+- **KI-Team-Tab**: Sektion "Neu entdeckte KI-Modelle – erst nach Bestätigung auswählbar" (`ai-pending-models`) ans Ende des Tabs verschoben (nach Rollen-Karten + AITeamSupervisor).
+- **SlippageStatsCard**: automatische "Messphasen-Check"-Zeile (`slippage-verdict`): tradegewichteter Ø Slippage Market vs. Maker/Limit, erscheint sobald beide Order-Arten Daten haben.
+- Tests: `test_backlog_p1_p2_fixes.py` erweitert (7 Tests, u.a. Provider-intern → outside_team=True), `test_iteration15_fallback_shape.py` (Testing-Agent). Unit-Suite: 867 passed.
+
 ## Backlog
 - Nach der Messphase (2–4 Wochen ab 23.06.): Slippage-Auswertung (market vs. maker vs. limit_fill, MAE je Order-Art) → dann Entscheidung über Option 3 (1m-Hybrid-Trigger)
-- Beobachten: Testing-Agent sah einmalig 2×60s-API-Timeouts (möglicher Event-Loop-Block durch Scan/Backfill), nicht reproduzierbar
+- Beobachten: Testing-Agent sah einmalig 2×60s-API-Timeouts (möglicher Event-Loop-Block durch Scan/Backfill), nicht reproduzierbar; erneut 1×502/60s auf /api/ai/status (24.06.)
+- Prüfen: mögliches Under-Reporting von active_fallbacks, wenn das Primärmodell wegen Cooldown übersprungen wird (Log zeigte market_observer auf groq statt gemini ohne Fallback-Eintrag) – Anzeige-Thema, Trading unberührt
+- Kosmetik (dev-only): React-Warnung `<span>` in `<option>` (AITradingPanel ~Z.1952)
 - Optional P3: PerformanceAnalytics.js weiter aufteilen (Clear-Modal, Zeit-Analyse)
 
 ## Wichtige Hinweise

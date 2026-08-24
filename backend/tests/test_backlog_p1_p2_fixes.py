@@ -49,13 +49,37 @@ def test_outside_team_flag_in_health_status():
     fb = [f for f in h["active_fallbacks"] if f["role"] == "news_watcher"]
     assert fb, h["active_fallbacks"]
     assert fb[0].get("outside_team") is True
+    assert fb[0].get("team_model")  # konfiguriertes Primärmodell für die UI
 
 
 def test_inside_team_fallback_not_flagged():
-    team = role_manager.team_chain("news_watcher", {})
-    prov, model = team[-1]  # letztes Team-Mitglied als aktiver Fallback
+    team = role_manager.configured_models("news_watcher", {})
+    prov, model = team[-1]  # explizit gewähltes Team-Mitglied als Fallback
     ai_providers.record_result(prov, model, "ok", key_index=0,
                                role="news_watcher", requested="wunsch-modell")
     h = ai_providers.health_status()
     fb = [f for f in h["active_fallbacks"] if f["role"] == "news_watcher"]
     assert fb and fb[0].get("outside_team") is False
+
+
+def test_provider_internal_substitute_is_flagged_outside_team():
+    """User-Bug: Provider-interne Ersatzmodelle (gleicher Provider, aber nie
+    vom Nutzer gewählt) galten fälschlich als 'im Team' – sie müssen als
+    Not-Fallback markiert werden."""
+    team = set(role_manager.configured_models("news_watcher", {}))
+    internal = [pm for pm in role_manager.team_chain("news_watcher", {})
+                if pm not in team]
+    assert internal, "erwartet Provider-interne Ersatzmodelle in der Kette"
+    prov, model = internal[0]
+    ai_providers.record_result(prov, model, "ok", key_index=0,
+                               role="news_watcher", requested="wunsch-modell")
+    h = ai_providers.health_status()
+    fb = [f for f in h["active_fallbacks"] if f["role"] == "news_watcher"]
+    assert fb and fb[0].get("outside_team") is True
+
+
+def test_configured_models_only_explicit_selection():
+    conf = role_manager.configured_models("news_watcher", {})
+    team = role_manager.team_chain("news_watcher", {})
+    assert 1 <= len(conf) <= 3
+    assert set(conf).issubset(set(team))

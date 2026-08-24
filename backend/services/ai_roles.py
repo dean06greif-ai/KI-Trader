@@ -296,6 +296,30 @@ class AIRoleManager:
     def role_cfg(self, role: str) -> Dict:
         return self.config.get(role) or dict(_BASE_ROLE)
 
+    def configured_models(self, role: str, engine_cfg: Dict) -> List[Tuple[str, str]]:
+        """Die explizit GEWÄHLTEN Modelle der Rolle (Modell + Fallback 1/2) –
+        OHNE Provider-interne Ersatzketten. Nur diese zählen für die
+        Not-Fallback-Kennzeichnung als "im Team" (User-Auswahl)."""
+        cfg = self.role_cfg(role)
+        provider = cfg.get("provider") or engine_cfg.get("provider", "gemini")
+        model = cfg.get("model") or (engine_cfg.get("model")
+                                     if not cfg.get("provider") else None)
+        out: List[Tuple[str, str]] = []
+        if provider:
+            if not model:
+                allowed = ai_providers.allowed_models(provider)
+                model = allowed[0] if allowed else None
+            if model:
+                out.append((provider, model))
+        for prefix in ("fallback", "fallback2"):
+            fm = cfg.get(f"{prefix}_model")
+            if fm:
+                fb_prov = cfg.get(f"{prefix}_provider") or \
+                    ai_providers.provider_for_model(fm)
+                if fb_prov:
+                    out.append((fb_prov, fm))
+        return _dedupe(out)
+
     def team_chain(self, role: str, engine_cfg: Dict,
                    now: Optional[datetime] = None) -> List[Tuple[str, str]]:
         """Nur das KONFIGURIERTE Team der Rolle (Primär + Fallback 1/2) – ohne

@@ -528,20 +528,25 @@ def restrict_indices_for_priority(idxs: List[int], priority: str) -> List[int]:
     return idxs
 
 
-def _fallback_outside_team(role: Optional[str], provider: Optional[str],
-                           model: Optional[str]) -> Optional[bool]:
-    """True = das aktive Fallback-Modell gehört NICHT zum konfigurierten Team
-    der Rolle (Primär + Fallback 1/2) – es sprang nur über die Not-Kette aller
-    verfügbaren Provider ein. UI-Hinweis "Not-Fallback außerhalb des Teams"."""
+def _fallback_team_info(role: Optional[str], provider: Optional[str],
+                        model: Optional[str]):
+    """(outside_team, team_model) für einen aktiven Fallback.
+
+    outside_team=True, wenn das aktive Modell KEINES der 3 explizit gewählten
+    Rollen-Modelle ist (Modell + Fallback 1/2). Provider-interne Ersatzmodelle
+    zählen bewusst NICHT als Team – der Nutzer hat sie nie ausgewählt
+    (User-Bug: Nemotron via OpenRouter-Kette galt fälschlich als "im Team").
+    team_model = konfiguriertes Primärmodell als "provider/model" für die UI."""
     if not role or not provider or not model:
-        return None
+        return None, None
     try:
         from services.ai_engine import ai_engine
         from services.ai_roles import role_manager
-        team = role_manager.team_chain(role, ai_engine.config or {})
-        return (provider, model) not in set(team)
+        team = role_manager.configured_models(role, ai_engine.config or {})
+        team_model = f"{team[0][0]}/{team[0][1]}" if team else None
+        return (provider, model) not in set(team), team_model
     except Exception:  # noqa: BLE001 – reine Anzeige-Info, nie blockieren
-        return None
+        return None, None
 
 
 def health_status() -> Dict:
@@ -570,9 +575,10 @@ def health_status() -> Dict:
         if age > 6 * 3600:
             _role_fallbacks.pop(r, None)
             continue
+        outside, team_model = _fallback_team_info(
+            fb.get("role"), fb.get("provider"), fb.get("model"))
         active_fb.append({**fb, "age_s": int(age),
-                          "outside_team": _fallback_outside_team(
-                              fb.get("role"), fb.get("provider"), fb.get("model"))})
+                          "outside_team": outside, "team_model": team_model})
     active_fb.sort(key=lambda x: x["age_s"])
     last = dict(_last_call)
     if last.get("ts"):

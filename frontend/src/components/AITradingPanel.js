@@ -999,6 +999,11 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                       <div className="ai-health-dd-title" style={{ marginTop: 6 }}>
                         Aktive Fallbacks – diese Assistenten laufen gerade auf Ersatz-Modell
                       </div>
+                      <div style={{ fontSize: 10, opacity: 0.65, margin: '2px 0 4px' }} data-testid="ai-active-fallbacks-hint">
+                        Ersatz kann auch ein NICHT von dir gewähltes Modell sein (Not-Kette),
+                        damit die Rolle weiterläuft. Sobald deine Auswahl wieder frei ist,
+                        kehrt sie automatisch zurück – keine Aktion nötig.
+                      </div>
                       {(status.providers_health.active_fallbacks || []).map((f, i) => (
                         <div className="ai-health-dd-row fallback" key={`afb-${f.role}-${i}`}
                           data-testid={`ai-active-fallback-${f.role}`}>
@@ -1010,9 +1015,9 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                             {f.age_s != null && ` · seit ${Math.max(1, Math.round(f.age_s / 60))} min`}
                             {f.outside_team && (
                               <b style={{ color: '#f0b90b' }}
-                                title="Not-Fallback: Dieses Modell gehört NICHT zum konfigurierten Team der Rolle (Primär + Fallback 1/2). Es sprang nur ein, weil das komplette Team nicht verfügbar war – ggf. Team-Konfiguration der Rolle prüfen."
+                                title="Not-Fallback: Dieses Modell ist KEINES deiner 3 gewählten Modelle dieser Rolle (Modell + Fallback 1/2). Weil deine Auswahl gerade nicht verfügbar/limitiert war, ist die KI über die Not-Kette auf ein Ersatz-Modell ausgewichen, damit die Rolle weiterläuft. Sobald deine Auswahl wieder frei ist, kehrt sie automatisch zurück."
                                 data-testid={`ai-fallback-outside-team-${f.role}`}>
-                                {' '}· NOT-FALLBACK außerhalb des Teams
+                                {' '}· NOT-FALLBACK außerhalb des Teams{f.team_model ? ` (gewählt: ${f.team_model})` : ''}
                               </b>
                             )}
                           </span>
@@ -1820,31 +1825,6 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
               Backup-Keys (z.B. OPENROUTER_API_KEY_BACKUP, CEREBRAS_API_KEY_BACKUP)
               greifen automatisch bei Rate-Limits. Lektionen &amp; Analysen stärkerer Modelle werden höher gewichtet.
             </div>
-            {pendingModels.length > 0 && (
-              <div className="ai-pending-models" data-testid="ai-pending-models">
-                <div className="ai-pending-title">
-                  Neu entdeckte KI-Modelle – erst nach Bestätigung auswählbar
-                </div>
-                {pendingModels.map(pm => (
-                  <div className="ai-pending-row" key={`${pm.provider}/${pm.model}`}
-                    data-testid={`ai-pending-${pm.provider}-${String(pm.model).replace(/[^a-z0-9]/gi, '-')}`}>
-                    <span className="ai-pending-name">{pm.provider} · {pm.model}</span>
-                    <div className="ai-pending-actions">
-                      <button className="ai-action-btn ai-pending-approve"
-                        onClick={() => approveModel(pm.provider, pm.model)}
-                        data-testid={`ai-approve-${pm.provider}-${String(pm.model).replace(/[^a-z0-9]/gi, '-')}`}>
-                        Bestätigen
-                      </button>
-                      <button className="ai-action-btn ai-pending-dismiss"
-                        onClick={() => dismissModel(pm.provider, pm.model)}
-                        data-testid={`ai-dismiss-${pm.provider}-${String(pm.model).replace(/[^a-z0-9]/gi, '-')}`}>
-                        Verwerfen
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
             {ROLE_DEFS.map(rd => {
               const rc = roles?.[rd.key] || {};
               const roleModelValue = rc.model ? `${rc.provider}|${rc.model}` : '';
@@ -2030,6 +2010,32 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
               roleLabels={ROLE_DEFS.reduce((acc, r) => ({ ...acc, [r.key]: r.label }), {})}
               onApplyModel={(roleKey, patch) => saveRole(roleKey, patch)}
             />
+            {/* Vom Modell-Wächter neu entdeckte Modelle – auf Nutzerwunsch ganz unten */}
+            {pendingModels.length > 0 && (
+              <div className="ai-pending-models" data-testid="ai-pending-models">
+                <div className="ai-pending-title">
+                  Neu entdeckte KI-Modelle – erst nach Bestätigung auswählbar
+                </div>
+                {pendingModels.map(pm => (
+                  <div className="ai-pending-row" key={`${pm.provider}/${pm.model}`}
+                    data-testid={`ai-pending-${pm.provider}-${String(pm.model).replace(/[^a-z0-9]/gi, '-')}`}>
+                    <span className="ai-pending-name">{pm.provider} · {pm.model}</span>
+                    <div className="ai-pending-actions">
+                      <button className="ai-action-btn ai-pending-approve"
+                        onClick={() => approveModel(pm.provider, pm.model)}
+                        data-testid={`ai-approve-${pm.provider}-${String(pm.model).replace(/[^a-z0-9]/gi, '-')}`}>
+                        Bestätigen
+                      </button>
+                      <button className="ai-action-btn ai-pending-dismiss"
+                        onClick={() => dismissModel(pm.provider, pm.model)}
+                        data-testid={`ai-dismiss-${pm.provider}-${String(pm.model).replace(/[^a-z0-9]/gi, '-')}`}>
+                        Verwerfen
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
