@@ -254,12 +254,19 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
   };
 
   const loadStatus = useCallback(async () => {
+    // 10s-Timeout: hängt das Backend (Deploy/Neustart auf Render), bricht der
+    // Fetch ab und der LETZTE bekannte Status bleibt stehen – Warn-Dropdown &
+    // Polling hängen nie mehr minutenlang an einer offenen Verbindung.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
     try {
-      const data = await fetch(`${API_URL}/api/ai/status`).then(r => r.json());
+      const data = await fetch(`${API_URL}/api/ai/status`, { signal: ctrl.signal })
+        .then(r => r.json());
       const val = data && typeof data === 'object' ? data : null;
       statusRef.current = val;
       setStatus(val);
-    } catch (e) { /* silent */ }
+    } catch (e) { /* silent – letzter Status bleibt erhalten */ }
+    finally { clearTimeout(timer); }
   }, []);
 
   const loadHistory = useCallback(async () => {

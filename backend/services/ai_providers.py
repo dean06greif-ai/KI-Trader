@@ -373,12 +373,16 @@ SAME_ORG_429_STREAK = 3
 
 
 def _quota_cooldown_s(detail: str) -> float:
-    """Cooldown je nach Limit-Art: TAGES-Quota (tokens/requests per day) sperrt
-    den Key bis zum UTC-Tageswechsel statt nur 10 min – vorher wurden erschöpfte
-    Keys den ganzen Tag alle 10 min erneut gehämmert ('immer alle ausgereizt')."""
+    """Cooldown je nach Limit-Art: TAGES-Quota (tokens/requests per day) und
+    402 Payment Required (Konto-Kontingent komplett erschöpft / Billing nötig)
+    sperren den Key bis zum UTC-Tageswechsel statt nur 10 min – vorher wurden
+    erschöpfte/tote Keys den ganzen Tag alle 10 min erneut gehämmert."""
     s = str(detail).lower()
-    if any(k in s for k in ("per day", "daily", "tokens_per_day", "requests_per_day",
-                            "_day_", "tpd", "rpd", "quota exceeded for today")):
+    daily = any(k in s for k in ("per day", "daily", "tokens_per_day", "requests_per_day",
+                                 "_day_", "tpd", "rpd", "quota exceeded for today"))
+    payment = any(k in s for k in ("error code: 402", "payment required",
+                                   "payment_requ", "insufficient credit"))
+    if daily or payment:
         from datetime import datetime, timezone, timedelta
         now = datetime.now(timezone.utc)
         nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=30,
@@ -848,7 +852,11 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                         logger.warning(f"{provider}/{model} {reason} (Key {i + 1}/{len(keys)}), weiter…")
                     record_result(provider, model, "rate_limited", str(e),
                                   key_index=i, role=role)
-                    if not paid_transient:
+                    if not paid_transient and not is_payment_error(e):
+                        # 402 (totes Konto-Kontingent) sagt NICHTS über andere
+                        # Keys aus – zählt nicht in den Same-Org-Streak, sonst
+                        # sperren 3 tote Keys in Folge ALLE gesunden Keys mit
+                        # (Bug: 16/16 Cerebras-Keys "im Limit" wegen 3× 402).
                         streak_429 += 1
                     # Kontingente gelten pro KONTO/ORGANISATION: liefern mehrere
                     # Keys in Folge 429, teilen sie sich fast sicher EIN Konto –
