@@ -1,62 +1,42 @@
-# PRD – KI-Trader (externe Daytrading-Website)
+# PRD – KI-Trader (externe Render-Deployment, Repo: dean06greif-ai/KI-Trader, Branch conflict_240826_1008)
 
 ## Original-Problemstellung
-Bestehende, produktiv laufende Daytrading-Website (GitHub: dean06greif-ai/KI-Trader, Branch `conflict_230826_1950`, Deployment: Render). Verbesserungen sollen sauber, modular und rückwärtskompatibel in die bestehende Architektur eingepflegt werden. Originalstruktur (Ordner/Dateien) beibehalten für Render-Deployment.
+Bestehende, produktiv laufende Daytrading-Website (FastAPI + React + MongoDB, deployt auf Render) verbessern – sauber, modular, rückwärtskompatibel, Originalstruktur beibehalten. Konkrete Bugs:
+1. Korrelations-Guard im AI Trading Panel wird nach manuellem Ausschalten ständig wieder eingeschaltet.
+2. Lektionen: KI schränkt sich selbst zu oft ein (Verbote statt dynamischer Anpassung) → Overfitting-Gefahr.
+3. 402-Spam: erschöpfte Cerebras-Free-Keys (Payment Required) werden jeden Zyklus alle 16 erneut probiert.
+Zusätzlich: überflüssige/unausgereifte Funktionen identifizieren (entfernen nur wenn eindeutig, sonst melden).
 
 ## Architektur
-- Backend: FastAPI (`/app/backend/server.py` + `routers/` + `services/` + `core/`), MongoDB Atlas (extern, 500 MB Limit), Bitunix Trading-API (LIVE-Keys!), Multi-LLM-Provider-System (`services/ai_providers.py`, Rollen-Teams in `services/ai_roles.py`)
-- Frontend: React + craco, `PerformanceAnalytics.js` (offene/geschlossene Trades), `AITradingPanel.js` (KI-Team, Warnungen), lightweight-charts v5
-- KI-Rollen laufen parallel (News-Wächter, Deep-Analyst, Chat, Model-Advisor …)
+- backend/ FastAPI (server.py + routers/ + services/ ~80 Module), MongoDB (lokal: mongodb://localhost:27017, DB crypto_scanner; produktiv: Atlas via Render-Env)
+- frontend/ React (CRA/craco), AITradingPanel.js als KI-Cockpit
+- Struktur unverändert gelassen (Render-Deploy-kompatibel). Lokale .env bewusst OHNE externe API-Keys (Cerebras/OpenRouter/Bitunix/Telegram/Supabase), um Produktions-Quotas & Live-Handel nicht zu beeinflussen.
 
-## User-Entscheidungen
-- Branch: `conflict_230826_1950`
-- Trade-Chart: Bitunix Kline-API on-demand (kein Mongo-Speicher)
-- MFE/Peak-Tracking: nur neue Trades ab jetzt (alte zeigen "—")
-- Watchdog-Bug: zuletzt beim XRP-Trade (KI-Trader) aufgetreten
+## Umgesetzt (Juni 2026)
+1. **Korrelations-Guard-Hoheit** (`ai_engine.py::_tuning_guard`, `ai_knowledge.py`): JEDE KI-Änderung an correlation_guard (an UND aus) wird nur noch als Vorschlag geparkt (needs_confirmation) – gilt auch für den Autonomie-Review geparkter Vorschläge. Manuelles Umschalten durch den Trader wirkt sofort und bleibt bestehen.
+2. **402-Cooldown-Fix** (`ai_providers.py::usable_key_indices`): Keys mit 402/Tages-Quota-Cooldown werden bis UTC-Mitternacht übersprungen; der frühere "alle im Cooldown → alle erneut probieren"-Fallback gilt nur noch für kurze Minuten-Rate-Limits. Kette wechselt direkt zum nächsten Provider.
+3. **Lektionen-Lebenszyklus & Overfitting-Schutz** (`ai_lessons.py`, `ai_learning.py`):
+   - Abgelaufene Lektionen → status "dormant" (zurückgestellt, NICHT gelöscht); nach 45 Tagen ohne Re-Validierung endgültig entfernt (DORMANT_DELETE_DAYS).
+   - Reaktivierung: erneute Bestätigung im Lernlauf (exakt gleicher Titel) reaktiviert + verlängert Gültigkeit progressiv (renewal_valid_until: 14–90 Tage, wächst mit Bestätigungen).
+   - Kontextgebundene Lektionen bekommen Default-Verfall (21 Tage), müssen sich neu validieren.
+   - Pauschale Verbots-Lektionen ohne Marktkontext (is_absolute_rule) werden verworfen; Prompt fordert adaptive Wenn-Dann-Regeln statt Verboten; hartes Verbot nur bei >=20 entschiedenen Trades + Kontext.
+   - Lern-Reset "veraltet" stellt zurück statt zu löschen; dormant-Block im Lernprompt.
+   - Frontend: dormant-Lektionen gedimmt + Badge "zurückgestellt – reaktivierbar" (data-testid ai-lesson-dormant-{id}), Zähler zeigt nur aktive.
+4. **Regressionstests**: backend/tests/test_fixes_guard_402_lessons.py (15 Tests) + Live-API-Suite tests/test_regression_iter15_guard_lessons_api.py. Gesamt-Suite: 885+ passed.
 
-## Umgesetzt
-### 23.06.2026 – Bugfix: Falsche Fallback-Zuordnung in KI-Warnungen ✅ (getestet 5/5)
-- Root Cause: `record_result()` nutzte das globale `_current_role` zum Call-ENDE → parallele Rollen-Calls (News-Wächter triggert Deep-Analyse als Task, Deep-Analyst nutzt OpenRouter) wurden falsch zugeordnet.
-- Fix: `generate_chain()`/`stream_chain()` fixieren die Rolle einmal am Start (`role`-Parameter) und reichen sie an alle `record_result()`-Aufrufe durch. Aufrufer: `ai_engine.generate_for_role`, Chat-Stream (role="chat"), `ai_model_advisor` (role="model_advisor").
-- Tests: `backend/tests/test_role_fallback_attribution.py`, `test_role_attribution_stream_iter9.py`.
+## Cleanup-Analyse (gemeldet, nichts entfernt)
+Kein Service-Modul ist tot – alle ~80 services/ werden importiert und sind testabgedeckt. Kandidaten zur späteren Konsolidierung (nur nach Rücksprache):
+- Regime-Familie stark fragmentiert: regime.py, regime_engine, regime_reactive, regime_lab, regime_opt, regime_truth (~5.6k Zeilen).
+- Mehrfache Sim-Engines: backtester, fast_sim, parallel_sim, gpu_accel (gpu_accel nur von fast_sim genutzt; auf Render ohne GPU wirkungslos, aber harmlos).
+- ai_engine.py (4.1k Zeilen) – Aufteilung in Module würde Wartbarkeit erhöhen.
 
-### 23.06.2026 – 5 Trade-Verbesserungen ✅ (Testing-Agent: 24/24 Backend, 100% Frontend)
-1. **MFE/Peak-Tracking**: `update_peak()` in `services/bitunix_trade.py`; Tracking im Tick von `_manage_trade` (kein Extra-DB-Write), Exit-Fill fließt beim Schließen ein, `manual_close` ebenfalls. Anzeige via `_enrich_trade` (`core/utils.py`): `computed.peak_price/peak_distance_pct/mfe_pct` – offen live berechnet, geschlossen gespeichert, Alt-Trades → null. UI: Meta-Feld `trade-peak-{id}` + `lvl-peak`-Zeile in der Preis-Leiter.
-2. **Trade-Chart on-demand**: `GET /api/autotrade/trades/{id}/chart` (routers/autotrade.py, `_chart_interval` wählt 1m–1d), Kerzen via `fetch_klines_range()` (`services/bitunix_client.py`, öffentliche Bitunix-Kline-API, kein DB-Speicher). Frontend: `TradeChart.js` (lightweight-charts v5, Preislinien Entry/SL/SL-initial/TP1/TP Full/Exit/Peak, de-DE-Locale-Fix, autoscaleInfoProvider damit TP/SL außerhalb der Kerzen-Range sichtbar sind, ResizeObserver). Button `trade-history-chart-btn-{id}` neben "Live-Chart öffnen", nur geschlossene Trades, lädt erst beim Klick.
-3. **Strategie-Filter**: `<select data-testid="trade-filter-strategy">` neben "Nur BTC" – filtert offene UND geschlossene Trades (inkl. Option "Manuell / Extern").
-4. **Mehr laden (+100)**: Backend `offset`-Param + `total` bei `?status=...` in `GET /api/autotrade/trades`; Frontend seitenweises Nachladen (`load-more-closed-btn`, dedupliziert, "x von y", Button verschwindet am Ende). Kein zusätzlicher Mongo-Speicher.
-5. **Watchdog-Fix (unvollständige Closes, XRP)**: Root Cause: `_fmt_qty` rundete beim Voll-Close AB auf die Step-Size → bis zu 1 Step blieb auf Bitunix offen. Fix: `flash_close(full=True)` rundet AUF (`_fmt_qty(round_up=True)`), reduceOnly schützt vor Überschließen; `close_live_position` reicht `full` durch; Watchdog nutzt an 3 Stellen `full=True`.
-- Tests: `backend/tests/test_trade_improvements.py` (11), `test_iter10_trade_improvements_api.py` (10, vom Testing-Agent).
+## Backlog / Nächste Aufgaben
+- P0 (Sicherheit, Nutzer-Aktion): API-Keys/Secrets wurden im Klartext geteilt → rotieren (Bitunix, Mongo Atlas, Telegram, alle LLM-Keys)
+- P1: Regime-Module konsolidieren (nach Freigabe des Traders)
+- P1: GET /api/ai/lessons & /insights sind unauthentifiziert lesbar (bewusstes Design lt. core/auth.py – ggf. absichern)
+- P2: LessonStore.all() Write-on-Read (Lifecycle-Persist bei GET) beobachten
+- P2: ai_engine.py modular aufteilen
+- P2: dormant-Lektionen-Verwaltung (manuell reaktivieren/endgültig löschen per UI)
 
-### 23.06.2026 – MAE-Tracking + Analyse Live-vs.-Paper ✅ (Testing-Agent verifiziert)
-- **MAE ("Tiefster/Höchster Gegenlauf")**: `update_trough()` (Spiegelbild von update_peak) in bitunix_trade.py, Tracking im Tick von `_manage_trade` + Exit-Fill + manual_close. `_enrich_trade`: `trough_price/trough_distance_pct/mae_pct`. UI: Meta-Feld `trade-trough-{id}`, `lvl-trough`-Zeile (#C97A8A) in der Preis-Leiter, gepunktete Trough-Linie im Trade-Chart. Chart-Endpoint liefert `trough_price`.
-- **Bugfix nach Testing (HIGH)**: `_enrich_trade` nahm bei offenen Trades ohne gespeicherten Wert nur den aktuellen Kurs als Kandidat → positives MAE / "Gegenlauf über Entry". Fix: Entry immer als Kandidat (wie Tick-Tracker), symmetrisch auch beim Peak; `-0.0`-Normalisierung. Tests: 18 Unit + 9 API (test_iter11_mae_api.py) grün.
-- **Analyse/Plan**: `UMSETZUNGSPLAN_LIVE_QUALITAET.md` aktualisiert – Ist-Stand: Baustein C (Key-Level-Limits) + D (ehrliches Paper) + E (MFE/MAE) fertig; OFFEN: Baustein A (ATR-Market-Block, Schwelle 0,10% default konfigurierbar – vom User bestätigt) und Baustein B (Slippage-/Fill-Qualitäts-Messung inkl. slippage-stats-Endpoint + MFE/MAE-Auswertung je order_kind). Empfohlene Reihenfolge: A → B → 2-4 Wochen Messphase → erst dann über Option 3 (1m-Hybrid) entscheiden.
-
-### 24.06.2026 – Backlog P1+P2 komplett + Slippage-UI-Karte ✅ (Testing-Agent: 13/13 API + 10/10 Unit, Frontend 100%)
-1. **Forex-Chart-Fix (P1)**: `kline_available()` in `core/instruments.py` (Forex hat `bitunix=None`); `_enrich_trade` liefert `computed.chart_available`; Chart-Endpoint antwortet für Forex mit `chart_available=false` + `reason` statt leerer Kerzen; Frontend blendet `trade-history-chart-btn` bei Forex aus.
-2. **Not-Fallback-Kennzeichnung (P1)**: `role_manager.team_chain()` (Team ohne Not-Kette, aus `chain()` extrahiert); `health_status()` setzt je active_fallback `outside_team` (via `_fallback_outside_team`, lazy imports); UI: gelber Badge "NOT-FALLBACK außerhalb des Teams" (`ai-fallback-outside-team-{role}`) in AITradingPanel.
-3. **Modularisierung (P2)**: `TradeDetailCard.js` (Card + LevelRow + OpenTradeActions + fmt-Helper) und `TradeFilters.js` (PnlFilter + TradeListControls) aus `PerformanceAnalytics.js` (1029 → ~705 Zeilen) extrahiert – alle data-testids unverändert, reine Refaktorierung.
-4. **record_result ohne globalen Rollen-Fallback (P2)**: `role or _current_role.get("role")` entfernt – Rolle kommt immer explizit von generate_chain/stream_chain; ohne Rolle bleibt der Eintrag unzugeordnet. Test angepasst (`test_record_result_without_role_stays_unassigned`).
-5. **Slippage-/Fill-Qualitäts-Karte (NEU)**: `SlippageStatsCard.js` im Analyse-Panel → Trades-View (`slippage-stats-card`), nutzt `GET /api/autotrade/slippage-stats?days=7|30|90`, Empty-State solange `measured_trades=0` (Messphase). days-Clamp-Fix: `days=0 → 1`.
-- Tests: `backend/tests/test_backlog_p1_p2_fixes.py` (5 neu), `test_iteration13_api.py` (13, Testing-Agent). Unit-Suite: 865 passed.
-
-### 24.06.2026 – Fallback-Anzeige-Fix + Modell-Bestätigung nach unten ✅ (Testing-Agent verifiziert)
-- **Bug (User-Report)**: outside_team nutzte `team_chain()` → Provider-interne Ersatzmodelle (z.B. OpenRouter-Nemotron über die OpenRouter-Kette) galten fälschlich als "im Team". Fix: `role_manager.configured_models()` (NUR die 3 explizit gewählten Modelle); `_fallback_team_info()` liefert strikt `outside_team` + `team_model` (konfiguriertes Primärmodell). UI: Badge "NOT-FALLBACK außerhalb des Teams (gewählt: provider/model)" + Erklärtext `ai-active-fallbacks-hint` unter der Überschrift.
-- **KI-Team-Tab**: Sektion "Neu entdeckte KI-Modelle – erst nach Bestätigung auswählbar" (`ai-pending-models`) ans Ende des Tabs verschoben (nach Rollen-Karten + AITeamSupervisor).
-- **SlippageStatsCard**: automatische "Messphasen-Check"-Zeile (`slippage-verdict`): tradegewichteter Ø Slippage Market vs. Maker/Limit, erscheint sobald beide Order-Arten Daten haben.
-- Tests: `test_backlog_p1_p2_fixes.py` erweitert (7 Tests, u.a. Provider-intern → outside_team=True), `test_iteration15_fallback_shape.py` (Testing-Agent). Unit-Suite: 867 passed.
-
-## Backlog
-- Nach der Messphase (2–4 Wochen ab 23.06.): Slippage-Auswertung (market vs. maker vs. limit_fill, MAE je Order-Art) → dann Entscheidung über Option 3 (1m-Hybrid-Trigger)
-- Beobachten: Testing-Agent sah einmalig 2×60s-API-Timeouts (möglicher Event-Loop-Block durch Scan/Backfill), nicht reproduzierbar; erneut 1×502/60s auf /api/ai/status (24.06.)
-- Prüfen: mögliches Under-Reporting von active_fallbacks, wenn das Primärmodell wegen Cooldown übersprungen wird (Log zeigte market_observer auf groq statt gemini ohne Fallback-Eintrag) – Anzeige-Thema, Trading unberührt
-- Kosmetik (dev-only): React-Warnung `<span>` in `<option>` (AITradingPanel ~Z.1952)
-- Optional P3: PerformanceAnalytics.js weiter aufteilen (Clear-Modal, Zeit-Analyse)
-
-## Wichtige Hinweise
-- backend/.env enthält ECHTE Bitunix-LIVE-Keys – in Tests keine Orders platzieren!
-- Backend braucht nach Restart ~90–120 s (Candle-Backfill) bis Port 8001 antwortet
-- pytest: `-n 0` für serielle Läufe anhängen (pytest.ini erzwingt xdist)
-- Admin-Login: /app/memory/test_credentials.md
-- DB-Stand (23.06.): 390 geschlossene / 26 offene Trades
+## Test-Zugang
+Admin / Dean06Greif!/Admin (siehe /app/memory/test_credentials.md)
