@@ -565,7 +565,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
 
   const reevaluateLessons = async () => {
     if (!window.confirm('Alle Lektionen gegen die AKTUELLE Strategie neu bewerten? '
-      + 'Veraltete KI-Lektionen werden entfernt/angepasst, vom Trader festgelegte bleiben unangetastet.')) return;
+      + 'Veraltete KI-Lektionen werden zurückgestellt/angepasst (reaktivierbar), vom Trader festgelegte bleiben unangetastet.')) return;
     setReevaluating(true);
     try {
       const res = await fetch(`${API_URL}/api/ai/lessons/reevaluate`, {
@@ -1210,7 +1210,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
           <div className="ai-learn-panel" data-testid="ai-learn-panel">
             <div className="ai-learn-head">
               <span className="ai-learn-title">
-                <Brain size={14} weight="fill" /> KI-Lernen · {(insights?.lessons || []).length} Lektionen
+                <Brain size={14} weight="fill" /> KI-Lernen · {(insights?.lessons || []).filter(l => !l.superseded && l.status !== 'dormant').length} Lektionen
                 {insights?.last_learn ? ` · zuletzt ${fmtTime(insights.last_learn)}` : ''}
               </span>
               <button className="ai-action-btn" onClick={learnNow} disabled={learning} data-testid="ai-learn-now-btn">
@@ -1338,7 +1338,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                         </div>
                       </div>
                     ) : (
-                      <div className="ai-lesson-row" style={l.superseded ? { opacity: 0.45 } : undefined}>
+                      <div className="ai-lesson-row" style={(l.superseded || l.status === 'dormant') ? { opacity: 0.45 } : undefined}>
                         <div className="ai-lesson-body" style={l.superseded ? { textDecoration: 'line-through' } : undefined}>
                           {l.no != null && (
                             <span className="ai-lesson-no" data-testid={`ai-lesson-no-${l.id}`}
@@ -1352,6 +1352,11 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                             <span className="ai-lesson-locked" style={{ background: 'rgba(255,120,60,0.18)' }}
                               title="Widerspruch zum gleichen Thema – die neueste Trader-Anweisung gilt, diese Lektion ist inaktiv (bleibt gespeichert)."
                               data-testid={`ai-lesson-superseded-${l.id}`}>ersetzt – neuere Anweisung gilt</span>
+                          )}
+                          {!l.superseded && l.status === 'dormant' && (
+                            <span className="ai-lesson-locked" style={{ background: 'rgba(120,160,255,0.16)' }}
+                              title="Gültigkeit abgelaufen – zurückgestellt statt gelöscht. Bestätigen neue Daten die Lektion erneut, wird sie automatisch reaktiviert und verlängert."
+                              data-testid={`ai-lesson-dormant-${l.id}`}>zurückgestellt – reaktivierbar</span>
                           )}
                         </div>
                         <button className="ai-lesson-btn" title="Lektion bearbeiten"

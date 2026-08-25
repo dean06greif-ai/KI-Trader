@@ -405,14 +405,23 @@ def usable_key_indices(provider: str, n_keys: int, now: Optional[float] = None) 
     """Key-Indizes in Prio-Reihenfolge; frisch rate-limitierte werden übersprungen.
     Der Startpunkt rotiert pro Aufruf (Round-Robin), damit sich die Last über
     Keys aus VERSCHIEDENEN Konten verteilt statt immer Key 1 zu verbrennen.
-    Fallback: sind alle im Cooldown, werden wieder alle geliefert."""
+
+    Fallback: Sind ALLE Keys im Cooldown, werden nur die KURZ limitierten
+    (Minuten-Rate-Limit) erneut probiert. Keys mit Tages-/402-Cooldown
+    (Kontingent erschöpft / Payment Required) bleiben gesperrt – die Kette
+    wechselt dann direkt zum nächsten Modell/Provider, statt tote Keys jeden
+    Zyklus erneut zu hämmern (Fix: 16×402-Spam pro Analyse-Zyklus)."""
     now = _now() if now is None else now
     limited = _key_limited.get(provider) or {}
-    fresh = {i for i, info in limited.items()
-             if (now - float(info.get("ts", 0)))
-             < float(info.get("cooldown_s") or KEY_LIMIT_COOLDOWN_S)}
+    fresh: Dict[int, float] = {}
+    for i, info in limited.items():
+        cd = float(info.get("cooldown_s") or KEY_LIMIT_COOLDOWN_S)
+        if (now - float(info.get("ts", 0))) < cd:
+            fresh[i] = cd
     idxs = [i for i in range(n_keys) if i not in fresh]
-    idxs = idxs or list(range(n_keys))
+    if not idxs:
+        idxs = [i for i in range(n_keys)
+                if fresh.get(i, KEY_LIMIT_COOLDOWN_S) <= KEY_LIMIT_COOLDOWN_S]
     if len(idxs) > 1:
         off = _rr_start.get(provider, 0) % len(idxs)
         _rr_start[provider] = off + 1

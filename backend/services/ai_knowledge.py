@@ -76,7 +76,9 @@ AI_TUNABLE_ENGINE_KEYS: Dict[str, Dict] = {
     "max_same_direction": {"type": "int", "min": 0, "max": 10,
                            "desc": "Richtungs-Guard: max. gleichzeitig offene KI-Trades in dieselbe Richtung (0 = aus). Für Datensammel-Trades immer ausgesetzt."},
     "correlation_guard": {"type": "bool",
-                          "desc": "Korrelations-Guard: BTC/ETH/SOL zählen als EIN Richtungs-Risiko"},
+                          "desc": "Korrelations-Guard: BTC/ETH/SOL zählen als EIN Richtungs-Risiko. "
+                                  "Trader-Schalter: JEDE Änderung (an/aus) wird nur als Vorschlag "
+                                  "geparkt und braucht Trader-Bestätigung"},
     "maker_suspend_hours": {"type": "float", "min": 0, "max": 72,
                             "desc": "Maker-Order-Modus für X Stunden aussetzen (0 = wieder aktivieren; nur wirksam, wenn der Trader den Modus eingeschaltet hat)"},
 }

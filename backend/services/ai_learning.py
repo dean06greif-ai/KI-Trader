@@ -28,7 +28,10 @@ REEVAL_SYSTEM = (
     "Rahmenbedingungen noch, oder stammt sie aus einem Kontext, der nicht mehr existiert "
     "(anderes Intervall, andere SL/TP-Politik, anderer Stil)? Alte Lektionen dürfen die "
     "neue Strategie NICHT übermäßig einschränken. Lektionen mit Markierung LOCKED sind vom "
-    "Trader festgelegt: NIEMALS 'veraltet', höchstens 'gueltig'. Antworte NUR mit JSON: "
+    "Trader festgelegt: NIEMALS 'veraltet', höchstens 'gueltig'. 'veraltet' LÖSCHT die "
+    "Lektion nicht endgültig, sondern stellt sie zurück – sie kann später durch neue Daten "
+    "reaktiviert werden. Bevorzuge 'anpassen' (Regel dynamisch an den Markt anpassen) "
+    "gegenüber 'veraltet'. Antworte NUR mit JSON: "
     '{"verdicts":[{"id":"...","verdict":"gueltig|veraltet|anpassen","reason":"kurz",'
     '"new_detail":"nur bei anpassen"}],"assessment":"2-3 Sätze Gesamtbild"}'
 )
@@ -57,6 +60,17 @@ LEARNING_SYSTEM = (
     "Marktbedingung gilt die Lektion, z.B. 'BTC 4h-Abwärtstrend unter EMA200') und gib "
     "\"expires_days\" an (z.B. 7-21), damit die Lektion automatisch verfällt, wenn das "
     "Regime dreht. Pauschale Richtungs-Lektionen ohne Kontext werden automatisch verworfen. "
+    "ADAPTIEREN STATT VERBIETEN (Overfitting-Schutz): Formuliere Lektionen als adaptive "
+    "Wenn-Dann-Regeln ('Wenn <Marktbedingung>, dann <konkrete Anpassung>'), NIEMALS als "
+    "pauschale Verbote ('nie', 'verboten', 'nur noch', 'komplett meiden'). Pauschale "
+    "Verbote ohne Marktkontext werden automatisch verworfen – sie schränken das System "
+    "dauerhaft ein, statt es dynamisch an den Markt anzupassen. Bevorzuge Verbesserungen "
+    "(Entry-Qualität, Timing, Selektion) gegenüber Einschränkungen; ein hartes Verbot ist "
+    "nur bei großer, eindeutiger Stichprobe (>= 20 entschiedene Trades zum Muster) UND mit "
+    "Kontext zulässig. Abgelaufene Lektionen werden ZURÜCKGESTELLT statt gelöscht: "
+    "Bestätigen die Daten eine zurückgestellte Lektion erneut, gib sie mit EXAKT demselben "
+    "Titel zurück – sie wird reaktiviert und ihre Gültigkeit verlängert; du darfst sie "
+    "dabei anpassen/optimieren, wenn sich ein ähnlicher Ansatz besser validiert. "
     "HEBEL IST KEIN STELLHEBEL: Das Auto-Leverage-System nutzt bewusst den maximal "
     "möglichen Hebel (Liquidation liegt dadurch hinter dem SL). Empfehle NIE Hebel-Deckel "
     "('max 20x') – steuere Risiko stattdessen über die Marge (capital_pct) oder den "
@@ -406,8 +420,9 @@ class AILearning:
         """Urteile auf den Bestand anwenden (rein, testbar).
 
         Regeln: LOCKED/Trader-Lektionen werden NIE entfernt oder geändert;
-        'veraltet' entfernt, 'anpassen' aktualisiert das Detail, 'gueltig'
-        bekommt einen frischen revalidated_at-Stempel."""
+        'veraltet' stellt die Lektion ZURÜCK (dormant, reaktivierbar) statt sie
+        zu löschen, 'anpassen' aktualisiert das Detail, 'gueltig' bekommt einen
+        frischen revalidated_at-Stempel."""
         by_id = {str(v.get("id", "")): v for v in verdicts if isinstance(v, dict)}
         kept, removed, adjusted, protected = [], [], [], []
         now = _now_iso()
@@ -422,8 +437,15 @@ class AILearning:
                 kept.append(l)
                 continue
             if verdict == "veraltet":
+                # Zurückstellen statt löschen: eine lange bewährte Lektion, die
+                # kurzzeitig nicht validiert, geht nicht verloren – sie ruht und
+                # kann durch neue Daten reaktiviert werden (User-Vorgabe).
+                l = dict(l)
+                l["status"] = "dormant"
+                l["dormant_since"] = now
                 removed.append({"id": l.get("id"), "title": l.get("title"),
                                 "reason": reason or "Kontext hat sich geändert"})
+                kept.append(l)
                 continue
             if verdict == "anpassen":
                 new_detail = str((v or {}).get("new_detail", "")).strip()[:600]
@@ -604,8 +626,10 @@ class AILearning:
                     self._lessons_cache = None
             except Exception as e:
                 logger.warning(f"Lektionen-Audit vor Lernlauf fehlgeschlagen: {e}")
+            self._lessons_cache = None  # frisch laden -> Lebenszyklus (dormant) anwenden
             old = await self.get_lessons()
             old_txt = ai_lessons.lessons_text(old)
+            dormant_block = ai_lessons.dormant_text(old)
             directives = await self.engine._user_directives(10)
             # Lean-Prompt: Forschungs-/ML-Blöcke fließen bereits direkt in die
             # Analyse-Prompts – für den Lernlauf (Lektionen aus EIGENEN
@@ -655,6 +679,7 @@ class AILearning:
                 + (f"{insights_txt}\n\n" if insights_txt else "")
                 + f"=== BISHERIGE LEKTIONEN ===\n{old_txt}\n\n"
                 + (f"{candidates_block}\n\n" if candidates_block else "")
+                + (f"{dormant_block}\n\n" if dormant_block else "")
                 + (f"{research_txt}\n\n" if research_txt else "")
                 + (f"{ml_txt}\n\n" if ml_txt else "")
                 + f"=== AKTUELLE TRADER-DIREKTIVEN ===\n{directives}\n\n"
@@ -697,6 +722,12 @@ class AILearning:
                                        + timedelta(days=exp_days)).isoformat()
                 except (TypeError, ValueError):
                     pass
+                if context and not valid_until:
+                    # Kontextgebundene Lektionen verfallen standardmäßig und
+                    # müssen sich über erneute Validierung verlängern
+                    # (Overfitting-Schutz: Regime-Regeln laufen nicht ewig).
+                    valid_until = (datetime.now(timezone.utc)
+                                   + timedelta(days=21)).isoformat()
                 key = title.strip().lower()
                 if key in locked_titles:
                     _skip(title, "vom Trader festgelegt (unveränderlich)", detail,
@@ -706,6 +737,12 @@ class AILearning:
                     title, f"{detail} {context}".strip())
                 if not ok_master:
                     _skip(title, why, detail)
+                    continue
+                if not l.get("trader_directive") and not context \
+                        and ai_lessons.is_absolute_rule(title, detail):
+                    _skip(title, "pauschales Verbot/Einschränkung ohne Marktkontext – "
+                                 "bitte als adaptive Wenn-Dann-Regel mit 'context' "
+                                 "formulieren (Overfitting-Schutz)", detail)
                     continue
                 prev = old_by_title.get(key)
                 if l.get("trader_directive") and prev is None:
@@ -751,6 +788,14 @@ class AILearning:
                     # Modelle bleibt erhalten, Bestätigungen zählen weiter.
                     weight = max(run_weight, int(prev.get("weight", 0)))
                     confirmations = int(prev.get("confirmations", 0)) + 1
+                    if not context and prev.get("context"):
+                        context = str(prev["context"])[:200]
+                    if not valid_until and (prev.get("valid_until")
+                                            or ai_lessons.is_dormant(prev)):
+                        # Erneut validiert: Gültigkeit verlängern (je öfter
+                        # bestätigt, desto länger) statt auslaufen zu lassen;
+                        # zurückgestellte Lektionen werden so reaktiviert.
+                        valid_until = ai_lessons.renewal_valid_until(confirmations)
                 fresh.append({"title": title,
                               "detail": detail,
                               "context": context,

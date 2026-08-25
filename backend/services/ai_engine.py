@@ -2917,8 +2917,15 @@ class AIEngine:
             if h > 72:
                 return (f"Maker-Aussetzung {h:g}h (> 72h) "
                         "– nur der Trader darf das bestätigen")
-        if "correlation_guard" in changes and not changes["correlation_guard"]:
-            return "Korrelations-Guard abschalten – nur der Trader darf das bestätigen"
+        if "correlation_guard" in changes:
+            # Trader-Schalter: JEDE Änderung (an UND aus) braucht Bestätigung.
+            # Bugfix: die KI durfte den Guard automatisch wieder EINSCHALTEN und
+            # drehte damit den manuell ausgeschalteten Zustand des Traders
+            # ständig zurück – jetzt bleibt der Trader-Zustand bestehen, bis er
+            # selbst bestätigt.
+            state = "einschalten" if changes["correlation_guard"] else "abschalten"
+            return (f"Korrelations-Guard {state} – Trader-Schalter, "
+                    "nur der Trader darf das bestätigen")
         return ""
 
     async def _normalize_auto_tuned(self):

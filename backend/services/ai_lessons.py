@@ -12,8 +12,9 @@ damit sie sowohl vom Lernlauf (`services/ai_learning.py`) als auch von den
 Endpunkten (`routers/ai_governance.py`) genutzt werden können.
 """
 import logging
+import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,106 @@ def is_expired(lesson: Dict) -> bool:
         return False
 
 
+# --------------------------------------------------------------------------- #
+#  Lebenszyklus: Abgelaufene Lektionen werden ZURÜCKGESTELLT ("dormant") statt
+#  gelöscht. Sie fließen nicht mehr in den Prompt ein, können sich aber im
+#  Lernlauf neu validieren (exakt gleicher Titel) -> Reaktivierung mit
+#  verlängerter Gültigkeit. Erst nach langer Ruhephase ohne erneute Validierung
+#  werden sie endgültig entfernt. Overfitting-Schutz: alte Regime-Regeln
+#  blockieren nicht dauerhaft, bewährte Erkenntnisse gehen aber nicht durch
+#  eine kurze Schwächephase verloren.
+# --------------------------------------------------------------------------- #
+DORMANT_DELETE_DAYS = 45   # so lange bleibt eine zurückgestellte Lektion reaktivierbar
+RENEWAL_BASE_DAYS = 14     # Basis-Gültigkeit bei erneuter Validierung
+RENEWAL_MAX_DAYS = 90
+
+
+def _parse_iso(ts) -> Optional[datetime]:
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def is_dormant(lesson: Dict) -> bool:
+    return str((lesson or {}).get("status") or "") == "dormant"
+
+
+def renewal_valid_until(confirmations: int) -> str:
+    """Neues Verfallsdatum nach erneuter Validierung: je öfter bestätigt,
+    desto länger gültig (bewährte Lektionen müssen sich seltener neu beweisen)."""
+    days = min(RENEWAL_MAX_DAYS,
+               int(RENEWAL_BASE_DAYS * (1 + 0.5 * max(0, int(confirmations or 0)))))
+    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+
+
+def apply_lifecycle(lessons: List[Dict]):
+    """Lebenszyklus anwenden (rein, testbar).
+
+    * abgelaufen -> status "dormant" (zurückgestellt, NICHT gelöscht)
+    * dormant + > DORMANT_DELETE_DAYS ohne Reaktivierung -> entfernt
+    * locked/Trader-Lektionen bleiben immer unangetastet
+    Rückgabe: (lessons, changed)."""
+    now = datetime.now(timezone.utc)
+    out: List[Dict] = []
+    changed = False
+    for l in normalize_all(lessons):
+        if l.get("locked"):
+            out.append(l)
+            continue
+        if is_dormant(l):
+            since = _parse_iso(l.get("dormant_since"))
+            if since and (now - since).days > DORMANT_DELETE_DAYS:
+                changed = True
+                continue
+            out.append(l)
+            continue
+        if is_expired(l):
+            l = dict(l)
+            l["status"] = "dormant"
+            l["dormant_since"] = _now_iso()
+            changed = True
+        out.append(l)
+    return out, changed
+
+
+def dormant_lessons(lessons: List[Dict]) -> List[Dict]:
+    return [l for l in (lessons or []) if isinstance(l, dict) and is_dormant(l)]
+
+
+def dormant_text(lessons: List[Dict]) -> str:
+    """Prompt-Block der zurückgestellten Lektionen (fürs Lern-Modul)."""
+    dorm = dormant_lessons(lessons)
+    if not dorm:
+        return ""
+    lines = [f"- „{l.get('title')}“ (zurückgestellt seit "
+             f"{str(l.get('dormant_since', ''))[:10]}, "
+             f"{int(l.get('confirmations', 0) or 0)} Bestätigung(en)): {l.get('detail')}"
+             for l in dorm[:10]]
+    return ("=== ZURÜCKGESTELLTE LEKTIONEN (abgelaufen, NICHT gelöscht) ===\n"
+            "Diese Lektionen sind ausgelaufen und aktuell inaktiv. Bestätigen die "
+            "aktuellen Daten eine davon erneut, gib sie mit EXAKT demselben Titel "
+            "zurück – sie wird reaktiviert und ihre Gültigkeit verlängert. Du darfst "
+            "sie dabei anpassen/optimieren (Feld detail), wenn sich ein ähnlicher "
+            "Ansatz besser validiert.\n" + "\n".join(lines))
+
+
+# Pauschale Verbots-/Einschränkungs-Sprache ("nie", "verboten", "nur noch"):
+# solche Regeln ohne Marktkontext führen zu Overfitting und schränken das
+# System dauerhaft ein, statt es dynamisch an den Markt anzupassen.
+_ABSOLUTE_RE = re.compile(
+    r"\b(nie|niemals|verboten|verbiete\w*|handelsverbot|ausschließlich|nur noch|"
+    r"keine (trades|longs|shorts|entries)|nicht mehr (handeln|traden)|"
+    r"(grundsätzlich|immer|komplett|generell) (meiden|vermeiden)|"
+    r"deaktivier\w*|blockier\w*)\b")
+
+
+def is_absolute_rule(title: str, detail: str = "") -> bool:
+    """Erkennt pauschale Verbots-Lektionen (Overfitting-Schutz)."""
+    return bool(_ABSOLUTE_RE.search(f"{str(title)} {str(detail)}".lower()))
+
+
 def normalize_all(lessons) -> List[Dict]:
     return [normalize(l) for l in (lessons or []) if isinstance(l, dict) and l.get("title")]
 
@@ -80,7 +181,6 @@ _STOPWORDS = {
 
 
 def _tokens(text: str):
-    import re
     return {w for w in re.findall(r"[a-zä-üß0-9]+", str(text).lower())
             if w not in _STOPWORDS}
 
@@ -193,9 +293,11 @@ def consolidate_conflicts(lessons: List[Dict]):
 
 
 def active_lessons(lessons: List[Dict]) -> List[Dict]:
-    """Nur die aktuell gültigen Lektionen (ohne superseded, ohne abgelaufene)."""
+    """Nur die aktuell gültigen Lektionen (ohne superseded, abgelaufene
+    und zurückgestellte)."""
     consolidated, _ = consolidate_conflicts(lessons)
-    return [l for l in consolidated if not l.get("superseded") and not is_expired(l)]
+    return [l for l in consolidated
+            if not l.get("superseded") and not is_expired(l) and not is_dormant(l)]
 
 
 def merge_lessons(old: List[Dict], new: List[Dict], removed: List[str],
@@ -212,11 +314,19 @@ def merge_lessons(old: List[Dict], new: List[Dict], removed: List[str],
     locked_titles = {l["title"].strip().lower() for l in locked}
     drop = {str(t).strip().lower() for t in (removed or []) if str(t).strip()}
     drop -= locked_titles
+    # Zurückgestellte (dormant) Lektionen bleiben erhalten, zählen aber nicht
+    # gegen das Limit. Kommt derselbe Titel neu validiert zurück, ersetzt die
+    # frische Version die zurückgestellte (= Reaktivierung).
+    new_titles = {str(l.get("title", "")).strip().lower() for l in normalize_all(new)}
+    dormant = [l for l in old_n
+               if not l.get("locked") and is_dormant(l)
+               and l["title"].strip().lower() not in new_titles
+               and l["title"].strip().lower() not in drop]
 
     merged: List[Dict] = []
     seen = set(locked_titles)
     for lesson in normalize_all(new) + old_n:
-        if lesson.get("locked"):
+        if lesson.get("locked") or is_dormant(lesson):
             continue
         key = lesson["title"].strip().lower()
         if not key or key in seen or key in drop:
@@ -232,7 +342,7 @@ def merge_lessons(old: List[Dict], new: List[Dict], removed: List[str],
     locked_out = [l for l in deduped if l.get("locked")]
     ai_out = [l for l in deduped if not l.get("locked")]
     limit = max(1, int(max_lessons))
-    return locked_out + ai_out[:limit]
+    return locked_out + ai_out[:limit] + dormant
 
 
 def prompt_order(lessons: List[Dict]) -> List[Dict]:
@@ -290,8 +400,13 @@ class LessonStore:
         konsolidiert; aktive Lektionen tragen dieselbe Nummer (`no`) wie im
         KI-Prompt, superseded Lektionen haben keine Nummer."""
         lessons = normalize_all((await self._doc()).get("lessons"))
+        lessons, changed = apply_lifecycle(lessons)
+        if changed:
+            await self.save_all(lessons)
         consolidated, _ = consolidate_conflicts(lessons)
-        prompt_order([l for l in consolidated if not l.get("superseded")])
+        prompt_order([l for l in consolidated
+                      if not l.get("superseded") and not is_expired(l)
+                      and not is_dormant(l)])
         for l in consolidated:
             l.setdefault("no", None)
         return consolidated
