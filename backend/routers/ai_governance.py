@@ -140,6 +140,33 @@ async def delete_lesson(lesson_id: str, _: bool = Depends(require_admin)):
     return {"status": "success"}
 
 
+@router.post("/api/ai/lessons/{lesson_id}/reactivate")
+async def reactivate_lesson(lesson_id: str, _: bool = Depends(require_admin)):
+    """Zurückgestellte Lektion reaktivieren – Gültigkeit wird verlängert."""
+    lesson = await lesson_store.set_dormant(lesson_id, dormant=False)
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lektion nicht gefunden")
+    if ai_engine.learning:
+        ai_engine.learning.invalidate_lessons()
+    _opinion("Vom Trader reaktivierte Lektion",
+             f"{lesson['title']}: {lesson['detail']} "
+             f"(gültig bis {str(lesson.get('valid_until', ''))[:10]})")
+    return {"status": "success", "lesson": lesson}
+
+
+@router.post("/api/ai/lessons/{lesson_id}/park")
+async def park_lesson(lesson_id: str, _: bool = Depends(require_admin)):
+    """Lektion zurückstellen (statt löschen) – inaktiv, jederzeit reaktivierbar."""
+    lesson = await lesson_store.set_dormant(lesson_id, dormant=True)
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lektion nicht gefunden")
+    if ai_engine.learning:
+        ai_engine.learning.invalidate_lessons()
+    _opinion("Vom Trader zurückgestellte Lektion",
+             f"{lesson['title']} ist bis auf Weiteres inaktiv (reaktivierbar)")
+    return {"status": "success", "lesson": lesson}
+
+
 # ---------------- Daten-Validierung ----------------
 @router.get("/api/ai/validation")
 async def get_validation():

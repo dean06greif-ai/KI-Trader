@@ -167,6 +167,28 @@ def is_absolute_rule(title: str, detail: str = "") -> bool:
     return bool(_ABSOLUTE_RE.search(f"{str(title)} {str(detail)}".lower()))
 
 
+def reactivate(lesson: Dict) -> Dict:
+    """Zurückgestellte Lektion vom Trader reaktivieren – Gültigkeit wird anhand
+    der bisherigen Bestätigungen verlängert (rein, testbar)."""
+    l = dict(lesson)
+    l.pop("status", None)
+    l.pop("dormant_since", None)
+    l["valid_until"] = renewal_valid_until(int(l.get("confirmations", 0) or 0))
+    l["reactivated_by"] = "trader"
+    l["updated_at"] = _now_iso()
+    return l
+
+
+def park(lesson: Dict) -> Dict:
+    """Lektion vom Trader zurückstellen (statt löschen): inaktiv, aber
+    jederzeit reaktivierbar (rein, testbar)."""
+    l = dict(lesson)
+    l["status"] = "dormant"
+    l["dormant_since"] = _now_iso()
+    l["updated_at"] = _now_iso()
+    return l
+
+
 def normalize_all(lessons) -> List[Dict]:
     return [normalize(l) for l in (lessons or []) if isinstance(l, dict) and l.get("title")]
 
@@ -466,6 +488,20 @@ class LessonStore:
             return False
         await self.save_all(rest)
         return True
+
+    async def set_dormant(self, lesson_id: str, dormant: bool) -> Optional[Dict]:
+        """Trader-Aktion: Lektion zurückstellen (park) oder reaktivieren."""
+        lessons = await self.all()
+        found = None
+        for idx, l in enumerate(lessons):
+            if l.get("id") == lesson_id:
+                lessons[idx] = park(l) if dormant else reactivate(l)
+                found = lessons[idx]
+                break
+        if not found:
+            return None
+        await self.save_all(lessons)
+        return found
 
     async def conflicts(self, persist: bool = True) -> Dict:
         """Themen-Konflikte (z.B. Auto-Lev vs. fester Hebel) erkennen und die

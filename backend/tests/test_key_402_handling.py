@@ -55,8 +55,9 @@ def test_402_keys_do_not_block_healthy_keys(monkeypatch):
 
 
 def test_real_429_streak_still_skips_same_org(monkeypatch):
-    """Regression: echte 429 in Folge müssen die Same-Org-Heuristik weiterhin
-    auslösen (Keys desselben Kontos teilen sich EIN Kontingent)."""
+    """Nach dem Streak werden die restlichen Keys nur für den AKTUELLEN Aufruf
+    übersprungen – sie werden NICHT mitgesperrt (Update: die Keys stammen laut
+    Trader aus UNTERSCHIEDLICHEN Konten mit jeweils eigenem Kontingent)."""
     keys = [f"key{i}" for i in range(6)]
 
     async def fake_oai(provider, model, key, prompt, system, temperature, json_mode):
@@ -75,7 +76,10 @@ def test_real_429_streak_still_skips_same_org(monkeypatch):
         pass  # gesamte Kette scheitert erwartungsgemäß
 
     limited = ai_providers._key_limited.get("cerebras", {})
-    assert any("übersprungen" in str(v.get("detail", ""))
-               for v in limited.values()), limited
+    # Nur die tatsächlich probierten Keys (Streak) sind markiert – der Rest
+    # bleibt nutzbar und trägt KEIN "übersprungen"-Poisoning mehr.
+    assert len(limited) == ai_providers.SAME_ORG_429_STREAK, limited
+    assert not any("übersprungen" in str(v.get("detail", ""))
+                   for v in limited.values()), limited
     ai_providers._key_limited.clear()
     ai_providers._rr_start.clear()

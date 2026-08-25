@@ -394,6 +394,19 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
     } catch (e) { toast.error(e.message); }
   };
 
+  const setLessonDormant = async (id, dormant) => {
+    try {
+      const res = await fetch(`${API_URL}/api/ai/lessons/${id}/${dormant ? 'park' : 'reactivate'}`, {
+        method: 'POST', headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Aktion fehlgeschlagen');
+      toast.success(dormant ? 'Lektion zurückgestellt – jederzeit reaktivierbar'
+        : 'Lektion reaktiviert – Gültigkeit verlängert');
+      loadInsights();
+    } catch (e) { toast.error(e.message); }
+  };
+
   const createLesson = async () => {
     if (!newLesson?.title?.trim() || !newLesson?.detail?.trim()) {
       toast.error('Titel und Inhalt erforderlich'); return;
@@ -956,6 +969,11 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                           {v.limited < v.total
                             ? ` (Key ${(v.limited_keys || []).map(k => k.index).join(', ')}) – restliche Keys übernehmen automatisch`
                             : ' – ALLE Keys aktuell erschöpft'}
+                          {(() => {
+                            const left = Math.max(0, ...(v.limited_keys || []).map(k => k.cooldown_left_s || 0));
+                            if (!left) return '';
+                            return ` · frei in ca. ${left >= 3600 ? `${Math.ceil(left / 3600)} h` : `${Math.ceil(left / 60)} min`}`;
+                          })()}
                         </span>
                       </div>
                     ))}
@@ -1348,6 +1366,11 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                           )}
                           <b>{l.title}</b>: {l.detail}
                           {l.locked && <span className="ai-lesson-locked" data-testid={`ai-lesson-locked-${l.id}`}>vom Trader</span>}
+                          {(l.confirmations || 0) >= 2 && (
+                            <span className="ai-lesson-locked" style={{ background: 'rgba(80,200,120,0.14)' }}
+                              title="So oft hat sich diese Lektion in Lernläufen erneut in echten Daten bestätigt."
+                              data-testid={`ai-lesson-confirms-${l.id}`}>{l.confirmations}× validiert</span>
+                          )}
                           {l.superseded && (
                             <span className="ai-lesson-locked" style={{ background: 'rgba(255,120,60,0.18)' }}
                               title="Widerspruch zum gleichen Thema – die neueste Trader-Anweisung gilt, diese Lektion ist inaktiv (bleibt gespeichert)."
@@ -1359,6 +1382,19 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                               data-testid={`ai-lesson-dormant-${l.id}`}>zurückgestellt – reaktivierbar</span>
                           )}
                         </div>
+                        {l.status === 'dormant' ? (
+                          <button className="ai-lesson-btn" title="Lektion reaktivieren – Gültigkeit wird anhand der Bestätigungen verlängert"
+                            onClick={() => setLessonDormant(l.id, false)}
+                            data-testid={`ai-lesson-reactivate-${l.id}`}>
+                            <ArrowCounterClockwise size={14} weight="bold" />
+                          </button>
+                        ) : (!l.superseded && (
+                          <button className="ai-lesson-btn" title="Lektion zurückstellen (statt löschen) – inaktiv, jederzeit reaktivierbar"
+                            onClick={() => setLessonDormant(l.id, true)}
+                            data-testid={`ai-lesson-park-${l.id}`}>
+                            <Prohibit size={14} weight="bold" />
+                          </button>
+                        ))}
                         <button className="ai-lesson-btn" title="Lektion bearbeiten"
                           onClick={() => setEditLesson({ id: l.id, title: l.title, detail: l.detail })}
                           data-testid={`ai-lesson-edit-${l.id}`}>

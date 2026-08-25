@@ -367,8 +367,10 @@ KEY_LIMIT_COOLDOWN_S = 10 * 60
 _key_limited: Dict[str, Dict[int, Dict]] = {}   # provider -> key_index -> {ts, detail}
 _rr_start: Dict[str, int] = {}                  # provider -> Round-Robin-Zähler
 # Nach so vielen 429 in FOLGE (verschiedene Keys, gleicher Call) werden die
-# restlichen Keys übersprungen: die Limits gelten bei den Providern pro
-# KONTO/ORGANISATION – Keys aus demselben Konto teilen sich EIN Kontingent.
+# RESTLICHEN Keys nur für den AKTUELLEN Aufruf übersprungen (Latenz-Schutz,
+# Fallback-Modell übernimmt). Sie werden dabei NICHT gesperrt: die Keys
+# stammen laut Trader aus UNTERSCHIEDLICHEN Konten mit eigenem Kontingent –
+# das frühere Mit-Sperren blockierte gesunde Keys für 10 Minuten.
 SAME_ORG_429_STREAK = 3
 
 
@@ -871,22 +873,20 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                     # Keys in Folge 429, teilen sie sich fast sicher EIN Konto –
                     # restliche Keys überspringen (spart Latenz + 429-Spam).
                     if streak_429 >= SAME_ORG_429_STREAK and i != last_idx:
+                        # Mehrere Keys in FOLGE im Limit -> restliche Keys nur
+                        # für DIESEN Aufruf überspringen (Latenz-Schutz). Sie
+                        # werden NICHT gesperrt: Keys stammen aus verschiedenen
+                        # Konten mit eigenem Kontingent (Trader-Info).
                         remaining = [j for j in idxs if idxs.index(j) > idxs.index(i)]
-                        for j in remaining:
-                            mark_key_limited(provider, j,
-                                             "übersprungen – Kontingent gilt pro "
-                                             "Konto/Organisation (Keys teilen sich das Limit)")
                         failed_models.append(f"{provider}/{model}")
                         failed_providers.add(provider)
                         _fail_detail(provider, model, "rate_limited",
-                                     f"{streak_429} Keys in Folge im Limit – Hinweis: "
-                                     f"{provider}-Kontingente gelten pro KONTO, Backup-Keys "
-                                     f"aus demselben Konto teilen sich EIN Limit; "
-                                     f"{len(remaining)} weitere Keys übersprungen")
+                                     f"{streak_429} Keys in Folge im Limit – "
+                                     f"{len(remaining)} weitere Keys für diesen Aufruf "
+                                     f"übersprungen (bleiben nutzbar), Fallback übernimmt")
                         logger.warning(
                             f"{provider}/{model}: {streak_429} Keys in Folge im Limit – "
-                            f"Kontingent gilt pro Konto/Organisation, "
-                            f"{len(remaining)} restliche Keys übersprungen")
+                            f"{len(remaining)} restliche Keys für diesen Aufruf übersprungen")
                         break
                     # Ausfall-Meldung erst, wenn ALLE Keys (primär + backup)
                     # dieses Providers erschöpft sind – nicht beim ersten Limit.
@@ -1015,12 +1015,8 @@ async def stream_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                         continue
                     streak_429 += 1
                     if streak_429 >= SAME_ORG_429_STREAK:
-                        # Kontingent gilt pro Konto/Organisation – Rest überspringen
-                        for j in idxs:
-                            if idxs.index(j) > idxs.index(i):
-                                mark_key_limited(provider, j,
-                                                 "übersprungen – Kontingent gilt pro "
-                                                 "Konto/Organisation (Keys teilen sich das Limit)")
+                        # Rest nur für diesen Aufruf überspringen – Keys anderer
+                        # Konten werden NICHT mitgesperrt (siehe generate_chain)
                         break
                     continue
                 logger.warning(f"{provider}/{model} chat Fehler: {str(e)[:150]}")

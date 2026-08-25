@@ -22,7 +22,9 @@ Zusätzlich: überflüssige/unausgereifte Funktionen identifizieren (entfernen n
    - Pauschale Verbots-Lektionen ohne Marktkontext (is_absolute_rule) werden verworfen; Prompt fordert adaptive Wenn-Dann-Regeln statt Verboten; hartes Verbot nur bei >=20 entschiedenen Trades + Kontext.
    - Lern-Reset "veraltet" stellt zurück statt zu löschen; dormant-Block im Lernprompt.
    - Frontend: dormant-Lektionen gedimmt + Badge "zurückgestellt – reaktivierbar" (data-testid ai-lesson-dormant-{id}), Zähler zeigt nur aktive.
-4. **Regressionstests**: backend/tests/test_fixes_guard_402_lessons.py (15 Tests) + Live-API-Suite tests/test_regression_iter15_guard_lessons_api.py. Gesamt-Suite: 885+ passed.
+4. **Regressionstests**: backend/tests/test_fixes_guard_402_lessons.py (17 Tests) + Live-API-Suiten (test_regression_iter15_guard_lessons_api.py, test_iter16_park_reactivate_api.py). Gesamt-Suite: 888 passed.
+5. **Trader-Verwaltung für Lektionen** (Iteration 2): POST /api/ai/lessons/{id}/park und /reactivate (admin-geschützt); UI-Buttons zum Zurückstellen/Reaktivieren, "N× validiert"-Badge (confirmations >= 2), Key-Status-Dropdown zeigt "frei in ca. X min/h" für limitierte Keys.
+6. **Keys aus verschiedenen Konten** (Trader-Info): 429-Streak sperrt restliche Keys NICHT mehr mit (nur Skip für den aktuellen Aufruf) – gesunde Keys anderer Konten bleiben nutzbar.
 
 ## Cleanup-Analyse (gemeldet, nichts entfernt)
 Kein Service-Modul ist tot – alle ~80 services/ werden importiert und sind testabgedeckt. Kandidaten zur späteren Konsolidierung (nur nach Rücksprache):
@@ -36,7 +38,6 @@ Kein Service-Modul ist tot – alle ~80 services/ werden importiert und sind tes
 - P1: GET /api/ai/lessons & /insights sind unauthentifiziert lesbar (bewusstes Design lt. core/auth.py – ggf. absichern)
 - P2: LessonStore.all() Write-on-Read (Lifecycle-Persist bei GET) beobachten
 - P2: ai_engine.py modular aufteilen
-- P2: dormant-Lektionen-Verwaltung (manuell reaktivieren/endgültig löschen per UI)
 
 ## Test-Zugang
 Admin / Dean06Greif!/Admin (siehe /app/memory/test_credentials.md)

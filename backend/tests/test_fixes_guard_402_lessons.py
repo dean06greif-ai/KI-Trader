@@ -154,3 +154,54 @@ def test_reeval_veraltet_parks_instead_of_delete():
     kept = [l for l in res["kept"] if l.get("title") == "Alte Lektion"]
     assert kept and ai_lessons.is_dormant(kept[0]), \
         "veraltet muss zurückstellen (dormant), nicht löschen"
+
+
+# ---------------- Keys aus verschiedenen Konten: kein Mit-Sperren ----------------
+def test_429_streak_skips_without_poisoning_other_keys(monkeypatch):
+    """Nach SAME_ORG_429_STREAK werden restliche Keys nur für den AKTUELLEN
+    Aufruf übersprungen – sie stammen aus anderen Konten und dürfen NICHT
+    mitgesperrt werden."""
+    import asyncio
+    import pytest as _pytest
+    prov = "_t_streak"
+    ai_providers.OPENAI_COMPAT_PROVIDERS[prov] = {
+        "base_url": "http://invalid.local", "env_keys": ["_T_STREAK_KEY"]}
+    monkeypatch.setenv("_T_STREAK_KEY", "k0")
+    monkeypatch.setenv("_T_STREAK_KEY_BACKUP", "k1")
+    for n in range(2, 6):
+        monkeypatch.setenv(f"_T_STREAK_KEY_BACKUP{n}", f"k{n}")
+    _clean(prov)
+
+    async def _fake_429(*a, **kw):
+        raise Exception("Error code: 429 - too many requests")
+
+    monkeypatch.setattr(ai_providers, "_oai_generate", _fake_429)
+    assert len(ai_providers.provider_keys(prov)) == 6
+    with _pytest.raises(Exception):
+        asyncio.run(ai_providers.generate_chain([(prov, "m1")], "p", "s"))
+    limited = ai_providers._key_limited.get(prov) or {}
+    assert len(limited) == ai_providers.SAME_ORG_429_STREAK, \
+        f"nur die tatsächlich probierten Keys dürfen markiert sein, nicht {len(limited)}"
+    _clean(prov)
+    ai_providers.OPENAI_COMPAT_PROVIDERS.pop(prov, None)
+
+
+# ---------------- Trader-Aktionen: reaktivieren / zurückstellen ----------------
+def test_reactivate_clears_dormant_and_extends_validity():
+    dormant = ai_lessons.normalize_all([{
+        "title": "Bewährte Regel", "detail": "x", "status": "dormant",
+        "dormant_since": _past(3), "confirmations": 4}])[0]
+    out = ai_lessons.reactivate(dormant)
+    assert not ai_lessons.is_dormant(out)
+    assert out.get("valid_until") and not ai_lessons.is_expired(out)
+    assert out.get("reactivated_by") == "trader"
+    assert ai_lessons.active_lessons([out])
+
+
+def test_park_sets_dormant_and_keeps_lesson():
+    active = ai_lessons.normalize_all([{"title": "Aktive Regel", "detail": "x"}])[0]
+    out = ai_lessons.park(active)
+    assert ai_lessons.is_dormant(out) and out.get("dormant_since")
+    assert ai_lessons.active_lessons([out]) == []
+    kept, changed = ai_lessons.apply_lifecycle([out])
+    assert kept and ai_lessons.is_dormant(kept[0])
