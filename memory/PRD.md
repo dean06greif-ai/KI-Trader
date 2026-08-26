@@ -81,3 +81,9 @@ Admin / Dean06Greif!/Admin (siehe /app/memory/test_credentials.md)
 - Bug: Trade A anpinnen, dann direkt Trade B anklicken -> SL/TPs BEIDER Trades sichtbar. Root Cause: Hover-Detail-Linien (Crosshair/Badge-Hover) wurden beim Pinnen nicht entfernt; verlässt die Maus den Chart-Canvas über ein DOM-Overlay (Badge), feuert kein Crosshair-Event mehr -> alte Linien blieben stehen.
 - Fix (hooks/useTradeMarkers.js): neues clearDetail() entfernt alle Hover-SL/TP-Linien; togglePin ruft clearDetail vor renderPinned; hoverDetail nutzt clearDetail. Regression (Pin/Unpin, Hover-only, S/R-Toggle) grün.
 - Hebel-Frage des Users beantwortet (kein Code-Change): Auto-Hebel "SL vor Liq" ist als Konzept legitim; lev_mode steht aktuell aber auf 'coin' (KI-Auto-Modus inaktiv). Deckel-Empfehlung nur als Schutz vor Fee-Bleed (Notional-Gebühren) + Wick-Stopouts erklärt — Entscheidung beim User belassen.
+
+## Update 2026-06 (Coin-Einstellungen haben beim KI-Trader Vorrang; testing_agent iteration_26 100%)
+- Backend (services/bitunix_trade.py): neue Helper ai_leverage_override + ai_capital_base. Coin-Auto-Hebel (auto_leverage_enabled) hat IMMER Vorrang vor dem KI-Hebelwunsch (signal.ai_leverage, egal ob lev_mode auto/fixed); globales "Max. Kapital pro Trade" (KI-Panel) kann die Coin-Einstellung max_capital nur SENKEN (min-Logik), Coin-Setting = harte Obergrenze pro Coin.
+- Frontend (StrategyAutoTradeModal.js): für strategyId 'ai_trader' werden STOP LOSS, TAKE PROFIT (inkl. BE/Gebühren/Pre-Signale), KI-TRADER (ai_manage) und GEWINNSICHERUNG ausgeblendet (KI macht das selbst) + Hinweis sat-ai-note; sichtbar bleiben Modus, Max. Kapital, Hebel/Auto-Hebel, Signal-Benachrichtigungen, Export/Import/Speichern. Andere Strategien unverändert (Regression grün).
+- Tooltips im KI-Panel (Hebel-Modus, Max. Kapital/Trade) auf neue Vorrang-Logik aktualisiert.
+- Tests: tests/test_ai_coin_overrides.py 3/3 grün; testing_agent iteration_26 Backend+Frontend 100% (nichts in Prod gespeichert).

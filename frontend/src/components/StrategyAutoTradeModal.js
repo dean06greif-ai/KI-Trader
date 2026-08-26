@@ -177,6 +177,8 @@ export default function StrategyAutoTradeModal({ strategyId, strategyName, symbo
   };
   const m = modeMeta[cfg.mode] || modeMeta.off;
 
+  const isAi = strategyId === 'ai_trader';
+
   return (
     <SafeOverlay className="at-overlay" onClose={onClose} closeOnOutside={false}>
       <div className="at-panel" onClick={e => e.stopPropagation()} data-testid="strategy-autotrade-modal">
@@ -314,6 +316,16 @@ export default function StrategyAutoTradeModal({ strategyId, strategyName, symbo
               Positionsgröße: <b>{posSize} USDT</b> · Order: {cfg.order_type || 'MARKET'}
             </div>
 
+            {isAi && (
+              <div className="at-possize" style={{ marginBottom: 8 }} data-testid="sat-ai-note">
+                🤖 KI-Trader: Stop-Loss, Take-Profits, Break-Even und das laufende
+                Trade-Management wählt die KI pro Trade selbst (Rahmen im KI-Setup).
+                Für diesen Coin zählen hier nur Modus, Max. Kapital und Hebel/Auto-Hebel –
+                beide gelten als harte Grenze und haben Vorrang vor den KI-Vorgaben.
+              </div>
+            )}
+            {!isAi && (
+            <>
             <div className="at-block">
               <div className="at-block-title">STOP LOSS</div>
               <div className="at-seg">
@@ -510,8 +522,11 @@ export default function StrategyAutoTradeModal({ strategyId, strategyName, symbo
                 <span>Auch Pre-Signale traden</span>
               </label>
             </div>
+            </>
+            )}
 
             {/* KI-Trader-Zugriff auf Trades dieser Strategie */}
+            {!isAi && (
             <div className="at-block">
               <div className="at-block-title">KI-TRADER</div>
               <label className="at-check" style={{ marginTop: 0 }}>
@@ -526,8 +541,10 @@ export default function StrategyAutoTradeModal({ strategyId, strategyName, symbo
                   managt nur ihre eigenen Trades.</span>
               </label>
             </div>
+            )}
 
             {/* Gewinnsicherung */}
+            {!isAi && (
             <div className="at-block">
               <div className="at-block-title">GEWINNSICHERUNG</div>
               <label className="at-check" style={{ marginTop: 0 }}>
@@ -602,6 +619,7 @@ export default function StrategyAutoTradeModal({ strategyId, strategyName, symbo
                 </div>
               )}
             </div>
+            )}
 
             <div className="at-block">
               <label className="at-check">

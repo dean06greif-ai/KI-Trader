@@ -1641,7 +1641,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                 {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </label>
-            <label title="Max. Kapital (USDT Margin) pro KI-Trade. 0 = aus (Coin-Trade-Settings gelten). Wenn gesetzt, entscheidet die KI pro Trade selbst, wie viel Kapital (10-100% davon) sie einsetzt – nicht automatisch immer das Maximum.">
+            <label title="Max. Kapital (USDT Margin) pro KI-Trade. 0 = aus (Coin-Trade-Settings gelten). Wenn gesetzt, entscheidet die KI pro Trade selbst, wie viel Kapital (10-100% davon) sie einsetzt – nicht automatisch immer das Maximum. Das Max. Kapital der Coin-Einstellungen bleibt dabei immer die harte Obergrenze pro Coin.">
               <span><Coins size={13} /> Max. Kapital/Trade</span>
               <input type="number" min={0} step={1}
                 style={{ width: 80 }}
@@ -1684,7 +1684,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                   data-testid="ai-crv-max-input" />
               </span>
             </label>
-            <label title="Hebel-Modus für alle KI-Trades: Coin-Einstellungen = bisheriges Verhalten (Hebel aus den Coin-Trade-Settings) · Auto = die KI wählt pro Trade frei einen Hebel bis zum Max · Fest = immer derselbe Hebel. Swing-Trades bleiben zusätzlich auf den Swing-Max-Hebel gedeckelt.">
+            <label title="Hebel-Modus für alle KI-Trades: Coin-Einstellungen = bisheriges Verhalten (Hebel aus den Coin-Trade-Settings) · Auto = die KI wählt pro Trade frei einen Hebel bis zum Max · Fest = immer derselbe Hebel. Swing-Trades bleiben zusätzlich auf den Swing-Max-Hebel gedeckelt. WICHTIG: Coins mit aktiviertem Auto-Hebel (Coin-Einstellungen) behalten ihren Auto-Hebel IMMER – auch bei Auto/Fest.">
               <span>Hebel-Modus</span>
               <select value={cfg.lev_mode || 'coin'}
                 onChange={e => updateConfig({ lev_mode: e.target.value })}

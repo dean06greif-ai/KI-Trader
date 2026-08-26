@@ -769,6 +769,24 @@ DEFAULT_CAPITAL_ALLOCATION = {
 }
 
 
+def ai_leverage_override(cfg: Dict, lev_used: float, ai_lev: float) -> float:
+    """KI-Hebelwunsch greift nur OHNE Coin-Auto-Hebel: hat der Nutzer für den
+    Coin auto_leverage_enabled gesetzt, bleibt der automatisch berechnete
+    Hebel (Liq hinter SL) immer maßgeblich (Nutzerwunsch pro Coin)."""
+    if ai_lev > 0 and not cfg.get("auto_leverage_enabled"):
+        return max(1.0, min(200.0, ai_lev))
+    return lev_used
+
+
+def ai_capital_base(cfg_capital: float, ai_max_cap: float) -> float:
+    """Kapital-Basis für KI-Trades: das globale 'Max. Kapital pro Trade' (KI-
+    Panel) kann die Coin-Einstellung nur SENKEN, nie erhöhen – das Max. Kapital
+    der Coin-Einstellungen bleibt die harte Obergrenze pro Coin."""
+    if ai_max_cap > 0:
+        return min(cfg_capital, ai_max_cap) if cfg_capital > 0 else ai_max_cap
+    return cfg_capital
+
+
 DEFAULT_COIN_CFG = {
     "enabled": False,
     "max_capital": 100.0,
@@ -1704,11 +1722,11 @@ class AutoTradeManager:
 
         # ---- KI-Custom-Trade: Hebel/Kapitalanteil dürfen pro Trade vorgegeben
         # werden (services/ai_trade_manager.py). Immer innerhalb der Limits der
-        # Coin-Config – max_capital und der Live/Paper-Modus bleiben tabu.
+        # Coin-Config – Coin-Auto-Hebel und max_capital haben Vorrang, der
+        # Live/Paper-Modus bleibt tabu.
         try:
-            ai_lev = float(signal.get("ai_leverage") or 0)
-            if ai_lev > 0:
-                lev_used = max(1.0, min(200.0, ai_lev))
+            lev_used = ai_leverage_override(
+                cfg, lev_used, float(signal.get("ai_leverage") or 0))
         except (TypeError, ValueError):
             pass
         # Max-Hebel des Coins (Bitunix-Katalog) deckelt alle Hebel-Pfade
@@ -1732,12 +1750,12 @@ class AutoTradeManager:
             mode = "paper"
         # ---- Kapital-Zuweisung: Gesamt-Exposure des Bots begrenzen ----
         capital = float(cfg["max_capital"])
-        # KI-Trader mit eigenem "Max. Kapital pro Trade": überschreibt die
-        # Coin-Config als Basis; die KI wählt darunter per ai_capital_pct.
+        # KI-Trader mit eigenem "Max. Kapital pro Trade": kann die Coin-Config
+        # nur SENKEN (Coin-Einstellung = harte Grenze); die KI wählt darunter
+        # per ai_capital_pct.
         try:
-            ai_max_cap = float(signal.get("ai_max_capital") or 0)
-            if ai_max_cap > 0:
-                capital = ai_max_cap
+            capital = ai_capital_base(
+                capital, float(signal.get("ai_max_capital") or 0))
         except (TypeError, ValueError):
             pass
         try:
