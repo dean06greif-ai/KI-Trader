@@ -1,0 +1,42 @@
+{
+  "summary": "Backend-only regression for session-scoped small fixes: (1) smart_skip_move_pct migration 0.02->0.10 with marker smart_skip_migrated_v1, (2) parse_order_fill allow_price_fallback + new fill_price_for_slippage helper, (3) cleanup_slippage_artifacts.py dry-run/apply with PROD guard. All 7 requested checks passed. No writes to PROD_MONGO_URL performed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "backend boot", "issue": "Pre-existing (unrelated to this session) ModuleNotFoundError: 'telegram' from services/telegram_bot.py appears once in backend.err.log during startup; backend still starts and serves requests. Not caused by this session's changes."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/tests/test_smart_skip_and_fill_source.py",
+    "/app/backend/tests/ (pytest -m unit)"
+  ],
+  "test_execution_details": {
+    "GET /api/ai/status": "200 OK, config.smart_skip_move_pct = 0.1 after fresh migration (dev DB was seeded 0.02).",
+    "migration_marker_dev_db": "settings.ai_trader_config.smart_skip_migrated_v1 == true, crv_max_migrated_v1 == true.",
+    "idempotency": "Set smart_skip_move_pct=0.05 in dev DB (marker present), restarted backend (~45s boot), value remained 0.05 - migration did NOT re-run. PASS.",
+    "unit_pytest": "cd /app/backend && python -m pytest tests/ -m unit -q => 892 passed, 3 warnings in 22.54s. PASS.",
+    "new_tests": "python tests/test_smart_skip_and_fill_source.py => 'ALLE TESTS GRÜN (3/3)'. PASS (parse_order_fill default+strict; fill_price_for_slippage status/avg/2% guard; migration idempotency).",
+    "cleanup_dry_run_local": "python backend/scripts/cleanup_slippage_artifacts.py (dev DB) => 'Kandidaten ... : 0', exit 0. PASS.",
+    "cleanup_prod_guard": "MONGO_URL=<PROD_MONGO_URL> python backend/scripts/cleanup_slippage_artifacts.py --apply => 'ABBRUCH: --apply gegen PROD_MONGO_URL ist verboten', exit code 2. PASS. NO write attempt made to PROD.",
+    "slippage_stats_api": "GET /api/autotrade/slippage-stats?days=30 => 200 OK with keys ['days','measured_trades','groups'] (days=30, measured_trades=0, groups=list). PASS.",
+    "backend_health": "Only 1 Traceback in backend.err.log - pre-existing telegram module import warning, unrelated to session's changes. /api/ai/status responsive, no import errors in ai_engine.py or bitunix_trade.py."
+  },
+  "action_items": [
+    "Optional (not in scope): install python-telegram-bot or gate the import in services/telegram_bot.py to remove the startup Traceback noise.",
+    "Dev DB state note: smart_skip_move_pct is currently 0.05 in local dev DB (set by idempotency test). Marker smart_skip_migrated_v1=true is present, so migration will not overwrite. Reset to 0.10 manually if desired."
+  ],
+  "critical_code_review_comments": [
+    "cleanup_slippage_artifacts.py PROD guard correctly compares against PROD_MONGO_URL env value and hard-exits with code 2 before any DB open - safe design.",
+    "fill_price_for_slippage rejects |slip|>2% with clear log line - good defensive coding for protection-price artifacts.",
+    "smart_skip migration mirrors crv_max_migrated_v1 pattern exactly - consistent, idempotent, respects user override."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "n/a (skipped as requested)"},
+  "test_credentials": "not needed - endpoints tested are public/read-only",
+  "seed_data_creation": "None. Temporarily mutated settings.ai_trader_config.smart_skip_move_pct in local dev DB (0.02->0.05) to prove idempotency; migration marker preserved.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 7 session-scope checks green. PROD_MONGO_URL must remain read-only. Dev DB smart_skip_move_pct currently 0.05 with marker set; next boot won't re-migrate. Unit suite = 892 passed. New file: /app/tests/test_smart_skip_and_fill_source.py (3/3). Cleanup script: /app/backend/scripts/cleanup_slippage_artifacts.py.",
+  "rca of the issue": "n/a - no bugs found in the tested scope."
+}
