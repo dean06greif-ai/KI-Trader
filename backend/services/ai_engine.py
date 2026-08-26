@@ -2324,6 +2324,7 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                 # (Backtest-/Optimizer-Auswertung) und ML-Labor (Optuna/XGBoost).
                 # Alle drei laufen unabhängig von der Analyse-Engine weiter.
                 for name, mod_attr in (("market observer", "ai_market_observer.market_observer"),
+                                       ("market radar", "ai_market_radar.market_radar"),
                                        ("research analyst", "ai_research.research_analyst"),
                                        ("ml lab", "ai_ml_lab.ml_lab"),
                                        ("ml gate", "ml_gate.ml_gate"),

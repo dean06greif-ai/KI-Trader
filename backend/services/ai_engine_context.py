@@ -771,6 +771,14 @@ class AIEngineContextMixin:
                     parts.append(research)
             except Exception as e:
                 logger.warning(f"AI research block failed: {e}")
+            # Wochen-Marktbild (Markt-Radar): Kurz-/Mittel-/Langfrist-Bias
+            try:
+                from services.ai_market_radar import market_radar
+                radar = await market_radar.context_text()
+                if radar:
+                    parts.append(radar)
+            except Exception as e:
+                logger.warning(f"AI radar block failed: {e}")
             try:
                 from services.ai_ml_lab import ml_lab
                 ml = await ml_lab.context_text()

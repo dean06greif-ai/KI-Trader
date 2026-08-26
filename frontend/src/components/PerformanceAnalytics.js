@@ -38,6 +38,15 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
   const [stratFilter, setStratFilter] = useState('');
   // "Mehr laden" für geschlossene Trades: seitenweise +100 aus der DB
   const [extraClosed, setExtraClosed] = useState([]);
+  // Fill-Slippage-Übersicht: standardmäßig ausgeblendet, Toggle in den
+  // Master-Einstellungen (Steuerung) – localStorage + Live-Event
+  const [showSlippage, setShowSlippage] = useState(
+    () => localStorage.getItem('ui_show_slippage') === '1');
+  useEffect(() => {
+    const onToggle = () => setShowSlippage(localStorage.getItem('ui_show_slippage') === '1');
+    window.addEventListener('ui-show-slippage', onToggle);
+    return () => window.removeEventListener('ui-show-slippage', onToggle);
+  }, []);
   const [closedTotal, setClosedTotal] = useState(null);
   const [shownClosed, setShownClosed] = useState(30);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -468,7 +477,7 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
             })}
           </div>
 
-          <SlippageStatsCard />
+          {showSlippage && <SlippageStatsCard />}
 
           <div className="analytics-section">
             <div className="section-title">OFFENE TRADES <span className="sec-count">{openList.length}{openList.length !== openTrades.length ? `/${openTrades.length}` : ''}</span>

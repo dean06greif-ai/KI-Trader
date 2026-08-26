@@ -215,6 +215,19 @@ async def observer_run(_: bool = Depends(require_admin)):
     return await market_observer.run_check(manual=True)
 
 
+# ---------------- Markt-Radar (wöchentlicher Ultra-Marktscan) ----------------
+@router.get("/api/ai/radar/status")
+async def radar_status():
+    from services.ai_market_radar import market_radar
+    return await market_radar.status()
+
+
+@router.post("/api/ai/radar/run")
+async def radar_run(_: bool = Depends(require_admin)):
+    from services.ai_market_radar import market_radar
+    return await market_radar.run(manual=True)
+
+
 @router.get("/api/ai/observer/snapshots")
 async def observer_snapshots(limit: int = 30, symbol: Optional[str] = None):
     limit = max(1, min(500, limit))

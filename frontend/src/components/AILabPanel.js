@@ -200,9 +200,10 @@ const AILabPanel = () => {
             {ml.training_now ? 'Trainiert…' : 'ML-Training'}
           </button>
           <button className="ai-action-btn" disabled={!!busy}
-            onClick={() => post('/api/ai/observer/run', 'Markt-Beobachtung')}
-            data-testid="ai-lab-observe-btn">
-            <ArrowsClockwise size={13} weight="bold" className={busy === 'Markt-Beobachtung' ? 'spin' : ''} /> Markt scannen
+            onClick={() => post('/api/ai/radar/run', 'Markt-Radar')}
+            data-testid="ai-lab-observe-btn"
+            title="Ultra-Marktscan (Markt-Radar): Kurz-/Mittel-/Langfrist-Analyse durch den Forschungs-Analysten – baut auf dem letzten Radar & den vorherigen Analysen auf, statt alles neu zu rechnen. Läuft automatisch jeden Sonntag ab 18:00. Der Bericht erscheint als Überblick im KI-Chat und fließt als Wochen-Marktbild in jede Trader-Analyse ein.">
+            <ArrowsClockwise size={13} weight="bold" className={busy === 'Markt-Radar' ? 'spin' : ''} /> Markt-Radar
           </button>
           <div className="ai-lab-trash-wrap">
             <button className="ai-action-btn ai-lab-trash-btn" disabled={!!busy}

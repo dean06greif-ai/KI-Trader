@@ -90,6 +90,8 @@ async def lifespan(app: FastAPI):
     research_analyst.setup(ai_engine)
     ml_lab.setup(ai_engine)
     market_observer.setup(ai_engine)
+    from services.ai_market_radar import market_radar
+    market_radar.setup(ai_engine)
     trade_manager.setup(ai_engine, autotrader)
     closed_loop.setup(ai_engine)
     # Positions-Watchdog: letzte Verteidigungslinie gegen Positionen ohne

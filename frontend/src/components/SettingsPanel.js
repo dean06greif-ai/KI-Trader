@@ -33,6 +33,15 @@ const SettingsPanel = ({ onClose, focusStrategy, mode = 'all', controlState, onC
   const importParamsRef = React.useRef(null);
   const { symbols: ALL_COINS } = useInstruments();
   const [notifyCfg, setNotifyCfg] = useState(null);
+  // Fill-Slippage-Übersicht (Trades-Tab): Sichtbarkeit per localStorage + Event
+  const [showSlippage, setShowSlippage] = useState(
+    () => localStorage.getItem('ui_show_slippage') === '1');
+  const toggleSlippage = () => {
+    const next = !showSlippage;
+    setShowSlippage(next);
+    localStorage.setItem('ui_show_slippage', next ? '1' : '0');
+    window.dispatchEvent(new Event('ui-show-slippage'));
+  };
   const [guard, setGuard] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
   const [syncBusy, setSyncBusy] = useState(false);
@@ -1010,6 +1019,33 @@ const SettingsPanel = ({ onClose, focusStrategy, mode = 'all', controlState, onC
                       </span>
                       <span className={`control-master-pill ${controlState?.signals_paused ? 'off' : 'on'}`}>
                         {controlState?.signals_paused ? 'GESTOPPT' : 'AKTIV'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="control-card" data-testid="control-slippage-card">
+                  <div className="control-card-header">
+                    <div className="control-card-info">
+                      <div className="control-card-title">Fill-Slippage-Übersicht</div>
+                      <div className="control-card-desc">
+                        Zeigt im Trades-Tab die Karte mit den gemessenen Fill-Slippage-Statistiken.
+                        Standardmäßig ausgeblendet – hier jederzeit wieder einblendbar.
+                      </div>
+                    </div>
+                    <button
+                      className={`control-master-btn ${showSlippage ? 'active' : 'paused'}`}
+                      onClick={toggleSlippage}
+                      data-testid="control-toggle-slippage"
+                    >
+                      {showSlippage
+                        ? <PauseCircle size={22} weight="fill" />
+                        : <PlayCircle size={22} weight="fill" />}
+                      <span className="control-master-label">
+                        {showSlippage ? 'ÜBERSICHT AN' : 'ÜBERSICHT AUS'}
+                      </span>
+                      <span className={`control-master-pill ${showSlippage ? 'on' : 'off'}`}>
+                        {showSlippage ? 'SICHTBAR' : 'AUSGEBLENDET'}
                       </span>
                     </button>
                   </div>

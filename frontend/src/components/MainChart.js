@@ -3,6 +3,7 @@ import { createChart, CandlestickSeries, LineSeries } from 'lightweight-charts';
 import useLiquidityOverlay from '../hooks/useLiquidityOverlay';
 import useHeatmapOverlay from '../hooks/useHeatmapOverlay';
 import useSRZonesOverlay from '../hooks/useSRZonesOverlay';
+import useLimitOrderLines from '../hooks/useLimitOrderLines';
 import useTradeMarkers from '../hooks/useTradeMarkers';
 import RegimeBadge from './RegimeBadge';
 import './MainChart.css';
@@ -103,6 +104,8 @@ const MainChart = ({ symbol, candleData, signal, onClearSignal }) => {
   const [srOn, setSrOn] = useState(false);
   const { zones: srZones, error: srError } = useSRZonesOverlay(
     chartRef, candleSeriesRef, srCanvasRef, symbol, srOn);
+  // Wartende KI-Limit-Orders als gestrichelte Preislinien (Abstand + Countdown)
+  useLimitOrderLines(candleSeriesRef, symbol, formingRef);
   // Lade-Bereich (LIVE / 1 Woche / 1 Monat) + Trade-Overlay
   const [range, setRange] = useState('live');
   const [rangeOpen, setRangeOpen] = useState(false);
