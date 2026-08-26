@@ -30,6 +30,18 @@ export default function useTradeMarkers(seriesRef, symbol, showClosed, barSec, b
   const pinnedLinesRef = useRef([]);
   const [pinnedId, setPinnedId] = useState(null);
 
+  // Hover-SL/TP-Linien entfernen (auch beim Pinnen nötig: verlässt die Maus den
+  // Chart über ein DOM-Overlay, feuert kein Crosshair-Event mehr und die alten
+  // Linien des vorherigen Trades blieben sonst neben dem neuen Pin stehen)
+  const clearDetail = useCallback(() => {
+    const series = seriesRef.current;
+    detailLinesRef.current.forEach(l => {
+      try { series && series.removePriceLine(l); } catch (_) { /* noop */ }
+    });
+    detailLinesRef.current = [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const renderPinned = useCallback(() => {
     const series = seriesRef.current;
     pinnedLinesRef.current.forEach(l => {
@@ -61,6 +73,7 @@ export default function useTradeMarkers(seriesRef, symbol, showClosed, barSec, b
   const togglePin = useCallback((tradeId) => {
     pinnedIdRef.current = pinnedIdRef.current === tradeId ? null : tradeId;
     setPinnedId(pinnedIdRef.current);
+    clearDetail();     // alte Hover-SL/TPs des vorherigen Trades immer ausblenden
     renderPinned();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -74,10 +87,7 @@ export default function useTradeMarkers(seriesRef, symbol, showClosed, barSec, b
   // SL/TP der Position nur beim Hover über den Entry-Punkt einblenden
   const hoverDetail = useCallback((time) => {
     const series = seriesRef.current;
-    detailLinesRef.current.forEach(l => {
-      try { series && series.removePriceLine(l); } catch (_) { /* noop */ }
-    });
-    detailLinesRef.current = [];
+    clearDetail();
     if (time == null || !series) return;
     openRef.current
       .filter(o => o.time === time && o.trade.id !== pinnedIdRef.current)

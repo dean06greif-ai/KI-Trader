@@ -76,3 +76,8 @@ Admin / Dean06Greif!/Admin (siehe /app/memory/test_credentials.md)
 - Hinweis S/R im KI-Prompt: KEY-LEVELS (4h/1d) waren bereits im Prompt (macro_context.key_levels); der Radar ergänzt jetzt exakt die Chart-Zonen.
 - Tests: tests/test_market_radar_and_chart_limits.py 5/5 grün; testing_agent iteration_24 Backend+Frontend 100%. E2E-Radar-Lauf real verifiziert (groq/gpt-oss-120b).
 - Kleinigkeiten aus Review (nicht blockierend, Backlog): requireAdmin öffnet Panel nach Login nicht automatisch (Extra-Klick); Markt-Radar-Button tief verschachtelt (evtl. Header-Shortcut).
+
+## Update 2026-06 (Bugfix — doppelte SL/TP-Linien beim Trade-Wechsel im Chart; testing_agent iteration_25 100%)
+- Bug: Trade A anpinnen, dann direkt Trade B anklicken -> SL/TPs BEIDER Trades sichtbar. Root Cause: Hover-Detail-Linien (Crosshair/Badge-Hover) wurden beim Pinnen nicht entfernt; verlässt die Maus den Chart-Canvas über ein DOM-Overlay (Badge), feuert kein Crosshair-Event mehr -> alte Linien blieben stehen.
+- Fix (hooks/useTradeMarkers.js): neues clearDetail() entfernt alle Hover-SL/TP-Linien; togglePin ruft clearDetail vor renderPinned; hoverDetail nutzt clearDetail. Regression (Pin/Unpin, Hover-only, S/R-Toggle) grün.
+- Hebel-Frage des Users beantwortet (kein Code-Change): Auto-Hebel "SL vor Liq" ist als Konzept legitim; lev_mode steht aktuell aber auf 'coin' (KI-Auto-Modus inaktiv). Deckel-Empfehlung nur als Schutz vor Fee-Bleed (Notional-Gebühren) + Wick-Stopouts erklärt — Entscheidung beim User belassen.
