@@ -137,11 +137,18 @@ const StrategyCopilot = ({ panel, getContext, onApplied }) => {
       {open && (
         <div className="cp-panel">
           <div className="cp-topbar">
-            <span className="cp-model">{status ? `OpenRouter · ${status.model || 'Auto (mit Fallback)'}` : '…'}</span>
+            <span className="cp-model">{status ? `OpenRouter (eigene Keys) · ${status.model || 'Auto (mit Fallback)'}` : '…'}</span>
             <button className="cp-clear" onClick={clearChat} title="Verlauf löschen" data-testid="copilot-clear-btn">
               <Trash size={13} /> Verlauf
             </button>
           </div>
+          {status && !status.ready && (
+            <div className="cp-nokey" data-testid="copilot-nokey-hint">
+              Kein Copilot-Key konfiguriert: Bitte <code>{status.key_env || 'COPILOT_OPENROUTER_API_KEY'}</code> (optional
+              + <code>_BACKUP…</code>) in der Backend-.env setzen. Der Copilot nutzt bewusst eigene Keys – die
+              OpenRouter-Keys des KI-Traders bleiben unangetastet.
+            </div>
+          )}
           <div className="cp-quick">
             {QUICK_PROMPTS.map(q => (
               <button key={q.label} onClick={() => send(q.text)} disabled={busy}

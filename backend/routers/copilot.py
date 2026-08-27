@@ -15,7 +15,7 @@ from core.auth import require_admin
 from core.state import scanner
 from services import ai_providers
 from services.ai_memory import memory
-from services.strategy_copilot import copilot, PROVIDER, sanity_check
+from services.strategy_copilot import copilot, copilot_keys, PROVIDER, KEY_ENV, sanity_check
 from strategies.registry import registry as strategy_registry
 
 logger = logging.getLogger(__name__)
@@ -26,11 +26,12 @@ router = APIRouter(tags=["copilot"])
 @router.get("/api/copilot/status")
 async def copilot_status():
     cfg = await copilot.config()
-    keys = ai_providers.provider_keys(PROVIDER)
+    keys = copilot_keys()
     return {"provider": PROVIDER,
             "model": cfg.get("model"),
             "models": ai_providers.allowed_models(PROVIDER),
             "paid_models": sorted(ai_providers.PAID_MODELS_NO_FALLBACK),
+            "key_env": KEY_ENV,
             "keys_available": len(keys),
             "ready": bool(keys)}
 

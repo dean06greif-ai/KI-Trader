@@ -2,8 +2,9 @@
 
 Bewusst GETRENNT vom KI-Trader (services/ai_engine.py), damit es keine
 Komplikationen zwischen den Systemen gibt:
-  * eigener Provider-Stack: NUR OpenRouter, mit Backup-Keys + Modell-Fallback
-    (nutzt die geteilte Infrastruktur ai_providers – Key-Rotation, Cooldowns)
+  * eigener Provider-Stack: NUR OpenRouter mit EIGENEN, separaten Keys
+    (COPILOT_OPENROUTER_API_KEY + COPILOT_OPENROUTER_API_KEY_BACKUP*).
+    Die OPENROUTER_API_KEY* des KI-Traders werden NICHT angefasst.
   * eigener Chat-Verlauf (copilot_chat) und eigene Konfiguration
   * KEIN direkter Zugriff auf Live-Order-Logik – Änderungen laufen
     ausschließlich über vom Nutzer bestätigte Vorschläge (POST /api/copilot/apply)
@@ -16,10 +17,13 @@ Brücke zwischen den KI-Systemen (lose Kopplung, keine Abhängigkeit):
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
+from openai import AsyncOpenAI
 
 from services import ai_providers
 from services.ai_json import parse_json_lenient
@@ -28,6 +32,7 @@ from services.timeframes import TIMEFRAMES
 logger = logging.getLogger(__name__)
 
 PROVIDER = "openrouter"
+KEY_ENV = "COPILOT_OPENROUTER_API_KEY"
 CONFIG_ID = "strategy_copilot_config"
 CHAT_COLLECTION = "copilot_chat"
 MAX_HISTORY_DOCS = 300
@@ -45,6 +50,23 @@ FAST_MODEL_ORDER = [
 ]
 PER_CALL_TIMEOUT = 28.0
 TOTAL_DEADLINE = 52.0
+
+
+def copilot_keys() -> List[str]:
+    """NUR die Copilot-eigenen Keys (getrennte .env-Variablen).
+
+    Primär: COPILOT_OPENROUTER_API_KEY
+    Backups: COPILOT_OPENROUTER_API_KEY_BACKUP, _BACKUP1, _BACKUP2, …
+    Es gibt bewusst KEINEN Fallback auf die KI-Trader-Keys."""
+    keys: List[str] = []
+    primary = (os.environ.get(KEY_ENV) or "").strip()
+    if primary:
+        keys.append(primary)
+    for name in sorted(k for k in os.environ if k.startswith(KEY_ENV + "_BACKUP")):
+        val = (os.environ.get(name) or "").strip()
+        if val and val not in keys:
+            keys.append(val)
+    return keys
 
 SYSTEM_PROMPT = """Du bist der STRATEGIE-COPILOT einer Krypto-Daytrading-Plattform.
 Du hilfst dem Nutzer beim Bauen, Einstellen und Bewerten von Handelsstrategien
@@ -261,10 +283,35 @@ class StrategyCopilot:
                 models.append(m)
         return models
 
+    async def _openrouter_call(self, key: str, model: str, prompt: str,
+                               timeout: float) -> str:
+        client = AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1", api_key=key, timeout=timeout,
+            max_retries=0,
+            default_headers={
+                "HTTP-Referer": os.environ.get("OPENROUTER_REFERER", "https://localhost"),
+                "X-Title": (os.environ.get("OPENROUTER_TITLE") or "KI Trader").strip('"') + " Copilot",
+            })
+        resp = await client.chat.completions.create(
+            model=model, temperature=0.3,
+            messages=[{"role": "system", "content": SYSTEM_PROMPT},
+                      {"role": "user", "content": prompt}])
+        text = (resp.choices[0].message.content or "").strip() if resp.choices else ""
+        if not text:
+            raise RuntimeError("leere Antwort")
+        return text
+
     async def chat(self, message: str, ctx: Optional[Dict] = None) -> Dict:
         message = (message or "").strip()
         if not message:
             raise ValueError("Leere Nachricht")
+
+        keys = copilot_keys()
+        if not keys:
+            raise RuntimeError(
+                f"Kein Copilot-Key gesetzt: bitte {KEY_ENV} (optional + _BACKUP…) "
+                "in der .env eintragen – der Copilot nutzt bewusst NICHT die "
+                "OpenRouter-Keys des KI-Traders")
 
         history = await self.history(HISTORY_FOR_PROMPT)
         hist_txt = "\n".join(
@@ -274,37 +321,41 @@ class StrategyCopilot:
         prompt = (f"KONTEXT:\n{context}\n\nBISHERIGER CHAT:\n{hist_txt}\n\n"
                   f"NUTZER: {message}\n\nAntworte als JSON gemäß Formatvorgabe.")
 
-        cfg = await self.config()
-        models = self._chain(cfg.get("model"))
-        if not models or not ai_providers.provider_keys(PROVIDER):
-            raise RuntimeError("Kein OpenRouter-Modell/Key verfügbar")
+        models = self._chain((await self.config()).get("model"))
 
-        # Hartes Zeitbudget: langsames Modell abbrechen -> nächstes probieren
+        # Hartes Zeitbudget: langsames Modell/Key abbrechen -> nächste Kombination
         start = time.monotonic()
-        text = provider = model = None
+        text = model = None
         last_err: Optional[Exception] = None
         for m in models:
-            remaining = TOTAL_DEADLINE - (time.monotonic() - start)
-            if remaining < 6:
+            for ki, key in enumerate(keys):
+                remaining = TOTAL_DEADLINE - (time.monotonic() - start)
+                if remaining < 6:
+                    break
+                try:
+                    text = await asyncio.wait_for(
+                        self._openrouter_call(key, m, prompt,
+                                              min(PER_CALL_TIMEOUT, remaining)),
+                        timeout=min(PER_CALL_TIMEOUT, remaining))
+                    model = m
+                    break
+                except asyncio.TimeoutError:
+                    logger.info(f"Copilot: {m} zu langsam (> {PER_CALL_TIMEOUT}s)")
+                    last_err = RuntimeError(f"{m}: Timeout")
+                    break  # langsames Modell nicht mit weiteren Keys probieren
+                except Exception as e:
+                    logger.info(f"Copilot: {m} (Key {ki + 1}/{len(keys)}) fehlgeschlagen: {str(e)[:150]}")
+                    last_err = e
+                    msg_l = str(e).lower()
+                    if "429" not in msg_l and "rate" not in msg_l:
+                        break  # kein Rate-Limit -> Key-Wechsel bringt nichts, nächstes Modell
+            if text or (TOTAL_DEADLINE - (time.monotonic() - start)) < 6:
                 break
-            try:
-                text, provider, model = await asyncio.wait_for(
-                    ai_providers.generate_chain(
-                        [(PROVIDER, m)], prompt, SYSTEM_PROMPT, temperature=0.3,
-                        json_mode=True, priority="normal", role="strategy_copilot"),
-                    timeout=min(PER_CALL_TIMEOUT, remaining))
-                break
-            except asyncio.TimeoutError:
-                logger.info(f"Copilot: {m} zu langsam (> {PER_CALL_TIMEOUT}s) – nächstes Modell")
-                last_err = RuntimeError(f"{m}: Timeout")
-            except Exception as e:
-                logger.info(f"Copilot: {m} fehlgeschlagen: {str(e)[:150]}")
-                last_err = e
         if not text:
             raise RuntimeError(
                 f"Copilot-Modelle derzeit überlastet – bitte gleich erneut senden "
                 f"({str(last_err)[:120] if last_err else 'kein Modell erreichbar'})")
-
+        provider = PROVIDER
         data = parse_json_lenient(text) or {}
         reply = str(data.get("reply") or text or "").strip()
         proposal = data.get("proposal")
