@@ -1,0 +1,183 @@
+.cp-wrap {
+  margin-top: 12px;
+  border: 1px solid rgba(179, 136, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(179, 136, 255, 0.04);
+  overflow: hidden;
+}
+
+.cp-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: transparent;
+  border: none;
+  color: #B388FF;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+.cp-toggle:hover { background: rgba(179, 136, 255, 0.08); }
+.cp-toggle-hint {
+  flex: 1;
+  text-align: left;
+  color: #8A8FA3;
+  font-weight: 400;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.cp-panel { border-top: 1px solid rgba(179, 136, 255, 0.18); }
+
+.cp-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #8A8FA3;
+}
+.cp-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: #8A8FA3;
+  font-size: 11px;
+  cursor: pointer;
+}
+.cp-clear:hover { color: #FF3366; }
+
+.cp-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+.cp-quick button {
+  background: rgba(179, 136, 255, 0.1);
+  border: 1px solid rgba(179, 136, 255, 0.3);
+  color: #CBB6FF;
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.cp-quick button:hover:not(:disabled) { background: rgba(179, 136, 255, 0.22); }
+.cp-quick button:disabled { opacity: 0.5; cursor: default; }
+
+.cp-body {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.cp-empty { color: #8A8FA3; font-size: 12px; padding: 8px 4px; line-height: 1.5; }
+
+.cp-msg { display: flex; flex-direction: column; gap: 6px; }
+.cp-msg.user { align-items: flex-end; }
+.cp-msg.assistant { align-items: flex-start; }
+
+.cp-bubble {
+  max-width: 88%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cp-msg.user .cp-bubble { background: rgba(179, 136, 255, 0.18); color: #EDE7FF; }
+.cp-msg.assistant .cp-bubble { background: rgba(255, 255, 255, 0.06); color: #D8DBE6; }
+.cp-thinking { color: #8A8FA3; font-style: italic; }
+
+.cp-checks {
+  margin: 6px 0 0;
+  padding-left: 14px;
+  color: #FFB020;
+  font-size: 11.5px;
+}
+
+.cp-proposal {
+  max-width: 92%;
+  border: 1px solid rgba(0, 255, 102, 0.3);
+  background: rgba(0, 255, 102, 0.05);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.cp-proposal-title { font-weight: 700; color: #7CFFB0; margin-bottom: 4px; }
+.cp-proposal-summary { color: #C8CCD8; margin-bottom: 6px; }
+.cp-proposal-json {
+  max-height: 140px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 10.5px;
+  color: #9FE8C0;
+  margin: 0 0 8px;
+}
+.cp-proposal-actions { display: flex; gap: 8px; }
+.cp-apply, .cp-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  padding: 5px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+}
+.cp-apply { background: #00c853; color: #04170b; font-weight: 700; }
+.cp-apply:hover:not(:disabled) { background: #00e676; }
+.cp-apply:disabled { opacity: 0.6; cursor: default; }
+.cp-dismiss { background: rgba(255, 255, 255, 0.08); color: #B9BECC; }
+.cp-dismiss:hover { background: rgba(255, 51, 102, 0.2); color: #FF6B8E; }
+.cp-proposal-applied {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #00e676;
+  font-weight: 700;
+  font-size: 11.5px;
+}
+
+.cp-inputrow {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.cp-inputrow input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #E5E8F0;
+  font-size: 12.5px;
+  padding: 7px 10px;
+  outline: none;
+}
+.cp-inputrow input:focus { border-color: rgba(179, 136, 255, 0.5); }
+.cp-send {
+  background: #B388FF;
+  border: none;
+  color: #1A1030;
+  border-radius: 6px;
+  padding: 0 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.cp-send:hover:not(:disabled) { background: #C7A6FF; }
+.cp-send:disabled { opacity: 0.5; cursor: default; }
