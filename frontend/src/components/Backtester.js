@@ -945,6 +945,24 @@ export default function Backtester({ onClose }) {
         )}
 
         <StrategyCopilot panel="backtester"
+          onApplySettings={(s) => {
+            if (!s || typeof s !== 'object') return 0;
+            let n = 0;
+            const num = (v) => (v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v));
+            if (Array.isArray(s.strategies)) {
+              const valid = s.strategies.filter(id => strategies.some(x => x.id === id));
+              if (valid.length) { setSelStrats(valid); n++; }
+            }
+            if (Array.isArray(s.coins)) {
+              const valid = s.coins.filter(c => allSymbols.includes(c));
+              if (valid.length) { setSelCoins(valid); n++; }
+            }
+            if (num(s.days) !== null) { setDateMode('days'); setDays(Math.max(1, num(s.days))); n++; }
+            if (num(s.capital) !== null) { setCapital(Math.max(1, num(s.capital))); n++; }
+            if (num(s.fee_percent) !== null) { setFee(Math.max(0, num(s.fee_percent))); n++; }
+            if (typeof s.require_all_rules === 'boolean') { setRequireAll(s.require_all_rules); n++; }
+            return n;
+          }}
           getContext={() => ({
             settings: {
               strategies: selStrats, coins: selCoins,

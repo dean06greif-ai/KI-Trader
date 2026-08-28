@@ -97,7 +97,7 @@ const CoinSidebar = ({ selectedCoin, onSelectCoin, performance, notifications = 
           <div key={group.name} className="coin-group">
             <button className="coin-group-title" onClick={() => toggleGroup(group.name)} data-testid={`group-${group.name}`}>
               {isOpen ? <CaretDown size={11} weight="bold" /> : <CaretRight size={11} weight="bold" />}
-              <span>{group.name}</span>
+              <span>{group.name === 'TOP 10 COINS' ? `TOP ${items.length} COINS` : group.name}</span>
               <span className="coin-group-count mono">{items.length}</span>
             </button>
             {isOpen && <div className="coin-list">{items.map(renderItem)}</div>}

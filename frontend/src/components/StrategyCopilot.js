@@ -62,6 +62,8 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
   const [status, setStatus] = useState(null);
   const [showCfg, setShowCfg] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
+  const [weekly, setWeekly] = useState(null);
+  const [sendingWeekly, setSendingWeekly] = useState(false);
   const bodyRef = useRef(null);
 
   const loadHistory = useCallback(() => {
@@ -97,6 +99,37 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
       toast.success(d.model ? `Copilot-Modell: ${d.model}` : 'Copilot-Modell: Auto (mit Fallback)');
     } catch { toast.error('Verbindungsfehler'); }
     finally { setSavingModel(false); }
+  };
+
+  useEffect(() => {
+    if (!showCfg) return;
+    fetch(`${API_URL}/api/copilot/weekly`).then(r => r.json()).then(setWeekly).catch(() => {});
+  }, [showCfg]);
+
+  const saveWeekly = async (updates) => {
+    if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
+    try {
+      const res = await fetch(`${API_URL}/api/copilot/weekly`, {
+        method: 'POST', headers: jsonHeaders(), body: JSON.stringify(updates),
+      });
+      const d = await res.json();
+      if (res.ok) setWeekly(d);
+    } catch { toast.error('Verbindungsfehler'); }
+  };
+
+  const sendWeeklyNow = async () => {
+    if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
+    setSendingWeekly(true);
+    try {
+      const res = await fetch(`${API_URL}/api/copilot/weekly/send`, {
+        method: 'POST', headers: jsonHeaders(),
+      });
+      const d = await res.json();
+      if (!res.ok) { toast.error(typeof d.detail === 'string' ? d.detail : 'Report fehlgeschlagen', { duration: 8000 }); return; }
+      toast.success(d.sent ? 'Wochen-Report per Telegram gesendet' : 'Report erstellt – Telegram-Versand nicht möglich (Token/Chat prüfen)', { duration: 8000 });
+      setWeekly(w => ({ ...(w || {}), last_sent: d.sent_at }));
+    } catch { toast.error('Verbindungsfehler'); }
+    finally { setSendingWeekly(false); }
   };
 
   const send = async (text) => {
@@ -206,6 +239,35 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
               <div className="cp-settings-hint">
                 Bezahlte Modelle (z.B. DeepSeek, GPT/GLM/Grok) laufen über dein OpenRouter-Guthaben
                 und werden nie automatisch als Fallback genutzt – nur wenn du sie hier fest auswählst.
+              </div>
+              <div className="cp-weekly" data-testid="copilot-weekly">
+                <label style={{ marginTop: 10 }}>Wöchentlicher Setup-Report (Telegram)</label>
+                <div className="cp-weekly-row">
+                  <label className="cp-weekly-check">
+                    <input type="checkbox" checked={!!weekly?.enabled}
+                      onChange={e => saveWeekly({ enabled: e.target.checked })}
+                      data-testid="copilot-weekly-toggle" />
+                    <span>aktiv</span>
+                  </label>
+                  <select value={weekly?.weekday ?? 0} onChange={e => saveWeekly({ weekday: Number(e.target.value) })}
+                    data-testid="copilot-weekly-weekday">
+                    {['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag']
+                      .map((d, i) => <option key={d} value={i}>{d}</option>)}
+                  </select>
+                  <select value={weekly?.hour ?? 9} onChange={e => saveWeekly({ hour: Number(e.target.value) })}
+                    data-testid="copilot-weekly-hour">
+                    {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
+                  </select>
+                  <button className="cp-weekly-send" onClick={sendWeeklyNow} disabled={sendingWeekly}
+                    data-testid="copilot-weekly-send">
+                    {sendingWeekly ? 'Erstelle…' : 'Jetzt senden'}
+                  </button>
+                </div>
+                <div className="cp-settings-hint">
+                  Der Copilot analysiert wöchentlich alle Strategien + den KI-Setup-Katalog
+                  (was optimieren, welche Setups fehlen) und schickt das Ergebnis per Telegram.
+                  {weekly?.last_sent ? ` Zuletzt gesendet: ${new Date(weekly.last_sent).toLocaleString('de-DE')}.` : ''}
+                </div>
               </div>
             </div>
           )}

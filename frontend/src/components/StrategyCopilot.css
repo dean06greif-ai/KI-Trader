@@ -76,6 +76,19 @@
   font-size: 11px;
   line-height: 1.45;
 }
+.cp-weekly-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.cp-weekly-check { display: inline-flex !important; align-items: center; gap: 5px; color: #E6E8F0 !important; text-transform: none !important; font-size: 12px !important; font-weight: 500 !important; margin: 0 !important; }
+.cp-weekly-row select { width: auto; min-width: 90px; }
+.cp-weekly-send {
+  background: rgba(179, 136, 255, 0.15);
+  border: 1px solid rgba(179, 136, 255, 0.4);
+  color: #B388FF;
+  border-radius: 5px;
+  padding: 5px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.cp-weekly-send:disabled { opacity: 0.5; cursor: default; }
 
 .cp-topbar {
   display: flex;

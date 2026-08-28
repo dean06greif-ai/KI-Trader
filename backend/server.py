@@ -349,6 +349,10 @@ async def lifespan(app: FastAPI):
     from services import boot_backfill
     asyncio.create_task(boot_backfill.run_boot_backfill())
 
+    # Wöchentlicher Copilot-Setup-Report (Telegram, Toggle in Settings)
+    from services import copilot_weekly
+    asyncio.create_task(copilot_weekly.weekly_loop(state.db))
+
     # initial analyze so rule-states are populated immediately
     for symbol in ALL_SYMBOLS:
         try:

@@ -17,6 +17,7 @@ from services import ai_providers
 from services.ai_memory import memory
 from services.strategy_copilot import (copilot, copilot_key_source, copilot_keys,
                                        PROVIDER, KEY_ENV, sanity_check)
+from services import copilot_weekly
 from strategies.registry import registry as strategy_registry
 
 logger = logging.getLogger(__name__)
@@ -156,3 +157,23 @@ async def copilot_review(body: Dict, _: bool = Depends(require_admin)):
     metrics = (body.get("metrics") or {})
     notes = sanity_check(metrics)
     return {"status": "success", "ok": not notes, "checks": notes}
+
+
+# ---- Wöchentlicher Setup-Report (Telegram) --------------------------------
+@router.get("/api/copilot/weekly")
+async def copilot_weekly_status():
+    return await copilot_weekly.get_config(state.db)
+
+
+@router.post("/api/copilot/weekly")
+async def copilot_weekly_config(body: Dict, _: bool = Depends(require_admin)):
+    return await copilot_weekly.set_config(state.db, body or {})
+
+
+@router.post("/api/copilot/weekly/send")
+async def copilot_weekly_send(_: bool = Depends(require_admin)):
+    """Wochen-Report sofort erstellen und per Telegram senden (manueller Test)."""
+    try:
+        return await copilot_weekly.send_report(state.db, trigger="manual")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:300])

@@ -15,6 +15,7 @@ import AIRewardPanel from './AIRewardPanel';
 import AITraderReset from './AITraderReset';
 import { MODEL_OPTIONS } from '../lib/aiModels';
 import './AITradingPanel.css';
+import AIDiagnosisPanel from './AIDiagnosisPanel';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -128,6 +129,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
   const [showGov, setShowGov] = useState(false);
   const [showStrat, setShowStrat] = useState(false);
   const [showCurve, setShowCurve] = useState(false);
+  const [showDiag, setShowDiag] = useState(false);
   // Lektionen bearbeiten (Trader-Rechte: Stift / Löschen / Hinzufügen)
   const [editLesson, setEditLesson] = useState(null);
   const [newLesson, setNewLesson] = useState(null);
@@ -184,7 +186,14 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
   const toggleLab = () => {
     setShowLab(prev => {
       const next = !prev;
-      if (next) { setShowLearn(false); setShowSetup(false); setShowTeam(false); setShowGov(false); setShowStrat(false); setShowCurve(false); closeChatFocus(); }
+      if (next) { setShowLearn(false); setShowSetup(false); setShowTeam(false); setShowGov(false); setShowStrat(false); setShowCurve(false); setShowDiag(false); closeChatFocus(); }
+      return next;
+    });
+  };
+  const toggleDiag = () => {
+    setShowDiag(prev => {
+      const next = !prev;
+      if (next) { setShowLearn(false); setShowSetup(false); setShowTeam(false); setShowGov(false); setShowStrat(false); setShowCurve(false); setShowLab(false); closeChatFocus(); }
       return next;
     });
   };
@@ -507,7 +516,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
   // Beim Zurückwechseln in die Chat-Ansicht (z.B. aus dem KI-Labor) sofort
   // ans NEUESTE Ende des Verlaufs springen – nicht mehr oben beim ältesten.
   // Chat = Standard-Ansicht: sichtbar, sobald kein Vollfenster offen ist.
-  const chatVisible = !showLearn && !showSetup && !showTeam && !showLab && !showGov && !showStrat && !showCurve;
+  const chatVisible = !showLearn && !showSetup && !showTeam && !showLab && !showGov && !showStrat && !showCurve && !showDiag;
   useEffect(() => {
     if (!chatVisible) return;
     atBottomRef.current = true;
@@ -1211,6 +1220,14 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
             <ChartLineUp size={12} weight="bold" /> Verlauf
           </button>
           <button
+            className={`ai-setup-toggle ${showDiag ? 'active' : ''}`}
+            onClick={toggleDiag}
+            title="Diagnose: Warum laufen die Live-Trades schlecht? Fehlen Setups, stimmen die Daten, blockiert etwas? Deterministische Auswertung echter Messdaten."
+            data-testid="ai-diagnosis-toggle"
+          >
+            <Warning size={12} weight="bold" /> Diagnose
+          </button>
+          <button
             className={`ai-setup-toggle ${showGov ? 'active' : ''}`}
             onClick={toggleGov}
             title="MasterPrompt (oberstes Gebot) & Daten-Validierung der KI-Änderungen"
@@ -1424,6 +1441,9 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
 
         {/* Verlauf: Equity-Kurve der KI-Trades (lädt erst beim Öffnen des Reiters) */}
         {showCurve && <AIEquityPanel />}
+
+        {/* Diagnose: Warum laufen die Live-Trades schlecht? */}
+        {showDiag && <AIDiagnosisPanel />}
 
         {/* MasterPrompt & Daten-Validierung (nur Trader) */}
         {showGov && <AIGovernancePanel />}

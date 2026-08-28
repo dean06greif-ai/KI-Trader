@@ -1249,6 +1249,18 @@ export default function RegimeLab({ onClose }) {
         </div>
 
         <StrategyCopilot panel="regime_lab"
+          onApplySettings={(s) => {
+            if (!s || typeof s !== 'object') return 0;
+            let n = 0;
+            if (Array.isArray(s.coins) && s.coins.every(c => typeof c === 'string') && s.coins.length) {
+              setSelCoins(s.coins); n++;
+            }
+            if (typeof s.timeframe === 'string' && s.timeframe) { setTimeframe(s.timeframe); n++; }
+            const d = Number(s.days);
+            if (!Number.isNaN(d) && d > 0) { setDays(d); n++; }
+            if (['both', 'combined', 'per_coin'].includes(s.scope)) { setScope(s.scope); n++; }
+            return n;
+          }}
           getContext={() => ({
             settings: { coins: selCoins, timeframe, days, scope },
           })} />

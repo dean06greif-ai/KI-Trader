@@ -142,6 +142,13 @@ VORSCHLAGS-TYPEN (nur auf ausdrücklichen Wunsch des Nutzers):
                  "explore": {"champions": 5, "max_minutes": 0},
                  "dynamic": {"max_regimes": 5, "conf_min": 70, "min_hold_days": 2,
                              "rule_variants": false, "per_regime": false}}}
+   Die settings-Schlüssel hängen vom AKTUELLEN PANEL ab:
+   - panel=optimizer: Schema oben.
+   - panel=backtester: {"strategies": ["<strategy_id>"], "coins": ["BTCUSDT"],
+                        "days": 3, "capital": 100, "fee_percent": 0.06,
+                        "require_all_rules": false}
+   - panel=regime_lab: {"coins": ["BTCUSDT"], "timeframe": "15m", "days": 360,
+                        "scope": "both|combined|per_coin"}
 2) Parameter/Trade-Einstellungen einer BESTEHENDEN Strategie:
    {"type": "params", "strategy_id": "<id>", "summary": "1 Satz",
     "params": {"rsi_period": 12}, "trade_params": {"leverage": 5}, "timeframe": "5m"}
@@ -386,7 +393,7 @@ class StrategyCopilot:
         return models
 
     async def _openrouter_call(self, key: str, model: str, prompt: str,
-                               timeout: float) -> str:
+                               timeout: float, system: Optional[str] = None) -> str:
         client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1", api_key=key, timeout=timeout,
             max_retries=0,
@@ -396,12 +403,45 @@ class StrategyCopilot:
             })
         resp = await client.chat.completions.create(
             model=model, temperature=0.3,
-            messages=[{"role": "system", "content": SYSTEM_PROMPT},
+            messages=[{"role": "system", "content": system or SYSTEM_PROMPT},
                       {"role": "user", "content": prompt}])
         text = (resp.choices[0].message.content or "").strip() if resp.choices else ""
         if not text:
             raise RuntimeError("leere Antwort")
         return text
+
+    async def freeform(self, prompt: str, system: Optional[str] = None,
+                       deadline: float = 110.0, per_call: float = 45.0) -> str:
+        """Einmalige Analyse OHNE Chat-Verlauf (Hintergrund-Reports, z.B. der
+        wöchentliche Telegram-Report) – gleiche Modell-/Key-Kette wie chat(),
+        aber mit großzügigerem Zeitbudget (kein HTTP-Request wartet darauf)."""
+        keys = copilot_keys()
+        if not keys:
+            raise RuntimeError(f"Kein OpenRouter-Key ({KEY_ENV} oder {SHARED_KEY_ENV}) gesetzt")
+        models = self._chain((await self.config()).get("model"))
+        start = time.monotonic()
+        last_err: Optional[Exception] = None
+        for m in models:
+            for ki, key in enumerate(keys):
+                remaining = deadline - (time.monotonic() - start)
+                if remaining < 6:
+                    break
+                try:
+                    return await asyncio.wait_for(
+                        self._openrouter_call(key, m, prompt, min(per_call, remaining),
+                                              system=system),
+                        timeout=min(per_call, remaining))
+                except asyncio.TimeoutError:
+                    last_err = RuntimeError(f"{m}: Timeout")
+                    break
+                except Exception as e:
+                    last_err = e
+                    if "429" not in str(e).lower() and "rate" not in str(e).lower():
+                        break
+            if (deadline - (time.monotonic() - start)) < 6:
+                break
+        raise RuntimeError(f"Copilot-Report: kein Modell erreichbar "
+                           f"({str(last_err)[:120] if last_err else '?'})")
 
     async def chat(self, message: str, ctx: Optional[Dict] = None) -> Dict:
         message = (message or "").strip()
@@ -475,3 +515,6 @@ class StrategyCopilot:
 
 
 copilot = StrategyCopilot()
+
+
+# ---- Wöchentlicher Setup-Report (Telegram) – Endpoints in routers/copilot.py

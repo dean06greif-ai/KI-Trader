@@ -1114,6 +1114,42 @@ export default function Optimizer({ onClose }) {
           </div>
         )}
 
+        {/* Copilot direkt zwischen Einstellungen und Ergebnissen – kurzer Weg */}
+        <StrategyCopilot panel="optimizer"
+          onApplySettings={applyCopilotSettings}
+          getContext={() => ({
+            strategy_id: selStrategy || baseStrategy || null,
+            settings: {
+              mode, strategy_id: selStrategy || null, base_strategy_id: baseStrategy || null,
+              coins: selCoins, days, timeframe, objective, iterations,
+              min_trades: minTrades, max_rules: maxRules,
+              deep_test: deepTest, deep_depth: deepDepth, algorithm,
+              indicators, opt_groups: optFlags,
+              rule_timeframes: ruleTf.enabled ? ruleTf : null,
+              sessions: optSessions || '24/7', execution,
+              walk_forward: wfEnabled ? { mode: wfMode, windows: wfWindows, train_pct: wfTrainPct } : null,
+              robustness: {
+                drawdown_filter_max_pct: ddEnabled ? ddMaxPct : null,
+                constancy: ctEnabled ? { chunk_days: ctChunkDays, max_dev_pct: ctMaxDev } : null,
+                stress_fee_mult: stEnabled ? stMult : null,
+                stability_variation_pct: sbEnabled ? sbVar : null,
+                monte_carlo_runs: mcEnabled ? mcRuns : null,
+                regime_report: rgEnabled,
+              },
+              explore: mode === 'explore' ? { champions: exploreChamps, max_minutes: exploreMaxMin } : null,
+              dynamic: mode === 'dynamic' ? {
+                max_regimes: dynMaxRegimes, lookback_days: dynLookback, conf_min: dynConfMin,
+                min_hold_days: dynMinHold, train_pct: dynTrainPct, rule_variants: dynRuleVariants,
+                per_regime: dynPerRegime, max_rules: dynMaxRules, start_from_base: dynStartFromBase,
+              } : null,
+            },
+            result: result ? {
+              score: result.score, params: result.params,
+              trade_params: result.trade_params, metrics: result.metrics,
+              definition: result.definition, base_strategy_id: result.base_strategy_id,
+            } : null,
+          })} />
+
         {result && !running && (
           <div className="opt-result" data-testid="opt-result">
             {result.explore_report && (
@@ -1525,41 +1561,6 @@ export default function Optimizer({ onClose }) {
             hunderte Kombinationen auf echten historischen Daten.
           </div>
         )}
-
-        <StrategyCopilot panel="optimizer"
-          onApplySettings={applyCopilotSettings}
-          getContext={() => ({
-            strategy_id: selStrategy || baseStrategy || null,
-            settings: {
-              mode, strategy_id: selStrategy || null, base_strategy_id: baseStrategy || null,
-              coins: selCoins, days, timeframe, objective, iterations,
-              min_trades: minTrades, max_rules: maxRules,
-              deep_test: deepTest, deep_depth: deepDepth, algorithm,
-              indicators, opt_groups: optFlags,
-              rule_timeframes: ruleTf.enabled ? ruleTf : null,
-              sessions: optSessions || '24/7', execution,
-              walk_forward: wfEnabled ? { mode: wfMode, windows: wfWindows, train_pct: wfTrainPct } : null,
-              robustness: {
-                drawdown_filter_max_pct: ddEnabled ? ddMaxPct : null,
-                constancy: ctEnabled ? { chunk_days: ctChunkDays, max_dev_pct: ctMaxDev } : null,
-                stress_fee_mult: stEnabled ? stMult : null,
-                stability_variation_pct: sbEnabled ? sbVar : null,
-                monte_carlo_runs: mcEnabled ? mcRuns : null,
-                regime_report: rgEnabled,
-              },
-              explore: mode === 'explore' ? { champions: exploreChamps, max_minutes: exploreMaxMin } : null,
-              dynamic: mode === 'dynamic' ? {
-                max_regimes: dynMaxRegimes, lookback_days: dynLookback, conf_min: dynConfMin,
-                min_hold_days: dynMinHold, train_pct: dynTrainPct, rule_variants: dynRuleVariants,
-                per_regime: dynPerRegime, max_rules: dynMaxRules, start_from_base: dynStartFromBase,
-              } : null,
-            },
-            result: result ? {
-              score: result.score, params: result.params,
-              trade_params: result.trade_params, metrics: result.metrics,
-              definition: result.definition, base_strategy_id: result.base_strategy_id,
-            } : null,
-          })} />
       </div>
     </SafeOverlay>
   );

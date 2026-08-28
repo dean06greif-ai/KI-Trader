@@ -176,6 +176,16 @@ async def ai_guard_stats(days: int = 7):
             "guards": guards, "regime_shadow": shadow}
 
 
+# ---- KI-Trader Live-Diagnose (deterministisch, kein LLM) -------------------
+@router.get("/api/ai/diagnosis")
+async def ai_diagnosis(days: int = 14):
+    """Beantwortet: Fehlen Setups? Falsche/ungenaue Daten? Hindert die KI etwas?
+    Reine Auswertung der gemessenen Daten (Trades, Guards, Slippage, Feeds)."""
+    from services import ai_diagnosis as diag
+    return await diag.build(ai_engine.db, getattr(ai_engine, "scanner", None),
+                            ai_engine.config or {}, days=days)
+
+
 @router.get("/api/ai/equity-curve")
 async def ai_equity_curve(days: int = 0, mode: str = "all"):
     """Equity-Kurve des KI-Traders (Reiter "Verlauf"): kumulierter realisierter
