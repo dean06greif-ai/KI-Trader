@@ -1,0 +1,38 @@
+{
+  "summary": "Alle 8 Review-Punkte grün. Backend-Regression (87 Tests aus den 6 genannten Dateien) läuft komplett durch. Neuer Endpoint GET /api/autotrade/coin/{symbol}/meta liefert korrekte max_leverage-Werte (BTC=200, BNB=75, XRP=100). Frontend: Admin-Login funktioniert, StrategyAutoTradeModal für Strategie 'Scalping' (scalping_4_rules) öffnet, PAPER-Modus setzbar. Gewinnsicherungs-Sektion mit allen neuen Reglern (sat-ps-trigger min=5 klemmt korrekt, sat-ps-margin-reduce 10-100/step5, sat-ps-max-lev 2-200/step1) inkl. Coin-Max-Label 'max. Hebel des Coins: 200x'. Haupt-Hebel-Slider sat-leverage hat max=200 und Label '(max. 200x)'. Persistenz vollständig verifiziert: trigger=25, margin-reduce=60, max-lev=150 werden nach Save + Modal-Reopen wieder korrekt geladen. Alle Tests nur PAPER-Modus, kein LIVE, keine Orders.",
+  "feature_verdicts": [
+    "GET /api/autotrade/coin/{symbol}/meta - pass - BTCUSDT->200, BNBUSDT->75, XRPUSDT->100 (öffentlich, kein Auth).",
+    "Admin-Login UI - pass - admin-lock-button öffnet admin-login-modal; Login mit Admin/Dean06Greif!/Admin schließt Modal (isAdmin=true).",
+    "StrategyAutoTradeModal öffnen - pass - strategy-trade-toggle-scalping_4_rules öffnet strategy-autotrade-modal.",
+    "sat-ps-trigger Min=5 - pass - min attribute='5', Label 'Auslöser: Gewinn % auf Marge (min. 5%)', Eingabe '1' wird auf 5 geklemmt.",
+    "sat-ps-release-margin Slider - pass - margin-reduce: min=10 max=100 step=5; max-lev: min=2 max=200 step=1 (BTC-Coin-Max), Label 'max. Hebel des Coins: 200x'.",
+    "sat-leverage Coin-Max - pass - max='200', Label 'Hebel: 10x (max. 200x)'.",
+    "Persistenz (POST->reopen) - pass - Werte trigger=25, margin-reduce=60, max-lev=150 nach Speichern+Modal-neu-öffnen korrekt geladen; profit-secure & release-margin Checkboxes bleiben aktiv.",
+    "Backend-Regression - pass - pytest tests/test_multi_position_and_lesson_quality.py tests/test_profit_release_and_secure_profit.py tests/test_watchdog_sync_only.py tests/test_ai_lessons_merge.py tests/test_ai_trader_iter2_fixes.py tests/test_iter8_token_crv_lev.py => 87 passed in 1.43s (junit: /app/test_reports/pytest/iter3_review.xml)."
+  ],
+  "skills_loaded": [],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/test_reports/pytest/iter3_review.xml",
+    "/app/backend/tests/test_profit_release_and_secure_profit.py",
+    "/app/backend/tests/test_multi_position_and_lesson_quality.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/autotrade.py:107 GET /coin/{symbol}/meta liefert max_leverage aus catalog.max_leverage_for() – korrekt öffentlich (kein Depends(admin)) da nur Metadata.",
+    "frontend/StrategyAutoTradeModal.js:53 coinMaxLev-State default 200; :108 Fetch /api/autotrade/coin/{symbol}/meta in load(); :109 clamped auf min 2. Fallback bei Fehler bleibt 200 – akzeptabel.",
+    "frontend/StrategyAutoTradeModal.js:246,250,251 Haupt-Hebel-Slider max=coinMaxLev; value=Math.min(cfg.leverage, coinMaxLev) verhindert Overshoot bei Coin-Wechsel (z.B. gespeicherter 150x-Hebel wird bei BNB=75 automatisch auf 75 gekappt).",
+    "frontend/StrategyAutoTradeModal.js:594-597 sat-ps-max-lev range 2..coinMaxLev; Label zeigt Math.min(profit_secure_max_leverage, coinMaxLev) – Anzeige-Klemmung sichtbar für User.",
+    "frontend/StrategyAutoTradeModal.js:558-559 profit_secure_trigger_pct wird beim Rendern und onCommit mit Math.max(5,..) geklemmt – Werte <5 nicht möglich.",
+    "AutoTradeModal.js (Legacy) enthält identische at-ps-* Testids aber ist nicht in App.js verlinkt (nur Code-Review, nicht UI-testbar) – wie im Request angemerkt, in Ordnung."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (87/87 pytest + 3/3 meta-endpoints)", "frontend": "100% (8/8 UI-Checks)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "Persistenz-Test: POST /api/autotrade/strategy/scalping_4_rules/coin/BTCUSDT mit profit_secure_trigger_pct=25, profit_secure_margin_reduce_pct=60, profit_secure_max_leverage=150, profit_secure_enabled=true, profit_secure_release_margin=true, mode=paper – bleibt in DB (Scalping/BTC PAPER-Konfig).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Neuer Endpoint: GET /api/autotrade/coin/{symbol}/meta (öffentlich). Modal-Flow: admin-lock-button -> admin-login -> strategy-trade-toggle-{id} -> strategy-autotrade-modal. Alle relevanten Testids: sat-mode-paper, sat-profit-secure, sat-ps-trigger, sat-ps-release-margin, sat-ps-margin-reduce, sat-ps-max-lev, sat-leverage, sat-save. Legacy AutoTradeModal.js ist NICHT in App.js gemountet.",
+  "rca of the issue": "N/A – kein Bug gefunden. Alle geforderten Features sind Ende-zu-Ende korrekt implementiert."
+}
