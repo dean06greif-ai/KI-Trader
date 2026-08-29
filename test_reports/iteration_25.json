@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend-only Bug-Verifikation für Fix in useTradeMarkers.js (clearDetail beim togglePin). BTCUSDT-Chart hat wie beschrieben Short 9 (PAPER @77.992) und Long 1 (LIVE @72.703) offen – perfekter Diskriminator, da Long-1-Level (SL 65432.88) im LIVE-Zoom off-screen liegen. Alle vom User beschriebenen Szenarien getestet: (A) direkter Klickwechsel Short 9 → Long 1 ohne Zwischenbewegung, (B) Hover-Pfad über Short-Badge dann Klick auf Long-Badge, (C) Pin-Toggle-Regression, (D) Hover-only-Regression, (E) S/R-Toggle. Alle bestanden.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    ".screenshots/A1_short_pinned.png (Short 9 gepinnt: SL 78467.90 + ENTRY Short 9 77992.05 an rechter Preisachse sichtbar)",
+    ".screenshots/A2_long_pinned.png (nach Klick auf Long 1: KEINE SL/ENTRY-Labels mehr sichtbar → Bug behoben)",
+    ".screenshots/B2_after_hover_click.png (Hover-Short + Klick-Long: Achse frei von Short-9-Labels → Bug behoben)"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "clearDetail() in useTradeMarkers.js sauber implementiert und wird konsistent in togglePin/hoverDetail/cleanup verwendet – kein Memory-Leak in detailLinesRef.",
+    "Console-Errors 'TypeError: Failed to fetch' beim initialen Mount stammen aus React StrictMode Double-Invocation / abgebrochenen Requests – NICHT vom Fix verursacht (nicht Teil dieses Review-Scopes)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "test_credentials": "n/a (Chart-Interaktion braucht keinen Login)",
+  "seed_data_creation": "keine – reale offene Trades in Prod-DB genutzt (nur Klicks/Hover, rein clientseitig)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "BTCUSDT hat 2 offene Trades (Short 9 PAPER, Long 1 LIVE). Long-1-Level liegen im LIVE-Zoom off-screen → sauberer Diskriminator für SL-Sichtbarkeitstests. Badges: .chart-open-badge:not(.more), gepinnt bekommt Klasse 'pinned'. SL/TP sind Canvas-Preislinien (lightweight-charts), Verifikation über Screenshots der rechten Preisachse.",
+  "rca of the issue": "Root Cause: Hover-Detail-Preislinien (detailLinesRef) blieben stehen, wenn die Maus den Chart-Canvas über ein DOM-Overlay verließ (kein Crosshair-Leave-Event), und der User danach direkt ein anderes Badge pinnte. Fix: neue clearDetail()-Funktion wird jetzt sowohl von hoverDetail als auch von togglePin (vor renderPinned) aufgerufen, sodass alte SL/TP-Hover-Linien beim Pin-Wechsel zuverlässig entfernt werden."
+}

@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 7 alle 5 Punkte GRÜN. (1) GET /api/autotrade/pending-entry-orders liefert 200 mit demo-ord-1 SOLUSDT LONG @94.57 status=waiting strategy_name='KI Trader' expires_in_s=129434 (>0), max_age_hours=36.0. (2) Frontend (public URL, ohne Login) Analyse-Panel Tab Trades zeigt pending-orders-card mit 'SOLUSDT LONG @ 94.57 Menge 2.5 KI Trader wartet auf Fill ⏳ 35h 56m'; data-testid pending-order-row-demo-ord-1 + pending-order-countdown-demo-ord-1 vorhanden, Countdown-Format 'Xh Ym' passt, kein JS-Crash. (3) Nach db.pending_entry_orders.delete_many({order_id:'demo-ord-1'}): Endpoint {orders:[]}, Frontend rendert pending-orders-card NICHT mehr (Query {is not None}=False bestätigt). (4) Code-Review Bypass-Feed ai_engine.py:2309-2364: telegram_notify('live_gate_bypass',...) wird mit Setup+why+Konfidenz+Zähler N/2 gesendet, komplett in try/except; Fehler dort blockieren den Trade nicht (nur logger.warning, kein return). (5) Regression cd /app/backend && pytest -m unit -q => 824 passed, 1 skipped, 3 warnings in 17.72s (exakt wie erwartet 824/1). Seed demo-ord-1 wurde am Ende dauerhaft entfernt (remaining=0).",
+  "feature_verdicts": [
+    "GET /api/autotrade/pending-entry-orders - pass - 200 OK, demo-ord-1 vollständig gemappt (order_id, symbol SOLUSDT, side LONG, qty 2.5, price 94.57, status waiting, kind limit, strategy_name 'KI Trader', sl 92.0, tpf 99.0, age_s 166, expires_in_s 129434 >0, max_age_hours 36.0).",
+    "Frontend pending-orders-card sichtbar - pass - Trades-Tab Klick (view-trades) genügt, kein Admin-Login nötig. Card-Text 'WARTENDE KI-LIMIT-ORDERS · 1 offen · Auto-Cancel nach Ablauf', Row 'SOLUSDT LONG @ 94.57 Menge 2.5 KI Trader wartet auf Fill ⏳ 35h 56m', Countdown-Format 'Xh Ym' korrekt.",
+    "Kein JS-Crash - pass - keine PageErrors, nur die aus iter4/6 bekannten transienten 'TypeError: Failed to fetch' im Cold-Start (bundle.js:126/140/159/167/175/284/295 fetchSession/fetchNotif) - nicht regressionsrelevant, App vollständig gerendert.",
+    "Card verschwindet ohne Orders - pass - Nach delete_many({'order_id':'demo-ord-1'}): Endpoint liefert {orders:[]}, Frontend-Reload+view-trades Klick => data-testid=pending-orders-card ist NICHT im DOM (querySelector = None), row-demo-ord-1 ebenfalls nicht mehr da.",
+    "Code-Review Bypass-Feed (services/ai_engine.py _setup_live_gate) - pass - Zeilen 2326-2358: try/except um telegram_notify + logger.warning bei Fehler, keine Trade-Blockade. Payload enthält '⚡ *LIVE-BYPASS* {symbol} {action}\\nSetup `{setup}` ist noch nicht live-reif ({why}), aber Konfidenz {confidence} ≥ Schwelle+{margin} – KI eröffnet Live-Trade {opened_today+1}/{per_day} heute.'. Notify-Typ 'live_gate_bypass'.",
+    "Regression Unit-Suite - pass - pytest tests/ -m unit -q => 824 passed, 1 skipped, 3 warnings in 17.72s."
+  ],
+  "skills_loaded": [],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Cold-Start Fetches", "issue": "Bekannte transient 'TypeError: Failed to fetch' im Cold-Start-Bundle (fetchSession/fetchNotif etc.) – nicht regressionsrelevant, aus iter4/6 dokumentiert.", "affected_selectors": []}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/autotrade.py:639-666 GET /pending-entry-orders sauber: excluded _id via projection {'_id':0}, sort created_at desc, limit 50, expires_in_s=max(0, MAX_AGE_H*3600 - age_s) verhindert negative Werte, TypeError/ValueError im created_at-Parsing bewusst gefangen. Kein Auth Guard – bewusst, da nur read-only. Konsistent mit anderen public GETs im Router.",
+    "components/PendingEntryOrders.js sauber: 15s Polling mit alive-Flag Cleanup, if (!orders.length) return null verhindert leeres Card-Rendering (Testfall 3 bestätigt), try/catch um fetch, authHeaders() genutzt – korrekt selbst wenn kein Token gesetzt ist. fmtLeft() liefert 'Xh Ym' bei h>0 sonst 'Xm Ys'.",
+    "services/ai_engine.py:2326-2358 _setup_live_gate Bypass-Block: fail-closed bei DB-Error (opened_today=999 blockt Bypass), live_gate_bypass_ok pure function, telegram_notify komplett in try/except gewrapped => Notify-Fehler kann Trade nie killen. dec['live_gate_bypass']=True + dec['live_gate_bypass_reason']=why werden gesetzt bevor return None => downstream sichtbar. Preview ohne TELEGRAM_BOT_TOKEN => telegram_notify wird stillschweigend übersprungen (verifiziert via Code-Review, nicht real getriggert).",
+    "components/PerformanceAnalytics.js:642 PendingEntryOrders wird nach mode-banner und vor pnl-filter im Trades-View gerendert – exakt wie in der Anforderung ('über der Trade-Liste'). Import Zeile 7 wie spezifiziert."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (824/825 unit + Endpoint 200)", "frontend": "100% (Card visible+hidden Toggle + Countdown-Format)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (nicht benötigt – Trades-View ist public, view-trades Klick genügt).",
+  "seed_data_creation": "Kein neuer Seed erzeugt. Vorhandener Seed demo-ord-1 wurde für Testfall 1+2 genutzt und am Ende des Tests (Testfall 3) via pymongo delete_many({'order_id':'demo-ord-1'}) DAUERHAFT ENTFERNT (Bestätigung: remaining=0, Endpoint liefert {orders:[]}).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 7 fügt hinzu: (a) GET /api/autotrade/pending-entry-orders (backend/routers/autotrade.py:639) liefert wartende/verwaiste Bot-Entry-Limit-Orders aus pending_entry_orders Collection inkl. age_s/expires_in_s (36h Cap via services.entry_order_registry.MAX_AGE_H). (b) PendingEntryOrders.js Card mit 15s Poll (data-testid pending-orders-card + pending-order-row-<id> + pending-order-countdown-<id>). (c) Bypass-Feed via telegram_notify('live_gate_bypass',...) in _setup_live_gate. Seed demo-ord-1 nach diesem Run NICHT mehr in db.pending_entry_orders. Preview weiterhin ohne Bitunix/Telegram/AI-Keys.",
+  "rca of the issue": "N/A - kein Bug gefunden. Alle 5 Review-Punkte erfüllt und verifiziert."
+}
