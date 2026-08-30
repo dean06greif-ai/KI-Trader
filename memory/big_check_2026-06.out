@@ -1,0 +1,298 @@
+
+======================================================================
+## A) ENGINE-CONFIG (Prod, live)
+======================================================================
+  enabled = True
+  min_confidence = 65
+  cooldown_min = 15
+  tune_conf_min = 55
+  tune_conf_max = 75
+  tune_cooldown_max = 15
+  collection_enabled = True
+  collection_min_confidence = 60
+  collection_cooldown_min = 10
+  collection_max_same_direction = 5
+  collection_max_per_coin = 2
+  max_same_direction = 3
+  correlation_guard = False
+  min_entry_distance_pct = 0.0
+  max_trades_per_coin = 3
+  fee_guard_enabled = True
+  fee_guard_mult = 4.0
+  crv_max = 4.0
+  autonomy = auto
+  provider = gemini
+  model = gemini-3.6-flash
+  interval_min = 15
+  use_liquidation_data = True
+  use_heatmap_data = True
+  lev_mode = coin
+  smart_skip_move_pct = 0.02
+  use_ai_levels = True
+  master_prompt.rules = {}
+
+======================================================================
+## B) DECISIONS 7d: Aktionen / Konfidenz / signaled / blocked_by
+======================================================================
+  Decisions 7d: 13232
+  Aktionen: {'LONG': 823, 'HOLD': 12095, 'SHORT': 314}
+  LONG/SHORT: 1137, davon signaled: 900, davon collection: 854
+  Konfidenz-Histogramm LONG/SHORT: {'30-34': 9, '35-39': 1, '45-49': 2, '50-54': 7, '55-59': 60, '60-64': 155, '65-69': 308, '70-74': 401, '75-79': 189, '80-84': 5}
+  blocked_by (Top 15):
+     113x Korrelations-Guard: BTC/ETH/SOL zählen als EIN Richtungs-Risiko – offener LONG a
+      37x Stale-Price-Guard: letzter Kurs von SILVER ist 11 min alt (Limit 10 min) – kein 
+      36x Stale-Price-Guard: letzter Kurs von OIL ist 11 min alt (Limit 10 min) – kein Ein
+      36x Korrelations-Guard: BTC/ETH/SOL zählen als EIN Richtungs-Risiko – offener SHORT 
+      28x Stale-Price-Guard: letzter Kurs von GOLD ist 11 min alt (Limit 10 min) – kein Ei
+      16x Richtungs-Guard: bereits 17 offene LONG-Risiken (ADAUSDT, AVAXUSDT, BNBUSDT, BTC
+      14x Richtungs-Guard: bereits 16 offene LONG-Risiken (ADAUSDT, AVAXUSDT, BNBUSDT, BTC
+      11x Richtungs-Guard: bereits 4 offene LONG-Risiken (AVAXUSDT, EURUSD, SPYUSDT) – Lim
+      10x Richtungs-Guard: bereits 8 offene LONG-Risiken (BNBUSDT, BTCUSDT, EURUSD, QQQUSD
+      10x Richtungs-Guard: bereits 4 offene SHORT-Risiken (AVAXUSDT, DOTUSDT, ETHUSDT, GBP
+       9x Stale-Price-Guard: letzter Kurs von OIL ist 10 min alt (Limit 10 min) – kein Ein
+       9x Richtungs-Guard: bereits 15 offene LONG-Risiken (AVAXUSDT, BNBUSDT, BTCUSDT, DOG
+       9x Richtungs-Guard: bereits 18 offene LONG-Risiken (ADAUSDT, AVAXUSDT, BNBUSDT, BTC
+       9x Richtungs-Guard: bereits 12 offene LONG-Risiken (ADAUSDT, AVAXUSDT, BNBUSDT, DOT
+       8x Stale-Price-Guard: letzter Kurs von GOLD ist 10 min alt (Limit 10 min) – kein Ei
+  LONG/SHORT weder signaled noch blocked_by (Cooldown/Schwelle/Session): 87
+  gate_shadow vorhanden: 896, would_block: 215 (24%)
+
+======================================================================
+## C) SIGNALS 7d: _reject_reason der KI-Signale
+======================================================================
+  KI-Signale 7d: 0
+  _reject_reason (alle):
+
+======================================================================
+## D) GOVERNANCE-Feed 7d (blockierte Trades)
+======================================================================
+  Governance-Einträge 7d: 23
+      23x Limit 3, kein weiterer gleichgerichteter Trade
+
+======================================================================
+## E) TRADES: letzte 30 geschlossene + offene KI-Trades
+======================================================================
+  Offene KI-Trades: 10
+    OPEN EURUSD LONG entry=1.17096 sl=1.165105 tp1=1.18267 tpf=None lev=50.0 qty=427.000068 mode=paper dc=True conf=60 setup=momentum_news opened=2026-08-20T10:31
+    OPEN EURUSD LONG entry=1.168634 sl=1.163024 tp1=1.177983 tpf=None lev=50.0 qty=427.849951 mode=paper dc=True conf=72 setup=pullback opened=2026-08-20T15:00
+    OPEN EURUSD SHORT entry=1.166997 sl=1.1705 tp1=1.157661 tpf=None lev=25.0 qty=642.675174 mode=paper dc=None conf=70 setup=hedge opened=2026-08-24T07:53
+    OPEN AVAXUSDT LONG entry=7.6287865 sl=7.420861 tp1=7.929515 tpf=None lev=8.0 qty=26.216489 mode=paper dc=True conf=80 setup=momentum_news opened=2026-08-24T15:29
+    OPEN SPYUSDT LONG entry=764.11417 sl=765.031657 tp1=773.04656 tpf=None lev=10.0 qty=0.458047 mode=paper dc=True conf=70 setup=squeeze_breakout opened=2026-08-24T17:49
+    OPEN ETHUSDT SHORT entry=2507.4542 sl=2486.0821 tp1=2432.4787 tpf=None lev=25.0 qty=0.249257 mode=paper dc=True conf=68 setup=momentum_news opened=2026-08-25T06:33
+    OPEN EURUSD SHORT entry=1.167542 sl=1.1705 tp1=1.158202 tpf=None lev=25.0 qty=428.250119 mode=paper dc=None conf=65 setup=hedge opened=2026-08-25T09:14
+    OPEN USDJPY SHORT entry=159.16756 sl=160.059614 tp1=158.339228 tpf=None lev=50.0 qty=4.712015 mode=paper dc=True conf=68 setup=momentum_news opened=2026-08-25T09:52
+    OPEN USDJPY SHORT entry=159.14158 sl=160.065342 tp1=157.676307 tpf=None lev=50.0 qty=4.712785 mode=paper dc=True conf=68 setup=momentum_news opened=2026-08-25T10:07
+    OPEN BNBUSDT LONG entry=697.8043 sl=689.986269 tp1=710.007102 tpf=None lev=10.0 qty=0.21496 mode=paper dc=True conf=65 setup=momentum_news opened=2026-08-25T13:13
+
+  Letzte 30 geschlossene KI-Trades:
+    2026-08-25T12:09 BTCUSDT    SHORT pnl=  +0.836 fees= 0.224 lev=25.0 conf=70 setup=hedge              dc=1 exit=None
+    2026-08-25T09:54 DOTUSDT    LONG  pnl=  -1.648 fees= 0.085 lev=7.2 conf=65 setup=mean_reversion     dc=1 exit=None
+    2026-08-25T09:52 DOGEUSDT   LONG  pnl=  -6.192 fees= 0.417 lev=25.0 conf=72 setup=mean_reversion     dc=1 exit=None
+    2026-08-25T07:50 BTCUSDT    LONG  pnl=  -3.698 fees= 0.598 lev=25.0 conf=65 setup=pullback           dc=1 exit=None
+    2026-08-25T07:40 BNBUSDT    LONG  pnl=  -0.988 fees= 0.149 lev=10.0 conf=70 setup=mean_reversion     dc=1 exit=None
+    2026-08-25T07:31 BNBUSDT    LONG  pnl=  -1.171 fees= 0.179 lev=10.0 conf=60 setup=pullback           dc=1 exit=None
+    2026-08-25T06:31 POLUSDT    LONG  pnl=  +2.790 fees= 0.077 lev=5.0 conf=70 setup=mean_reversion     dc=1 exit=None
+    2026-08-25T05:38 SILVER     SHORT pnl=  -7.716 fees= 1.220 lev=67.57 conf=65 setup=squeeze_breakout   dc=1 exit=None
+    2026-08-25T05:24 OIL        LONG  pnl=  -1.138 fees= 0.179 lev=10.0 conf=65 setup=squeeze_breakout   dc=1 exit=None
+    2026-08-25T02:29 ETHUSDT    SHORT pnl=  -6.426 fees= 0.364 lev=25.0 conf=62 setup=momentum_news      dc=1 exit=None
+    2026-08-25T02:22 BTCUSDT    LONG  pnl=  +5.140 fees= 0.303 lev=25.0 conf=70 setup=momentum_news      dc=1 exit=None
+    2026-08-25T00:47 BTCUSDT    LONG  pnl=  +5.693 fees= 0.904 lev=25.0 conf=75 setup=momentum_news      dc=1 exit=None
+    2026-08-25T00:24 QQQUSDT    SHORT pnl=  +0.005 fees= 0.040 lev=5.0 conf=70 setup=squeeze_breakout   dc=0 exit=None
+    2026-08-24T23:04 DOTUSDT    LONG  pnl=  -3.431 fees= 0.128 lev=6.0 conf=72 setup=momentum_news      dc=1 exit=None
+    2026-08-24T20:08 QQQUSDT    SHORT pnl=  -0.130 fees= 0.510 lev=5.0 conf=80 setup=trend_follow       dc=1 exit=None
+    2026-08-24T18:13 DOGEUSDT   SHORT pnl=  -5.323 fees= 0.603 lev=25.0 conf=72 setup=squeeze_breakout   dc=0 exit=None
+    2026-08-24T17:21 DOGEUSDT   LONG  pnl=  -9.706 fees= 0.444 lev=25.0 conf=68 setup=momentum_news      dc=1 exit=None
+    2026-08-24T17:01 XRPUSDT    LONG  pnl=  -5.298 fees= 0.271 lev=19.0 conf=65 setup=momentum_news      dc=1 exit=None
+    2026-08-24T15:56 BTCUSDT    LONG  pnl=  -4.696 fees= 0.538 lev=25.0 conf=78 setup=momentum_news      dc=1 exit=None
+    2026-08-24T15:35 SOLUSDT    LONG  pnl=  +4.632 fees= 0.205 lev=11.2 conf=63 setup=squeeze_breakout   dc=1 exit=None
+    2026-08-24T15:34 BNBUSDT    LONG  pnl=  +3.401 fees= 0.212 lev=10.0 conf=68 setup=squeeze_breakout   dc=1 exit=None
+    2026-08-24T15:31 BNBUSDT    LONG  pnl=  +4.892 fees= 0.303 lev=10.0 conf=60 setup=squeeze_breakout   dc=1 exit=None
+    2026-08-24T15:30 SOLUSDT    LONG  pnl=  +4.519 fees= 0.204 lev=11.2 conf=70 setup=momentum_news      dc=1 exit=None
+    2026-08-24T13:46 SPYUSDT    LONG  pnl= -14.392 fees= 2.326 lev=55.56 conf=70 setup=trend_follow       dc=1 exit=None
+    2026-08-24T13:45 SPYUSDT    LONG  pnl=  -0.975 fees= 0.180 lev=10.0 conf=60 setup=momentum_news      dc=1 exit=None
+    2026-08-24T13:43 AVAXUSDT   LONG  pnl=  -0.129 fees= 0.420 lev=10.0 conf=72 setup=squeeze_breakout   dc=1 exit=None
+    2026-08-24T12:53 BTCUSDT    LONG  pnl=  +5.269 fees= 0.303 lev=25.0 conf=68 setup=momentum_news      dc=1 exit=None
+    2026-08-24T12:17 ADAUSDT    LONG  pnl=  +4.082 fees= 0.753 lev=25.0 conf=60 setup=squeeze_breakout   dc=1 exit=None
+    2026-08-24T11:44 BTCUSDT    LONG  pnl=  +6.665 fees= 0.454 lev=25.0 conf=65 setup=momentum_news      dc=1 exit=None
+    2026-08-24T08:20 SPYUSDT    SHORT pnl=  +0.087 fees= 0.200 lev=40.0 conf=75 setup=hedge              dc=0 exit=None
+  Winrate letzte 30: 13/30 = 43%
+
+======================================================================
+## F) WINRATE nach Konfidenz-Bucket (alle geschlossenen KI-Trades)
+======================================================================
+  Geschlossene KI-Trades gesamt: 315
+    conf <65      : n= 58 wins= 32 winrate= 55% sumPnL= +221.56
+    conf 65-69    : n= 73 wins= 34 winrate= 47% sumPnL=  +50.14
+    conf 70-74    : n=118 wins= 53 winrate= 45% sumPnL= -184.63
+    conf 75-79    : n= 63 wins= 40 winrate= 63% sumPnL= +139.60
+    conf >=80     : n=  2 wins=  0 winrate=  0% sumPnL=   -6.81
+    conf unbekannt: n=  1 wins=  0 winrate=  0% sumPnL=   -0.02
+  Fee-dominierte Verluste (Fees>=50% des Verlusts): 15/150
+  Nach Setup:
+    momentum_news         : n=203 winrate= 52% sumPnL= +177.80
+    squeeze_breakout      : n= 59 winrate= 49% sumPnL=  +40.92
+    hedge                 : n= 14 winrate= 64% sumPnL=  +21.67
+    pullback              : n= 12 winrate= 33% sumPnL=  -61.09
+    liquidity_sweep       : n=  7 winrate= 57% sumPnL=  +18.45
+    trend_follow          : n=  5 winrate= 20% sumPnL=   +0.04
+    mean_reversion        : n=  4 winrate= 25% sumPnL=   -6.04
+    breakout              : n=  4 winrate=100% sumPnL=  +44.96
+    swing_trend           : n=  3 winrate= 33% sumPnL=  -10.54
+    range_fade            : n=  3 winrate=  0% sumPnL=   -6.31
+
+======================================================================
+## G) REGIME v2: Verteilung Snapshots 7d
+======================================================================
+  Snapshots 7d: 14479
+  davon regime_v=2: 14479
+  Regime-Verteilung (v2):
+     24.8%   3597x range_ruhig
+     11.4%   1644x drift_ruhig
+     10.8%   1568x range_normal
+      8.4%   1222x breakout_ruhig
+      7.0%   1010x trend_up_normal
+      6.4%    928x trend_down_normal
+      5.9%    854x trend_up_ruhig
+      5.8%    842x trend_up_volatil
+      4.4%    642x trend_down_ruhig
+      3.8%    553x range_volatil
+      3.2%    462x drift_normal
+      3.0%    436x trend_down_volatil
+      2.9%    423x breakout_normal
+      1.0%    151x drift_volatil
+      1.0%    147x breakout_volatil
+  vol_basis: {'percentile': 9314, 'fixed_fallback': 5165}
+  Vol-Anteil: {'ruhig': '55%', 'normal': '30%', 'volatil': '15%'}
+
+======================================================================
+## H) TOKEN-USAGE letzte 7 Tage (pro Rolle)
+======================================================================
+  2026-08-25: gesamt 4,377,463 Tokens
+      analyst             3,474,376 tok   211 calls  model=nvidia/nemotron-3-super-120b-a12b:free
+      trade_manager         678,263 tok   159 calls  model=deepseek/deepseek-v4-flash
+      learner               112,248 tok    37 calls  model=deepseek/deepseek-v4-pro-0813
+      deep_analyst           39,387 tok     5 calls  model=nvidia/nemotron-3-ultra-550b-a55b:free
+      market_observer        38,495 tok    57 calls  model=openai/gpt-oss-20b
+      news_watcher           17,776 tok    25 calls  model=mistral-small-latest
+      chat                   10,910 tok     5 calls  model=gemini-3.5-flash
+      research_analyst        4,926 tok     1 calls  model=openai/gpt-oss-120b
+      summarizer              1,082 tok     1 calls  model=mistral-small-latest
+  2026-08-24: gesamt 7,379,447 Tokens
+      analyst             6,197,501 tok   392 calls  model=nvidia/nemotron-3-super-120b-a12b:free
+      trade_manager         750,910 tok   176 calls  model=deepseek/deepseek-v4-flash
+      learner               212,862 tok    62 calls  model=deepseek/deepseek-v4-pro-0813
+      deep_analyst           67,664 tok     9 calls  model=nvidia/nemotron-3-super-120b-a12b:free
+      market_observer        63,865 tok    95 calls  model=openai/gpt-oss-20b
+      news_watcher           35,276 tok    50 calls  model=mistral-small-latest
+      research_analyst       31,468 tok     7 calls  model=openai/gpt-oss-120b
+      chat                   14,756 tok     6 calls  model=gemini-3.5-flash
+      supervisor              3,914 tok     1 calls  model=gemini-3.6-flash
+      summarizer              1,231 tok     1 calls  model=mistral-small-latest
+  2026-08-23: gesamt 3,116,770 Tokens
+      analyst             2,497,111 tok   143 calls  model=nvidia/nemotron-3-super-120b-a12b:free
+      learner               383,437 tok    68 calls  model=deepseek/deepseek-v4-pro-0813
+      trade_manager         129,475 tok    30 calls  model=deepseek/deepseek-v4-flash
+      market_observer        68,154 tok   102 calls  model=openai/gpt-oss-20b
+      news_watcher           16,890 tok    19 calls  model=mistral-small-latest
+      chat                   13,370 tok     6 calls  model=gemini-3.5-flash
+      research_analyst        4,106 tok     1 calls  model=openai/gpt-oss-120b
+      supervisor              3,455 tok     1 calls  model=gemini-3.6-flash
+      summarizer                772 tok     1 calls  model=mistral-small-latest
+  2026-08-22: gesamt 2,547,863 Tokens
+      analyst             2,188,751 tok   125 calls  model=nvidia/nemotron-3-super-120b-a12b:free
+      learner               244,075 tok    62 calls  model=deepseek/deepseek-v4-pro-0813
+      market_observer        62,240 tok    93 calls  model=openai/gpt-oss-20b
+      trade_manager          21,075 tok     5 calls  model=deepseek/deepseek-v4-flash
+      deep_analyst           20,159 tok     2 calls  model=nvidia/nemotron-3-ultra-550b-a55b:free
+      news_watcher            5,745 tok    12 calls  model=mistral-small-latest
+      research_analyst        4,187 tok     1 calls  model=openai/gpt-oss-120b
+      summarizer              1,631 tok     1 calls  model=mistral-small-latest
+  2026-08-21: gesamt 5,234,708 Tokens
+      analyst             4,477,984 tok   295 calls  model=nvidia/nemotron-3-super-120b-a12b:free
+      trade_manager         408,577 tok    95 calls  model=deepseek/deepseek-v4-flash
+      learner               258,477 tok    64 calls  model=deepseek/deepseek-v4-pro-0813
+      market_observer        48,443 tok    72 calls  model=openai/gpt-oss-20b
+      news_watcher           19,758 tok    36 calls  model=mistral-small-latest
+      chat                    8,517 tok     4 calls  model=gemini-3.5-flash
+      deep_analyst            7,483 tok     1 calls  model=nvidia/nemotron-3-ultra-550b-a55b:free
+      research_analyst        4,170 tok     1 calls  model=openai/gpt-oss-120b
+      summarizer              1,299 tok     1 calls  model=mistral-small-latest
+  2026-08-20: gesamt 6,063,191 Tokens
+      analyst             5,632,831 tok   398 calls  model=nvidia/nemotron-3-super-120b-a12b:free
+      learner               225,957 tok    60 calls  model=deepseek/deepseek-v4-pro-0813
+      market_observer        61,627 tok    92 calls  model=openai/gpt-oss-20b
+      trade_manager          57,816 tok    13 calls  model=deepseek/deepseek-v4-flash
+      deep_analyst           32,713 tok     4 calls  model=nvidia/nemotron-3-ultra-550b-a55b:free
+      news_watcher           29,357 tok    48 calls  model=mistral-small-latest
+      chat                   13,180 tok     7 calls  model=gemini-3.5-flash
+      research_analyst        8,734 tok     2 calls  model=openai/gpt-oss-120b
+      summarizer                976 tok     1 calls  model=mistral-small-latest
+  2026-08-19: gesamt 6,241,989 Tokens
+      analyst             5,847,755 tok   414 calls  model=nvidia/nemotron-3-super-120b-a12b:free
+      deep_analyst          152,970 tok    13 calls  model=nvidia/nemotron-3-ultra-550b-a55b:free
+      learner                88,806 tok    22 calls  model=nvidia/nemotron-3.5-lightning:free
+      trade_manager          79,367 tok    19 calls  model=nvidia/nemotron-3.5-lightning:free
+      market_observer        44,364 tok    69 calls  model=openai/gpt-oss-20b
+      news_watcher           21,878 tok    40 calls  model=mistral-small-latest
+      research_analyst        4,330 tok     1 calls  model=openai/gpt-oss-120b
+      chat                    1,601 tok     1 calls  model=openai/gpt-oss-120b
+      summarizer                918 tok     1 calls  model=mistral-small-latest
+
+======================================================================
+## I) ML-GATE: Modelle + Shadow-Report-Basis
+======================================================================
+    v37 2026-08-25T10:18 samples=2425 AUC=None brier=None vs base=None trigger=auto (neue Ergebnisse)
+    v36 2026-08-25T02:59 samples=2374 AUC=None brier=None vs base=None trigger=auto (neue Ergebnisse)
+    v35 2026-08-24T20:12 samples=2321 AUC=None brier=None vs base=None trigger=auto (neue Ergebnisse)
+    v34 2026-08-24T15:10 samples=2271 AUC=None brier=None vs base=None trigger=auto (neue Ergebnisse)
+    v33 2026-08-24T09:04 samples=2214 AUC=None brier=None vs base=None trigger=manuell
+    v32 2026-08-24T07:23 samples=2197 AUC=None brier=None vs base=None trigger=auto (neue Ergebnisse)
+    v31 2026-08-24T07:23 samples=2197 AUC=None brier=None vs base=None trigger=auto (neue Ergebnisse)
+    v30 2026-08-24T00:40 samples=2137 AUC=None brier=None vs base=None trigger=auto (neue Ergebnisse)
+    v29 2026-08-23T21:09 samples=2079 AUC=None brier=None vs base=None trigger=auto (neue Ergebnisse)
+    v28 2026-08-23T14:32 samples=2021 AUC=None brier=None vs base=None trigger=auto (neue Ergebnisse)
+  gate settings: {'auto_retrain': True, 'retrain_hour_berlin': 4, 'retrain_min_new': 50, 'shadow_enabled': True, 'threshold': 0.45, 'auc_min': 0.55, 'auc_risk_factor': 0.5, 'auc_risk_scaling': True}
+
+======================================================================
+## J) REWARDS: letzte Lern-Einträge
+======================================================================
+  ai_rewards gesamt: 315
+  Reward>0: 0/315
+  Ø fee_share_pct bei Verlusten: 17% (n=146)
+  Nach Regime:
+    trend_up_volatil         n= 63 win=  0%
+    trend_down_volatil       n= 53 win=  0%
+    trend_up_normal          n= 46 win=  0%
+    range_normal             n= 31 win=  0%
+    trend_up_ruhig           n= 28 win=  0%
+    trend_down_normal        n= 24 win=  0%
+    range_ruhig              n= 17 win=  0%
+    range_volatil            n= 15 win=  0%
+    trend_down_ruhig         n= 14 win=  0%
+    drift_ruhig              n=  6 win=  0%
+    breakout_ruhig           n=  6 win=  0%
+    drift_normal             n=  5 win=  0%
+
+======================================================================
+## K) AI-PROPOSALS (Self-Tuning) letzte 14d
+======================================================================
+    2026-08-25T07:33 ENGINE {"max_same_direction": 2} status=needs_confirmation Richtungs-Guard auf 2 (außerhalb der Autonomie-Spanne 3–10) 
+    2026-08-25T07:33 ENGINE {"min_confidence": 65.0} status=auto_applied 
+    2026-08-25T07:23 DOGEUSDT {"leverage": 9.6} status=needs_confirmation 
+    2026-08-25T07:23 DOTUSDT {"leverage": 8.64} status=needs_confirmation 
+    2026-08-25T07:23 POLUSDT {"leverage": 6.0} status=needs_confirmation 
+    2026-08-25T07:23 ETHUSDT {"leverage": 10.0} status=needs_confirmation 
+    2026-08-25T07:23 AVAXUSDT {"leverage": 9.6} status=needs_confirmation 
+    2026-08-25T00:52 ENGINE {"cooldown_min": 30} status=needs_confirmation cooldown_min 30 min über dem Autonomie-Limit 15 min – nur de
+    2026-08-25T00:19 SPYUSDT {"leverage": 8.0} status=needs_confirmation 
+    2026-08-25T00:19 QQQUSDT {"leverage": 6.4} status=needs_confirmation 
+    2026-08-25T00:19 SILVER {"leverage": 12.0} status=needs_confirmation 
+    2026-08-25T00:19 GOLD {"leverage": 17.0} status=needs_confirmation 
+    2026-08-24T17:39 DOTUSDT {"leverage": 7.2} status=auto_applied 
+    2026-08-24T17:39 DOGEUSDT {"leverage": 9.6} status=needs_confirmation 
+    2026-08-24T17:39 BNBUSDT {"leverage": 6.0} status=needs_confirmation 
+    2026-08-24T17:39 ETHUSDT {"leverage": 11.52} status=needs_confirmation 
+    2026-08-24T17:39 BTCUSDT {"leverage": 7.68} status=auto_applied 
+    2026-08-24T15:35 ENGINE {"max_same_direction": 2} status=needs_confirmation Richtungs-Guard auf 2 (außerhalb der Autonomie-Spanne 3–10) 
+    2026-08-24T13:47 ENGINE {"cooldown_min": 30} status=needs_confirmation cooldown_min 30 min über dem Autonomie-Limit 15 min – nur de
+    2026-08-24T12:24 ENGINE {"correlation_guard": true} status=auto_applied 

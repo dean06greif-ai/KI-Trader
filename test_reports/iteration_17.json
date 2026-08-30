@@ -1,0 +1,23 @@
+{
+  "summary": "Regression test after the ai_engine.py split (core + context/governance/housekeeping mixins) and the new services/regime_core.py facade. Backend boots clean, full pytest suite (not live) = 892 passed / 1 skipped, new live API regression file (9 tests) all green: /api/ai/status (config.enabled + providers_health present), /api/ai/lessons, /api/ai/proposals, /api/ai/proposals/actionable, /api/settings, /api/ai/insights all 200; governance path POST /api/ai/config {correlation_guard:false} applied+persisted and reset to true; full lesson lifecycle (create -> listing -> park -> reactivate -> delete -> gone) all 200; POST /api/ai/proposals/<unknown-id> returns clean 404 (no 500). Frontend E2E: app loads, admin login via edit-strategy-params-btn modal works ('Admin angemeldet'), KI-Trader panel opens and Lernen / Setup / KI-Team / KI-Labor views all render with real data, no white screen, no new console errors besides the known editor-instrumenting hydration warning (option/span in AIRewardPanel.js:84). No behaviour change detected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter17_refactor_regression_api.py",
+    "/app/test_reports/pytest/iter17_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "services/ai_engine.py is still 2409 lines (>700 guideline) even after the split - context(843)/governance(567)/housekeeping(444) mixins helped; a further split of the trade-execution vs. analysis paths would be the next candidate.",
+    "regime_core.py is a pure re-export facade; no caller migrated yet - consider migrating at least new/edited imports so the facade does not drift from the 6 modules.",
+    "Known pre-existing warning: services/regime.py:301 RuntimeWarning 'invalid value encountered in divide' during K-Means feature normalisation (std=0 case) - harmless today but should guard the divide."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter17_refactor_regression_api.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "One TEST_iter17 lesson created and deleted again (lesson list back to 0); correlation_guard restored to true (verified in Setup view: 'an (BTC/ETH/SOL = 1 Risiko)').",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md) - works for POST /api/auth/login and the UI AdminLogin modal",
+  "context_for_next_testing_agent": "New live regression file: backend/tests/test_iter17_refactor_regression_api.py (marked 'live', run with -m live). Note API shapes: POST /api/ai/lessons needs {title, detail, weight} and returns {status, lesson:{id,...}}; the proposal decision endpoint is POST /api/ai/proposals/{pid} with {action: approve|reject} (no /decide suffix); admin login is POST /api/auth/login {username,password} -> {token}. Full suite baseline: 892 passed, 1 skipped, ~17s.",
+  "rca_of_the_issue": "N/A - pure regression run, no defects found."
+}
