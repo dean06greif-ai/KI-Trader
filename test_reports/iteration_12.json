@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 12 – Baustein A (ATR/Low-Vol-Market-Block) + Baustein B (Slippage-/Fill-Qualitäts-Messung) verifiziert. Unit-Tests: tests/test_atr_market_block.py + test_slippage_stats.py + test_trade_improvements.py = 29/29 grün; Gesamt-Unit-Suite `-m unit` = 860 passed. Neue API-Suite tests/test_iter12_slippage_lowvol_api.py (14 Tests) erstellt und 14/14 grün: slippage-stats Shape/Clamping (days 0->30, -5->1, 9999->365, abc->422), kein _id-Leak, Gruppen-Schema, low_vol-Defaults im /api/ai/status (true / 0.1), Admin-Schutz von POST /api/ai/config (403 ohne Auth), Clamping 5->2.0 und -3->0.0 mit Persistenz-Check und WIEDERHERSTELLUNG auf 0.1 (verifiziert). Regression tests/test_iter10_trade_improvements_api.py + test_iter11_mae_api.py = 19/19 grün. Code-Review Bausteine A+B gegen Plan abgeglichen – Implementierung entspricht der Beschreibung. UI-Smoke (Preview-URL): App lädt ohne Error-Overlay, ANALYSE -> Trades rendert Statistiken (23 offen / 180 geschlossen). KEINE Orders/Trades ausgelöst.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "ALLE /api/* (z. B. /api/ai/status, /api/autotrade/slippage-stats)", "issue": "Wiederholbare Event-Loop-Blockaden: während des KI-Analyse-Zyklus (Logs: 'AI Analyse-Zyklus', 'candle_cache EXTEND-HEAD ... +18719') antworten ALLE Endpoints 18-25 s+ nicht (requests/http.client ReadTimeout bei 25/60 s, curl 18 s). Zwischen den Zyklen 3 ms. Nicht durch diese Iteration verursacht (CPU-schwere Sync-Arbeit im Loop), aber Grund für flaky API-Tests und träge UI -> candle_cache/Indikator-Berechnung in run_in_executor/Thread auslagern."},
+      {"endpoint": "GET /api/autotrade/slippage-stats", "issue": "days wird auf 1..365 geklemmt, aber days=-5 -> 1 (nicht 30). Kein Crash, nur Hinweis: negative Werte fallen auf 1 Tag statt auf den Default zurück."},
+      {"endpoint": "GET /api/autotrade/slippage-stats", "issue": "measured_trades=0 / groups=[] – wie vom Main-Agent angekündigt ERWARTET (signal_price/slippage_pct entstehen erst bei NEUEN Trades). Die Gruppen-Schema-Assertion konnte deshalb nur leer laufen; echte Daten müssen in einer Folge-Iteration nachgeprüft werden."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter12_slippage_lowvol_api.py",
+    "/app/backend/tests/test_atr_market_block.py",
+    "/app/backend/tests/test_slippage_stats.py",
+    "/app/test_reports/pytest/iter12_api.xml"
+  ],
+  "action_items": [
+    "Optional/Perf: CPU-lastige candle_cache-EXTEND-HEAD-/Indikator-Berechnung des KI-Zyklus aus dem asyncio-Event-Loop nehmen (Executor), sonst blockieren alle API-Requests zyklisch 20-30 s.",
+    "Folge-Iteration: sobald erste neue Trades mit signal_price/slippage_pct existieren, slippage-stats mit echten Gruppen (market vs. maker vs. limit_fill) und den Ø MFE/MAE-Werten prüfen.",
+    "Kein funktionaler Fix nötig – Bausteine A+B sind wie geplant implementiert."
+  ],
+  "critical_code_review_comments": [
+    "Baustein A OK: atr_market_block() ist fail-open (ungültige Werte/thr<=0 -> kein Block), Grenzfall ATR == Schwelle erlaubt Market. Low-Vol-Block greift ausschließlich bei mode=='live' + strategy_id=='ai_trader' + nicht manual_trade + nicht ai_limit_fill; erzwingt maker_requested/order_kind='maker'; im Fallback-Zweig -> _notify_reject + return None (kein 'taker_fallback'); orphan-Zweig unverändert; Trade-Feld low_vol_forced_maker gesetzt.",
+    "ai_cfg wird nur innerhalb von `if strategy_id == 'ai_trader'` (Zeile 1549) gebunden – Zugriffe an Zeile 1623 (fee_guard) und 1762 (Low-Vol-Block) sind durch dieselbe Bedingung bzw. durch Short-Circuit vor strategy_id abgesichert. Kein UnboundLocalError-Risiko, aber fragil: eine Umsortierung der and-Kette in Zeile 1758-1762 würde sofort crashen -> ai_cfg besser früh mit {} initialisieren.",
+    "Baustein B OK: signal_price wird VOR Maker-/Paper-Anpassung fixiert (1744); realer Fill-Preis nur zur Messung via parse_order_fill(get_order_detail) (1969) und nur wenn order_kind != 'maker' – bei Maker-Fills wird entry ohnehin auf den echten Fill (m['entry']) gesetzt, die Messung bleibt also korrekt; Entry/SL/TP unverändert.",
+    "compute_slippage_pct: signiert (+ = teurer), SHORT invers, '+ 0.0' verhindert -0.0, None bei ungültigen/<=0 Preisen. slippage_usdt = slip%/100 * signal_price * qty.",
+    "core/utils.slippage_aggregate gruppiert strategy_id × mode × order_kind mit limit_entry -> 'limit_fill', Ø MFE/MAE seitenrichtig, sortiert nach Trades desc, keine Division durch 0 (mfe_n/mae_n geprüft).",
+    "routers/autotrade.py: Projektion mit _id:0 (kein ObjectId-Leak), to_list(5000)-Cap – bei künftig >5000 gemessenen Trades werden Gruppen still abgeschnitten (dokumentieren oder Aggregation-Pipeline nutzen).",
+    "ai_engine._strategy_performance_text: Fill-Qualitäts-Block vollständig in try/except gekapselt, Top-6-Gruppen, kein Token-Blowup. update_config klemmt low_vol_atr_threshold_pct auf 0..2 und persistiert nach settings/_id=ai_trader_config (gleiche Quelle, die on_signal liest) – konsistent.",
+    "Hinweis: services/bitunix_trade.py ist weit über 700 Zeilen (>2000) – on_signal ist eine sehr lange Funktion; Aufsplitten (Entry-Placement / Maker-Pfad / Trade-Doc-Bau) würde Testbarkeit deutlich erhöhen."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter12_slippage_lowvol_api.py"],
+  "success_rate": {"backend": "100% (860 Unit + 14 neue API + 19 Regression grün)", "frontend": "100% (Smoke)"},
+  "seed_data_creation": "Keine. Produktions-DB nicht beschrieben. Nur temporäre Config-Änderung low_vol_atr_threshold_pct (5 -> geklemmt 2.0, -3 -> 0.0) und danach nachweislich auf 0.1 zurückgesetzt (GET /api/ai/status bestätigt low_vol_atr_threshold_pct=0.1, low_vol_market_block_enabled=true).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / Dean06Greif!/Admin (POST /api/auth/login mit {username, password} funktioniert; ohne Auth liefert POST /api/ai/config korrekt 401/403)",
+  "context_for_next_testing_agent": "Live-Pfad on_signal (echte Bitunix-Keys) ist NICHT e2e testbar – nur Code-Review + Unit-Tests. slippage-stats liefert derzeit measured_trades=0; sobald neue Trades geschrieben sind, echte Gruppen prüfen (market vs. maker vs. limit_fill, Ø MFE/MAE) und dass maker-Gruppen negative/0 Slippage zeigen. WICHTIG für API-Tests: Backend blockiert zyklisch 20-30 s (KI-Analyse) -> Timeouts >=90 s + Retry verwenden (Helper _get() in tests/test_iter12_slippage_lowvol_api.py). Trades-Endpoint liefert mfe_pct/mae_pct innerhalb des Sub-Objekts 'computed' (peak_price/trough_price top-level nur wenn bereits gesetzt).",
+  "rca_of_the_issue": "Erste Testläufe zeigten ReadTimeouts auf /api/autotrade/slippage-stats und /api/ai/status. RCA: kein Endpoint-Bug – der Backend-Event-Loop wird während des 15-min-KI-Analyse-Zyklus durch synchrone candle_cache-Arbeit (EXTEND-HEAD +18719 Kerzen je Symbol) für ~20-30 s blockiert; danach antwortet derselbe Endpoint in 3 ms. Mitigation im Test: Timeout 120 s + Retry. Empfehlung für Produktion: Berechnung in einen Executor/Thread verschieben."
+}

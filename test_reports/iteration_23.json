@@ -1,0 +1,23 @@
+{
+  "summary": "Verifiziert: (1) S/R-Zonen-API + Chart-Overlay funktionieren, (2) limit_orders-Toggle in notify-config + Settings-UI funktioniert, (3) Regression LIQ/HEAT/TRADES-Toggles + /liquidity/levels + /liquidity/heatmap OK. 8/8 pytest-Tests grün, alle UI-Checks bestanden. limit_orders wurde am Ende wieder auf true zurückgesetzt.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_sr_zones_and_limit_notify.py",
+    "/app/test_reports/pytest/sr_zones_limit.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "sr_zones.compute_zones – Clustering per Sortierung nach Wert kann Zonen verschmelzen, die zeitlich weit auseinander liegen. Für Overlay ausreichend, aber Touches-Zählung enthält keine Wiederannäherungen (nur Pivot-Anzahl).",
+    "routers/liquidity.py sr_zones-Endpoint gibt bei leerer Zonenliste HTTP 502 zurück – für ein Overlay wäre 200 mit leerem zones[] robuster (Frontend könnte 502-Toast auslösen). Aktuell aber kein sichtbares Problem, da BTC/ETH/SOL immer Zonen liefern.",
+    "notifications.get_config nutzt 30s In-Process-Cache; nach POST wird _cfg_cache=None gesetzt – korrekt, aber bei Multi-Worker-Deployment (Gunicorn) sähen andere Worker den alten Cache bis TTL. Aktuell singulärer Uvicorn-Worker, daher OK."
+  ],
+  "updated_files": ["/app/backend/tests/test_sr_zones_and_limit_notify.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "Keine – notify-config limit_orders wurde toggle-getestet und final wieder auf TRUE gesetzt.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend-Tests laufen mit pytest -o addopts='' (pytest.ini enthält -n=xdist, das mit dem produktiven Backend timeouts erzeugt hat). Datei: /app/backend/tests/test_sr_zones_and_limit_notify.py. Frontend-S/R-Toggle zeigt 'S/R · 11' bei BTC, Legende erscheint (grün=Support/rot=Widerstand/1d=kräftig·4h=gestrichelt).",
+  "rca of the issue": "Nicht anwendbar – keine Bugs gefunden."
+}
