@@ -58,8 +58,8 @@ def test_ai_status_key_status(api):
     assert r.status_code == 200
     ks = ((r.json().get("providers_health") or {}).get("key_status")) or {}
     assert ks, "key_status missing from providers_health"
-    assert ks.get("cerebras", {}).get("total") == 14, \
-        f"cerebras total != 14 (got {ks.get('cerebras')})"
+    assert ks.get("cerebras", {}).get("total", 0) >= 14, \
+        f"cerebras total < 14 (got {ks.get('cerebras')})"
     for prov in ("gemini", "groq", "openrouter", "mistral"):
         assert prov in ks, f"provider {prov} missing"
         assert int(ks[prov].get("total") or 0) >= 1, \

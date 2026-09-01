@@ -266,6 +266,16 @@ def is_payment_error(err: Exception) -> bool:
                                 "payment_required"))
 
 
+def is_upstream_overload(err: Exception) -> bool:
+    """429, das NICHT am Key/Konto liegt: das Free-Modell selbst ist beim
+    Upstream-Anbieter (z.B. Nvidia hinter OpenRouter) überlastet. Key-Wechsel
+    bringt hier NICHTS – vorher wurden alle Keys durchprobiert und für 10 min
+    gesperrt, obwohl sie gesund waren ('trotz vieler Backups überlastet')."""
+    s = str(err).lower()
+    return ("upstream" in s or "no instances available" in s
+            or "model is overloaded" in s)
+
+
 def is_empty_response_error(err: Exception) -> bool:
     """Transient: Free-Modell (v.a. OpenRouter) liefert 200 mit leeren
     choices/Content – typisch Überlastung des Upstream-Providers.
@@ -374,16 +384,22 @@ _rr_start: Dict[str, int] = {}                  # provider -> Round-Robin-Zähle
 SAME_ORG_429_STREAK = 3
 
 
+MINUTE_LIMIT_COOLDOWN_S = 65
+
+
 def _quota_cooldown_s(detail: str) -> float:
     """Cooldown je nach Limit-Art: TAGES-Quota (tokens/requests per day) und
     402 Payment Required (Konto-Kontingent komplett erschöpft / Billing nötig)
     sperren den Key bis zum UTC-Tageswechsel statt nur 10 min – vorher wurden
-    erschöpfte/tote Keys den ganzen Tag alle 10 min erneut gehämmert."""
+    erschöpfte/tote Keys den ganzen Tag alle 10 min erneut gehämmert.
+    MINUTEN-Limits (z.B. OpenRouter 20 req/min pro Konto, Groq RPM/TPM) sperren
+    den Key nur ~65s – der frühere 10-min-Cooldown nahm bei einem kurzen Burst
+    ALLE Keys gleichzeitig aus der Rotation ('trotz vieler Backups überlastet')."""
     s = str(detail).lower()
     daily = any(k in s for k in ("per day", "daily", "tokens_per_day", "requests_per_day",
                                  "_day_", "tpd", "rpd", "quota exceeded for today",
                                  # OpenRouter Free-Tier: "free-models-per-day" (Bindestriche!)
-                                 "per-day", "free-models-per"))
+                                 "per-day", "free-models-per-day"))
     payment = any(k in s for k in ("error code: 402", "payment required",
                                    "payment_requ", "insufficient credit"))
     if daily or payment:
@@ -392,6 +408,11 @@ def _quota_cooldown_s(detail: str) -> float:
         nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=30,
                                                 microsecond=0)
         return max(30 * 60.0, (nxt - now).total_seconds())
+    minute = any(k in s for k in ("per minute", "per-min", "free-models-per-min",
+                                  "per_minute", "rpm", "tpm", "requests per min",
+                                  "tokens per min"))
+    if minute:
+        return MINUTE_LIMIT_COOLDOWN_S
     return KEY_LIMIT_COOLDOWN_S
 
 
@@ -849,6 +870,20 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                                  f"Prompt ~{est_tokens} Tokens zu groß (413)")
                     break  # nächstes Modell – gleicher Prompt scheitert bei jedem Key
                 if is_rate_limit_error(e) or is_payment_error(e):
+                    if is_upstream_overload(e) and not is_payment_error(e):
+                        # Modell selbst upstream überlastet: Key-Wechsel hilft
+                        # nicht -> Keys NICHT sperren, direkt nächstes Modell.
+                        logger.warning(f"{provider}/{model}: Upstream überlastet – "
+                                       "Keys bleiben nutzbar, nächstes Modell…")
+                        record_result(provider, model, "rate_limited",
+                                      f"Modell upstream überlastet: {str(e)[:140]}",
+                                      key_index=i, role=role)
+                        failed_models.append(f"{provider}/{model}")
+                        failed_providers.add(provider)
+                        _fail_detail(provider, model, "rate_limited",
+                                     "Modell beim Upstream-Anbieter überlastet – "
+                                     "Key-Wechsel übersprungen, Fallback-Modell übernimmt")
+                        break
                     reason = ("Free-Kontingent erschöpft (402) – Backup übernimmt"
                               if is_payment_error(e) else "rate-limited")
                     paid_transient = (model in PAID_MODELS_NO_FALLBACK
@@ -1003,6 +1038,13 @@ async def stream_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                                   key_index=i, role=role)
                     break
                 if is_rate_limit_error(e) or is_payment_error(e):
+                    if is_upstream_overload(e) and not is_payment_error(e):
+                        # Modell upstream überlastet: Keys nicht sperren,
+                        # direkt nächstes Modell (siehe generate_chain).
+                        record_result(provider, model, "rate_limited",
+                                      f"Modell upstream überlastet: {str(e)[:140]}",
+                                      key_index=i, role=role)
+                        break
                     reason = ("Free-Kontingent erschöpft (402) – Backup übernimmt"
                               if is_payment_error(e) else "rate-limited")
                     paid_transient = (model in PAID_MODELS_NO_FALLBACK

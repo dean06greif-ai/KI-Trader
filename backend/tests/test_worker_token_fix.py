@@ -16,7 +16,8 @@ import requests
 from dotenv import dotenv_values
 
 from services import local_exec
-from services.ai_providers import _quota_cooldown_s, KEY_LIMIT_COOLDOWN_S
+from services.ai_providers import (_quota_cooldown_s, KEY_LIMIT_COOLDOWN_S,
+                                   MINUTE_LIMIT_COOLDOWN_S)
 
 _env = dotenv_values("/app/frontend/.env")
 BASE_URL = (os.environ.get("REACT_APP_BACKEND_URL")
@@ -146,5 +147,6 @@ class TestOpenRouterDailyLimit:
         assert _quota_cooldown_s(msg) > KEY_LIMIT_COOLDOWN_S
 
     def test_minute_limit_stays_short(self):
-        assert _quota_cooldown_s("Rate limit exceeded: 20 requests per minute") \
-            == KEY_LIMIT_COOLDOWN_S
+        # Iter32: Minuten-Limits sperren den Key nur ~65s (vorher 10-min-Default)
+        cd = _quota_cooldown_s("Rate limit exceeded: 20 requests per minute")
+        assert cd == MINUTE_LIMIT_COOLDOWN_S < KEY_LIMIT_COOLDOWN_S

@@ -50,6 +50,22 @@ Branch-Basis: conflict_300826_2041 (Referenz alte Version: conflict_270826_1202)
 OpenRouter-Key-Analyse: Limits gelten PRO KONTO (nicht pro Key): 50 Free-Requests/Tag
 (<10$ lifetime), 1000/Tag nach einmaligem 10$-Kauf. Empfehlung an User dokumentiert.
 
+## Umgesetzt (Follow-up Session 2) – OpenRouter-Rotation-Verbesserungen
+User-Feedback: '~8 Keys aus verschiedenen Konten, trotzdem überlastet.'
+Diagnose (live verifiziert): Key-ANZAHL ist nicht der Engpass (Haupt-Key = 10$-Konto
+mit 1000 Free-Req/Tag, Backups Free-Tier je 50/Tag, Prod hat 9 Keys ≈ 1400/Tag
+Kapazität vs. ~150-250/Tag Bedarf). Echte Ursachen behoben:
+1. **Minuten-Limits** (20 req/min pro Konto) sperrten Keys fälschlich 10 min →
+   jetzt nur 65s (MINUTE_LIMIT_COOLDOWN_S, _quota_cooldown_s klassifiziert
+   minute/daily/402/default getrennt).
+2. **Upstream-Überlastung** der Free-Modelle (z.B. Nemotron): Key-Wechsel half nie,
+   verbrannte aber alle Keys → is_upstream_overload() in generate_chain+stream_chain:
+   sofort nächstes Modell, Keys bleiben nutzbar.
+3. **Key-Ampel**: GET /api/ai/openrouter/keys (Admin) fragt live openrouter.ai/api/v1/key
+   pro Key ab (maskiert, free_tier, usage, Hinweise). Noch ohne UI (Backlog).
+Tests: test_key_rotation_improvements.py (9) + test_iter32_key_endpoint_review.py (5),
+Gesamt 129 relevante Tests grün (iteration_32.json).
+
 ## Backlog / Nächste Schritte
 - P1: strategy_coin_toggles-Bootmigration bulken (Boot auf Atlas langsam)
 - P1: Erklärung/ggf. Vereinfachung Dynamische Strategie vs. Regime-Lab (User entscheidet)

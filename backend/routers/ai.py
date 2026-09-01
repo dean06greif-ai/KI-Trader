@@ -23,6 +23,41 @@ async def ai_status():
     return ai_engine.status()
 
 
+@router.get("/api/ai/openrouter/keys")
+async def openrouter_key_status(_: bool = Depends(require_admin)):
+    """Live-Status aller konfigurierten OpenRouter-Keys (Key-Ampel):
+    Free-Tier?, Lifetime-Verbrauch, Tageslimit-Einordnung. Fragt die
+    OpenRouter-API pro Key ab – beantwortet 'warum reicht es nicht?'."""
+    import httpx
+    from services import ai_providers
+    keys = ai_providers.provider_keys("openrouter")
+    out = []
+    async with httpx.AsyncClient(timeout=15) as client:
+        for i, k in enumerate(keys):
+            entry = {"index": i + 1, "key_masked": f"{k[:14]}…{k[-4:]}"}
+            try:
+                r = await client.get("https://openrouter.ai/api/v1/key",
+                                     headers={"Authorization": f"Bearer {k}"})
+                d = (r.json() or {}).get("data") or {}
+                free = bool(d.get("is_free_tier", True))
+                entry.update({
+                    "valid": r.status_code == 200,
+                    "is_free_tier": free,
+                    "usage_usd": d.get("usage"),
+                    "daily_free_requests": 50 if free else 1000,
+                    "hint": ("Free-Tier: 50 Free-Requests/Tag – einmalig 10$ aufladen "
+                             "hebt dieses Konto dauerhaft auf 1000/Tag" if free
+                             else "10$-Konto: 1000 Free-Requests/Tag"),
+                })
+            except Exception as e:  # noqa: BLE001
+                entry.update({"valid": False, "error": str(e)[:120]})
+            out.append(entry)
+    limited = ai_providers.key_status().get("openrouter", {})
+    return {"keys": out, "runtime_limits": limited,
+            "note": "Limits gelten PRO KONTO (nicht pro Key) + 20 Requests/Minute "
+                    "je Konto. Keys aus demselben Konto teilen sich das Kontingent."}
+
+
 @router.get("/api/ai/limit-orders")
 async def ai_limit_orders(limit: int = 50):
     """Wartende Key-Level-Limit-Orders der KI + jüngste Historie."""
