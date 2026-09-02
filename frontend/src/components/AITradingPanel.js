@@ -1736,6 +1736,25 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                 </label>
               </>
             )}
+            <label title="Sweep-Trigger: lokaler Detektor (ohne KI-Kosten) erkennt auf den 1m-Kerzen Wick-Sweeps über markante Hochs/Tiefs mit Reclaim und startet sofort eine gezielte Analyse NUR für dieses Symbol – statt bis zum nächsten Zyklus zu warten. Begrenzt durch Tagesbudget (Extra-Analyst-Calls) und 30-min-Cooldown je Symbol.">
+              <span><Lightning size={13} /> Sweep-Trigger</span>
+              <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                <input type="checkbox" checked={cfg.sweep_trigger_enabled !== false}
+                  onChange={e => updateConfig({ sweep_trigger_enabled: e.target.checked })}
+                  data-testid="ai-sweep-trigger-toggle" />
+                <input type="number" min={0} max={200} step={1} style={{ width: 56 }}
+                  title="Max. Extra-Analysen pro Tag"
+                  key={`stc-${cfg.sweep_trigger_daily_cap ?? 20}`}
+                  defaultValue={cfg.sweep_trigger_daily_cap ?? 20}
+                  onBlur={e => {
+                    const v = parseInt(e.target.value, 10);
+                    if (Number.isNaN(v)) { e.target.value = String(cfg.sweep_trigger_daily_cap ?? 20); return; }
+                    if (v !== (cfg.sweep_trigger_daily_cap ?? 20)) updateConfig({ sweep_trigger_daily_cap: v });
+                  }}
+                  data-testid="ai-sweep-trigger-cap-input" />
+                <span style={{ opacity: 0.6, fontSize: 11 }}>/Tag</span>
+              </span>
+            </label>
             <label title="Chance-Risiko-Verhältnis (TP1 zu SL): Spanne, in der sich die KI bei JEDEM Trade frei bewegen darf. Min wird technisch erzwungen; Max 0 = keine Obergrenze.">
               <span>CRV min / max</span>
               <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>

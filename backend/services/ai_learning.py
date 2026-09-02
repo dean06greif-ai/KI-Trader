@@ -355,8 +355,11 @@ class AILearning:
                 self._lessons_cache = []
         return self._lessons_cache or []
 
+    def _risk_sizing(self) -> bool:
+        return str((self.engine.config or {}).get("sizing_mode", "risk")) == "risk"
+
     async def lessons_text(self) -> str:
-        return ai_lessons.lessons_text(await self.get_lessons())
+        return ai_lessons.lessons_text(await self.get_lessons(), risk_sizing=self._risk_sizing())
 
     # ---------------- Lektions-Kandidaten (Validierung durch Wiedererkennung) ----------------
     async def lesson_candidates(self, limit: int = 20) -> List[Dict]:
@@ -743,6 +746,24 @@ class AILearning:
                     _skip(title, "pauschales Verbot/Einschränkung ohne Marktkontext – "
                                  "bitte als adaptive Wenn-Dann-Regel mit 'context' "
                                  "formulieren (Overfitting-Schutz)", detail)
+                    continue
+                # Lektions-Qualität (Befund 02.09.): Größen-Anweisungen drückten die
+                # Live-Marge auf 1,5–4,5 USDT – im Risiko-Modus rechnet
+                # position_sizing deterministisch, solche Lektionen sind
+                # gegenstandslos. Mini-Stichproben (<10 Trades) sind kein Wissen.
+                if not l.get("trader_directive") and self._risk_sizing() \
+                        and ai_lessons.is_sizing_rule(title, detail):
+                    _skip(title, "Größen-/Margen-Anweisung – Positionsgröße wird im "
+                                 "Risiko-Modus automatisch aus dem Risiko-Budget berechnet "
+                                 "(Lektion würde den KI-Trader nur unnötig verkleinern)",
+                          detail, approvable=False)
+                    continue
+                small_n = None if l.get("trader_directive") else \
+                    ai_lessons.small_sample_n(title, detail)
+                if small_n is not None:
+                    _skip(title, f"Datenbasis zu klein ({small_n} Trades < "
+                                 f"{ai_lessons.MIN_LESSON_SAMPLE}) – Zufall statt Muster; "
+                                 "erneut vorschlagen, wenn genug Trades vorliegen", detail)
                     continue
                 prev = old_by_title.get(key)
                 if l.get("trader_directive") and prev is None:

@@ -55,6 +55,7 @@ from services import ai_providers
 from services import ai_playbook
 from services import position_sizing
 from services import smc_zones
+from services import sweep_trigger
 from services.ai_roles import role_manager
 from services.ai_json import parse_json_lenient
 from services.ai_engine_context import AIEngineContextMixin
@@ -184,6 +185,9 @@ DEFAULT_AI_CONFIG = {
     # capital_pct × ML-Faktor (altes Verhalten) | "risk" = Risiko-Budget in % der
     # Equity / SL-Abstand, Hebel mit Liq hinter dem SL (Boot-Migration setzt risk).
     **position_sizing.DEFAULTS,
+    # Sweep-Trigger (services/sweep_trigger.py): lokaler 1m-Wick-Sweep-Detektor
+    # -> gezielte Einzel-Symbol-Analyse mit Tagesbudget + Symbol-Cooldown.
+    **sweep_trigger.DEFAULTS,
     # Einstellungs-Autonomie: darf die KI ihre Trade-Settings ändern?
     # off = nie | suggest = Vorschläge, Trader bestätigt | auto = sofort anwenden
     "autonomy": "suggest",
@@ -822,6 +826,7 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
             except (TypeError, ValueError):
                 pass
         position_sizing.clamp_updates(updates, self.config)
+        sweep_trigger.clamp_updates(updates, self.config)
         if "news_enabled" in updates:
             self.config["news_enabled"] = bool(updates["news_enabled"])
         if "macro_enabled" in updates:
@@ -1261,17 +1266,27 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                 return False
         return True
 
-    async def run_analysis(self, manual: bool = False) -> Dict:
+    async def run_analysis(self, manual: bool = False,
+                           only_symbols: Optional[List[str]] = None,
+                           trigger: Optional[str] = None) -> Dict:
+        """Regulärer Analyse-Zyklus. only_symbols/trigger = gezielte Einzel-Symbol-
+        Analyse (Sweep-Trigger, services/sweep_trigger.py): nur diese Symbole,
+        kein Smart-Skip, Ereignis-Block im Prompt."""
         if self._analyzing:
             return {"status": "busy", "detail": "Analyse läuft bereits"}
         if not self.key:
             self.last_error = f"API-Key für Provider '{self.config.get('provider')}' fehlt (Render EnvVars setzen)"
             return {"status": "error", "detail": self.last_error}
         self._analyzing = True
+        if trigger:
+            manual = True  # kein Smart-Skip für Ereignis-Läufe
         try:
             symbols = [s for s in self.symbols
                        if (not self.toggle_check or self.toggle_check("ai_trader", s))
                        and len(self.scanner.candle_buffer.get(s, [])) >= 60]
+            if only_symbols:
+                wanted = {str(x).upper() for x in only_symbols}
+                symbols = [s for s in symbols if s.upper() in wanted]
             if not symbols:
                 return {"status": "error", "detail": "Keine Coins mit ausreichend Kursdaten"}
             # Nur Coins analysieren, die für den KI Trader freigeschaltet sind
@@ -1405,11 +1420,20 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
             frame_block = ("=== TRADE-RAHMEN (vom Trader vorgegeben) ===\n"
                            + "\n".join(frame_lines) + "\n\n")
 
+            trigger_block = ""
+            if trigger:
+                trigger_block = (
+                    "=== EREIGNIS (gezielte Sofort-Analyse) ===\n"
+                    f"{str(trigger)[:400]}\n"
+                    "Diese Analyse wurde außerplanmäßig durch einen lokalen Detektor "
+                    "ausgelöst. Prüfe NUR das/die genannten Symbole: Ist der Sweep + "
+                    "Reclaim ein valides liquidity_sweep-/order_block-Setup (5m/15m-"
+                    "Bestätigung, Level, CRV)? Wenn nicht: HOLD mit kurzem Grund.\n\n")
             prompt_base = (
                 f"Zeit (Berlin): {berlin}\n\n"
                 f"{extra_blocks}\n\n"
                 f"=== AKTUELLE NEWS ===\n{news_block}\n\n"
-                + capital_block + frame_block +
+                + trigger_block + capital_block + frame_block +
                 f"=== ANWEISUNGEN DES TRADERS (höchste Priorität) ===\n{directives}\n\n"
                 f"=== OFFENE POSITIONEN ===\n{open_trades}\n\n"
             )
@@ -2481,6 +2505,13 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                     from services import ram_queue
                     await ram_queue.wait_for_ram(110, 600, "ki-analyse")
                     await self.run_analysis()
+                else:
+                    # Zwischen den Zyklen: Sweep-Trigger (lokal, ohne LLM) – feuert
+                    # bei Wick-Sweep eine gezielte Einzel-Symbol-Analyse (Budget).
+                    try:
+                        await sweep_trigger.check(self)
+                    except Exception as ste:
+                        logger.error(f"Sweep-Trigger error: {ste}")
             except Exception as e:
                 logger.error(f"AI loop error: {e}")
 

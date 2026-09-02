@@ -167,6 +167,52 @@ def is_absolute_rule(title: str, detail: str = "") -> bool:
     return bool(_ABSOLUTE_RE.search(f"{str(title)} {str(detail)}".lower()))
 
 
+# Größen-Anweisungen ("Marge um 25 % reduzieren", "capital_pct 20 %", "Position
+# halbieren"): Befund 02.09. – solche Lektionen drückten die KI-Live-Marge auf
+# 1,5–4,5 USDT (Risiko ~0,1 USDT/Trade). Im Risiko-Modus berechnet
+# services/position_sizing.py die Größe deterministisch – Größen-Lektionen sind
+# dort gegenstandslos und werden nicht mehr aufgenommen.
+_SIZING_RE = re.compile(
+    r"(marge|margin|capital_pct|kapitalanteil|positionsgr[öo]ße|position(sgr[öo]sse)?|"
+    r"notional|einsatz)[^.;\n]{0,60}?(reduzier\w*|senk\w*|halbier\w*|verkleiner\w*|"
+    r"kleiner|begrenz\w*|maximal|höchstens|max\.?\s*\d|auf \d+\s?%|um \d+\s?%)|"
+    r"(reduzier\w*|senk\w*|halbier\w*|verkleiner\w*)[^.;\n]{0,40}?(marge|margin|capital_pct|"
+    r"kapitalanteil|positionsgr[öo]ße|position)|"
+    r"(nicht mehr als|h[öo]chstens|maximal|max\.?)\s*\d+\s?%\s*(der|des|vom)\s*"
+    r"(marge|margin|kapital\w*|budget\w*|paper)")
+
+
+def is_sizing_rule(title: str, detail: str = "") -> bool:
+    """Erkennt Lektionen, die die Positionsgröße/Marge steuern wollen."""
+    return bool(_SIZING_RE.search(f"{str(title)} {str(detail)}".lower()))
+
+
+MIN_LESSON_SAMPLE = 10
+_SAMPLE_RE = re.compile(r"(?:n\s*=\s*|\(|\b)(\d{1,4})\s*(?:/\s*\d+\s*)?(?:entschiedene\s+)?"
+                        r"(?:trades?|signale?|positionen|f[äa]lle)\b", re.I)
+
+
+def small_sample_n(title: str, detail: str = "") -> Optional[int]:
+    """Kleinste im Text belegte Stichprobe – oder None, wenn keine/genug Belege.
+    'Konfidenz >=80 %: 5 Trades zeigen 0 % Winrate' -> 5 (unbrauchbar)."""
+    nums = [int(m.group(1)) for m in _SAMPLE_RE.finditer(f"{title} {detail}")]
+    nums = [n for n in nums if n > 0]
+    if not nums:
+        return None
+    if max(nums) >= MIN_LESSON_SAMPLE:
+        return None
+    return min(nums)
+
+
+def sizing_note(lesson: Dict) -> str:
+    """Prompt-Hinweis für bestehende Größen-Lektionen im Risiko-Modus."""
+    if is_sizing_rule(lesson.get("title", ""), lesson.get("detail", "")):
+        return (" [HINWEIS: Größen-/Margen-Anweisung gegenstandslos – Positionsgröße "
+                "wird automatisch aus dem Risiko-Budget berechnet; nur der inhaltliche "
+                "Teil (Bestätigungen/Levels) gilt]")
+    return ""
+
+
 def reactivate(lesson: Dict) -> Dict:
     """Zurückgestellte Lektion vom Trader reaktivieren – Gültigkeit wird anhand
     der bisherigen Bestätigungen verlängert (rein, testbar)."""
@@ -379,11 +425,12 @@ def prompt_order(lessons: List[Dict]) -> List[Dict]:
     return ordered
 
 
-def lessons_text(lessons: List[Dict]) -> str:
+def lessons_text(lessons: List[Dict], risk_sizing: bool = False) -> str:
     """Prompt-Block: Lektionen inkl. Herkunfts-Markierung.
 
     Widersprüchliche Lektionen zum gleichen Thema werden vorher konsolidiert –
-    nur die jeweils NEUESTE Trader-Anweisung fließt in den Prompt ein."""
+    nur die jeweils NEUESTE Trader-Anweisung fließt in den Prompt ein.
+    risk_sizing=True: Größen-Anweisungen bekommen den Hinweis 'gegenstandslos'."""
     lessons = active_lessons(lessons)
     if not lessons:
         return "(noch keine Lektionen – zu wenige abgeschlossene Ergebnisse)"
@@ -401,6 +448,8 @@ def lessons_text(lessons: List[Dict]) -> str:
             extra += f" [GILT NUR: {l['context']}]"
         if l.get("valid_until"):
             extra += f" [gültig bis {str(l['valid_until'])[:10]}]"
+        if risk_sizing:
+            extra += sizing_note(l)
         out.append(f"{l['no']}. {mark} {l.get('title')}: {l.get('detail')}{extra}")
     return "\n".join(out)
 

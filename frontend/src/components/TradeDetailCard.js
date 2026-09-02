@@ -298,6 +298,20 @@ const TradeDetailCard = ({ t, stratName, getCoinName, onChanged, onShowChart }) 
                 {t.ai_news_impact && t.ai_news_impact !== 'neutral' && <span className="badge" title="Einschätzung der Nachrichtenlage zum Entry-Zeitpunkt: bullish/positive = News sprachen für steigende Kurse, bearish/negative = für fallende. Die konkreten Schlagzeilen stehen in der vollen Begründung (Details).">News: {t.ai_news_impact}</span>}
               </div>
               {t.ai_reasoning && <div className="tdc-ai-text" data-testid={`trade-ai-reasoning-${t.id}`}>{t.ai_reasoning}</div>}
+              {t.sizing && t.sizing.risk_usdt != null && (
+                <div className="tdc-ai-text" data-testid={`trade-sizing-${t.id}`}
+                  title={t.sizing.note || 'Risiko-basierte Positionsgröße: Risiko-Budget ÷ SL-Abstand = Positionswert; Hebel so, dass die Liquidation hinter dem SL liegt.'}
+                  style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: 11.5, opacity: 0.9 }}>
+                  <span style={{ opacity: 0.6 }}>GRÖSSE (Risiko-Modus):</span>
+                  <span>Risiko <b className="mono">{Number(t.sizing.risk_usdt).toFixed(2)} $</b>{t.sizing.risk_pct_eff != null && <span style={{ opacity: 0.65 }}> ({Number(t.sizing.risk_pct_eff).toFixed(2)} % von {Number(t.sizing.equity || 0).toFixed(0)} $)</span>}</span>
+                  <span>SL <b className="mono">{Number(t.sizing.sl_dist_pct || 0).toFixed(2)} %</b></span>
+                  <span>Hebel <b className="mono">{t.sizing.leverage}x</b></span>
+                  <span>Marge <b className="mono">{Number(t.sizing.margin || t.max_capital || 0).toFixed(2)} $</b></span>
+                  <span>Skalierung <b className="mono">×{t.sizing.scale}</b></span>
+                  {t.sizing.capped && <span className="badge" style={{ color: '#FFB020' }} title="Marge-Deckel (Max. Marge % der Equity) hat gegriffen – Risiko entsprechend reduziert">Marge gedeckelt</span>}
+                </div>
+              )}
+              {t.ai_size_reason && !t.sizing && <div className="tdc-ai-text" style={{ opacity: 0.7, fontSize: 11.5 }} data-testid={`trade-size-reason-${t.id}`}>Größe: {t.ai_size_reason}</div>}
               <TradeAIDetails trade={t} onChanged={onChanged} />
             </div>
           )}

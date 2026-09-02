@@ -301,6 +301,20 @@ _pending_fail: list = []
 _pending_task = None
 
 
+def _is_team_model(role: str, provider: str, model: str) -> bool:
+    """True, wenn (provider, model) zu den vom Trader gewählten Modellen der
+    Rolle gehört (Primär + Fallback 1/2; ohne Rollen-Modell: Haupt-Modell)."""
+    try:
+        from services.ai_roles import role_manager
+        from services.ai_engine import ai_engine
+        team = role_manager.configured_models(role, ai_engine.config)
+    except Exception:  # noqa: BLE001 – im Zweifel melden wie bisher
+        return True
+    if not team:
+        return True
+    return (provider, model) in set(team)
+
+
 async def notify_model_failure(role: Optional[str], provider: str, model: str,
                                reason: str, detail: str = "",
                                fallback: Optional[str] = None):
@@ -317,6 +331,14 @@ async def notify_model_failure(role: Optional[str], provider: str, model: str,
             return
         cfg = await get_config(db)
         if not cfg.get("website_ai_failure", True):
+            return
+        # Nur GEWÄHLTE Team-Modelle (Modell + Fallback 1/2 der Rolle) lösen eine
+        # Warnung aus. Provider-interne Ersatzmodelle der Fallback-Kette (z.B.
+        # nemotron-3.5-lightning aus FALLBACK_ORDER) probiert das System still –
+        # ihr Ausfall ist kein Ereignis für den Trader (User-Bug 02.09.).
+        if role and not _is_team_model(role, provider, model):
+            logger.info(f"Modell-Ausfall {provider}/{model} ({role}) ist kein Team-Modell "
+                        "– keine Website-Warnung")
             return
         _pending_fail.append({
             "role": ROLE_LABELS.get(role or "", role or "unbekannte Rolle"),

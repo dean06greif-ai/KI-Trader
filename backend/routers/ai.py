@@ -85,6 +85,13 @@ async def ai_playbook_status():
     return await ai_playbook.status(ai_engine.db)
 
 
+@router.get("/api/ai/sweep-trigger")
+async def ai_sweep_trigger_status():
+    """Sweep-Trigger: Tagesbudget, Cooldown, letzte Auslösungen."""
+    from services import sweep_trigger
+    return sweep_trigger.budget.status(ai_engine.config)
+
+
 @router.get("/api/ai/fee-guard/stats")
 async def ai_fee_guard_stats(days: int = 7):
     """Blockier-Statistik des Fee-Wächters (Anzahl + geschätzte vermiedene Fees)."""
