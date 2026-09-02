@@ -66,6 +66,24 @@ Kapazität vs. ~150-250/Tag Bedarf). Echte Ursachen behoben:
 Tests: test_key_rotation_improvements.py (9) + test_iter32_key_endpoint_review.py (5),
 Gesamt 129 relevante Tests grün (iteration_32.json).
 
+## Umgesetzt (Follow-up Session 3) – RAM-Warteschlange + Daten-Ordner pro Worker
+1. **RAM-Warteschlange** (services/ram_queue.py): Cloud-Jobs (Backtest, Optimizer,
+   alle 6 Regime-Lab-Starts) starten nur bei genug freiem Container-RAM
+   (cgroup-Limit, MIN 150 MB via RAM_QUEUE_MIN_FREE_MB); sonst FIFO-Queue mit
+   Auto-Start durch Watcher (10s-Takt, malloc_trim vor Messung, 12h-Timeout,
+   Cancel-Unterstützung). Job-Phase zeigt "Wartet auf freien Server-RAM…".
+   Response-Feld ram_queued. Lokale Worker-Jobs unberührt.
+2. **Daten-Ordner pro Worker**: settings.data_dirs{worker_id: pfad} in Mongo;
+   Poll liefert jedem Worker SEINEN Pfad (get_settings_for_worker); neuer
+   Endpoint POST /api/localworker/worker/{id}/data-dir; UI-Panel: eigenes
+   Feld je Online-Worker (lw-set-datadir-{worker_id}); Worker v1.9.1 übernimmt
+   Server-Pfad (validiert, persistiert worker_config.json, Live-Switch wenn idle)
+   und meldet aktuellen Pfad in data.data_dir.
+3. **Hauptkonto-Schonung**: :free-Modelle nutzen Backup-Keys zuerst, Primär-Key
+   (10$-Konto, für Bezahl-Modelle) nur als Reserve (generate_chain+stream_chain).
+Tests: test_ram_queue_and_worker_datadir.py (8) + test_iter33_ramqueue_datadir_review.py
+(4) + Regression 44/44 grün (iteration_33.json).
+
 ## Backlog / Nächste Schritte
 - P1: strategy_coin_toggles-Bootmigration bulken (Boot auf Atlas langsam)
 - P1: Erklärung/ggf. Vereinfachung Dynamische Strategie vs. Regime-Lab (User entscheidet)

@@ -794,6 +794,11 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
         # probieren, sofort auf die Free-Modell-Fallback-Kette wechseln.
         if model in PAID_MODELS_NO_FALLBACK:
             idxs = [0] if 0 in idxs else []
+        elif model.endswith(":free") and 0 in idxs and len(idxs) > 1:
+            # Free-Modelle: Backup-Keys zuerst, Hauptkonto (Key 1) nur als
+            # Reserve – dessen Tages-Kontingent bleibt für Bezahl-Modelle
+            # (deepseek etc.) frei (Trader-Wunsch).
+            idxs = [i for i in idxs if i != 0] + [0]
         idxs = restrict_indices_for_priority(idxs, priority)
         if not idxs:
             continue
@@ -986,6 +991,9 @@ async def stream_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
         # Bezahl-Modelle nur mit Primär-Key (siehe _generate_chain).
         if model in PAID_MODELS_NO_FALLBACK:
             idxs = [0] if 0 in idxs else []
+        elif model.endswith(":free") and 0 in idxs and len(idxs) > 1:
+            # Free-Modelle: Hauptkonto-Key als letzte Reserve (siehe generate_chain)
+            idxs = [i for i in idxs if i != 0] + [0]
         if not idxs:
             continue
         streak_429 = 0

@@ -62,7 +62,7 @@ async def worker_poll(body: Dict, _: bool = Depends(require_worker)):
     job = local_exec.claim(worker_id,
                            want_compute=bool(body.get("want_compute", True)),
                            want_data=bool(body.get("want_data", True)))
-    settings = await local_exec.get_settings(state.db)
+    settings = await local_exec.get_settings_for_worker(state.db, worker_id)
     return {"job": job, "cancel_ids": local_exec.cancel_ids(), "settings": settings}
 
 
@@ -117,6 +117,15 @@ async def localworker_set_settings(body: Dict, _: bool = Depends(require_admin))
         settings = await local_exec.save_settings(state.db, body or {})
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "success", "settings": settings}
+
+
+@router.post("/api/localworker/worker/{worker_id}/data-dir")
+async def localworker_worker_data_dir(worker_id: str, body: Dict,
+                                      _: bool = Depends(require_admin)):
+    """Daten-Ordner PRO Worker (leer = Standardordner des Workers)."""
+    settings = await local_exec.set_worker_data_dir(
+        state.db, worker_id, str((body or {}).get("data_dir") or ""))
     return {"status": "success", "settings": settings}
 
 

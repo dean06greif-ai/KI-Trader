@@ -152,6 +152,19 @@ export default function LocalWorkerPanel({ onClose }) {
       .catch(() => toast.error('Kopieren fehlgeschlagen'));
   };
 
+  const saveWorkerDataDir = async (workerId, value) => {
+    if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
+    try {
+      const r = await fetch(`${API_URL}/api/localworker/worker/${workerId}/data-dir`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ data_dir: value || '' }),
+      });
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.detail || 'Speichern fehlgeschlagen'); return; }
+      toast.success(value ? 'Daten-Ordner für diesen Worker gespeichert' : 'Daten-Ordner zurückgesetzt (Standard)');
+    } catch { toast.error('Verbindungsfehler'); }
+  };
+
   const set = (k, v) => setSettings(prev => ({ ...prev, [k]: v }));
 
   return (
@@ -267,10 +280,23 @@ export default function LocalWorkerPanel({ onClose }) {
                 <option value="1">An – Auto-Erkennung, CPU-Fallback</option>
               </select>
             </label>
-            <label>Daten-Ordner (leer = Standard des Workers)
-              <input type="text" placeholder="z.B. D:/KryptoDaten" value={settings.data_dir}
-                onChange={e => set('data_dir', e.target.value)} data-testid="lw-set-datadir" />
-            </label>
+            {(status?.workers || []).filter(w => w.online).map(w => (
+              <label key={w.worker_id}
+                title="Wird nur für DIESEN Worker gespeichert – jeder Worker (z.B. dein PC und der deines Kumpels) behält seinen eigenen Pfad.">
+                Daten-Ordner für „{w.name || w.worker_id}" (leer = Standard des Workers)
+                <input type="text"
+                  placeholder={w.data?.data_dir || 'z.B. D:/KryptoDaten'}
+                  defaultValue={w.data_dir_override || ''}
+                  onBlur={e => saveWorkerDataDir(w.worker_id, e.target.value.trim())}
+                  data-testid={`lw-set-datadir-${w.worker_id}`} />
+              </label>
+            ))}
+            {!(status?.workers || []).some(w => w.online) && (
+              <label>Daten-Ordner (pro Worker – Worker verbinden, um ihn zu setzen)
+                <input type="text" disabled placeholder="Kein Worker verbunden"
+                  data-testid="lw-set-datadir" />
+              </label>
+            )}
             <label className="lw-check">
               <input type="checkbox" checked={!!settings.auto_update_enabled}
                 onChange={e => set('auto_update_enabled', e.target.checked)}

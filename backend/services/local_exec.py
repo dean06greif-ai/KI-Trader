@@ -40,7 +40,8 @@ DEFAULT_SETTINGS = {
     "ram_limit_mb": 4096,       # Obergrenze Kerzen-RAM-Cache des Workers
     "use_gpu": False,           # GPU (NVIDIA/CuPy) für Indikator-Vorberechnung
     "max_parallel_jobs": 1,     # gleichzeitige Rechen-Jobs auf dem Worker
-    "data_dir": "",             # leer = Standardordner des Workers
+    "data_dir": "",             # leer = Standardordner des Workers (globaler Fallback)
+    "data_dirs": {},            # worker_id -> eigener Daten-Ordner (pro Worker!)
     "auto_update_enabled": False,
     "auto_update_minutes": 60,
 }
@@ -146,6 +147,8 @@ def workers_public() -> List[Dict]:
             "sim_workers": w.get("sim_workers"),
             "running_jobs": w.get("running_jobs") or [],
             "outdated": _ver(w.get("version")) < REQUIRED_WORKER_VERSION,
+            "data_dir_override": ((_settings_cache or {}).get("data_dirs")
+                                  or {}).get(wid),
         })
     out.sort(key=lambda x: (not x["online"], x.get("last_seen") or ""), reverse=False)
     return out
@@ -176,6 +179,9 @@ async def save_settings(db, patch: Dict) -> Dict:
         cur["use_gpu"] = bool(cur.get("use_gpu"))
         cur["auto_update_enabled"] = bool(cur.get("auto_update_enabled"))
         cur["data_dir"] = str(cur.get("data_dir") or "")
+        dd = cur.get("data_dirs")
+        cur["data_dirs"] = ({str(k): str(v).strip() for k, v in dd.items()
+                             if str(v or "").strip()} if isinstance(dd, dict) else {})
     except (TypeError, ValueError):
         raise ValueError("Ungültige Einstellungswerte")
     global _settings_cache
@@ -184,6 +190,28 @@ async def save_settings(db, patch: Dict) -> Dict:
         await db.settings.update_one({"_id": "local_worker_settings"},
                                      {"$set": cur}, upsert=True)
     return cur
+
+
+async def get_settings_for_worker(db, worker_id: str) -> Dict:
+    """Settings mit worker-spezifischem Daten-Ordner: jeder Worker (z.B. eigener
+    PC + PC des Kumpels) bekommt SEINEN Pfad aus data_dirs[worker_id] statt
+    des zuletzt global gespeicherten Pfads des jeweils anderen."""
+    base = await get_settings(db)
+    out = {k: v for k, v in base.items() if k != "data_dirs"}
+    out["data_dir"] = ((base.get("data_dirs") or {}).get(worker_id)
+                       or base.get("data_dir") or "")
+    return out
+
+
+async def set_worker_data_dir(db, worker_id: str, path: str) -> Dict:
+    """Daten-Ordner EINES Workers setzen (leer = Eintrag entfernen)."""
+    cur = dict((await get_settings(db)).get("data_dirs") or {})
+    path = str(path or "").strip()
+    if path:
+        cur[worker_id] = path
+    else:
+        cur.pop(worker_id, None)
+    return await save_settings(db, {"data_dirs": cur})
 
 
 async def get_token(db) -> str:

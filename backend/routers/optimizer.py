@@ -13,6 +13,7 @@ from core.config import BACKTEST_SYMBOLS, ALL_SYMBOLS
 from core.defaults import DEFAULT_STRATEGY_OVERRIDE, OPT_TRADE_KEYS
 from core.state import scanner, autotrader
 from core.utils import _clean, _watch_job_task, _job_public
+from services import ram_queue
 from services import optimizer as opt
 from services.bitunix_trade import DEFAULT_COIN_CFG
 from strategies.registry import registry as strategy_registry
@@ -80,11 +81,10 @@ async def start_optimizer(body: Dict, _: bool = Depends(require_admin)):
         })
         return {"status": "started", "job_id": job_id, "execution": "local"}
     job_id = opt.create_job(params)
-    task = asyncio.create_task(opt.run_optimizer(job_id, body, strategy_registry,
-                                                 scanner.settings, DEFAULT_COIN_CFG,
-                                                 state.db))
-    _watch_job_task(task, opt.JOBS, job_id)
-    return {"status": "started", "job_id": job_id}
+    queued = ram_queue.submit(opt.JOBS, job_id, lambda: opt.run_optimizer(
+        job_id, body, strategy_registry, scanner.settings, DEFAULT_COIN_CFG,
+        state.db), kind="optimizer")
+    return {"status": "started", "job_id": job_id, "ram_queued": queued}
 
 
 @router.post("/api/optimizer/reset")

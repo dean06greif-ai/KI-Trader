@@ -13,6 +13,7 @@ from core import state
 from core.auth import require_admin
 from core.state import scanner
 from core.utils import _clean, _job_public, _watch_job_task
+from services import ram_queue
 from services import regime_lab as lab
 from services import regime_opt
 from services.bitunix_trade import DEFAULT_COIN_CFG
@@ -100,9 +101,10 @@ async def start_analysis(body: Dict, _: bool = Depends(require_admin)):
         _enqueue_local("analysis", job_id, body)
         return {"status": "started", "job_id": job_id, "execution": "local"}
     job_id = lab.create_job("analysis", params)
-    task = asyncio.create_task(lab.run_analysis(job_id, body, state.db))
-    _watch_job_task(task, lab.JOBS, job_id)
-    return {"status": "started", "job_id": job_id}
+    queued = ram_queue.submit(lab.JOBS, job_id,
+                              lambda: lab.run_analysis(job_id, body, state.db),
+                              kind="regime_analysis")
+    return {"status": "started", "job_id": job_id, "ram_queued": queued}
 
 
 @router.post("/api/regime-lab/calibrate")
@@ -124,9 +126,10 @@ async def start_calibration(body: Dict, _: bool = Depends(require_admin)):
         _check_local_available()
         _enqueue_local("calibrate", job_id, body)
         return {"status": "started", "job_id": job_id, "execution": "local"}
-    task = asyncio.create_task(lab.run_calibration(job_id, body, state.db))
-    _watch_job_task(task, lab.JOBS, job_id)
-    return {"status": "started", "job_id": job_id}
+    queued = ram_queue.submit(lab.JOBS, job_id,
+                              lambda: lab.run_calibration(job_id, body, state.db),
+                              kind="regime_calibration")
+    return {"status": "started", "job_id": job_id, "ram_queued": queued}
 
 
 @router.post("/api/regime-lab/ema-compare")
@@ -142,9 +145,10 @@ async def start_ema_compare(body: Dict, _: bool = Depends(require_admin)):
               ("symbols", "timeframe", "days", "periods", "train_pct",
                "engine_config")}
     job_id = lab.create_job("ema_compare", params)
-    task = asyncio.create_task(lab.run_ema_compare(job_id, body, state.db))
-    _watch_job_task(task, lab.JOBS, job_id)
-    return {"status": "started", "job_id": job_id}
+    queued = ram_queue.submit(lab.JOBS, job_id,
+                              lambda: lab.run_ema_compare(job_id, body, state.db),
+                              kind="regime_ema_compare")
+    return {"status": "started", "job_id": job_id, "ram_queued": queued}
 
 
 @router.post("/api/regime-lab/kombi-calibrate")
@@ -161,9 +165,10 @@ async def start_kombi_calibrate(body: Dict, _: bool = Depends(require_admin)):
                "slope_grid", "target_min_days", "target_max_days",
                "engine_config")}
     job_id = lab.create_job("kombi_calibrate", params)
-    task = asyncio.create_task(lab.run_kombi_calibrate(job_id, body, state.db))
-    _watch_job_task(task, lab.JOBS, job_id)
-    return {"status": "started", "job_id": job_id}
+    queued = ram_queue.submit(lab.JOBS, job_id,
+                              lambda: lab.run_kombi_calibrate(job_id, body, state.db),
+                              kind="regime_kombi")
+    return {"status": "started", "job_id": job_id, "ram_queued": queued}
 
 
 @router.get("/api/regime-lab/status/{job_id}")
@@ -325,10 +330,10 @@ async def start_regime_optimize(aid: str, body: Dict, _: bool = Depends(require_
         _enqueue_local("regime_opt", job_id, {**body, "analysis_doc": _slim_doc(doc)})
         return {"status": "started", "job_id": job_id, "execution": "local"}
     job_id = lab.create_job("regime_opt", params)
-    task = asyncio.create_task(regime_opt.run_regime_optimizer(
-        job_id, body, strategy_registry, scanner.settings, DEFAULT_COIN_CFG, state.db))
-    _watch_job_task(task, lab.JOBS, job_id)
-    return {"status": "started", "job_id": job_id}
+    queued = ram_queue.submit(lab.JOBS, job_id, lambda: regime_opt.run_regime_optimizer(
+        job_id, body, strategy_registry, scanner.settings, DEFAULT_COIN_CFG, state.db),
+        kind="regime_opt")
+    return {"status": "started", "job_id": job_id, "ram_queued": queued}
 
 
 @router.post("/api/regime-lab/{aid}/assign")
@@ -562,7 +567,7 @@ async def start_walkforward(aid: str, body: Dict, _: bool = Depends(require_admi
         _enqueue_local("walkforward", job_id, {**body, "analysis_doc": _slim_doc(doc)})
         return {"status": "started", "job_id": job_id, "execution": "local"}
     job_id = lab.create_job("walkforward", params)
-    task = asyncio.create_task(regime_opt.run_walkforward(
-        job_id, body, strategy_registry, scanner.settings, DEFAULT_COIN_CFG, state.db))
-    _watch_job_task(task, lab.JOBS, job_id)
-    return {"status": "started", "job_id": job_id}
+    queued = ram_queue.submit(lab.JOBS, job_id, lambda: regime_opt.run_walkforward(
+        job_id, body, strategy_registry, scanner.settings, DEFAULT_COIN_CFG, state.db),
+        kind="regime_walkforward")
+    return {"status": "started", "job_id": job_id, "ram_queued": queued}

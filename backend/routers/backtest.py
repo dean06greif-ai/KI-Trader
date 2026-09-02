@@ -13,6 +13,7 @@ from core.config import BACKTEST_SYMBOLS, ALL_SYMBOLS
 from core.defaults import DEFAULT_STRATEGY_COIN_CFG
 from core.state import scanner, autotrader
 from core.utils import _clean, _watch_job_task, _job_public, _equity_points, _rows_to_csv
+from services import ram_queue
 from services import backtester as bt
 from services.bitunix_trade import DEFAULT_COIN_CFG
 from strategies.registry import registry as strategy_registry
@@ -91,12 +92,11 @@ async def start_backtest(body: Dict, _: bool = Depends(require_admin)):
         })
         return {"status": "started", "job_id": job_id, "execution": "local"}
     job_id = bt.create_job(params)
-    task = asyncio.create_task(bt.run_backtest(job_id, strategy_ids, symbols, days, cfg,
-                                               strategy_registry, scanner.settings,
-                                               state.db, strategy_configs, default_tf,
-                                               date_from, date_to))
-    _watch_job_task(task, bt.JOBS, job_id)
-    return {"status": "started", "job_id": job_id}
+    queued = ram_queue.submit(bt.JOBS, job_id, lambda: bt.run_backtest(
+        job_id, strategy_ids, symbols, days, cfg, strategy_registry,
+        scanner.settings, state.db, strategy_configs, default_tf,
+        date_from, date_to), kind="backtest")
+    return {"status": "started", "job_id": job_id, "ram_queued": queued}
 
 
 @router.get("/api/backtest/status/{job_id}")

@@ -20,7 +20,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "1.9.0"
+VERSION = "1.9.1"
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = SCRIPT_DIR / "worker_config.json"
 POLL_INTERVAL = 2.0
@@ -97,6 +97,29 @@ def apply_settings(settings):
     os.environ["USE_GPU"] = "1" if SETTINGS.get("use_gpu") else "0"
     ram_mb = int(SETTINGS.get("ram_limit_mb") or 4096)
     os.environ["CANDLE_CACHE_MAX_CANDLES"] = str(max(ram_mb, 512) * 1024 * 1024 // 64)
+    # Daten-Ordner vom Server übernehmen (pro Worker konfigurierbar):
+    new_dir = str(SETTINGS.get("data_dir") or "").strip()
+    if new_dir and new_dir != CONFIG.get("data_dir"):
+        try:
+            os.makedirs(new_dir, exist_ok=True)
+        except OSError as e:
+            log(f"Daten-Ordner {new_dir} nicht anlegbar: {e} – bleibe bei {CONFIG.get('data_dir')}")
+            return
+        CONFIG["data_dir"] = new_dir
+        try:
+            CONFIG_PATH.write_text(json.dumps(CONFIG, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+        os.environ["CANDLE_CACHE_DIR"] = new_dir
+        if not RUNNING:
+            try:
+                from services import candle_cache
+                candle_cache.CACHE_DIR = new_dir
+                log(f"Daten-Ordner umgestellt: {new_dir}")
+            except Exception:  # noqa: BLE001
+                log(f"Neuer Daten-Ordner {new_dir} gilt ab dem nächsten Start")
+        else:
+            log(f"Neuer Daten-Ordner {new_dir} gilt ab dem nächsten Start (Job läuft)")
 
 
 def make_registry(custom_definitions):
@@ -335,9 +358,10 @@ def data_info():
     try:
         from services import candle_cache
         syms = candle_cache.list_disk_symbols()
-        return {"symbols": [s.get("symbol") for s in syms], "detail": syms[:50]}
+        return {"symbols": [s.get("symbol") for s in syms], "detail": syms[:50],
+                "data_dir": CONFIG.get("data_dir")}
     except Exception:  # noqa: BLE001
-        return {"symbols": []}
+        return {"symbols": [], "data_dir": CONFIG.get("data_dir")}
 
 
 def cleanup_finished():
