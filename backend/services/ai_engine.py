@@ -2421,6 +2421,9 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                         self._next_due, timezone.utc).isoformat()
                     self.active_window = window
                     logger.info(f"AI Analyse-Zyklus ({window}: alle {interval_min} min)")
+                    # RAM-Bremse: Zyklus verschieben statt OOM zu riskieren
+                    from services import ram_queue
+                    await ram_queue.wait_for_ram(110, 600, "ki-analyse")
                     await self.run_analysis()
             except Exception as e:
                 logger.error(f"AI loop error: {e}")

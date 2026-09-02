@@ -88,6 +88,19 @@ class TestRamQueue:
     def test_free_mb_positive(self):
         assert ram_queue.free_mb() > 0
 
+    def test_wait_for_ram_immediate_when_free(self, monkeypatch):
+        monkeypatch.setattr(ram_queue, "free_mb", lambda: 10000.0)
+        assert asyncio.run(ram_queue.wait_for_ram(120, 5, "test", check_s=0.01)) is True
+
+    def test_wait_for_ram_waits_then_continues(self, monkeypatch):
+        vals = iter([10.0, 10.0, 500.0])
+        monkeypatch.setattr(ram_queue, "free_mb", lambda: next(vals))
+        assert asyncio.run(ram_queue.wait_for_ram(120, 5, "test", check_s=0.01)) is True
+
+    def test_wait_for_ram_timeout_returns_false(self, monkeypatch):
+        monkeypatch.setattr(ram_queue, "free_mb", lambda: 10.0)
+        assert asyncio.run(ram_queue.wait_for_ram(120, 0.05, "test", check_s=0.01)) is False
+
 
 class TestPerWorkerDataDir:
     def test_settings_for_worker_merge(self):

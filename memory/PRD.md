@@ -84,6 +84,15 @@ Gesamt 129 relevante Tests grün (iteration_32.json).
 Tests: test_ram_queue_and_worker_datadir.py (8) + test_iter33_ramqueue_datadir_review.py
 (4) + Regression 44/44 grün (iteration_33.json).
 
+## Umgesetzt (Follow-up Session 4) – OOM-Crash-Schleife (RAM-Bremse)
+User-Bug: OOM alle ~30 min OHNE Nutzung (Render 512 MB, 35 Events). Ursache:
+nach jedem Boot lädt boot_backfill 23 Symbole × 14 Tage parallel zu KI-Zyklen
+→ Crash-Schleife. Fix: ram_queue.wait_for_ram() (RAM-Bremse mit trim+Timeout);
+eingebaut in boot_backfill (je Symbol, 120 MB/900s) und ai_engine-Analysezyklus
+(110 MB/600s); ram_guard loggt alle 3 min "Prozess X MB / Container Y MB frei"
+(OOM-Diagnose in Render-Logs). Env-Hebel für User: BOOT_BACKFILL_DAYS,
+RAM_QUEUE_MIN_FREE_MB, BOOT_BACKFILL_ENABLED=0. Tests 11/11 grün (iteration_34).
+
 ## Backlog / Nächste Schritte
 - P1: strategy_coin_toggles-Bootmigration bulken (Boot auf Atlas langsam)
 - P1: Erklärung/ggf. Vereinfachung Dynamische Strategie vs. Regime-Lab (User entscheidet)

@@ -70,6 +70,30 @@ def _wait_phase(free: float) -> str:
             f"{MIN_FREE_MB} MB) – startet automatisch")
 
 
+async def wait_for_ram(min_free_mb: float = 120, max_wait_s: float = 900,
+                       tag: str = "", check_s: float = 15) -> bool:
+    """RAM-Bremse für Hintergrund-Tasks (Backfill, KI-Analyse): pausiert, bis
+    genug Container-RAM frei ist. True = frei, False = Timeout (Aufrufer fährt
+    trotzdem fort, damit nichts dauerhaft blockiert)."""
+    start = time.time()
+    while True:
+        try:
+            from services import ram_guard
+            ram_guard.trim_now()
+        except Exception:  # noqa: BLE001
+            pass
+        free = free_mb()
+        if free >= min_free_mb:
+            return True
+        if time.time() - start >= max_wait_s:
+            logger.warning(f"RAM-Bremse [{tag}]: nach {int(max_wait_s)}s nur "
+                           f"{int(free)} MB frei – fahre trotzdem fort")
+            return False
+        logger.info(f"RAM-Bremse [{tag}]: {int(free)} MB frei "
+                    f"(< {int(min_free_mb)} MB) – warte {int(check_s)}s…")
+        await asyncio.sleep(check_s)
+
+
 def submit(jobs: Dict, job_id: str, factory: Callable, kind: str = "job") -> bool:
     """Job sofort starten oder bei RAM-Knappheit einreihen.
 

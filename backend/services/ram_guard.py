@@ -68,3 +68,13 @@ async def trim_loop():
     while True:
         await asyncio.sleep(TRIM_INTERVAL_S)
         trim_now()
+        # Telemetrie: 1 Log-Zeile alle 3 min – zeigt im Render-Log, wie der
+        # RAM sich entwickelt und WANN es eng wird (OOM-Diagnose).
+        try:
+            import psutil
+            from services import ram_queue
+            rss = psutil.Process().memory_info().rss // (1024 * 1024)
+            logger.info(f"RAM-Guard: Prozess {rss} MB belegt, "
+                        f"Container {int(ram_queue.free_mb())} MB frei")
+        except Exception:  # noqa: BLE001
+            pass

@@ -180,6 +180,10 @@ async def run_boot_backfill() -> Dict:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             for sym in prio:
                 STATUS["current"] = sym
+                # RAM-Bremse: Backfill trieb den 512-MB-Server direkt nach dem
+                # Boot in den nächsten OOM-Kill (Crash-Schleife alle ~30 min).
+                from services import ram_queue
+                await ram_queue.wait_for_ram(120, 900, f"boot_backfill {sym}")
                 try:
                     candles = await candle_cache.get_candles(session, sym, DAYS)
                     STATUS["candles_loaded"] += len(candles)
