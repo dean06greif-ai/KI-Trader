@@ -22,7 +22,18 @@ logger = logging.getLogger(__name__)
 
 WS_URL = "wss://fapi.bitunix.com/public/"
 WINDOW_SEC = 30 * 60          # Ticks der letzten 30 Minuten behalten
-MAX_TICKS = 9000              # harte RAM-Grenze pro Symbol
+# Tick-Puffer pro Symbol: 9000 war die harte 512-MB-Grenze – bei BTC/ETH mit
+# hohem Tick-Volumen deckte das oft nur wenige Minuten statt 30 min ab und
+# verkürzte das Orderflow-Fenster der KI. Ab ~1,5 GB RAM (Render Pro): 30000.
+def _default_max_ticks() -> int:
+    try:
+        from services.ram_guard import is_big_ram
+        return 30000 if is_big_ram() else 9000
+    except Exception:  # noqa: BLE001
+        return 9000
+
+
+MAX_TICKS = int(os.environ.get("OF_MAX_TICKS", "0") or 0) or _default_max_ticks()
 MIN_TRADES_FOR_TEXT = 30      # unter dieser Datenlage: Fallback auf Kerzen-Proxy
 
 

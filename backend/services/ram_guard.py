@@ -32,6 +32,38 @@ def _libc():
         return None  # z.B. macOS/Alpine – Guard einfach still deaktivieren
 
 
+def container_limit_mb():
+    """RAM-Limit des Containers (cgroup) in MB – None, wenn kein Limit gesetzt."""
+    try:
+        for p in ("/sys/fs/cgroup/memory.max",
+                  "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+            if os.path.isfile(p):
+                raw = open(p).read().strip()
+                if raw == "max":
+                    return None
+                v = int(raw)
+                if v > (1 << 40):  # >1 TB = kein echtes Limit
+                    return None
+                return v / (1024 * 1024)
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def is_big_ram(threshold_mb: float = 1536) -> bool:
+    """True, wenn der Server >= ~1,5 GB RAM hat (z.B. Render Pro 2 GB).
+    Schaltet die 512-MB-Sparlimits (Kerzen-Cache, Orderflow-Ticks,
+    ML-Trainingsmenge) automatisch auf größere Werte um."""
+    lim = container_limit_mb()
+    if lim is None:
+        try:
+            import psutil
+            lim = psutil.virtual_memory().total / (1024 * 1024)
+        except Exception:  # noqa: BLE001
+            return False
+    return lim >= threshold_mb
+
+
 def setup_malloc() -> bool:
     """So früh wie möglich aufrufen (vor großen Allokationen)."""
     if not ENABLED:

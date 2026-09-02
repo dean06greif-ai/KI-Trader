@@ -25,6 +25,18 @@ from typing import Dict, List, Optional, Tuple
 
 from services.ai_memory import memory
 
+# Trainingsmengen-Limits: 6000/30000 waren die 512-MB-Sparwerte (transiente
+# RAM-Spitzen beim Auto-Training). Ab ~1,5 GB RAM: mehr Lernmasse fürs ML-Gate.
+def _train_limits() -> Tuple[int, int]:
+    try:
+        from services.ram_guard import is_big_ram
+        big = is_big_ram()
+    except Exception:  # noqa: BLE001
+        big = False
+    rows = int(os.environ.get("ML_TRAIN_ROWS", "0") or 0) or (15000 if big else 6000)
+    snaps = int(os.environ.get("ML_TRAIN_SNAPSHOTS", "0") or 0) or (60000 if big else 30000)
+    return rows, snaps
+
 logger = logging.getLogger(__name__)
 
 # Feste Feature-Reihenfolge – Modell und Vorhersage müssen identisch sein.
