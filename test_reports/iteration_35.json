@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 35 – Risiko-Sizing (Modus 'risk'), RAM-Profil, neue Playbook-Setups (order_block/fvg_fill/htf_range) und UI-Controls im KI-Trader-Panel getestet. Backend: 8/8 pytest-API-Tests grün (/api/health, /api/system/ram container-Profil, /api/ai/status Risiko-Config + Legacy-Keys, /api/ai/config Klemmen 50->10 / 999->200 / bogus ignoriert / legacy übernommen + Admin-Gate 401, /api/ai/playbook 13 Setups + maturity-Felder + live_blocked/live_stats/custom). Frontend E2E: Admin-Login via Schloss-Icon, KI-Trader-Panel, Setup-Bereich mit ai-sizing-mode-select='risk' und den 4 Risiko-Inputs (2/15/50/0.5), Umschalten legacy -> Inputs weg, zurück auf risk -> Inputs da, Persistenz 2.5 über Reload verifiziert und auf 2 zurückgesetzt; Reife-Tabelle zeigt order_block/fvg_fill/htf_range mit 'sammelt Daten' und Spalte 'Live n / WR / PnL'. KI-Trader blieb AUS, keine Live-Trades ausgelöst.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "KI-Panel > Verlauf", "issues": ["Zeitraum-Select (ai-equity-days-select) erscheint im Screenshot mit hellem/weißem Hintergrund und kaum lesbarem Text – Kontrast/Styling prüfen (alle anderen Controls sind dark-themed)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter35_risk_sizing_playbook_api.py",
+    "/app/test_reports/pytest/iter35_api.xml"
+  ],
+  "action_items": [
+    "Optional: Styling des Zeitraum-Selects im Verlauf-Tab an das Dark-Theme anpassen",
+    "Optional: Console-Rauschen beim Erst-Load (mehrere 'TypeError: Failed to fetch' aus useEffect-Fetches, u.a. fetchSession/fetchNotif) – Abort/Netzwerkfehler werden geloggt statt still behandelt; funktional keine Auswirkung"
+  ],
+  "critical_code_review_comments": [
+    "position_sizing.clamp_updates ignoriert nicht-numerische Werte still (continue) – Vorschlag: Klemm-/Ignoriervorgänge im Response oder Log sichtbar machen, sonst merkt der Nutzer nicht, dass 50 auf 10 geklemmt wurde (UI zeigt nach POST zwar 10, aber ohne Hinweis).",
+    "ai_playbook.py ist mit ~595 Zeilen noch ok, aber refresh() vereint Sperr-Logik, Live-Divergenz, Reife-Status und Feed-Meldungen – bei weiterem Wachstum in Teilfunktionen splitten."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter35_risk_sizing_playbook_api.py"],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% der geprüften Flows"},
+  "seed_data_creation": "keine – nur Config-Toggles, alle Werte auf Ausgangszustand zurückgesetzt (sizing_mode=risk, risk_per_trade_pct=2, risk_max_leverage=50)",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md), funktioniert für UI-Login und POST /api/auth/login {username,password}",
+  "context_for_next_testing_agent": "API-Regressionstests der Risiko-Sizing/Playbook-Features liegen in /app/backend/tests/test_iter35_risk_sizing_playbook_api.py (Ausführung: pytest tests/... -p xdist -n 0, pytest.ini erzwingt sonst xdist-Args). /api/ai/config ist POST + Bearer-Admin-Token. Erwartete Klemmen: risk_per_trade_pct 0.1-10, risk_max_leverage 1-200. Frontend: Admin-Login über data-testid admin-lock-button -> admin-username/admin-password/admin-login-submit; Panel über strategy-tab-ai_trader + edit-strategy-params-btn; Sizing-Controls unter ai-setup-toggle, Reife-Tabelle unter ai-equity-toggle. KI-Trader enabled=false lassen.",
+  "rca_of_the_issue": "n/a – keine Defekte gefunden; einzige Auffälligkeiten sind kosmetisch (Select-Styling) und Console-Rauschen durch nicht abgefangene Fetch-Fehler beim Seitenwechsel/Reload."
+}

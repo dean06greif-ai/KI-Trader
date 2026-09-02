@@ -1,0 +1,63 @@
+{
+  "summary": "Iteration 11 – Verifikation des neuen MAE/Trough-Trackings (Spiegelbild MFE). Backend Unit-Tests test_trade_improvements.py 16/16 grün. Neue API-Suite /app/backend/tests/test_iter11_mae_api.py (9 Tests, 7 grün / 2 rot – echter Logikfehler, siehe unten) gegen die öffentliche Preview-URL: computed.trough_price/trough_distance_pct/mae_pct auf allen Trades vorhanden, kein _id-Leak, Alt-Trades (auch alle 390 geschlossenen) -> trough_price/mae_pct null, Chart-Endpoint liefert trade.trough_price (+ 404 bei unbekannter ID), Paging/total-Regression grün. Iteration-10-Suite test_iter10_trade_improvements_api.py 10/10 grün. Frontend (Playwright, öffentliche URL, ANALYSE -> Trades): Meta-Feld trade-trough-{id} mit korrektem Label ('Tiefster Gegenlauf' LONG / 'Höchster Gegenlauf' SHORT), Alt-/geschlossene Trades '—', lvl-trough-Zeile (#C97A8A, kursiv) erscheint nur bei vorhandenem trough und ist korrekt in die preissortierte Leiter einsortiert, Trade-Chart bei Alt-Trade (ETHUSDT-1787507277786) lädt on-demand (7 Canvas, Entry/SL/Exit/TP-Linien) ohne Runtime-Error-Overlay und ohne Konsolenfehler. Regression grün: Strategie-Filter (56->53->56), 'Mehr laden (+100)' 56->156. Keine Schreib-/Order-Calls ausgeführt.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/autotrade/trades (core/utils.py::_enrich_trade, trough-Block ~Zeile 182)",
+        "issue": "MAE kann POSITIV werden (Gegenlauf oberhalb Entry bei LONG). Reproduktion: offener adoptierter Trade BTCUSDT-ext-1787408624596 (LONG, entry 72703.2, kein gespeicherter trough_price, current 77368.2) -> computed.trough_price = 77368.2, trough_distance_pct/mae_pct = +6.416. Ursache: bei offenen Trades ohne gespeicherten trough ist cand_t = [current_price], das Minimum ist also der aktuelle (im Gewinn liegende) Kurs; der Tick-Tracker in _manage_trade nimmt dagegen immer auch den Entry als Kandidat (update_trough(side, prev, entry, price)) und liefert deshalb korrekt <= entry. Folge in der UI: 'Tiefster Gegenlauf 77368.2 (+6.416%)' identisch mit dem Höchststand, und die lvl-trough-Zeile steht ÜBER dem Entry. Fix-Vorschlag: cand_t = [v for v in (trough, cur, entry) if v] (analog zum Tracker) bzw. mae_pct auf <= 0 klemmen. Betrifft alle Trades, die vor dem MAE-Update eröffnet/adoptiert wurden und im Plus laufen.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/autotrade/trades",
+        "issue": "mae_pct wird als '-0.0' serialisiert (negatives Null, z.B. ADAUSDT-1787508257296). UI rendert daraus '+0%' (JS String(-0) == '0'), also nur kosmetisch – trotzdem sauberer wäre round(x, 3) + 0.0."
+      },
+      {
+        "endpoint": "Preview-URL (Cold Start)",
+        "issue": "Erster Testlauf gegen die Preview-URL lieferte 502 (Cloudflare-HTML) für /api/autotrade/trades?limit=5; direkte Folgeaufrufe (5x preview + 5x localhost) alle 200 in <1,2s. Kein Applikationsfehler, aber Testagenten sollten den ersten Call mit hohem Timeout/Retry absetzen."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "PerformanceAnalytics.js (Meta-Feld + lvl-trough-Ladder)",
+        "issue": "Zeigt die fehlerhaften Backend-Werte 1:1 an: bei adoptierten/alten offenen Trades ohne gespeicherten trough steht 'Tiefster Gegenlauf' = Höchststand und die lvl-trough-Zeile liegt über dem Entry (irreführend). Reine Folge des Backend-Bugs, keine separate Frontend-Änderung nötig.",
+        "selector": "[data-testid=\"trade-trough-BTCUSDT-ext-1787408624596\"]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Aufgeklappte Trade-Karte (Preis-Leiter)",
+        "issues": ["lvl-trough (#C97A8A, kursiv) ist gegenüber lvl-peak gut unterscheidbar; Kontrast auf dunklem Grund ok. Keine neuen Layout-/Spacing-Probleme gefunden."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_mae_api.py",
+    "/app/backend/tests/test_trade_improvements.py",
+    "/app/backend/tests/test_iter10_trade_improvements_api.py"
+  ],
+  "action_items": [
+    "core/utils.py::_enrich_trade – Entry in die trough-Kandidatenliste offener Trades aufnehmen (oder mae_pct auf <=0 klemmen), damit MAE nie positiv wird (Repro: BTCUSDT-ext-1787408624596).",
+    "Optional: symmetrisch prüfen, ob mfe_pct bei offenen Trades ohne gespeicherten peak negativ werden kann (peak = current_price < entry) – falls unerwünscht, ebenfalls Entry als Kandidat aufnehmen.",
+    "Optional: '-0.0' in mae_pct normalisieren."
+  ],
+  "critical_code_review_comments": [
+    "update_trough() als Wrapper um update_peak mit invertierter Seite ist elegant und korrekt (Unit-Tests LONG/SHORT grün); der Tick-Block in _manage_trade (~2528) und der closed-Block (trough_x ~2753) sowie manual_close setzen trough_price konsistent.",
+    "_enrich_trade spiegelt den peak-Block NICHT vollständig: der Tracker nutzt (entry, price) als Kandidaten, der Enricher nur (trough, current) – daraus entsteht der positive-MAE-Bug. Symmetrie herstellen.",
+    "PerformanceAnalytics.js ist mit 1030 Zeilen deutlich über der 700-Zeilen-Grenze – Trade-Karte/Ladder in eigene Komponenten auslagern (Bestandsbefund).",
+    "TradeChart.js: 'if (t.trough_price)' truthy-Check ist bei Preisen unkritisch; Alt-Trades rendern korrekt ohne trough-Linie (verifiziert). Eine echte trough-Linie konnte nicht verifiziert werden, da 0 von 390 geschlossenen Trades bereits einen trough_price haben (erwartet)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter11_mae_api.py"],
+  "success_rate": {"backend": "93% (25/27 Tests: 16 Unit + 10 Iter10-API grün, 7/9 neue MAE-API-Tests grün)", "frontend": "100% der getesteten Flows (Anzeige zeigt aber die fehlerhaften MAE-Werte)"},
+  "seed_data_creation": "keine – nur Lese-Endpoints, Produktions-DB unangetastet",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "nicht benötigt (nur öffentliche Lese-Endpoints)",
+  "context_for_next_testing_agent": "Neue Suite: cd /app/backend && python -m pytest tests/test_iter11_mae_api.py -n 0 -q (nutzt REACT_APP_BACKEND_URL, Override via BACKEND_BASE_URL möglich). 2 Tests (test_trough_plausibility, test_mae_sign) schlagen absichtlich fehl, solange der positive-MAE-Bug in core/utils.py besteht – nach dem Fix müssen sie grün werden. Stand DB: 0 von 390 geschlossenen Trades haben trough_price (Feature trackt erst ab jetzt) -> trough-Linie im TradeChart erst nach dem nächsten Close prüfbar. UI-Selektoren: view-trades, trade-card-toggle-{id}, trade-trough-{id}, trade-peak-{id}, trade-history-chart-btn-{id}, trade-filter-strategy, load-more-closed-btn.",
+  "rca_of_the_issue": "core/utils.py::_enrich_trade berechnet für offene Trades den Trough als min/max aus [gespeicherter trough, current_price]. Fehlt der gespeicherte Wert (Trades vor dem MAE-Update, adoptierte externe Positionen), bleibt nur der aktuelle Kurs übrig – liegt der im Gewinn, wird der 'schlechteste Stand' oberhalb des Entry gemeldet und mae_pct positiv (+6.416% bei BTCUSDT-ext-1787408624596). Der Tick-Tracker vermeidet das, weil er den Entry immer als Kandidaten mitgibt. Mitigation: Entry in die Kandidatenliste aufnehmen bzw. mae_pct auf <=0 begrenzen."
+}

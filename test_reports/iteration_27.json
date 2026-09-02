@@ -1,0 +1,43 @@
+{
+  "summary": "Tested HYPEUSDT (Bitunix) integration, scanner_settings key-persistence fix, optimizer/apply, custom-strategy persistence and the new Strategie-Copilot (backend + UI). 18 pytest cases created in /app/backend/tests/test_iter27_copilot_hype_settings.py: 16 passed, 1 skipped, 1 failed. The single failure is a real, reproducible blocker: POST /api/copilot/chat takes 200-280s (measured 3m20s and 4m36s locally) and therefore returns 502 Bad Gateway through the public ingress (~60s timeout) - the Copilot chat is unusable from the browser. All other Copilot endpoints (status/apply/review/history/DELETE history, auth guards, 400/422 error paths) work correctly. Frontend: page loads, HYPE appears as 11th entry in TOP 10 COINS and its chart loads with live Bitunix candles, Tools -> Strategie-Optimizer modal opens, strategy-copilot panel with toggle/quick-prompts/input/send works in both Optimizer and StrategyBuilder, thinking indicator shows - but the reply never arrives due to the 502.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/copilot/chat", "issue": "Request duration 200-280s -> public ingress returns 502 Bad Gateway (HTML), frontend shows only 'Copilot denkt nach...' then a generic error toast. Reproduced via pytest (external URL, 502 after ~60s) and via UI (RESP 502 POST copilot/chat). Locally (localhost:8001) the same request completes with a valid German reply after 3m20s / 4m36s, so the logic is correct but far too slow. Root causes: (a) services/ai_providers.py line ~674 creates AsyncOpenAI(...) WITHOUT a timeout -> openai default 600s, so a slow OpenRouter free model can hang for minutes; (b) chosen free models (nvidia/nemotron-3.5-lightning:free, nemotron-3-ultra-550b) are extremely slow/queued and the same keys are concurrently used by the KI-Trader engine; (c) empty-response retry adds another full round trip (log: 'leere Antwort - einmaliger Retry in 2s'). Fix: per-request timeout (~30-45s) for the copilot chain + fail over to the next model, and/or make the chat asynchronous (job id + polling / SSE) so the HTTP request returns within the ingress limit.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/copilot/chat", "issue": "The user message is persisted (copilot_chat) BEFORE the LLM call; when the call fails/times out the history keeps an orphan user message with no assistant reply."},
+      {"endpoint": "GET /api/ai/memory", "issue": "404 - no read endpoint to verify the copilot_note memory bridge from outside; only verifiable in DB (test skipped)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Copilot chat (Optimizer + StrategyBuilder)", "issue": "Send works, optimistic user bubble + 'Copilot denkt nach...' appear, but the fetch gets a 502 HTML response after ~60s; res.json() on the HTML body throws so the user only sees the generic catch-toast 'Verbindungsfehler zum Copilot' instead of a meaningful message. Suggest surfacing a timeout-specific hint once the backend latency is fixed.", "affected_selectors": ["[data-testid=\"copilot-send-btn\"]", "[data-testid=\"copilot-messages\"]"]}
+    ],
+    "design_issues": [
+      {"screen": "Global (console)", "issues": ["React hydration warning: '<span> cannot be a child of <option>' - invalid HTML inside a <select> (harmless but should be cleaned up)"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter27_copilot_hype_settings.py", "/app/test_reports/pytest/iter27_results.xml"],
+  "action_items": [
+    "Add an explicit request timeout (30-45s) for the Copilot OpenRouter calls (AsyncOpenAI(timeout=...) in services/ai_providers.py) and/or turn /api/copilot/chat into an async job (POST returns id, GET polls) so it never exceeds the ~60s ingress limit",
+    "Prefer fast OpenRouter free models for the copilot chain and skip models that already timed out (short cooldown)",
+    "Only persist the user message after a successful LLM reply (or mark failed turns) to avoid orphan history entries",
+    "Show a specific error message in StrategyCopilot when the response is not JSON (502/timeout) instead of the generic 'Verbindungsfehler'",
+    "Optional: fix invalid <span> inside <option> markup (React hydration warning)"
+  ],
+  "critical_code_review_comments": [
+    "services/ai_providers.py:674 AsyncOpenAI is created without timeout -> openai SDK default 600s; any slow free model blocks the request far beyond the ingress limit. Set a provider/role-specific timeout.",
+    "routers/copilot.py copilot_chat catches all exceptions as 502; with the missing timeout the client never even receives this JSON error (ingress 502 HTML wins).",
+    "strategy_copilot.chat stores the user message before the LLM call - not transactional, leaves half turns in copilot_chat.",
+    "scanner.save_settings targeted key persistence verified working: unknown keys are reported via ignored_keys, known keys persist, optimizer/apply and custom-strategy creation both write strategy_params/strategy_timeframes/enabled_strategies without clobbering other keys."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter27_copilot_hype_settings.py"],
+  "success_rate": {"backend": "94% (16/17 executed passed)", "frontend": "85% (all UI flows OK, copilot reply blocked by backend 502)"},
+  "seed_data_creation": "Created one temporary custom strategy TEST_RSI_* (deleted in teardown); set notify_cooldown_min=7, strategy_params.scalping_4_rules.rsi_period=13 then 14 and strategy_timeframes.scalping_4_rules=1m via the apply endpoints; copilot chat history was cleared during UI testing.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md). NOTE for UI testing: localStorage needs BOTH 'admin_token' AND 'admin_token_ts' (Date.now()), otherwise auth.js getToken() returns null and all admin actions silently no-op.",
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/test_iter27_copilot_hype_settings.py -v -o addopts=''. Everything passes except TestCopilot::test_chat_real_llm (502 via public URL because the LLM call needs 200-280s). To measure latency use localhost:8001 with curl -m 300. HYPEUSDT, settings key persistence, optimizer/apply, copilot apply/review/history are all verified green - focus the next run on the copilot chat latency fix and on the UI proposal/apply flow (copilot-proposal / copilot-apply-btn) which could not be exercised because no chat reply was received in the browser.",
+  "rca_of_the_issue": "POST /api/copilot/chat -> StrategyCopilot.chat -> ai_providers.generate_chain -> _oai_generate uses a cached AsyncOpenAI client created without a timeout (default 600s). The OpenRouter free models in the chain (nvidia/nemotron-*:free) respond only after several minutes (plus a 2s empty-response retry), so the HTTP request outlives the Kubernetes/Cloudflare ingress timeout (~60s) and the browser/pytest receives a 502 Bad Gateway HTML page while the backend later logs 200 OK. Mitigation: bound the per-call time (timeout + next-model failover) or decouple the request from the LLM call via a polling/streaming endpoint."
+}
