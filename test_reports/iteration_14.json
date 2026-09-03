@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 14 (read-only, LIVE keys respected): verified the 3 changes. (1) Backend outside_team/team_model classification: 7/7 tests in test_backlog_p1_p2_fixes.py pass (incl. test_provider_internal_substitute_is_flagged_outside_team, test_inside_team_fallback_not_flagged, test_configured_models_only_explicit_selection) + regression 5/5 in test_role_fallback_attribution.py/test_role_attribution_stream_iter9.py. New /app/backend/tests/test_iteration15_fallback_shape.py: GET /api/ai/status returns 200 with providers_health.active_fallbacks as list (currently empty, in-memory); in-process record_result('openrouter','nvidia/nemotron-3-super-120b-a12b:free',role='news_watcher') -> health_status() gives outside_team=True and team_model='<configured primary>' (verified live objects). (2) UI: KI-Team tab renders 9 role cards; ai-pending-models is now at the very bottom (pendingTop 3181px > supervisorTop 1746px > lastRoleCardTop 1592px) with ~35 discovered models; no Bestaetigen/Verwerfen clicked. (3) Warn dropdown opens (Cerebras rate-limits, Analyst failures listed); active_fallbacks currently empty so ai-active-fallbacks-hint is not rendered - code review of AITradingPanel.js 997-1027 confirms hint + '(gewaehlt: {team_model})' badge are inside the active_fallbacks>0 branch. SlippageStatsCard now has 1 measured market trade -> groups render, slippage-verdict correctly absent (needs market AND maker/limit data).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/ai/status", "issue": "Occasional 502 / very slow responses under load: 1st call timed out at 60s (502 from ingress), retry 21.8s, then 0.13s. Worth checking blocking work in the status handler / event-loop starvation."},
+      {"endpoint": "providers_health.active_fallbacks", "issue": "Possible under-reporting (not caused by this change): backend log shows 'AI [market_observer]: nutzt groq/openai/gpt-oss-20b (Haupt-Modell: gemini-3.6-flash)' yet active_fallbacks stayed []. record_result uses requested=chain[0][1]; when the primary model is pre-skipped (cooldown) the chain starts at the substitute, so requested==model and no fallback is recorded. Verify whether requested should always be the configured primary."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "KI-Team tab (AITradingPanel)", "issues": ["React console warning: 'In HTML, <span> cannot be a child of <option>' originating from AITradingPanel.js ~1952 role-refresh <select><option>{v}</option> (dev instrumentation wraps dynamic children in a span). Cosmetic/dev-only, but the only console error seen."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration15_fallback_shape.py",
+    "/app/backend/tests/test_backlog_p1_p2_fixes.py"
+  ],
+  "action_items": [
+    "Note: test_backlog_p1_p2_fixes.py contains 7 tests, not 8 as stated in the request (all pass).",
+    "Investigate slow/502 GET /api/ai/status (60s timeout observed once).",
+    "Optional: check active_fallbacks recording when the primary model is skipped due to cooldown (requested=chain[0][1] may hide the fallback)."
+  ],
+  "critical_code_review_comments": [
+    "_fallback_team_info swallows all exceptions and returns (None, None); UI then silently drops the NOT-FALLBACK badge. Consider logging at debug level so a broken role config is detectable.",
+    "AITradingPanel.js is ~2250 lines - split (health dropdown, team panel, lab) into sub-components per file-size guideline."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration15_fallback_shape.py"],
+  "success_rate": {"backend": "100% (14/14 unit + shape tests)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "none (read-only; one in-process record_result call affecting only the pytest process memory)",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / Dean06Greif!/Admin (admin-lock-button unlock required before edit-strategy-params-btn opens the AI panel)",
+  "context_for_next_testing_agent": "AI panel opens: click admin-lock-button -> enter admin password -> click edit-strategy-params-btn (with KI Trader strategy selected). Tabs: ai-team-toggle etc. Warn dropdown: ai-health-badge. active_fallbacks is in-memory and was empty during this run, so ai-active-fallbacks-hint/ai-fallback-outside-team-* could not be observed live; use tests/test_iteration15_fallback_shape.py for in-process verification. slippage-stats now has measured_trades=1 (market only) so slippage-groups renders and slippage-verdict is still (correctly) absent.",
+  "rca_of_the_issue": "N/A - no new defect. The reported bug fix works: role_manager.configured_models() only returns the 3 explicitly selected models, so provider-internal substitutes are flagged outside_team=True with team_model set."
+}

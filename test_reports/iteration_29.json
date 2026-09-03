@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 29 - Copilot advisor rewrite (settings-Vorschlag + shared OpenRouter fallback) + Marktphasen-Filter/Regime-Gate. Backend: 12/12 pytest passed (inkl. optional live-LLM chat mit COPILOT_LLM=1). Frontend: alle geforderten Flows funktionieren - Optimizer/Backtester/RegimeLab-Copilot-Embed, Modell-Auswahl mit deepseek + Label 'OpenRouter-Keys (geteilt)', 5 Quick-Prompts, 'Fuer mich einstellen' liefert Einstellungs-Vorschlag in ~1s (Modell offenbar in Kandidaten-Kette schnell), 'Uebernehmen' schreibt 5 Felder ins Formular und zeigt Toast. SAT-Modal: Regime-Filter-Block sichtbar sobald PAPER/LIVE gewaehlt, Checkbox toggelt, 3 Phasen-Buttons mit 'Seitwaerts' vorausgewaehlt (aktive Klasse), Info-Zeile zeigt 'Leichter Aufwaertstrend (61.2% Sicherheit)', Persistenz nach Speichern verifiziert (config API: regime_filter_enabled=true, regime_block_phases=['seitwaerts']). Keine Regressionen an /api/settings, /api/strategies, /api/optimizer/active, /api/copilot/history, /api/auth/login.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/copilot/status", "issue": "Erstaufruf gelegentlich >15s (Ingress-502 beobachtet). Retry-Logik im Test noetig; kein Fix-Kandidat weil Cold-Start-typisch."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "StrategyAutoTradeModal", "issues": ["Marktphasen-Filter-Block ist bei Modus 'AUS' unsichtbar (nur PAPER/LIVE) - beabsichtigt, aber Nutzer koennten es suchen. Kein Bug."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter29_copilot_regime.py",
+    "/app/test_reports/pytest/iter29.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/copilot.py apply: settings-Type wird korrekt mit 400 abgelehnt, Fehlermeldung verweist auf Panel-Button - klar.",
+    "SAT-Modal: sat-regime-filter ist direkt das <input type='checkbox'> (keine Wrapper-Struktur). Semantisch ok, aber assistive Tech-Nutzer haben keinen zugehoerigen <label for>. Feedback fuers E1: htmlFor am umgebenden Text ergaenzen fuer bessere A11y.",
+    "regime_phase Endpoint arbeitet als Public (kein require_admin) - fuer eine reine Lese-Info ok, aber kann bei vielen Symbol-Calls den Regime-Worker belasten. Cache ist laut Reihenfolge vorhanden - fein.",
+    "Optimizer-Copilot lieferte proposal in ~1s beim Testlauf. FAST_MODEL_ORDER greift wie erwartet aus Iter 28."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter29_copilot_regime.py"
+  ],
+  "success_rate": {"backend": "100% (12/12 inkl. optional LLM)", "frontend": "100% (Optimizer+Backtester+RegimeLab Copilot-Embed, SAT-Regime-Filter, Apply-Flow, Persistenz)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin - LocalStorage-Injection nach POST /api/auth/login liefert 'token' funktioniert.",
+  "seed_data_creation": "Test-Konfig strategy_coin_configs['scalping_4_rules_BTCUSDT'] mit regime_filter_enabled=true, regime_block_phases=['seitwaerts'], mode='paper' angelegt. Zusaetzlich strategy_coin_configs['trend_following_BTCUSDT'] via pytest. Kein Trade ausgeloest.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Wichtige Fakten: (1) sat-regime-filter data-testid sitzt DIREKT am <input type='checkbox'> - nicht am umgebenden Container. Zum Toggeln page.locator('[data-testid=sat-regime-filter]').check() nutzen. (2) Der Regime-Filter-Block ist im SAT-Modal nur sichtbar wenn Modus PAPER oder LIVE (sat-mode-paper/sat-mode-live), NICHT bei AUS. (3) tools-menu Ids: tools-menu-backtester / tools-menu-optimizer / tools-menu-regime-lab. (4) Es gibt keine per-Coin-blitz-Icons in der Sidebar - die Auto-Trade-Modal-Buttons pro Strategie heissen strategy-trade-toggle-{strategy_id} (z.B. strategy-trade-toggle-scalping_4_rules) und operieren auf dem aktuell selektierten Coin. (5) Copilot-Model-Endpoint POST /api/copilot/model akzeptiert {model: null} zum Reset. (6) Erste /api/copilot/status Anfrage kann >15s dauern - Tests mit Retry versehen.",
+  "rca_of_the_issue": "Keine offenen Bugs. Ein historischer Cold-Start-Effekt bei /api/copilot/status (>15s beim allerersten Aufruf) ist beobachtet aber nicht reproduzierbar auf Warm-Calls - Test enthaelt Retry-Loop. Nicht als Regression zu werten."
+}

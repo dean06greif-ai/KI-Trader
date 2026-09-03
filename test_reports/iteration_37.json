@@ -1,0 +1,40 @@
+{
+  "summary": "Tested ONLY the new changes: (1) chart badge leak on coin switch, (2) GOLD/SILVER/OIL live prices via Bitunix, (3) setup-lifecycle API shape (/api/ai/playbook) + Setup-Reife UI table. Backend: 13/13 pytest checks green (playbook rules/lifecycle/maturity, fresh klines for GOLD/SILVER/OIL/BTCUSDT <=5min, /api/ai/diagnosis data_quality ages <=5min, seed trades visible via /api/autotrade/trades without _id leakage). Frontend: badge bug is FIXED - BTC chart shows TEST-BTC-1/TEST-BTC-2, after clicking ETH within ~0.8s only TEST-ETH-1 (zero stale BTC badges) and after 5s still only ETH; back to BTC restores the 2 BTC badges with no ETH badge; SOL (no open trades) renders no 'chart-open-trades' container. KI-Trader panel Setup-Reife table verified (Profil + Phase columns, 13 phase cells all 'sammelt Daten') after admin login.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/klines/{symbol}", "issue": "Intermittent 502 (ingress HTML error page) on ~2 of 8 direct calls; retry succeeds. Also seen as 'TypeError: Failed to fetch' console errors in the browser on first page load. Worth verifying gateway/upstream timeout for the kline route."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "KI Trader > Verlauf (AIEquityPanel)", "issues": ["Day-range dropdown [data-testid='ai-equity-days-select'] is an unstyled native <select>: light/white box with hard-to-read text inside the dark panel - should use the app/shadcn styled select"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter37_lifecycle_resources_api.py",
+    "/app/backend/tests/_iter37_seed.py",
+    "/app/test_reports/pytest/iter37.xml"
+  ],
+  "action_items": [
+    "Optional: style the ai-equity-days-select (native select clashes with dark theme)",
+    "Optional: investigate intermittent 502 on /api/klines through the preview ingress (frontend logs 'Failed to fetch' on cold load)"
+  ],
+  "critical_code_review_comments": [
+    "Badge isolation is now double-guarded (useTradeMarkers lastSymbolRef reset + sameSymbol filter in MainChart) - correct and verified; no further change needed.",
+    "instruments._resource() now uses live_source='bitunix' with yahoo live_fallback - confirmed fresh (<5min) candles for GOLD/SILVER/OIL end-to-end."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter37_lifecycle_resources_api.py",
+    "/app/backend/tests/_iter37_seed.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "The requested seed trades TEST-BTC-1/TEST-BTC-2 (BTCUSDT) and TEST-ETH-1 (ETHUSDT) did NOT exist in test_database.auto_trades (collection was empty) - I created them (status open, mode paper, strategy_id TEST_STRAT) with entry = live price and SL/TP +-50% so the paper watchdog cannot close them. Re-seed anytime via 'python /app/backend/tests/_iter37_seed.py' (uses fixed prices) or the live-price snippet in the report notes. Note: a concurrently running test suite called POST /api/analytics/clear (range=hour, scope=all) and deleted 2 of the 3 seed trades mid-run (audit_log 16:40:08); they were re-seeded and are open again. Also one engine-created paper trade (BTCUSDT-<ts>) is open, so BTC currently shows 3 badges (2 TEST + 1 real) - expected, not a bug.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md) - required to open the KI-Trader panel via strategy-tab-ai_trader + edit-strategy-params-btn",
+  "context_for_next_testing_agent": "Path to the Setup-Reife table: click [data-testid='strategy-tab-ai_trader'] -> [data-testid='edit-strategy-params-btn'] -> admin login modal -> click edit-strategy-params-btn again -> [data-testid='ai-equity-toggle'] ('Verlauf') -> table [data-testid='ai-setup-maturity-table']. Badge testids: chart-open-trades / chart-open-badge-<tradeId>. Backend regression file: /app/backend/tests/test_iter37_lifecycle_resources_api.py (run with pytest, xdist is preconfigured in pytest.ini). Beware: other suites in /app/backend/tests contain destructive analytics_clear / reset calls that wipe open paper trades - re-seed before the UI badge test.",
+  "rca_of_the_issue": "Original badge bug root cause (already fixed by dev agent): openTrades state was only replaced when the trade fetch for the new symbol resolved, so the previous coin's badges stayed rendered. Fix verified: useTradeMarkers clears openTrades/counts/pin synchronously on symbol change (lastSymbolRef) and MainChart additionally filters with sameSymbol(); no stale badge observed either immediately (~0.8s) after switching or after 5s."
+}

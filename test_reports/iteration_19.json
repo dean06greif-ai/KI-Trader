@@ -1,0 +1,41 @@
+{
+  "summary": "Backend-only session: boot migrations (Cerebras-Slots, Heatmap-off, Slippage-Artefakte, Hebel-Proposals), _apply_changes auto_leverage_enabled=false, Duplikat-Guard, Rohstoff-Stale-Limit, Config-Klemmen. Alle 8 Prüfpunkte grün. Keine Writes gegen PROD_MONGO_URL.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "backend boot", "issue": "Pre-existing (aus iteration_18 bekannt): einmalige ModuleNotFoundError: 'telegram' aus services/telegram_bot.py im err.log. Backend startet normal weiter. Nicht durch diese Session verursacht."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/tests/test_boot_migrations_and_guards.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "test_execution_details": {
+    "new_tests_run": "python tests/test_boot_migrations_and_guards.py => 'ALLE TESTS GRÜN (7/7)' (Cerebras-Slot-Ersatz, Heatmap-off+Idempotenz, Slippage-Artefakt-Bereinigung Market>2%/Maker unangetastet, Hebel-Proposals Senkung angewendet+Duplikat superseded+Erhöhung offen+restriktive abgelehnt, _apply_changes deaktiviert Auto-Hebel, Duplikat-Guard mit Fenster/Richtung/0=aus, Rohstoff-Stale-Limit 20).",
+    "boot_migration_markers_dev_db": "settings._id=boot_migrations enthält cerebras_shutdown_v1=true, heatmap_off_v1=true, slippage_artifacts_v1=true, leverage_proposals_v1=true (+ *_at Zeitstempel).",
+    "boot_log_line": "backend.err.log enthält 'INFO:services.boot_migrations:Boot-Migration Hebel-Proposals: 0 Senkungen angewendet ...' (Dev-DB hatte keine offenen Hebel-Proposals, daher 0 - Migration lief korrekt).",
+    "api_ai_status": "GET /api/ai/status => 200. config.dup_entry_window_min=30, stale_price_max_min_commodity=20, use_heatmap_data=false, smart_skip_move_pct=0.05 (float, per iteration_18 Kontext beabsichtigt).",
+    "config_clamp_dup_entry": "POST /api/ai/config {dup_entry_window_min: 9999} => geklemmt auf 720. Wiederhergestellt auf 30. PASS.",
+    "config_clamp_stale_commodity": "POST /api/ai/config {stale_price_max_min_commodity: -5} => geklemmt auf 0. Wiederhergestellt auf 20. PASS.",
+    "unit_pytest": "cd /app/backend && python -m pytest tests/ -m unit -q => 892 passed, 3 warnings in 21.99s. Identisch zu iteration_18.",
+    "backend_health": "Nur 1 Traceback (bekannter telegram-import, aus iteration_18). Keine neuen Tracebacks. /api/ai/status antwortet 200."
+  },
+  "action_items": [
+    "Optional (nicht in Session-Scope): telegram-Modul installieren oder Import in services/telegram_bot.py gaten, um pre-existing Startup-Traceback zu eliminieren."
+  ],
+  "critical_code_review_comments": [
+    "services/boot_migrations.py: Marker-Design (settings._id='boot_migrations' mit *_v1 Flags) idempotent und konsistent mit smart_skip_migrated_v1 aus iteration_18.",
+    "ai_engine_governance._apply_changes setzt bei Hebel-Changes zusätzlich auto_leverage_enabled=false - respektiert aber explizit mitgeschicktes Flag (Test 5). Gutes Defensive-Design gegen Auto-Hebel-Overwrite.",
+    "Config-Klemmen (dup_entry_window_min: 0..720; stale_price_max_min_commodity: >=0) wirken bei API-Update - sauberer Schutz gegen Fehleingaben aus KI-Setup-UI.",
+    "Slippage-Artefakt-Migration filtert korrekt nur Market-Orders mit slippage_pct>2% - Maker-Messungen (die per Limitpreis=Fill legitim sein können) bleiben unangetastet."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "n/a (skipped as requested)"},
+  "test_credentials": "Admin-Login aus /app/memory/test_credentials.md verwendet (POST /api/auth/login).",
+  "seed_data_creation": "Nur temporär in eigener Test-DB crypto_scanner_test_bootmig (drop_database im finally). Für Config-Klemmen-Test kurzzeitig dup_entry_window_min/stale_price_max_min_commodity via API mutiert und danach auf 30/20 wiederhergestellt.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Alle 8 Prüfpunkte grün. PROD_MONGO_URL blieb unangetastet. Boot-Migration-Marker in Dev-DB gesetzt - nächster Boot triggert keine Re-Migration. Config-Werte (dup_entry_window_min=30, stale_price_max_min_commodity=20) wiederhergestellt. Unit-Suite weiterhin 892 passed. Bekanntes telegram-Import-Traceback existiert weiterhin (unrelated).",
+  "rca of the issue": "n/a - keine Bugs im Scope."
+}
