@@ -79,11 +79,27 @@ agenthub/agents/youtube/db
 memory/test_credentials.md
 
 # Mobile development
-android-sdk/
+android-sdk/frontend/node_modules/.cache/default-development/0.pack
+frontend/node_modules/.cache/default-development/5.pack
+frontend/node_modules/.cache/default-development/6.pack
 .env
 .env.*
 *.env
 credentials.json
 *.key
 .credentials
-kitrader/frontend/node_modules/.cache/default-development/0.pack
+frontend/node_modules/.cache/default-development/1.pack
+frontend/node_modules/.cache/default-development/4.pack
+frontend/node_modules/.cache/default-development/2.pack
+frontend/node_modules/.cache/default-development/0.pack
+frontend/node_modules/.cache/default-development/3.pack
+
+# Lokaler Worker MUSS im Repo bleiben (Worker-Paket-Download braucht die Dateien)
+!local_worker/
+!local_worker/worker.py
+!local_worker/requirements.txt
+!local_worker/README.md
+!local_worker/start_worker.bat
+!local_worker/start_worker.sh
+local_worker/worker_config.json
+local_worker/worker_data/

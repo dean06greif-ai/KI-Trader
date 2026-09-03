@@ -1,0 +1,1831 @@
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/.gitconfig /app/.gitconfig
+--- /tmp/KI-Trader/.gitconfig	2026-09-02 06:54:03.087634271 +0000
++++ /app/.gitconfig	1970-01-01 00:00:00.000000000 +0000
+@@ -1,3 +0,0 @@
+-[user]
+-	email = github@emergent.sh
+-	name = emergent-agent-e1
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/.pytest_cache/.gitignore /app/backend/.pytest_cache/.gitignore
+--- /tmp/KI-Trader/backend/.pytest_cache/.gitignore	1970-01-01 00:00:00.000000000 +0000
++++ /app/backend/.pytest_cache/.gitignore	2026-09-02 06:56:32.464636277 +0000
+@@ -0,0 +1,2 @@
++# Created by pytest automatically.
++*
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/.pytest_cache/CACHEDIR.TAG /app/backend/.pytest_cache/CACHEDIR.TAG
+--- /tmp/KI-Trader/backend/.pytest_cache/CACHEDIR.TAG	1970-01-01 00:00:00.000000000 +0000
++++ /app/backend/.pytest_cache/CACHEDIR.TAG	2026-09-02 06:56:32.464636277 +0000
+@@ -0,0 +1,4 @@
++Signature: 8a477f597d28d172789f06886806bc55
++# This file is a cache directory tag created by pytest.
++# For information about cache directory tags, see:
++#	https://bford.info/cachedir/spec.html
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/.pytest_cache/README.md /app/backend/.pytest_cache/README.md
+--- /tmp/KI-Trader/backend/.pytest_cache/README.md	1970-01-01 00:00:00.000000000 +0000
++++ /app/backend/.pytest_cache/README.md	2026-09-02 06:56:32.464636277 +0000
+@@ -0,0 +1,8 @@
++# pytest cache directory #
++
++This directory contains data from the pytest's cache plugin,
++which provides the `--lf` and `--ff` options, as well as the `cache` fixture.
++
++**Do not** commit this to version control.
++
++See [the docs](https://docs.pytest.org/en/stable/how-to/cache.html) for more information.
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/.pytest_cache/v/cache/lastfailed /app/backend/.pytest_cache/v/cache/lastfailed
+--- /tmp/KI-Trader/backend/.pytest_cache/v/cache/lastfailed	1970-01-01 00:00:00.000000000 +0000
++++ /app/backend/.pytest_cache/v/cache/lastfailed	2026-09-02 06:57:02.254636680 +0000
+@@ -0,0 +1 @@
++{}
+\ No newline at end of file
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/.pytest_cache/v/cache/nodeids /app/backend/.pytest_cache/v/cache/nodeids
+--- /tmp/KI-Trader/backend/.pytest_cache/v/cache/nodeids	1970-01-01 00:00:00.000000000 +0000
++++ /app/backend/.pytest_cache/v/cache/nodeids	2026-09-02 06:57:02.254636680 +0000
+@@ -0,0 +1,10 @@
++[
++  "tests/test_iter35_risk_sizing_playbook_api.py::test_ai_status_risk_config",
++  "tests/test_iter35_risk_sizing_playbook_api.py::test_config_clamp_leverage",
++  "tests/test_iter35_risk_sizing_playbook_api.py::test_config_clamp_risk_per_trade",
++  "tests/test_iter35_risk_sizing_playbook_api.py::test_config_requires_admin",
++  "tests/test_iter35_risk_sizing_playbook_api.py::test_config_sizing_mode_bogus_ignored_and_legacy_accepted",
++  "tests/test_iter35_risk_sizing_playbook_api.py::test_health",
++  "tests/test_iter35_risk_sizing_playbook_api.py::test_playbook_new_setups_and_maturity",
++  "tests/test_iter35_risk_sizing_playbook_api.py::test_system_ram_container_profile"
++]
+\ No newline at end of file
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/routers/general.py /app/backend/routers/general.py
+--- /tmp/KI-Trader/backend/routers/general.py	2026-09-02 06:54:03.089634271 +0000
++++ /app/backend/routers/general.py	2026-09-02 06:35:43.864385553 +0000
+@@ -163,11 +163,15 @@
+         export_candles += sum(len(v) for v in (j.get("export_candles") or {}).values())
+         export_trades += len(j.get("export_trades") or [])
+     export_mb = export_candles * 500 / 1024 / 1024 + export_trades * 900 / 1024 / 1024
++    from services import ram_guard, ram_queue
+     return {
+         "process_rss_mb": round(rss_mb, 1),
+         "system_total_mb": round(vm.total / 1024 / 1024),
+         "system_available_mb": round(vm.available / 1024 / 1024),
+         "system_used_percent": vm.percent,
++        # Container-Limit (cgroup, auf Render das echte Plan-Limit) + erkanntes
++        # Profil: 'big' = 2-GB-Limits aktiv (Kerzen-Cache, Orderflow, ML)
++        "container": {**ram_guard.profile(), "free_mb": round(ram_queue.free_mb())},
+         "candle_cache": {
+             "symbols": cstats["symbols"],
+             "total_candles": cstats["total_candles"],
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/scripts/sizing_check_prod.py /app/backend/scripts/sizing_check_prod.py
+--- /tmp/KI-Trader/backend/scripts/sizing_check_prod.py	1970-01-01 00:00:00.000000000 +0000
++++ /app/backend/scripts/sizing_check_prod.py	2026-09-02 06:22:46.607386134 +0000
+@@ -0,0 +1,146 @@
++"""Read-only Prod-Analyse: Positionsgröße, Hebel, Fees vs. PnL des KI-Traders. NIE schreiben."""
++import os, asyncio, json, statistics
++from collections import Counter, defaultdict
++from datetime import datetime, timezone, timedelta
++from dotenv import load_dotenv
++
++load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
++from motor.motor_asyncio import AsyncIOMotorClient
++
++
++async def main():
++    c = AsyncIOMotorClient(os.environ["PROD_MONGO_URL"], serverSelectionTimeoutMS=15000)
++    db = c[os.environ["PROD_DB_NAME"]]
++
++    print("## AI-Config (Größe/Hebel-relevant)")
++    ai = await db.settings.find_one({"_id": "ai_trader_config"}) or {}
++    cfg = ai.get("config") or ai
++    for k in ("enabled", "mode", "lev_mode", "lev_auto_max", "lev_fixed", "max_capital_per_trade",
++              "min_confidence", "swing_max_leverage", "use_ai_levels", "maker_mode",
++              "max_open_trades", "max_same_direction", "interval_min", "collection_mode",
++              "runner_enabled", "fee_guard_enabled", "fee_guard_max_fee_r", "max_daily_loss",
++              "max_trades_per_day", "sweep_trigger_enabled", "symbols", "groups"):
++        if k in cfg:
++            v = cfg[k]
++            print(f"  {k}: {json.dumps(v, ensure_ascii=False)[:200]}")
++    print("  alle keys:", sorted(cfg.keys())[:400])
++
++    print("\n## ML-Gate settings")
++    mg = await db.settings.find_one({"_id": "capital_allocation"}) or {}
++    print(json.dumps({k: v for k, v in mg.items() if k != "_id"}, default=str)[:800])
++    for cid in ("ml_gate_settings", "ml_gate_model"):
++        d = await db.settings.find_one({"_id": cid}) or {}
++        print(cid, json.dumps({k: v for k, v in d.items() if k not in ("_id", "model_b64", "booster")}, default=str)[:600])
++
++    print("\n## Capital Allocation")
++    at = await db.settings.find_one({"_id": "autotrade_config"}) or {}
++    print("  capital_allocation:", json.dumps(at.get("capital_allocation"), default=str))
++    coins = at.get("coins") or {}
++    keys = ("enabled", "mode", "max_capital", "leverage", "auto_leverage_enabled", "auto_lev_max",
++            "auto_lev_value", "auto_lev_mode", "sl_mode", "tp1_crv", "tp_full_crv")
++    print("  Coins:")
++    for sym in sorted(coins):
++        cc = coins[sym] or {}
++        if cc.get("enabled") or cc.get("mode") == "live":
++            print(f"    {sym:10s} {json.dumps({k: cc.get(k) for k in keys if k in cc}, ensure_ascii=False)}")
++    scc = at.get("strategy_coin_configs") or {}
++    print("  ai_trader coin overrides:")
++    for k in sorted(scc):
++        if k.startswith("ai_trader_"):
++            cc = scc[k] or {}
++            print(f"    {k:24s} {json.dumps({kk: cc.get(kk) for kk in keys if kk in cc}, ensure_ascii=False)}")
++
++    print("\n## Trades KI-Trader letzte 30 Tage (geschlossen)")
++    since = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
++    cur = db.auto_trades.find({"strategy_id": "ai_trader", "status": {"$in": ["closed", "CLOSED"]},
++                               "opened_at": {"$gte": since}},
++                              {"mode": 1, "data_collection": 1, "max_capital": 1, "leverage": 1, "realized_pnl": 1, "closed_by": 1, "horizon": 1, "fees_paid": 1, "ai_size_reason": 1,
++                               "pnl_usdt": 1, "fees": 1, "fee_usdt": 1, "fees_usdt": 1, "ai_capital_pct": 1,
++                               "ml_risk_scale": 1, "symbol": 1, "ai_setup": 1, "setup": 1, "entry": 1,
++                               "sl": 1, "stop_loss": 1, "qty": 1, "close_reason": 1, "result": 1,
++                               "ai_confidence": 1, "confidence": 1, "ai_horizon": 1, "auto_leverage": 1,
++                               "effective_leverage": 1, "timeframe": 1, "opened_at": 1, "closed_at": 1})
++    rows = await cur.to_list(5000)
++    print(f"  n={len(rows)}")
++    if rows:
++        print("  Beispiel-Felder:", sorted(rows[0].keys()))
++    groups = defaultdict(list)
++    for r in rows:
++        key = ("live" if r.get("mode") == "live" else "paper") + ("/dc" if r.get("data_collection") else "")
++        groups[key].append(r)
++
++    def f(x):
++        try:
++            return float(x or 0)
++        except (TypeError, ValueError):
++            return 0.0
++
++    for key, rs in groups.items():
++        caps = [f(r.get("max_capital")) for r in rs]
++        levs = [f(r.get("leverage")) for r in rs]
++        pnls = [f(r.get("realized_pnl")) for r in rs]
++        fees = [f(r.get("fees_paid")) for r in rs]
++        pcts = [f(r.get("ai_capital_pct")) for r in rs if r.get("ai_capital_pct")]
++        mls = [f(r.get("ml_risk_scale")) for r in rs if r.get("ml_risk_scale")]
++        sld = [abs(f(r.get("entry")) - f(r.get("sl") or r.get("stop_loss"))) / f(r.get("entry")) * 100
++               for r in rs if f(r.get("entry")) and (r.get("sl") or r.get("stop_loss"))]
++        wins = sum(1 for p in pnls if p > 0)
++        print(f"\n  [{key}] n={len(rs)} win={wins/len(rs)*100:.0f}% ΣPnL={sum(pnls):.2f} ΣFees={sum(fees):.2f}")
++        print(f"     Marge: Ø{statistics.mean(caps):.1f} med={statistics.median(caps):.1f} min={min(caps):.1f} max={max(caps):.1f}")
++        print(f"     Hebel: Ø{statistics.mean(levs):.1f} med={statistics.median(levs):.1f} min={min(levs):.1f} max={max(levs):.1f}")
++        if pcts:
++            print(f"     capital_pct: Ø{statistics.mean(pcts):.0f} Verteilung={Counter(int(p) for p in pcts).most_common(8)}")
++        if mls:
++            print(f"     ml_risk_scale gesetzt bei {len(mls)}/{len(rs)}: {Counter(mls).most_common(3)}")
++        if sld:
++            print(f"     SL-Abstand %: Ø{statistics.mean(sld):.3f} med={statistics.median(sld):.3f}")
++        notional = [c * l for c, l in zip(caps, levs)]
++        print(f"     Notional: Ø{statistics.mean(notional):.0f} med={statistics.median(notional):.0f}")
++        print(f"     Ø PnL/Trade={statistics.mean(pnls):.3f}  Ø Fee/Trade={statistics.mean(fees):.3f}")
++        setups = Counter((r.get("ai_setup") or r.get("setup") or "?") for r in rs)
++        print(f"     Setups: {setups.most_common(10)}")
++        hz = Counter(r.get("horizon") or "?" for r in rs)
++        print(f"     Horizon: {hz.most_common()}")
++        cr = Counter(r.get("closed_by") or "?" for r in rs)
++        print(f"     Close: {cr.most_common(8)}")
++        al = Counter(bool(r.get("auto_leverage")) for r in rs)
++        print(f"     auto_leverage flag: {al}")
++        # PnL per setup
++        ps = defaultdict(list)
++        for r, p in zip(rs, pnls):
++            ps[r.get("ai_setup") or r.get("setup") or "?"].append(p)
++        for s, ps_ in sorted(ps.items(), key=lambda kv: -len(kv[1]))[:10]:
++            w = sum(1 for p in ps_ if p > 0)
++            print(f"       {s:28s} n={len(ps_):3d} win={w/len(ps_)*100:3.0f}% Σ={sum(ps_):8.2f} Ø={statistics.mean(ps_):.3f}")
++
++    print("\n## Offene KI-Trades")
++    op = await db.auto_trades.find({"strategy_id": "ai_trader", "status": {"$in": ["open", "OPEN"]}},
++                                   {"symbol": 1, "mode": 1, "data_collection": 1, "capital": 1, "leverage": 1,
++                                    "ai_capital_pct": 1, "ml_risk_scale": 1}).to_list(200)
++    for r in op:
++        print("  ", {k: v for k, v in r.items() if k != "_id"})
++
++    print("\n## Token-Kosten letzte 7 Tage (ai_token_usage)")
++    since7 = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
++    tu = await db.ai_token_usage.find({"ts": {"$gte": since7}}, {"role": 1, "model": 1, "provider": 1,
++                                                                 "cost_usd": 1, "total_tokens": 1, "tokens": 1}).to_list(50000)
++    agg = defaultdict(lambda: [0, 0, 0.0])
++    for t in tu:
++        k = (t.get("role"), t.get("provider"), t.get("model"))
++        agg[k][0] += 1
++        agg[k][1] += int(t.get("total_tokens") or t.get("tokens") or 0)
++        agg[k][2] += float(t.get("cost_usd") or 0)
++    for k, v in sorted(agg.items(), key=lambda kv: -kv[1][0])[:15]:
++        print(f"  {str(k):80s} calls={v[0]} tokens={v[1]} cost=${v[2]:.3f}")
++
++    print("\n## Bitunix Live Balance (aus DB-Snapshot falls vorhanden)")
++    for cid in ("live_balance", "capital_state", "balance_snapshot"):
++        d = await db.settings.find_one({"_id": cid})
++        if d:
++            print(" ", cid, json.dumps({k: v for k, v in d.items() if k != "_id"}, default=str)[:400])
++    d = await db.ai_equity.find_one(sort=[("ts", -1)])
++    if d:
++        print("  ai_equity latest:", json.dumps({k: v for k, v in d.items() if k != "_id"}, default=str)[:400])
++
++
++asyncio.run(main())
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/server.py /app/backend/server.py
+--- /tmp/KI-Trader/backend/server.py	2026-09-02 06:54:03.098634271 +0000
++++ /app/backend/server.py	2026-09-02 06:35:02.216385584 +0000
+@@ -36,10 +36,13 @@
+ @asynccontextmanager
+ async def lifespan(app: FastAPI):
+     logger.info("Starting Crypto Scalping Scanner...")
+-    # RAM-Guard (Render 512 MB): Malloc-Arenen begrenzen + periodisches Trim
++    # RAM-Guard: Malloc-Arenen begrenzen + periodisches Trim. Das RAM-Profil
++    # (klein = 512-MB-Sparlimits, groß = Render Pro 2 GB: Kerzen-Cache 2 Mio.,
++    # Orderflow 30k Ticks, ML-Trainingsmenge voll) wird automatisch erkannt.
+     from services import ram_guard
+     ram_guard.setup_malloc()
+     asyncio.create_task(ram_guard.trim_loop())
++    logger.info(ram_guard.profile_text())
+     app.mongodb_client = AsyncIOMotorClient(os.getenv("MONGO_URL"))
+     app.mongodb = app.mongodb_client[os.getenv("DB_NAME", "crypto_scanner")]
+     state.db = app.mongodb
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/services/ai_engine.py /app/backend/services/ai_engine.py
+--- /tmp/KI-Trader/backend/services/ai_engine.py	2026-09-02 06:54:03.099634271 +0000
++++ /app/backend/services/ai_engine.py	2026-09-02 06:33:27.822385653 +0000
+@@ -53,6 +53,8 @@
+ from services.ai_validation import validation_gate
+ from services import ai_providers
+ from services import ai_playbook
++from services import position_sizing
++from services import smc_zones
+ from services.ai_roles import role_manager
+ from services.ai_json import parse_json_lenient
+ from services.ai_engine_context import AIEngineContextMixin
+@@ -178,6 +180,10 @@
+     # gelten wie bisher. Wenn > 0, entscheidet die KI PRO TRADE selbst, wie viel
+     # Kapital (10-100% dieses Betrags) sie einsetzt – nicht automatisch immer das Maximum.
+     "max_capital_per_trade": 0,
++    # Positionsgröße (services/position_sizing.py): "legacy" = Coin-max_capital ×
++    # capital_pct × ML-Faktor (altes Verhalten) | "risk" = Risiko-Budget in % der
++    # Equity / SL-Abstand, Hebel mit Liq hinter dem SL (Boot-Migration setzt risk).
++    **position_sizing.DEFAULTS,
+     # Einstellungs-Autonomie: darf die KI ihre Trade-Settings ändern?
+     # off = nie | suggest = Vorschläge, Trader bestätigt | auto = sofort anwenden
+     "autonomy": "suggest",
+@@ -295,8 +301,7 @@
+     '{"market_overview": "2-4 Sätze Marktlage auf Deutsch", '
+     '"decisions": [{"symbol": "BTCUSDT", "action": "LONG|SHORT|HOLD", '
+     '"confidence": 0-100, "horizon": "scalp|swing", "runner": false, '
+-    '"setup": "trend_follow|breakout|squeeze_breakout|mean_reversion|range_fade|'
+-    'liquidity_sweep|momentum_news|pullback|swing_trend|hedge", '
++    '"setup": "' + ai_playbook.SETUP_ENUM + '", '
+     '"sl_pct": 0.2-3.0, "tp1_pct": 0.3-4.0, "tpf_pct": 0.5-8.0, '
+     '"capital_pct": 10-100, '
+     '"entry_type": "market|limit", "limit_price": null, "limit_valid_min": "15-480 (scalp) | bis 2880 (swing)", '
+@@ -307,6 +312,7 @@
+     '"levels_reason": "1 kurzer Satz: warum SL und TP genau dort liegen"}], '
+     '"new_strategies": [{"name": "...", "thesis": "...", "rules_text": "...", '
+     '"symbols": ["BTCUSDT"], "learned_from": "..."}], '
++    '"new_setups": [{"id": "snake_case_id", "desc": "Einstieg/SL/TP/Timeframe in 1-2 Sätzen"}], '
+     '"config_changes": [{"symbol": "BTCUSDT", "changes": {"leverage": 8}, "reason": "kurz"}]}\n'
+     "Regeln: sl_pct/tp1_pct/tpf_pct sind Prozent-Abstände vom aktuellen Preis. "
+     "tp1_pct > sl_pct (CRV mind. 1.2), tpf_pct > tp1_pct. Für JEDES übergebene Symbol genau eine Entscheidung. "
+@@ -385,8 +391,7 @@
+     '{"market_overview": "2-3 Sätze Marktlage auf Deutsch", '
+     '"decisions": [{"symbol": "BTCUSDT", "action": "LONG|SHORT|HOLD", '
+     '"confidence": 0-100, "horizon": "scalp|swing", "runner": false, '
+-    '"setup": "trend_follow|breakout|squeeze_breakout|mean_reversion|range_fade|'
+-    'liquidity_sweep|momentum_news|pullback|swing_trend|hedge", '
++    '"setup": "' + ai_playbook.SETUP_ENUM + '", '
+     '"sl_pct": 0.2-3.0, "tp1_pct": 0.3-4.0, "tpf_pct": 0.5-8.0, '
+     '"capital_pct": 10-100, '
+     '"entry_type": "market|limit", "limit_price": null, "limit_valid_min": "15-480 (scalp) | bis 2880 (swing)", '
+@@ -397,6 +402,7 @@
+     '"levels_reason": "1 kurzer Satz: warum SL und TP genau dort liegen"}], '
+     '"new_strategies": [{"name": "...", "thesis": "...", "rules_text": "...", '
+     '"symbols": ["BTCUSDT"], "learned_from": "..."}], '
++    '"new_setups": [{"id": "snake_case_id", "desc": "Einstieg/SL/TP/Timeframe in 1-2 Sätzen"}], '
+     '"config_changes": [{"symbol": "BTCUSDT", "changes": {"leverage": 8}, "reason": "kurz"}]}\n'
+     "Regeln: sl/tp-Prozente = Abstand vom aktuellen Preis; tp1_pct > sl_pct; tpf_pct > tp1_pct; "
+     "für JEDES übergebene Symbol genau EINE Entscheidung. "
+@@ -815,6 +821,7 @@
+                 self.config["max_capital_per_trade"] = max(0.0, min(100000.0, float(updates["max_capital_per_trade"] or 0)))
+             except (TypeError, ValueError):
+                 pass
++        position_sizing.clamp_updates(updates, self.config)
+         if "news_enabled" in updates:
+             self.config["news_enabled"] = bool(updates["news_enabled"])
+         if "macro_enabled" in updates:
+@@ -1052,6 +1059,14 @@
+                 lines.append(rng)
+         except Exception as e:
+             logger.debug(f"Range-Analyse für {symbol} nicht berechenbar: {e}")
++        # Smart-Money-Zonen (Order-Blocks/FVG auf 5m/15m/1h): Datenbasis für
++        # order_block / fvg_fill / htf_range – lokal, ohne Netzwerk.
++        try:
++            smc = smc_zones.zones_text(candles, price)
++            if smc:
++                lines.append(smc)
++        except Exception as e:
++            logger.debug(f"SMC-Zonen für {symbol} nicht berechenbar: {e}")
+         return {"symbol": symbol, "price": price,
+                 "rsi": round(rsi_5m or rsi_1m, 1), "rsi_1m": round(rsi_1m, 1),
+                 "text": f"{symbol}: Preis {price:g} | " + " | ".join(lines)}
+@@ -1317,7 +1332,20 @@
+ 
+             capital_block = ""
+             max_cap = float(self.config.get("max_capital_per_trade") or 0)
+-            if max_cap > 0:
++            if str(self.config.get("sizing_mode", "legacy")) == "risk":
++                r_pct = float(self.config.get("risk_per_trade_pct", 2.0) or 2.0)
++                floor = float(self.config.get("risk_conviction_floor", 0.5) or 0.5)
++                capital_block = (
++                    f"=== POSITIONSGRÖSSE (RISIKO-MODUS) ===\n"
++                    f"Die Positionsgröße wird automatisch aus dem Risiko-Budget berechnet: "
++                    f"{r_pct:g}% der Equity pro Trade / SL-Abstand; der Hebel wird so gewählt, "
++                    f"dass die Liquidation hinter dem SL liegt. 'capital_pct' ist NUR deine "
++                    f"Überzeugung: 100 = volles Budget, 10 = {floor * 100:.0f}% des Budgets. "
++                    f"Reduziere also NICHT reflexartig 'defensiv' – ein enger SL macht die "
++                    f"Position automatisch größer (gleiches Risiko), ein weiter SL kleiner. "
++                    f"Lektionen über 'Marge reduzieren' oder 'Paper-Größe' sind hier "
++                    f"gegenstandslos.\n\n")
++            elif max_cap > 0:
+                 capital_block = (
+                     f"=== KAPITAL PRO TRADE ===\n"
+                     f"Max. Kapital pro Trade: {max_cap:.2f} USDT Margin. Du entscheidest "
+@@ -1397,6 +1425,7 @@
+             token_estimate = 0
+             all_new_strategies = []
+             all_config_changes = []
++            all_new_setups = []
+             model_used = None
+             for g_label, g_syms in groups:
+                 if self._should_skip_group(g_label, g_syms, snaps, open_syms, manual):
+@@ -1434,6 +1463,7 @@
+                 if ov:
+                     overview_parts.append(f"[{g_label}] {ov}" if len(groups) > 1 else ov)
+                 all_new_strategies += list(data.get("new_strategies") or [])
++                all_new_setups += list(data.get("new_setups") or [])
+                 all_config_changes += list(data.get("config_changes") or [])
+                 for d in data.get("decisions", []):
+                     sym = d.get("symbol")
+@@ -1531,6 +1561,19 @@
+ 
+             # Neue Strategie-Ideen der KI -> Strategie-Labor (Ghost-Phase)
+             new_candidates = []
++            # Setup-Entdeckung: neue Setup-Ideen der KI -> Playbook (Shadow-Test
++            # als Paper-Datensammlung, Live erst über das Reife-Gate)
++            for spec in all_new_setups[:2]:
++                if not isinstance(spec, dict):
++                    continue
++                try:
++                    res = await ai_playbook.propose_custom_setup(
++                        self.db, spec.get("id"), spec.get("desc"), source="ki")
++                    if res.get("status") == "rejected":
++                        logger.info(f"KI-Setup-Vorschlag abgelehnt: {res.get('reason')}")
++                except Exception as se:
++                    logger.error(f"KI-Setup konnte nicht angelegt werden: {se}")
++
+             for spec in all_new_strategies[:3]:
+                 if not isinstance(spec, dict):
+                     continue
+@@ -1672,6 +1715,12 @@
+             from core.state import autotrader
+             if autotrader.effective_mode("ai_trader", dec.get("symbol")) != "live":
+                 return None
++            # Paper/Live-Divergenz: Setup läuft live nachweislich schlechter als
++            # im Paper -> kein Live (auch kein Bypass), Datensammlung läuft weiter.
++            lb = ai_playbook.live_block_reason(setup)
++            if lb:
++                logger.info(f"{dec.get('symbol')}: Live-Gate – {lb}")
++                return lb
+             stats = await ai_playbook.cached_setup_stats(self.db)
+             ok, why = ai_playbook.live_ready(stats.get(setup))
+             if ok:
+@@ -2046,6 +2095,13 @@
+                 logger.info(f"AI-Signal {sym}: ML-Risiko-Skalierung ×{ml_scale:g} ({ml_why})")
+         except Exception as e:
+             logger.debug(f"ML-Risiko-Skalierung nicht verfügbar: {e}")
++        # Risiko-basierte Positionsgröße (services/position_sizing.py): Marge
++        # und Hebel werden in bitunix_trade aus Equity × Risiko % / SL-Abstand
++        # berechnet – ersetzt im Modus 'risk' die Kette max_capital × capital_pct.
++        if str(self.config.get("sizing_mode", "legacy")) == "risk":
++            signal["ai_sizing"] = position_sizing.build_params(
++                self.config, dec, is_swing, float(signal.get("ml_risk_scale") or 1.0),
++                collection=bool(collection))
+         # Key-Level-Limit-Order: Signal NICHT sofort ausführen, sondern als
+         # wartende Order am Level speichern. Fill/Ablauf prüft der Scheduler
+         # (core/scheduler.py), Neu-Bewertung übernimmt jeder Analyse-Zyklus.
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/services/ai_ml_lab.py /app/backend/services/ai_ml_lab.py
+--- /tmp/KI-Trader/backend/services/ai_ml_lab.py	2026-09-02 06:54:03.100634271 +0000
++++ /app/backend/services/ai_ml_lab.py	2026-09-02 06:40:42.136385335 +0000
+@@ -19,6 +19,7 @@
+ """
+ import base64
+ import logging
++import os
+ import time
+ from datetime import datetime, timezone, timedelta
+ from typing import Dict, List, Optional, Tuple
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/services/ai_playbook.py /app/backend/services/ai_playbook.py
+--- /tmp/KI-Trader/backend/services/ai_playbook.py	2026-09-02 06:54:03.100634271 +0000
++++ /app/backend/services/ai_playbook.py	2026-09-02 06:31:49.566385725 +0000
+@@ -15,6 +15,7 @@
+ Preiszone" (rein & testbar, technisch in ai_engine._emit_signal erzwungen).
+ """
+ import logging
++import re
+ import uuid
+ from datetime import datetime, timedelta, timezone
+ from typing import Dict, List, Optional, Tuple
+@@ -39,12 +40,22 @@
+     "pullback": "Key-Level-Pullback: Einstieg an starkem Support/Resistance mit Bestätigung (Abweisung/Volumen).",
+     "swing_trend": "Swing-Trendfolge (horizon=swing): übergeordneter HTF-Trend, weiter SL, gestaffelte Ziele/Runner.",
+     "hedge": "Hedge: bewusste GEGENposition zur bestehenden Exposure zur Risikoreduktion (z.B. Short-Scalp gegen Swing-Long).",
++    # Smart-Money-/Multi-Timeframe-Setups (Datenbasis: 'SMC-Zonen'-Zeile je Asset
++    # aus services/smc_zones.py auf 5m/15m/1h). Starten ohne Historie -> laufen
++    # über das Reife-Gate zuerst als Paper-Datensammlung (Shadow), Live erst nach
++    # genug echten Ergebnissen ('bewährt'/'neutral').
++    "order_block": "Order-Block (SMC): Rücklauf in einen frischen 15m/1h-Order-Block (letzte Gegenkerze vor Impuls), Einstieg bei 5m-Reaktion in der Zone, SL hinter dem Block, TP zum nächsten Liquiditäts-Level.",
++    "fvg_fill": "Fair-Value-Gap (SMC): Rückkehr in eine unverfüllte 5m/15m-Imbalance in Trendrichtung, Einstieg bei Rejection im Gap, SL hinter dem Gap, TP am Ursprung des Impulses.",
++    "htf_range": "HTF-Range-Trading: 1h/4h-Seitwärtsrange mit mehrfachen Touches, Einstieg an der Range-Kante nach 15m-Bestätigung (Rejection/Sweep), SL außerhalb der Range, TP Range-Mitte/Gegenseite.",
+ }
+ 
+ SETUP_ENUM = "|".join(SETUPS.keys())
+ 
+ _ALIASES = (
+     ("hedge", "hedge"), ("sweep", "liquidity_sweep"), ("ict", "liquidity_sweep"),
++    ("order_block", "order_block"), ("orderblock", "order_block"), ("block", "order_block"),
++    ("fvg", "fvg_fill"), ("imbalance", "fvg_fill"), ("fair_value", "fvg_fill"), ("gap", "fvg_fill"),
++    ("htf_range", "htf_range"), ("range_trading", "htf_range"),
+     ("squeeze", "squeeze_breakout"), ("break", "breakout"),
+     ("reversion", "mean_reversion"), ("revert", "mean_reversion"),
+     ("range", "range_fade"), ("fade", "range_fade"),
+@@ -55,18 +66,37 @@
+ 
+ # Cache der gesperrten Setups (von refresh() aktualisiert – einmal pro Analyse)
+ _disabled_cache: Dict[str, Dict] = {}
++# Live-Sperre bei Paper/Live-Divergenz (Setup läuft im Paper ok, live schwach)
++_live_blocked_cache: Dict[str, Dict] = {}
++# Von der KI selbst entdeckte Setups (Shadow-Test über das Reife-Gate)
++_custom_cache: Dict[str, Dict] = {}
++MAX_CUSTOM_SETUPS = 6
++_CUSTOM_ID_RE = re.compile(r"^[a-z][a-z0-9_]{2,23}$")
+ 
+ 
+ def _now_iso() -> str:
+     return datetime.now(timezone.utc).isoformat()
+ 
+ 
++def all_setups() -> Dict[str, str]:
++    """Playbook-Bibliothek + aktive KI-eigene Setups (rein)."""
++    out = dict(SETUPS)
++    for sid, meta in _custom_cache.items():
++        out[sid] = f"[KI-Setup] {meta.get('desc', '')}"
++    return out
++
++
++def set_custom_cache(custom: Dict[str, Dict]) -> None:
++    global _custom_cache
++    _custom_cache = dict(custom or {})
++
++
+ def normalize_setup(raw) -> Optional[str]:
+     """Freitext der KI auf eine bekannte Setup-ID mappen (rein, testbar)."""
+     s = str(raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+     if not s:
+         return None
+-    if s in SETUPS:
++    if s in SETUPS or s in _custom_cache:
+         return s
+     for needle, target in _ALIASES:
+         if needle in s:
+@@ -74,6 +104,76 @@
+     return "other"
+ 
+ 
++def valid_custom_setup(sid: str, desc: str) -> Tuple[bool, str]:
++    """Prüfung eines KI-Setup-Vorschlags (rein & testbar)."""
++    sid = str(sid or "").strip().lower().replace("-", "_").replace(" ", "_")
++    if not _CUSTOM_ID_RE.match(sid):
++        return False, "id muss snake_case (3-24 Zeichen) sein"
++    if sid in SETUPS or sid == "other":
++        return False, "id kollidiert mit Playbook-Setup"
++    if normalize_setup(sid) != "other" and sid not in _custom_cache:
++        return False, "id ist nur ein Alias eines bestehenden Setups"
++    if len(str(desc or "").strip()) < 20:
++        return False, "Beschreibung zu kurz (mind. 20 Zeichen)"
++    return True, sid
++
++
++async def propose_custom_setup(db, sid: str, desc: str, source: str = "ki") -> Dict:
++    """Neues KI-Setup anlegen (Shadow: kein Live bis Reife-Gate). Idempotent."""
++    ok, res = valid_custom_setup(sid, desc)
++    if not ok:
++        return {"status": "rejected", "reason": res}
++    sid = res
++    doc = await db.settings.find_one({"_id": STATE_ID}) or {}
++    custom = dict(doc.get("custom") or {})
++    retired = dict(doc.get("custom_retired") or {})
++    if sid in custom:
++        return {"status": "exists", "id": sid}
++    if sid in retired:
++        return {"status": "rejected", "reason": "Setup wurde bereits getestet und ausgemustert"}
++    if len(custom) >= MAX_CUSTOM_SETUPS:
++        return {"status": "rejected", "reason": f"max. {MAX_CUSTOM_SETUPS} KI-Setups gleichzeitig"}
++    custom[sid] = {"desc": str(desc).strip()[:300], "source": source, "created_at": _now_iso()}
++    await db.settings.update_one({"_id": STATE_ID}, {"$set": {"custom": custom}}, upsert=True)
++    set_custom_cache(custom)
++    try:
++        await db.ai_chat.insert_one({
++            "id": str(uuid.uuid4()), "role": "playbook", "setup": sid,
++            "text": (f"Neues KI-Setup '{sid}' angelegt (Shadow-Test als Paper-Datensammlung, "
++                     f"Live erst nach {MIN_TRADES_FOR_VERDICT}+ Trades mit Urteil bewährt/neutral): "
++                     f"{custom[sid]['desc']}"),
++            "ts": _now_iso()})
++    except Exception as e:  # noqa: BLE001
++        logger.debug(f"Playbook: Feed-Meldung KI-Setup '{sid}' fehlgeschlagen: {e}")
++    logger.info(f"Playbook: KI-Setup '{sid}' angelegt ({source})")
++    return {"status": "ok", "id": sid}
++
++
++async def retire_custom_setup(db, sid: str, reason: str) -> bool:
++    doc = await db.settings.find_one({"_id": STATE_ID}) or {}
++    custom = dict(doc.get("custom") or {})
++    if sid not in custom:
++        return False
++    retired = dict(doc.get("custom_retired") or {})
++    retired[sid] = {**custom.pop(sid), "retired_at": _now_iso(), "reason": reason}
++    await db.settings.update_one(
++        {"_id": STATE_ID}, {"$set": {"custom": custom, "custom_retired": retired}}, upsert=True)
++    set_custom_cache(custom)
++    logger.warning(f"Playbook: KI-Setup '{sid}' ausgemustert ({reason})")
++    return True
++
++
++def live_block_reason(setup: Optional[str]) -> Optional[str]:
++    """Live-Sperre wegen Paper/Live-Divergenz (Cache von refresh())."""
++    if not setup:
++        return None
++    d = _live_blocked_cache.get(setup)
++    if d:
++        return (f"Setup '{setup}' live-schwach ({d.get('reason', '')}) – weiter nur "
++                f"Datensammlung, Live-Re-Test ab {str(d.get('retest_at', ''))[:10]}")
++    return None
++
++
+ def verdict_for(trades: int, wins: int, pnl: float) -> str:
+     """Urteil pro Setup aus echten Ergebnissen (rein, testbar)."""
+     if trades < MIN_TRADES_FOR_VERDICT:
+@@ -207,12 +307,17 @@
+     return None
+ 
+ 
+-async def setup_stats(db, days: int = LOOKBACK_DAYS) -> Dict[str, Dict]:
+-    """Echte Trade-Ergebnisse des KI-Traders pro Setup aggregieren."""
++async def setup_stats(db, days: int = LOOKBACK_DAYS, live_only: bool = False) -> Dict[str, Dict]:
++    """Echte Trade-Ergebnisse des KI-Traders pro Setup aggregieren.
++    live_only=True: nur echte Live-Trades (mode=live, keine Sammel-Trades)."""
+     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
++    match = {"strategy_id": "ai_trader", "status": "closed",
++             "opened_at": {"$gte": cutoff}, "setup": {"$nin": [None, ""]}}
++    if live_only:
++        match["mode"] = "live"
++        match["data_collection"] = {"$ne": True}
+     rows = await db.auto_trades.aggregate([
+-        {"$match": {"strategy_id": "ai_trader", "status": "closed",
+-                    "opened_at": {"$gte": cutoff}, "setup": {"$nin": [None, ""]}}},
++        {"$match": match},
+         {"$group": {"_id": "$setup", "trades": {"$sum": 1},
+                     "wins": {"$sum": {"$cond": [{"$gt": ["$realized_pnl", 0]}, 1, 0]}},
+                     "pnl": {"$sum": "$realized_pnl"}}},
+@@ -227,6 +332,20 @@
+     return out
+ 
+ 
++def live_divergent(live: Optional[Dict], overall: Optional[Dict]) -> Optional[str]:
++    """Paper/Live-Divergenz (rein & testbar): Gesamtstatistik sagt 'ok', die
++    echten Live-Trades sind aber für sich 'schwach' (Befund 02.09.: squeeze_
++    breakout 48 % Win im Paper, 7 % live bei n=15). Rückgabe = Sperrgrund."""
++    if not live or int(live.get("trades") or 0) < MIN_TRADES_FOR_BLOCK:
++        return None
++    if live.get("verdict") != "schwach":
++        return None
++    if overall and overall.get("verdict") == "schwach":
++        return None  # ohnehin komplett gesperrt
++    wr = round(live["wins"] / live["trades"] * 100) if live["trades"] else 0
++    return f"live {live['trades']} Trades, Winrate {wr}%, PnL {live['pnl']:+.2f} USDT"
++
++
+ async def tf_stats(db, days: int = LOOKBACK_DAYS) -> List[Dict]:
+     """Performance je Setup × Timeframe (echte geschlossene KI-Trades)."""
+     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+@@ -275,10 +394,11 @@
+ 
+     Läuft einmal pro Analyse-Zyklus (über context_text) und hält den
+     Sperr-Cache für _emit_signal aktuell."""
+-    global _disabled_cache
++    global _disabled_cache, _live_blocked_cache
+     stats = await setup_stats(db)
+     doc = await db.settings.find_one({"_id": STATE_ID}) or {}
+     disabled: Dict[str, Dict] = dict(doc.get("disabled") or {})
++    set_custom_cache(doc.get("custom") or {})
+     changed = False
+     now = datetime.now(timezone.utc)
+     # Re-Test: Sperre nach RETEST_DAYS automatisch aufheben
+@@ -292,8 +412,9 @@
+             changed = True
+             logger.info(f"Playbook: Setup '{sid}' wieder freigegeben (Re-Test)")
+     # Schwache Setups sperren
++    library = all_setups()
+     for sid, st in stats.items():
+-        if st["verdict"] == "schwach" and sid not in disabled and sid in SETUPS:
++        if st["verdict"] == "schwach" and sid not in disabled and sid in library:
+             wr = round(st["wins"] / st["trades"] * 100) if st["trades"] else 0
+             disabled[sid] = {
+                 "at": _now_iso(),
+@@ -302,12 +423,48 @@
+             }
+             changed = True
+             logger.warning(f"Playbook: Setup '{sid}' gesperrt ({disabled[sid]['reason']})")
++            # KI-eigenes Setup mit Urteil 'schwach' -> ausmustern (kein Re-Test:
++            # Platz für die nächste Idee, Historie bleibt in custom_retired)
++            if sid in _custom_cache:
++                await retire_custom_setup(db, sid, disabled[sid]["reason"])
++    # ---- Paper/Live-Divergenz: Live-Sperre nur für die echte Welt ----
++    live_blocked: Dict[str, Dict] = dict(doc.get("live_blocked") or {})
++    for sid in list(live_blocked.keys()):
++        try:
++            retest = datetime.fromisoformat(str(live_blocked[sid].get("retest_at")))
++        except (TypeError, ValueError):
++            retest = now
++        if retest <= now:
++            live_blocked.pop(sid)
++            changed = True
++            logger.info(f"Playbook: Live-Sperre '{sid}' aufgehoben (Re-Test)")
++    try:
++        live_stats = await setup_stats(db, live_only=True)
++    except Exception as e:  # noqa: BLE001
++        logger.debug(f"Playbook: Live-Statistik übersprungen: {e}")
++        live_stats = {}
++    for sid, lst in live_stats.items():
++        why = live_divergent(lst, stats.get(sid))
++        if why and sid not in live_blocked and sid in library:
++            live_blocked[sid] = {"at": _now_iso(), "reason": why,
++                                 "retest_at": (now + timedelta(days=RETEST_DAYS)).isoformat()}
++            changed = True
++            logger.warning(f"Playbook: Setup '{sid}' LIVE-gesperrt (Divergenz: {why})")
++            try:
++                await db.ai_chat.insert_one({
++                    "id": str(uuid.uuid4()), "role": "playbook", "setup": sid,
++                    "text": (f"Setup '{sid}' läuft live deutlich schlechter als im Paper "
++                             f"({why}) – Live-Einstiege pausiert, Datensammlung läuft weiter. "
++                             f"Re-Test ab {live_blocked[sid]['retest_at'][:10]}."),
++                    "ts": _now_iso()})
++            except Exception:  # noqa: BLE001
++                pass
+     # ---- Reife-Status (Live-Freischaltung) + KI-Feed-Meldung bei Übergang ----
+     prev_ready: Dict[str, bool] = dict(doc.get("live_ready") or {})
+     ready_now: Dict[str, bool] = {}
+-    for sid in SETUPS:
++    for sid in library:
+         ok, _why = live_ready(stats.get(sid))
+-        ready_now[sid] = bool(ok and sid not in disabled)
++        ready_now[sid] = bool(ok and sid not in disabled and sid not in live_blocked)
+     # Meldung nur bei echtem Übergang (vorher explizit NICHT reif) –
+     # beim allerersten Lauf wird der Status still initialisiert (kein Spam).
+     for sid, ok in ready_now.items():
+@@ -333,18 +490,22 @@
+     if changed or ready_now != prev_ready or "disabled" not in doc:
+         await db.settings.update_one(
+             {"_id": STATE_ID},
+-            {"$set": {"disabled": disabled, "live_ready": ready_now,
+-                      "updated_at": _now_iso()}}, upsert=True)
++            {"$set": {"disabled": disabled, "live_blocked": live_blocked,
++                      "live_ready": ready_now, "updated_at": _now_iso()}}, upsert=True)
+     _disabled_cache = disabled
+-    return {"stats": stats, "disabled": disabled, "live_ready": ready_now}
++    _live_blocked_cache = live_blocked
++    return {"stats": stats, "disabled": disabled, "live_ready": ready_now,
++            "live_blocked": live_blocked, "live_stats": live_stats,
++            "custom": dict(_custom_cache)}
+ 
+ 
+ async def context_text(db) -> str:
+     """Kompakter Prompt-Block: Playbook + echte Performance pro Setup."""
+     data = await refresh(db)
+     stats, disabled = data["stats"], data["disabled"]
++    live_blocked = data.get("live_blocked") or {}
+     lines = ["=== STRATEGIE-PLAYBOOK (Feld \"setup\" – Pflicht bei LONG/SHORT) ==="]
+-    for sid, desc in SETUPS.items():
++    for sid, desc in all_setups().items():
+         lines.append(f"- {sid}: {desc}")
+     lines.append("PERFORMANCE PRO SETUP (echte KI-Trades, letzte "
+                  f"{LOOKBACK_DAYS} Tage):")
+@@ -354,6 +515,8 @@
+             mark = st["verdict"].upper() if st["verdict"] in ("bewährt", "schwach") else st["verdict"]
+             if sid in disabled:
+                 mark = "GESPERRT – nicht nutzen"
++            elif sid in live_blocked:
++                mark += " – LIVE PAUSIERT (live schwächer als Paper), nur Datensammlung"
+             lines.append(f"- {sid}: {st['trades']} Trades, WR {wr}%, "
+                          f"PnL {st['pnl']:+.2f} USDT → {mark}")
+     else:
+@@ -369,28 +532,49 @@
+     lines.append("REGELN: Wähle das Setup passend zur Marktphase. Bevorzuge BEWÄHRTE "
+                  "Setups, meide gesperrte. Setups ohne Daten bewusst klein antesten "
+                  "(capital_pct niedrig), damit die Statistik wachsen kann. Nutze die "
+-                 "ganze Bandbreite (auch swing_trend und hedge) statt immer dasselbe Muster.")
++                 "ganze Bandbreite (auch swing_trend, hedge, order_block, fvg_fill, htf_range) "
++                 "statt immer dasselbe Muster. MULTI-TIMEFRAME: Zone/Struktur auf 15m/1h "
++                 "(SMC-Zonen, Range-Check), Trigger auf 5m, 1m nur Timing. "
++                 f"SETUP-ENTDECKUNG: Erkennst du in den Daten ein wiederkehrendes, klar "
++                 f"regelbasiertes Muster, das KEINEM Playbook-Setup entspricht, schlage es "
++                 f"unter 'new_setups' vor (id snake_case, desc = Einstieg/SL/TP/Timeframe in "
++                 f"1-2 Sätzen; max. {MAX_CUSTOM_SETUPS} aktive KI-Setups, meist leere Liste). Es "
++                 "läuft dann automatisch als Shadow-Test (Paper-Datensammlung) und wird "
++                 "nach genug echten Ergebnissen live freigeschaltet oder ausgemustert.")
+     return "\n".join(lines)
+ 
+ 
+-def maturity_overview(stats: Dict[str, Dict], disabled: Dict[str, Dict]) -> List[Dict]:
++def maturity_overview(stats: Dict[str, Dict], disabled: Dict[str, Dict],
++                      live_blocked: Optional[Dict[str, Dict]] = None,
++                      live_stats: Optional[Dict[str, Dict]] = None) -> List[Dict]:
+     """Reife-Status pro Setup für die UI (rein & testbar): gesammelte Trades,
+     Winrate, PnL, Urteil und ob das Setup live-reif ist."""
+     out: List[Dict] = []
+-    for sid in SETUPS:
++    live_blocked = live_blocked or {}
++    live_stats = live_stats or {}
++    for sid in all_setups():
+         st = stats.get(sid)
+         ok, why = live_ready(st)
+         blocked = sid in (disabled or {})
++        lb = sid in live_blocked
+         trades = int((st or {}).get("trades") or 0)
+         wins = int((st or {}).get("wins") or 0)
++        ls = live_stats.get(sid) or {}
+         out.append({
+             "setup": sid,
++            "custom": sid in _custom_cache,
+             "trades": trades,
+             "winrate": round(wins / trades * 100) if trades else 0,
+             "pnl": round(float((st or {}).get("pnl") or 0), 2),
++            "live_trades": int(ls.get("trades") or 0),
++            "live_winrate": (round(int(ls.get("wins") or 0) / int(ls["trades"]) * 100)
++                             if ls.get("trades") else 0),
++            "live_pnl": round(float(ls.get("pnl") or 0), 2),
+             "verdict": (st or {}).get("verdict") or ("test" if trades else "keine Daten"),
+-            "live_ready": bool(ok and not blocked),
+-            "reason": (f"gesperrt: {disabled[sid].get('reason', '')}" if blocked else why),
++            "live_ready": bool(ok and not blocked and not lb),
++            "reason": (f"gesperrt: {disabled[sid].get('reason', '')}" if blocked
++                       else f"live pausiert: {live_blocked[sid].get('reason', '')}" if lb
++                       else why),
+         })
+     out.sort(key=lambda r: (-int(r["live_ready"]), -r["trades"]))
+     return out
+@@ -400,7 +584,11 @@
+     """Für API/UI: Playbook, Statistik, Sperren und Reife-Status."""
+     data = await refresh(db)
+     tf_rows = await tf_stats(db)
+-    return {"setups": SETUPS, "stats": data["stats"], "disabled": data["disabled"],
+-            "maturity": maturity_overview(data["stats"], data["disabled"]),
++    return {"setups": all_setups(), "stats": data["stats"], "disabled": data["disabled"],
++            "live_blocked": data.get("live_blocked") or {},
++            "live_stats": data.get("live_stats") or {},
++            "custom": data.get("custom") or {},
++            "maturity": maturity_overview(data["stats"], data["disabled"],
++                                          data.get("live_blocked"), data.get("live_stats")),
+             "tf_stats": tf_rows, "best_tf": best_tf_per_setup(tf_rows),
+             "lookback_days": LOOKBACK_DAYS, "retest_days": RETEST_DAYS}
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/services/bitunix_trade.py /app/backend/services/bitunix_trade.py
+--- /tmp/KI-Trader/backend/services/bitunix_trade.py	2026-09-02 06:54:03.102634271 +0000
++++ /app/backend/services/bitunix_trade.py	2026-09-02 06:34:20.954385614 +0000
+@@ -1832,6 +1832,30 @@
+             logger.warning(f"free_capital({mode}) failed: {e}")
+             alloc_cap = free_alloc = None
+             used = 0.0
++        # ---- Risiko-basierte Positionsgröße (KI-Trader, sizing_mode=risk):
++        # Marge/Hebel aus Equity × Risiko % / SL-Abstand statt der Kette
++        # max_capital × capital_pct × ML-Faktor (services/position_sizing.py).
++        # Equity = zugewiesenes Kapital (live: Börsen-Guthaben inkl. Marge,
++        # paper: Basis-Guthaben). Nicht berechenbar -> Legacy-Pfad oben bleibt.
++        sizing = signal.get("ai_sizing")
++        if isinstance(sizing, dict) and sizing.get("mode") == "risk":
++            try:
++                from services import position_sizing
++                equity = alloc_cap
++                if equity is None and mode == "live":
++                    equity = await self._live_total_balance()
++                rs = position_sizing.compute(sizing, cfg, entry, sl, equity,
++                                             coin_max_lev=self._coin_max_lev(symbol))
++            except Exception as e:
++                logger.warning(f"{symbol}: Risiko-Sizing fehlgeschlagen – Legacy-Größe: {e}")
++                rs = None
++            if rs:
++                capital, lev_used = rs["margin"], rs["leverage"]
++                signal["ai_sizing_result"] = rs
++                logger.info(f"{symbol}: Risiko-Sizing – Marge {capital:.2f} USDT @ "
++                            f"{lev_used:g}x ({rs['note']})")
++            else:
++                signal["ai_sizing_result"] = {"fallback": "legacy"}
+         if free_alloc is not None:
+             cap_str = f"{alloc_cap:.2f}" if alloc_cap is not None else "?"
+             if free_alloc < 5.0:
+@@ -2222,6 +2246,8 @@
+             "be_trigger_profit_pct": float(cfg.get("be_trigger_profit_pct", 30.0) or 30.0),
+             "leverage": round(lev_used, 2), "max_capital": round(capital, 6),
+             "auto_leverage": bool(cfg.get("auto_leverage_enabled")),
++            # Risiko-Sizing-Protokoll (Budget, Skalierung, Deckel) – None im Legacy-Modus
++            "sizing": signal.get("ai_sizing_result"),
+             "status": "open", "tp1_hit": False, "breakeven_moved": False,
+             "realized_pnl": round(-entry_fee, 6), "fees_paid": entry_fee,
+             "profit_secure_enabled": bool(cfg.get("profit_secure_enabled", False)
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/services/boot_migrations.py /app/backend/services/boot_migrations.py
+--- /tmp/KI-Trader/backend/services/boot_migrations.py	2026-09-02 06:54:03.102634271 +0000
++++ /app/backend/services/boot_migrations.py	2026-09-02 06:44:17.067385179 +0000
+@@ -180,12 +180,37 @@
+     await _mark(db, "manual_lev_display_v1")
+ 
+ 
++async def migrate_risk_sizing(db, engine):
++    """Positionsgröße auf Risiko-Modus umstellen (User-Auftrag 02.09.2026).
++    Befund: Live-Marge Median 8 USDT bei ~700 USDT Equity (Kette max_capital 30 ×
++    capital_pct 20-30 % × ML 0,5) – Risiko ~0,1-0,5 USDT pro Trade, Fees/KI-
++    Kosten unerreichbar. Neuer Standard: 2 % Equity-Risiko pro Trade, Marge-
++    Deckel 15 %, Hebel bis 50x mit Liquidation hinter dem SL. Läuft nur, wenn
++    der Trader sizing_mode noch nie selbst gesetzt hat."""
++    if await _done(db, "risk_sizing_v1"):
++        return
++    doc = await db.settings.find_one({"_id": "ai_trader_config"}) or {}
++    if "sizing_mode" not in doc:
++        from services import position_sizing
++        vals = {k: v for k, v in position_sizing.DEFAULTS.items() if k not in doc}
++        vals["sizing_mode"] = "risk"
++        await db.settings.update_one({"_id": "ai_trader_config"}, {"$set": vals}, upsert=True)
++        if engine is not None:
++            engine.config.update(vals)
++        logger.info("Boot-Migration: KI-Positionsgröße -> Risiko-Modus "
++                    f"({position_sizing.DEFAULTS['risk_per_trade_pct']:g}% Equity/Trade, Marge max "
++                    f"{position_sizing.DEFAULTS['risk_max_margin_pct']:g}%, Hebel max "
++                    f"{position_sizing.DEFAULTS['risk_max_leverage']}x)")
++    await _mark(db, "risk_sizing_v1")
++
++
+ async def run_boot_migrations(db, engine):
+     for fn, args in ((migrate_cerebras_shutdown, (db,)),
+                      (migrate_heatmap_off, (db, engine)),
+                      (migrate_slippage_artifacts, (db,)),
+                      (migrate_leverage_proposals, (db, engine)),
+-                     (migrate_manual_lev_display, (db,))):
++                     (migrate_manual_lev_display, (db,)),
++                     (migrate_risk_sizing, (db, engine))):
+         try:
+             await fn(*args)
+         except Exception as e:
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/services/orderflow.py /app/backend/services/orderflow.py
+--- /tmp/KI-Trader/backend/services/orderflow.py	2026-09-02 06:54:03.104634271 +0000
++++ /app/backend/services/orderflow.py	2026-09-02 06:40:15.845385354 +0000
+@@ -14,6 +14,7 @@
+ import asyncio
+ import json
+ import logging
++import os
+ import time
+ from collections import deque
+ from typing import Deque, Dict, List, Optional, Tuple
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/services/position_sizing.py /app/backend/services/position_sizing.py
+--- /tmp/KI-Trader/backend/services/position_sizing.py	1970-01-01 00:00:00.000000000 +0000
++++ /app/backend/services/position_sizing.py	2026-09-02 06:44:17.067385179 +0000
+@@ -0,0 +1,155 @@
++"""Risiko-basierte Positionsgröße für den KI-Trader (rein & testbar).
++
++Befund Prod 02.09.2026 (scripts/sizing_check_prod.py): Live-Marge Ø 11,6 USDT,
++Median 8,2 USDT bei ~700 USDT Equity – Kette Coin-max_capital 30 × capital_pct
++(LLM, Modus 20–30 %) × ml_risk_scale 0,5 = 1,5–4,5 USDT Marge bei 6–8x Hebel.
++Risiko pro Trade damit ~0,1–0,5 USDT (0,02–0,07 % der Equity) – die Fees und
++KI-/Render-Kosten können so nie verdient werden.
++
++Neuer Modus "risk" (Standard nach Boot-Migration risk_sizing_v1):
++  Risiko-Budget  = Equity × risk_per_trade_pct × Skalierung
++  Notional       = Risiko-Budget / SL-Abstand
++  Hebel          = Liquidation liegt `auto_lev_value` % hinter dem SL
++                   (Deans Taktik: hoher Hebel, kleine Marge, SL vor Liq),
++                   gedeckelt durch risk_max_leverage, Coin-Max und Swing-Cap
++  Marge          = Notional / Hebel, gedeckelt durch risk_max_margin_pct × Equity
++
++Skalierung = KEIN multiplikatives Stapeln mehr: aus Überzeugung (capital_pct
++-> [conviction_floor, 1]) und ML-Risiko-Faktor wird das MINIMUM genommen
++(risk_stack_reductions=False). Der alte Pfad ("legacy") bleibt unverändert
++erhalten und ist per sizing_mode="legacy" wählbar.
++"""
++from typing import Dict, Optional, Tuple
++
++DEFAULTS: Dict = {
++    "sizing_mode": "risk",            # risk | legacy (altes Verhalten)
++    "risk_per_trade_pct": 2.0,        # % der Equity pro Trade (Moderat: 2–3)
++    "risk_max_margin_pct": 15.0,      # Marge-Deckel in % der Equity
++    "risk_max_leverage": 50,          # Hebel-Deckel im Risiko-Modus
++    "risk_conviction_floor": 0.5,     # capital_pct 10 -> mind. 50 % des Budgets
++    "risk_stack_reductions": False,   # True = Überzeugung × ML (altes Stapeln)
++    "risk_collection_scale": 1.0,     # Sammel-Trades (Paper) relativ zum Budget
++}
++
++CLAMPS = {
++    "risk_per_trade_pct": (0.1, 10.0),
++    "risk_max_margin_pct": (1.0, 100.0),
++    "risk_max_leverage": (1, 200),
++    "risk_conviction_floor": (0.1, 1.0),
++    "risk_collection_scale": (0.1, 1.0),
++}
++
++
++def clamp_updates(updates: Dict, cfg: Dict) -> None:
++    """update_config-Klemmen für die Sizing-Keys (mutiert cfg)."""
++    if "sizing_mode" in updates and updates["sizing_mode"] in ("legacy", "risk"):
++        cfg["sizing_mode"] = updates["sizing_mode"]
++    if "risk_stack_reductions" in updates:
++        cfg["risk_stack_reductions"] = bool(updates["risk_stack_reductions"])
++    for key, (lo, hi) in CLAMPS.items():
++        if key in updates:
++            try:
++                v = float(updates[key])
++            except (TypeError, ValueError):
++                continue
++            v = max(lo, min(hi, v))
++            cfg[key] = int(v) if key == "risk_max_leverage" else v
++
++
++def conviction_scale(capital_pct, floor: float = 0.5) -> float:
++    """capital_pct (10–100) -> Skalierung [floor, 1.0]. Fehlend/ungültig = 1.0."""
++    try:
++        p = float(capital_pct)
++    except (TypeError, ValueError):
++        return 1.0
++    if p <= 0:
++        return 1.0
++    p = max(10.0, min(100.0, p))
++    floor = max(0.1, min(1.0, float(floor)))
++    return round(floor + (1.0 - floor) * (p - 10.0) / 90.0, 4)
++
++
++def combined_scale(conv: float, ml_scale: float, stack: bool = False) -> Tuple[float, str]:
++    """Überzeugung und ML-Faktor kombinieren – Standard: Minimum statt Produkt."""
++    conv = max(0.1, min(1.0, float(conv or 1.0)))
++    ml = float(ml_scale or 1.0)
++    ml = max(0.1, min(1.0, ml)) if ml > 0 else 1.0
++    if stack:
++        return round(conv * ml, 4), f"Überzeugung ×{conv:g} × ML ×{ml:g}"
++    if ml < conv:
++        return round(ml, 4), f"ML-Risiko ×{ml:g} (Überzeugung ×{conv:g} nicht gestapelt)"
++    return round(conv, 4), f"Überzeugung ×{conv:g}"
++
++
++def risk_leverage(cfg: Dict, params: Dict, entry: float, sl: float,
++                  coin_max_lev: float) -> float:
++    """Hebel so, dass die Liquidation `auto_lev_value` % hinter dem SL liegt."""
++    from services.backtester import effective_leverage
++    forced = dict(cfg)
++    forced["auto_leverage_enabled"] = True
++    forced["auto_lev_max"] = float(params.get("max_leverage") or 50)
++    forced.setdefault("auto_lev_value", 0.5)
++    forced.setdefault("auto_lev_mode", "liq_pct")
++    lev = effective_leverage(forced, entry, sl)
++    swing_cap = float(params.get("swing_cap") or 0)
++    if params.get("is_swing") and swing_cap > 0:
++        lev = min(lev, swing_cap)
++    if coin_max_lev and coin_max_lev > 0:
++        lev = min(lev, float(coin_max_lev))
++    return round(max(1.0, lev), 2)
++
++
++def build_params(ai_cfg: Dict, dec: Dict, is_swing: bool, ml_scale: float = 1.0,
++                 collection: bool = False) -> Dict:
++    """Sizing-Parameter fürs Signal (ai_engine -> bitunix_trade), rein."""
++    g = lambda k: ai_cfg.get(k, DEFAULTS[k])  # noqa: E731
++    return {
++        "mode": "risk",
++        "risk_pct": float(g("risk_per_trade_pct")),
++        "max_margin_pct": float(g("risk_max_margin_pct")),
++        "max_leverage": float(g("risk_max_leverage")),
++        "conviction_floor": float(g("risk_conviction_floor")),
++        "stack": bool(g("risk_stack_reductions")),
++        "capital_pct": dec.get("capital_pct"),
++        "ml_scale": float(ml_scale or 1.0),
++        "is_swing": bool(is_swing),
++        "swing_cap": float(ai_cfg.get("swing_max_leverage", 8) or 8),
++        "collection_scale": float(g("risk_collection_scale")) if collection else 1.0,
++    }
++
++
++def compute(params: Dict, cfg: Dict, entry: float, sl: float, equity: Optional[float],
++            coin_max_lev: float = 200.0) -> Optional[Dict]:
++    """Marge/Hebel aus Risiko-Budget. None = nicht berechenbar -> Legacy-Pfad."""
++    try:
++        entry, sl = float(entry), float(sl)
++        equity = float(equity) if equity is not None else 0.0
++    except (TypeError, ValueError):
++        return None
++    if entry <= 0 or sl <= 0 or equity <= 0:
++        return None
++    sl_dist = abs(entry - sl) / entry
++    if sl_dist <= 0:
++        return None
++    conv = conviction_scale(params.get("capital_pct"), params.get("conviction_floor", 0.5))
++    scale, scale_note = combined_scale(conv, params.get("ml_scale", 1.0), params.get("stack", False))
++    scale *= float(params.get("collection_scale") or 1.0)
++    risk_usdt = equity * float(params.get("risk_pct") or 2.0) / 100.0 * scale
++    lev = risk_leverage(cfg, params, entry, sl, coin_max_lev)
++    notional = risk_usdt / sl_dist
++    margin = notional / lev
++    notes = [f"Risiko {risk_usdt:.2f} USDT ({float(params.get('risk_pct') or 2.0):g}% × {scale:g}), "
++             f"SL {sl_dist * 100:.2f}%, Hebel {lev:g}x", scale_note]
++    cap = equity * float(params.get("max_margin_pct") or 15.0) / 100.0
++    capped = False
++    if margin > cap:
++        margin = cap
++        notional = margin * lev
++        risk_usdt = notional * sl_dist
++        capped = True
++        notes.append(f"Marge auf {cap:.2f} USDT gedeckelt (risk_max_margin_pct) -> "
++                     f"Risiko {risk_usdt:.2f} USDT")
++    return {"margin": round(margin, 6), "leverage": lev, "notional": round(notional, 4),
++            "risk_usdt": round(risk_usdt, 4), "risk_pct_eff": round(risk_usdt / equity * 100, 4),
++            "scale": round(scale, 4), "sl_dist_pct": round(sl_dist * 100, 4),
++            "capped": capped, "equity": round(equity, 2), "note": " | ".join(notes)}
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/services/ram_guard.py /app/backend/services/ram_guard.py
+--- /tmp/KI-Trader/backend/services/ram_guard.py	2026-09-02 06:54:03.104634271 +0000
++++ /app/backend/services/ram_guard.py	2026-09-02 06:35:29.573385564 +0000
+@@ -64,6 +64,39 @@
+     return lim >= threshold_mb
+ 
+ 
++def profile() -> dict:
++    """RAM-Profil für Log/API: erkanntes Limit + aktive Größen-Limits."""
++    lim = container_limit_mb()
++    if lim is None:
++        try:
++            import psutil
++            lim = psutil.virtual_memory().total / (1024 * 1024)
++        except Exception:  # noqa: BLE001
++            lim = None
++    big = is_big_ram()
++    out = {"limit_mb": int(lim) if lim else None, "profile": "big" if big else "small"}
++    try:
++        from services import candle_cache, orderflow
++        out["candle_cache_max"] = candle_cache.MAX_CANDLES_IN_MEMORY
++        out["orderflow_ticks_per_symbol"] = orderflow.MAX_TICKS
++    except Exception:  # noqa: BLE001
++        pass
++    try:
++        from services import ai_ml_lab
++        out["ml_train_limits"] = ai_ml_lab._train_limits()
++    except Exception:  # noqa: BLE001
++        pass
++    return out
++
++
++def profile_text() -> str:
++    p = profile()
++    return (f"RAM-Profil: {p.get('limit_mb') or '?'} MB erkannt -> "
++            f"{'GROSS (2-GB-Limits aktiv)' if p['profile'] == 'big' else 'KLEIN (512-MB-Sparlimits)'}"
++            f" | Kerzen-Cache {p.get('candle_cache_max', '?')} | Orderflow-Ticks "
++            f"{p.get('orderflow_ticks_per_symbol', '?')} | ML-Training {p.get('ml_train_limits', '?')}")
++
++
+ def setup_malloc() -> bool:
+     """So früh wie möglich aufrufen (vor großen Allokationen)."""
+     if not ENABLED:
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/services/ram_queue.py /app/backend/services/ram_queue.py
+--- /tmp/KI-Trader/backend/services/ram_queue.py	2026-09-02 06:54:03.104634271 +0000
++++ /app/backend/services/ram_queue.py	2026-09-02 06:43:58.296385193 +0000
+@@ -43,12 +43,32 @@
+                 if lim > (1 << 40):  # >1 TB = kein echtes Limit gesetzt
+                     return None
+                 cur = int(open(cur_p).read().strip())
++                # Page-Cache (inactive_file) ist jederzeit freigebbar und zählt
++                # im cgroup-Verbrauch mit – wie kubectl/Render 'working set':
++                # Verbrauch = current - inactive_file, sonst blockiert die
++                # RAM-Bremse bei großem Datei-Cache grundlos (Kerzen-Cache-Dateien!).
++                cur -= _cgroup_inactive_file(os.path.dirname(cur_p))
+                 return max(0.0, (lim - cur) / (1024 * 1024))
+     except (OSError, ValueError):
+         pass
+     return None
+ 
+ 
++def _cgroup_inactive_file(base: str) -> int:
++    for name, key in (("memory.stat", "inactive_file"), ("memory.stat", "total_inactive_file")):
++        p = os.path.join(base, name)
++        if not os.path.isfile(p):
++            continue
++        try:
++            for line in open(p):
++                k, _, v = line.partition(" ")
++                if k == key:
++                    return int(v.strip())
++        except (OSError, ValueError):
++            return 0
++    return 0
++
++
+ def free_mb() -> float:
+     v = _cgroup_free_mb()
+     if v is not None:
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/services/smc_zones.py /app/backend/services/smc_zones.py
+--- /tmp/KI-Trader/backend/services/smc_zones.py	1970-01-01 00:00:00.000000000 +0000
++++ /app/backend/services/smc_zones.py	2026-09-02 06:29:31.211385826 +0000
+@@ -0,0 +1,60 @@
++"""Smart-Money-Zonen (Order-Blocks + Fair-Value-Gaps) auf 5m/15m/1h für den
++Analyse-Prompt – rein lokal aus dem Scanner-Kerzenpuffer (kein Netzwerk, keine
++LLM-Kosten). Datenbasis für die Playbook-Setups order_block / fvg_fill und die
++Multi-Timeframe-Sicht (Zone auf 15m/1h, Trigger auf 5m).
++"""
++from typing import Dict, List, Optional
++
++from services import liquidity_levels
++from services.timeframes import aggregate_candles
++
++TIMEFRAMES = ("5m", "15m", "1h")
++MAX_ZONES_PER_TF = 2
++MAX_DISTANCE_PCT = 3.0
++
++
++def _zone_rows(candles: List[Dict], price: float) -> List[Dict]:
++    rows: List[Dict] = []
++    for ob in liquidity_levels.order_blocks(candles):
++        rows.append({"kind": "OB", "side": "bull" if ob["type"] == "ob_bull" else "bear",
++                     "low": float(ob["zone_low"]), "high": float(ob["zone_high"]),
++                     "untested": bool(ob.get("untested"))})
++    for g in liquidity_levels.fair_value_gaps(candles):
++        rows.append({"kind": "FVG", "side": g["side"], "low": float(g["low"]),
++                     "high": float(g["high"]), "untested": True})
++    for r in rows:
++        mid = (r["low"] + r["high"]) / 2
++        r["dist_pct"] = (mid - price) / price * 100 if price else 0.0
++    rows = [r for r in rows if abs(r["dist_pct"]) <= MAX_DISTANCE_PCT]
++    rows.sort(key=lambda r: abs(r["dist_pct"]))
++    return rows[:MAX_ZONES_PER_TF]
++
++
++def zones(candles_1m: List[Dict], price: float) -> Dict[str, List[Dict]]:
++    """Nächste OB/FVG-Zonen je Timeframe (rein & testbar)."""
++    out: Dict[str, List[Dict]] = {}
++    for tf in TIMEFRAMES:
++        agg = aggregate_candles(candles_1m, tf, drop_partial=True)
++        if len(agg) < 30:
++            continue
++        rows = _zone_rows(agg, price)
++        if rows:
++            out[tf] = rows
++    return out
++
++
++def zones_text(candles_1m: List[Dict], price: float) -> Optional[str]:
++    """Kompakte Prompt-Zeile, z.B.
++    'SMC-Zonen 15m: bull OB 0.851-0.853 (-0.4%, frisch) · bear FVG 0.866-0.868 (+1.1%)'."""
++    z = zones(candles_1m, price)
++    if not z:
++        return None
++    parts = []
++    for tf, rows in z.items():
++        items = []
++        for r in rows:
++            tag = ", frisch" if r["untested"] and r["kind"] == "OB" else ""
++            items.append(f"{r['side']} {r['kind']} {r['low']:g}-{r['high']:g} "
++                         f"({r['dist_pct']:+.2f}%{tag})")
++        parts.append(f"{tf}: " + " · ".join(items))
++    return "SMC-Zonen " + " | ".join(parts)
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/backend/tests/test_iter35_risk_sizing_playbook_api.py /app/backend/tests/test_iter35_risk_sizing_playbook_api.py
+--- /tmp/KI-Trader/backend/tests/test_iter35_risk_sizing_playbook_api.py	1970-01-01 00:00:00.000000000 +0000
++++ /app/backend/tests/test_iter35_risk_sizing_playbook_api.py	2026-09-02 06:56:37.578636346 +0000
+@@ -0,0 +1,143 @@
++"""Iteration 35 – API-Tests: RAM-Profil, Risiko-Sizing-Config, Playbook-Setups."""
++import os
++
++import pytest
++import requests
++from dotenv import dotenv_values
++
++frontend_env = dotenv_values("/app/frontend/.env")
++base_url = os.environ.get("REACT_APP_BACKEND_URL") or frontend_env.get("REACT_APP_BACKEND_URL")
++if not base_url:
++    raise RuntimeError("REACT_APP_BACKEND_URL missing")
++BASE_URL = base_url.rstrip("/")
++
++ADMIN = {"username": "Admin", "password": "Dean06Greif!/Admin"}
++
++
++@pytest.fixture(scope="module")
++def client():
++    s = requests.Session()
++    s.headers.update({"Content-Type": "application/json"})
++    return s
++
++
++@pytest.fixture(scope="module")
++def admin_client(client):
++    r = client.post(f"{BASE_URL}/api/auth/login", json=ADMIN, timeout=30)
++    if r.status_code != 200:
++        pytest.fail(f"Admin login failed {r.status_code}: {r.text[:300]}")
++    token = r.json().get("token")
++    assert isinstance(token, str) and token
++    s = requests.Session()
++    s.headers.update({"Content-Type": "application/json", "Authorization": f"Bearer {token}"})
++    return s
++
++
++# --- health / basics ---
++def test_health(client):
++    r = client.get(f"{BASE_URL}/api/health", timeout=30)
++    assert r.status_code == 200, r.text[:300]
++
++
++# --- ram_guard.profile via /api/system/ram ---
++def test_system_ram_container_profile(client):
++    r = client.get(f"{BASE_URL}/api/system/ram", timeout=60)
++    assert r.status_code == 200, r.text[:300]
++    c = r.json().get("container")
++    assert isinstance(c, dict), r.json()
++    for k in ("limit_mb", "profile", "candle_cache_max", "orderflow_ticks_per_symbol",
++              "ml_train_limits", "free_mb"):
++        assert k in c, f"missing {k} in {c}"
++    assert c["profile"] in ("big", "small"), c["profile"]
++    assert float(c["free_mb"]) > 0, c["free_mb"]
++    assert float(c["limit_mb"]) > 0
++
++
++# --- /api/ai/status config (Boot-Migration risk_sizing_v1) ---
++def test_ai_status_risk_config(client):
++    r = client.get(f"{BASE_URL}/api/ai/status", timeout=60)
++    assert r.status_code == 200, r.text[:300]
++    cfg = r.json().get("config")
++    assert isinstance(cfg, dict)
++    assert cfg.get("sizing_mode") == "risk"
++    assert float(cfg.get("risk_per_trade_pct")) == 2.0
++    assert float(cfg.get("risk_max_margin_pct")) == 15.0
++    assert int(cfg.get("risk_max_leverage")) == 50
++    assert float(cfg.get("risk_conviction_floor")) == 0.5
++    # bestehende Keys weiterhin vorhanden (Regression)
++    for k in ("lev_mode", "max_capital_per_trade", "crv_min"):
++        assert k in cfg, f"legacy key {k} missing"
++    # KI-Trader muss lokal ausgeschaltet bleiben
++    assert cfg.get("enabled") is False
++
++
++# --- /api/ai/config clamps ---
++def test_config_clamp_risk_per_trade(admin_client):
++    r = admin_client.post(f"{BASE_URL}/api/ai/config", json={"risk_per_trade_pct": 50}, timeout=60)
++    assert r.status_code == 200, r.text[:300]
++    st = admin_client.get(f"{BASE_URL}/api/ai/status", timeout=60).json()["config"]
++    assert float(st["risk_per_trade_pct"]) == 10.0, st["risk_per_trade_pct"]
++    # zurücksetzen
++    admin_client.post(f"{BASE_URL}/api/ai/config", json={"risk_per_trade_pct": 2}, timeout=60)
++    st = admin_client.get(f"{BASE_URL}/api/ai/status", timeout=60).json()["config"]
++    assert float(st["risk_per_trade_pct"]) == 2.0
++
++
++def test_config_clamp_leverage(admin_client):
++    r = admin_client.post(f"{BASE_URL}/api/ai/config", json={"risk_max_leverage": 999}, timeout=60)
++    assert r.status_code == 200, r.text[:300]
++    st = admin_client.get(f"{BASE_URL}/api/ai/status", timeout=60).json()["config"]
++    assert int(st["risk_max_leverage"]) == 200, st["risk_max_leverage"]
++    admin_client.post(f"{BASE_URL}/api/ai/config", json={"risk_max_leverage": 50}, timeout=60)
++    st = admin_client.get(f"{BASE_URL}/api/ai/status", timeout=60).json()["config"]
++    assert int(st["risk_max_leverage"]) == 50
++
++
++def test_config_sizing_mode_bogus_ignored_and_legacy_accepted(admin_client):
++    r = admin_client.post(f"{BASE_URL}/api/ai/config", json={"sizing_mode": "bogus"}, timeout=60)
++    assert r.status_code == 200, r.text[:300]
++    st = admin_client.get(f"{BASE_URL}/api/ai/status", timeout=60).json()["config"]
++    assert st["sizing_mode"] == "risk"
++
++    r = admin_client.post(f"{BASE_URL}/api/ai/config", json={"sizing_mode": "legacy"}, timeout=60)
++    assert r.status_code == 200
++    st = admin_client.get(f"{BASE_URL}/api/ai/status", timeout=60).json()["config"]
++    assert st["sizing_mode"] == "legacy"
++
++    admin_client.post(f"{BASE_URL}/api/ai/config", json={"sizing_mode": "risk"}, timeout=60)
++    st = admin_client.get(f"{BASE_URL}/api/ai/status", timeout=60).json()["config"]
++    assert st["sizing_mode"] == "risk"
++
++
++def test_config_requires_admin(client):
++    r = client.post(f"{BASE_URL}/api/ai/config", json={"risk_per_trade_pct": 3}, timeout=60)
++    assert r.status_code in (401, 403), f"{r.status_code} {r.text[:200]}"
++
++
++# --- /api/ai/playbook ---
++def test_playbook_new_setups_and_maturity(client):
++    r = client.get(f"{BASE_URL}/api/ai/playbook", timeout=90)
++    assert r.status_code == 200, r.text[:300]
++    d = r.json()
++    for k in ("setups", "maturity", "live_blocked", "live_stats", "custom"):
++        assert k in d, f"missing key {k}"
++    setups = d["setups"]
++    for sid in ("order_block", "fvg_fill", "htf_range"):
++        assert sid in setups, f"{sid} missing in setups"
++    base = ["trend_follow", "breakout", "squeeze_breakout", "mean_reversion", "range_fade",
++            "liquidity_sweep", "momentum_news", "pullback", "swing_trend", "hedge"]
++    for sid in base:
++        assert sid in setups
++    assert len(setups) >= 13
++    fields = {"setup", "custom", "trades", "winrate", "pnl", "live_trades",
++              "live_winrate", "live_pnl", "verdict", "live_ready", "reason"}
++    assert isinstance(d["maturity"], list) and d["maturity"]
++    for row in d["maturity"]:
++        assert fields.issubset(row.keys()), f"missing {fields - set(row.keys())}"
++    ids = {row["setup"] for row in d["maturity"]}
++    for sid in ("order_block", "fvg_fill", "htf_range"):
++        assert sid in ids
++        row = next(x for x in d["maturity"] if x["setup"] == sid)
++        assert row["live_ready"] is False
++        assert row["trades"] == 0
++    assert "_id" not in d
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/frontend/src/components/AIEquityPanel.js /app/frontend/src/components/AIEquityPanel.js
+--- /tmp/KI-Trader/frontend/src/components/AIEquityPanel.js	2026-09-02 06:54:03.117634271 +0000
++++ /app/frontend/src/components/AIEquityPanel.js	2026-09-02 06:36:28.008385521 +0000
+@@ -125,6 +125,8 @@
+       <div style={{ fontSize: 11, opacity: 0.55, margin: '2px 0 6px' }}>
+         Live-Trades nur für Setups mit genug echten Daten (Urteil „bewährt"/„neutral").
+         Unreife Setups laufen als Paper-Datensammlung weiter, bis sie freigeschaltet werden.
++        Läuft ein Setup live deutlich schlechter als im Paper, wird es automatisch live pausiert (Divergenz-Gate).
++        Von der KI entdeckte Setups (Badge „KI") starten immer im Shadow-Test.
+       </div>
+       {maturity === null && <div style={{ fontSize: 12, opacity: 0.7 }}>Lade…</div>}
+       {Array.isArray(maturity) && maturity.length > 0 && (
+@@ -136,6 +138,7 @@
+               <th style={{ padding: '3px 6px' }}>Trades</th>
+               <th style={{ padding: '3px 6px' }}>Winrate</th>
+               <th style={{ padding: '3px 6px' }}>PnL</th>
++              <th style={{ padding: '3px 6px' }} title="Nur echte Live-Trades (ohne Sammel-Trades)">Live n / WR / PnL</th>
+               <th style={{ padding: '3px 6px' }}>Urteil</th>
+               <th style={{ padding: '3px 0 3px 6px' }}>Live</th>
+             </tr>
+@@ -144,17 +147,25 @@
+             {maturity.map(r => (
+               <tr key={r.setup} data-testid={`ai-maturity-row-${r.setup}`}
+                 style={{ borderTop: '1px solid #22252F' }} title={r.reason || ''}>
+-                <td style={{ padding: '4px 6px 4px 0', fontWeight: 600 }}>{r.setup}</td>
++                <td style={{ padding: '4px 6px 4px 0', fontWeight: 600 }}>
++                  {r.setup}
++                  {r.custom && <span data-testid={`ai-maturity-custom-${r.setup}`} style={{ marginLeft: 5, fontSize: 9.5, padding: '1px 4px', borderRadius: 3, background: '#2A2F45', color: '#8FB3FF' }}>KI</span>}
++                </td>
+                 <td style={{ padding: '4px 6px' }}>{r.trades}</td>
+                 <td style={{ padding: '4px 6px' }}>{r.trades ? `${r.winrate}%` : '—'}</td>
+                 <td style={{ padding: '4px 6px', color: (r.pnl ?? 0) > 0 ? '#00FF66' : (r.pnl ?? 0) < 0 ? '#FF3366' : undefined }}>
+                   {r.trades ? money(r.pnl) : '—'}
+                 </td>
++                <td style={{ padding: '4px 6px', opacity: 0.85 }} data-testid={`ai-maturity-live-${r.setup}`}>
++                  {r.live_trades ? `${r.live_trades} / ${r.live_winrate}% / ${money(r.live_pnl)}` : '—'}
++                </td>
+                 <td style={{ padding: '4px 6px', opacity: 0.85 }}>{r.verdict}</td>
+                 <td style={{ padding: '4px 0 4px 6px' }}>
+                   {r.live_ready
+                     ? <span style={{ color: '#00FF66', fontWeight: 700 }}>✓ live-reif</span>
+-                    : <span style={{ color: '#FFB020' }}>sammelt Daten</span>}
++                    : (r.reason || '').startsWith('live pausiert')
++                      ? <span style={{ color: '#FF3366' }}>live pausiert</span>
++                      : <span style={{ color: '#FFB020' }}>sammelt Daten</span>}
+                 </td>
+               </tr>
+             ))}
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/frontend/src/components/AITradingPanel.js /app/frontend/src/components/AITradingPanel.js
+--- /tmp/KI-Trader/frontend/src/components/AITradingPanel.js	2026-09-02 06:54:03.118634271 +0000
++++ /app/frontend/src/components/AITradingPanel.js	2026-09-02 06:44:28.710385170 +0000
+@@ -1675,6 +1675,67 @@
+                 }}
+                 data-testid="ai-max-capital-per-trade" />
+             </label>
++            <label title="Positionsgröße: Risiko-Modus = Marge und Hebel werden pro Trade aus dem Risiko-Budget (X % der Equity) und dem SL-Abstand berechnet; der Hebel wird so gewählt, dass die Liquidation hinter dem SL liegt (Deckel: Max-Hebel, Coin-Max, Swing-Cap). Coin-Max-Kapital und 'Max. Kapital/Trade' gelten dann NICHT mehr als Grenze – stattdessen der Marge-Deckel. Legacy = altes Verhalten (Coin-Max-Kapital × capital_pct × ML-Faktor).">
++              <span><Coins size={13} /> Positionsgröße</span>
++              <select value={cfg.sizing_mode || 'risk'}
++                onChange={e => updateConfig({ sizing_mode: e.target.value })}
++                data-testid="ai-sizing-mode-select">
++                <option value="risk">Risiko-Budget (% Equity / SL)</option>
++                <option value="legacy">Legacy (Max-Kapital × capital_pct)</option>
++              </select>
++            </label>
++            {(cfg.sizing_mode || 'risk') === 'risk' && (
++              <>
++                <label title="Risiko pro Trade in % der Equity (Live: Bitunix-Guthaben inkl. gebundener Marge; Paper: Basis-Guthaben). Moderat: 2–3 %. Wird bei SL-Treffer ungefähr verloren – unabhängig vom Hebel.">
++                  <span>Risiko/Trade %</span>
++                  <input type="number" min={0.1} max={10} step={0.1} style={{ width: 64 }}
++                    key={`rpt-${cfg.risk_per_trade_pct ?? 2}`}
++                    defaultValue={cfg.risk_per_trade_pct ?? 2}
++                    onBlur={e => {
++                      const v = parseFloat(e.target.value);
++                      if (Number.isNaN(v)) { e.target.value = String(cfg.risk_per_trade_pct ?? 2); return; }
++                      if (v !== (cfg.risk_per_trade_pct ?? 2)) updateConfig({ risk_per_trade_pct: v });
++                    }}
++                    data-testid="ai-risk-per-trade-input" />
++                </label>
++                <label title="Marge-Deckel pro Trade in % der Equity. Greift, wenn ein enger SL bei begrenztem Hebel eine sehr große Marge verlangen würde – dann wird das Risiko entsprechend kleiner.">
++                  <span>Max. Marge %</span>
++                  <input type="number" min={1} max={100} step={1} style={{ width: 64 }}
++                    key={`rmm-${cfg.risk_max_margin_pct ?? 15}`}
++                    defaultValue={cfg.risk_max_margin_pct ?? 15}
++                    onBlur={e => {
++                      const v = parseFloat(e.target.value);
++                      if (Number.isNaN(v)) { e.target.value = String(cfg.risk_max_margin_pct ?? 15); return; }
++                      if (v !== (cfg.risk_max_margin_pct ?? 15)) updateConfig({ risk_max_margin_pct: v });
++                    }}
++                    data-testid="ai-risk-max-margin-input" />
++                </label>
++                <label title="Hebel-Deckel im Risiko-Modus (1–200). Der Hebel wird pro Trade so gewählt, dass die Liquidation den Coin-'Liq-Abstand hinter SL' einhält – nie höher als dieser Deckel bzw. das Coin-Maximum.">
++                  <span>Max. Hebel</span>
++                  <input type="number" min={1} max={200} step={1} style={{ width: 64 }}
++                    key={`rml-${cfg.risk_max_leverage ?? 50}`}
++                    defaultValue={cfg.risk_max_leverage ?? 50}
++                    onBlur={e => {
++                      const v = parseInt(e.target.value, 10);
++                      if (Number.isNaN(v)) { e.target.value = String(cfg.risk_max_leverage ?? 50); return; }
++                      if (v !== (cfg.risk_max_leverage ?? 50)) updateConfig({ risk_max_leverage: v });
++                    }}
++                    data-testid="ai-risk-max-leverage-input" />
++                </label>
++                <label title="Untergrenze der Überzeugungs-Skalierung: capital_pct 10 der KI ergibt mindestens diesen Anteil des Risiko-Budgets (0.5 = 50 %). Verhindert, dass 'defensive' Lektionen die Größe wieder auf Mini-Trades drücken. ML-Risiko-Faktor wird nicht mehr multipliziert, sondern das Minimum beider genommen.">
++                  <span>Überzeugungs-Boden</span>
++                  <input type="number" min={0.1} max={1} step={0.05} style={{ width: 64 }}
++                    key={`rcf-${cfg.risk_conviction_floor ?? 0.5}`}
++                    defaultValue={cfg.risk_conviction_floor ?? 0.5}
++                    onBlur={e => {
++                      const v = parseFloat(e.target.value);
++                      if (Number.isNaN(v)) { e.target.value = String(cfg.risk_conviction_floor ?? 0.5); return; }
++                      if (v !== (cfg.risk_conviction_floor ?? 0.5)) updateConfig({ risk_conviction_floor: v });
++                    }}
++                    data-testid="ai-risk-conviction-floor-input" />
++                </label>
++              </>
++            )}
+             <label title="Chance-Risiko-Verhältnis (TP1 zu SL): Spanne, in der sich die KI bei JEDEM Trade frei bewegen darf. Min wird technisch erzwungen; Max 0 = keine Obergrenze.">
+               <span>CRV min / max</span>
+               <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+diff -ruN '--exclude=node_modules' '--exclude=.env' '--exclude=__pycache__' '--exclude=.emergent' '--exclude=test_reports' '--exclude=.ruff_cache' '--exclude=.git' '--exclude=build' '--exclude=yarn.lock' '--exclude=memory' /tmp/KI-Trader/tests/test_risk_sizing_and_playbook_v2.py /app/tests/test_risk_sizing_and_playbook_v2.py
+--- /tmp/KI-Trader/tests/test_risk_sizing_and_playbook_v2.py	1970-01-01 00:00:00.000000000 +0000
++++ /app/tests/test_risk_sizing_and_playbook_v2.py	2026-09-02 06:44:17.069385179 +0000
+@@ -0,0 +1,371 @@
++"""Tests: Risiko-basierte Positionsgröße (services/position_sizing.py), Playbook-
++Erweiterungen (neue SMC-Setups, Paper/Live-Divergenz-Gate, KI-eigene Setups
++mit Shadow-Test), SMC-Zonen-Text, Boot-Migration risk_sizing_v1 und die
++Integration in bitunix_trade.execute_signal (Marge/Hebel aus dem Risiko-Budget).
++Ohne Netzwerk (lokale Mongo, eigene Test-DB)."""
++import asyncio
++import os
++import sys
++from datetime import datetime, timezone, timedelta
++
++sys.path.insert(0, "/app/backend")
++from dotenv import load_dotenv
++load_dotenv("/app/backend/.env")
++from motor.motor_asyncio import AsyncIOMotorClient
++
++TEST_DB = os.environ["DB_NAME"] + "_test_risk_sizing"
++
++
++def iso(**delta):
++    return (datetime.now(timezone.utc) - timedelta(**delta)).isoformat()
++
++
++def approx(a, b, tol=0.02):
++    return abs(a - b) <= tol * max(abs(b), 1e-9)
++
++
++# ------------------------------------------------------------------ Sizing (rein)
++def test_conviction_and_combined_scale():
++    from services import position_sizing as ps
++    assert ps.conviction_scale(100) == 1.0
++    assert ps.conviction_scale(10) == 0.5
++    assert approx(ps.conviction_scale(55), 0.75)
++    assert ps.conviction_scale(None) == 1.0
++    assert ps.conviction_scale(0) == 1.0
++    assert ps.conviction_scale(10, floor=0.8) == 0.8
++    # Minimum statt Produkt: capital_pct 20 (0.556) + ML 0.5 -> 0.5, nicht 0.278
++    s, note = ps.combined_scale(ps.conviction_scale(20), 0.5)
++    assert s == 0.5 and "nicht gestapelt" in note
++    s, _ = ps.combined_scale(ps.conviction_scale(20), 0.5, stack=True)
++    assert approx(s, 0.2778, 0.01)
++    s, _ = ps.combined_scale(1.0, 1.0)
++    assert s == 1.0
++
++
++def test_compute_reproduces_prod_case_and_fixes_it():
++    """Prod-Fall DOTUSDT 01.09.: Equity ~700, SL 0,46 %, alte Marge 4,5 USDT @7,2x
++    (Risiko ~0,15 USDT). Risiko-Modus: 2 % = 14 USDT Risiko."""
++    from services import position_sizing as ps
++    cfg = {"leverage": 7.2, "auto_lev_value": 0.5, "auto_lev_mode": "liq_pct",
++           "maintenance_margin_rate": 0.5}
++    params = ps.build_params(dict(ps.DEFAULTS), {"capital_pct": 100}, is_swing=False, ml_scale=1.0)
++    entry, sl = 0.8572, 0.8572 * (1 + 0.0046)   # SHORT, SL 0,46 % über Entry
++    r = ps.compute(params, cfg, entry, sl, equity=700.0, coin_max_lev=125)
++    assert r is not None
++    assert approx(r["risk_usdt"], 14.0)
++    # Hebel: 1/(0,46 % + 0,5 % Puffer + 0,5 % MMR) = 68x -> Deckel 50x
++    assert r["leverage"] == 50.0
++    assert approx(r["notional"], 14.0 / 0.0046)          # ~3043 USDT
++    assert approx(r["margin"], 14.0 / 0.0046 / 50)        # ~60,9 USDT (< 15 % Deckel 105)
++    assert r["capped"] is False
++    # Enger SL -> größere Position bei gleichem Risiko; weiter SL -> kleiner
++    r_wide = ps.compute(params, cfg, entry, entry * 1.02, equity=700.0, coin_max_lev=125)
++    assert r_wide["notional"] < r["notional"] and approx(r_wide["risk_usdt"], 14.0)
++    assert r_wide["leverage"] < 50.0  # 1/(2 %+0,5 %+0,5 %) = 33x
++
++
++def test_compute_margin_cap_and_floors():
++    from services import position_sizing as ps
++    cfg = {"leverage": 5, "auto_lev_value": 0.5, "maintenance_margin_rate": 0.5}
++    params = ps.build_params({**ps.DEFAULTS, "risk_max_leverage": 5},
++                             {"capital_pct": 100}, is_swing=False)
++    # SL 0,3 %, Hebel-Deckel 5x -> Marge = 14/0,003/5 = 933 > 15 % von 700 (105) -> gedeckelt
++    r = ps.compute(params, cfg, 100.0, 99.7, equity=700.0, coin_max_lev=200)
++    assert r["capped"] is True and approx(r["margin"], 105.0)
++    assert r["risk_usdt"] < 14.0
++    # Swing-Cap deckelt den Hebel
++    p_sw = ps.build_params({**ps.DEFAULTS, "swing_max_leverage": 8},
++                           {"capital_pct": 100}, is_swing=True)
++    r_sw = ps.compute(p_sw, cfg, 100.0, 99.0, equity=1000.0, coin_max_lev=200)
++    assert r_sw["leverage"] == 8.0
++    # Coin-Max deckelt
++    r_cm = ps.compute(params, cfg, 100.0, 99.0, equity=1000.0, coin_max_lev=3)
++    assert r_cm["leverage"] == 3.0
++    # Ungültige Eingaben -> None (Legacy-Pfad)
++    assert ps.compute(params, cfg, 100.0, 100.0, equity=700.0) is None
++    assert ps.compute(params, cfg, 100.0, 99.0, equity=None) is None
++    assert ps.compute(params, cfg, 100.0, 99.0, equity=0) is None
++    # Sammel-Trades skaliert
++    p_c = ps.build_params({**ps.DEFAULTS, "risk_collection_scale": 0.5},
++                          {"capital_pct": 100}, is_swing=False, collection=True)
++    r_c = ps.compute(p_c, cfg, 100.0, 99.0, equity=1000.0, coin_max_lev=200)
++    assert approx(r_c["risk_usdt"], 10.0)
++
++
++def test_clamp_updates():
++    from services import position_sizing as ps
++    cfg = dict(ps.DEFAULTS)
++    ps.clamp_updates({"sizing_mode": "legacy"}, cfg)
++    assert cfg["sizing_mode"] == "legacy"
++    ps.clamp_updates({"sizing_mode": "risk", "risk_per_trade_pct": 50, "risk_max_leverage": 999,
++                      "risk_conviction_floor": 0, "risk_stack_reductions": 1,
++                      "risk_max_margin_pct": "abc"}, cfg)
++    assert cfg["sizing_mode"] == "risk"
++    assert cfg["risk_per_trade_pct"] == 10.0
++    assert cfg["risk_max_leverage"] == 200 and isinstance(cfg["risk_max_leverage"], int)
++    assert cfg["risk_conviction_floor"] == 0.1
++    assert cfg["risk_stack_reductions"] is True
++    assert cfg["risk_max_margin_pct"] == 15.0
++    ps.clamp_updates({"sizing_mode": "bogus"}, cfg)
++    assert cfg["sizing_mode"] == "risk"
++
++
++def test_ai_engine_defaults_include_sizing_and_prompt_enum():
++    from services.ai_engine import DEFAULT_AI_CONFIG, ANALYSIS_SYSTEM, ANALYSIS_SYSTEM_LEAN
++    from services import ai_playbook
++    assert DEFAULT_AI_CONFIG["sizing_mode"] == "risk"
++    assert DEFAULT_AI_CONFIG["risk_per_trade_pct"] == 2.0
++    for p in (ANALYSIS_SYSTEM, ANALYSIS_SYSTEM_LEAN):
++        assert "order_block|fvg_fill|htf_range" in p
++        assert '"new_setups"' in p
++    assert ai_playbook.SETUP_ENUM.endswith("order_block|fvg_fill|htf_range")
++
++
++# ------------------------------------------------------------------ Playbook (rein)
++def test_normalize_setup_new_ids_and_aliases():
++    from services import ai_playbook as pb
++    pb.set_custom_cache({})
++    assert pb.normalize_setup("order_block") == "order_block"
++    assert pb.normalize_setup("Order Block Retest") == "order_block"
++    assert pb.normalize_setup("fvg") == "fvg_fill"
++    assert pb.normalize_setup("bullish imbalance") == "fvg_fill"
++    assert pb.normalize_setup("htf_range") == "htf_range"
++    assert pb.normalize_setup("range_fade") == "range_fade"   # bestehend unverändert
++    assert pb.normalize_setup("liquidity sweep") == "liquidity_sweep"
++    assert pb.normalize_setup("xyz") == "other"
++    pb.set_custom_cache({"vwap_reclaim": {"desc": "x"}})
++    assert pb.normalize_setup("VWAP Reclaim") == "vwap_reclaim"
++    assert "vwap_reclaim" in pb.all_setups()
++    pb.set_custom_cache({})
++
++
++def test_valid_custom_setup():
++    from services import ai_playbook as pb
++    pb.set_custom_cache({})
++    ok, sid = pb.valid_custom_setup("VWAP-Reclaim", "Rückeroberung des VWAP nach Sweep, SL unter Sweep-Low, TP POC")
++    assert ok and sid == "vwap_reclaim"
++    assert pb.valid_custom_setup("breakout", "lange Beschreibung hier drin......")[0] is False
++    assert pb.valid_custom_setup("squeeze_v2", "lange Beschreibung hier drin......")[0] is False  # Alias
++    assert pb.valid_custom_setup("ab", "lange Beschreibung hier drin......")[0] is False
++    assert pb.valid_custom_setup("neu_setup", "kurz")[0] is False
++
++
++def test_live_divergent():
++    from services import ai_playbook as pb
++    weak = {"trades": 15, "wins": 1, "pnl": -21.07, "verdict": "schwach"}
++    good = {"trades": 79, "wins": 38, "pnl": 40.0, "verdict": "neutral"}
++    assert pb.live_divergent(weak, good) is not None
++    assert pb.live_divergent({"trades": 5, "wins": 0, "pnl": -3, "verdict": "test"}, good) is None
++    assert pb.live_divergent(weak, {**good, "verdict": "schwach"}) is None
++    assert pb.live_divergent(None, good) is None
++    assert pb.live_divergent({"trades": 10, "wins": 6, "pnl": 3, "verdict": "bewährt"}, good) is None
++
++
++def test_maturity_overview_live_columns():
++    from services import ai_playbook as pb
++    pb.set_custom_cache({"vwap_reclaim": {"desc": "x"}})
++    stats = {"squeeze_breakout": {"trades": 79, "wins": 38, "pnl": 40.0, "verdict": "neutral"}}
++    live = {"squeeze_breakout": {"trades": 15, "wins": 1, "pnl": -21.0, "verdict": "schwach"}}
++    lb = {"squeeze_breakout": {"reason": "live 15 Trades"}}
++    rows = {r["setup"]: r for r in pb.maturity_overview(stats, {}, lb, live)}
++    r = rows["squeeze_breakout"]
++    assert r["live_ready"] is False and r["reason"].startswith("live pausiert")
++    assert r["live_trades"] == 15 and r["live_winrate"] == 7
++    assert rows["vwap_reclaim"]["custom"] is True and rows["order_block"]["custom"] is False
++    pb.set_custom_cache({})
++
++
++# ------------------------------------------------------------------ SMC-Zonen
++def _candles(n=400, start=100.0):
++    import math
++    out = []
++    p = start
++    for i in range(n):
++        drift = 0.4 * math.sin(i / 25.0)
++        o = p
++        c = p + drift + (0.6 if i % 97 == 50 else 0) - (0.6 if i % 89 == 40 else 0)
++        h, l = max(o, c) + 0.05, min(o, c) - 0.05
++        out.append({"timestamp": 1_700_000_000_000 + i * 60_000, "open": o, "high": h,
++                    "low": l, "close": c, "volume": 10 + (i % 7)})
++        p = c
++    return out
++
++
++def test_smc_zones_text_and_limits():
++    from services import smc_zones
++    cs = _candles()
++    z = smc_zones.zones(cs, cs[-1]["close"])
++    for tf, rows in z.items():
++        assert tf in smc_zones.TIMEFRAMES
++        assert len(rows) <= smc_zones.MAX_ZONES_PER_TF
++        for r in rows:
++            assert abs(r["dist_pct"]) <= smc_zones.MAX_DISTANCE_PCT
++            assert r["kind"] in ("OB", "FVG") and r["side"] in ("bull", "bear")
++    txt = smc_zones.zones_text(cs, cs[-1]["close"])
++    assert txt is None or txt.startswith("SMC-Zonen ")
++    assert smc_zones.zones_text(cs[:20], 100.0) is None  # zu wenig Daten -> keine Zeile
++
++
++# ------------------------------------------------------------------ DB-Tests
++async def _db_tests():
++    from services import ai_playbook as pb
++    from services import boot_migrations as bm
++    client = AsyncIOMotorClient(os.environ["MONGO_URL"], serverSelectionTimeoutMS=5000)
++    db = client[TEST_DB]
++    await client.drop_database(TEST_DB)
++
++    # ---- Divergenz-Gate: Paper ok, live schwach -> live_blocked, weiter sammelbar
++    rows = []
++    for i in range(60):   # Sammel-Trades: 50 % Win
++        rows.append({"id": f"c{i}", "strategy_id": "ai_trader", "status": "closed",
++                     "mode": "paper", "data_collection": True, "setup": "squeeze_breakout",
++                     "realized_pnl": 1.5 if i % 2 else -0.8, "opened_at": iso(days=2)})
++    for i in range(15):   # Live: 1 Gewinner von 15
++        rows.append({"id": f"l{i}", "strategy_id": "ai_trader", "status": "closed",
++                     "mode": "live", "setup": "squeeze_breakout",
++                     "realized_pnl": 0.5 if i == 0 else -1.5, "opened_at": iso(days=1)})
++    await db.auto_trades.insert_many(rows)
++    data = await pb.refresh(db)
++    assert data["stats"]["squeeze_breakout"]["verdict"] in ("neutral", "bewährt")
++    assert "squeeze_breakout" in data["live_blocked"], data["live_blocked"]
++    assert data["live_ready"]["squeeze_breakout"] is False
++    assert "squeeze_breakout" not in data["disabled"]
++    assert pb.live_block_reason("squeeze_breakout") and "live-schwach" in pb.live_block_reason("squeeze_breakout")
++    assert pb.disabled_reason("squeeze_breakout") is None   # Sammeln bleibt erlaubt
++    feed = await db.ai_chat.find_one({"role": "playbook", "setup": "squeeze_breakout"})
++    assert feed and "live deutlich schlechter" in feed["text"]
++    # Idempotent: zweiter Lauf legt keine zweite Sperre/Meldung an
++    await pb.refresh(db)
++    assert await db.ai_chat.count_documents({"role": "playbook", "setup": "squeeze_breakout"}) == 1
++    # Ablauf der Live-Sperre -> Re-Test freigegeben
++    await db.settings.update_one({"_id": pb.STATE_ID}, {"$set": {
++        "live_blocked.squeeze_breakout.retest_at": iso(days=1)}})
++    await db.auto_trades.delete_many({"mode": "live"})
++    data = await pb.refresh(db)
++    assert "squeeze_breakout" not in data["live_blocked"]
++    ctx = await pb.context_text(db)
++    assert "order_block" in ctx and "new_setups" in ctx and "MULTI-TIMEFRAME" in ctx
++    print("  ✓ Divergenz-Gate (live schwach, paper ok) + Re-Test + Prompt-Block")
++
++    # ---- KI-eigene Setups: anlegen, Shadow (nicht live-reif), ausmustern
++    res = await pb.propose_custom_setup(db, "VWAP Reclaim",
++                                        "Rückeroberung des Session-VWAP nach Sweep, SL unter Sweep-Low, TP POC (5m).")
++    assert res["status"] == "ok" and res["id"] == "vwap_reclaim"
++    assert (await pb.propose_custom_setup(db, "vwap_reclaim", "nochmal eine lange Beschreibung dazu"))["status"] == "exists"
++    assert (await pb.propose_custom_setup(db, "breakout", "kollidiert mit Playbook-Setup ....."))["status"] == "rejected"
++    data = await pb.refresh(db)
++    assert "vwap_reclaim" in data["custom"] and data["live_ready"]["vwap_reclaim"] is False
++    assert pb.normalize_setup("vwap_reclaim") == "vwap_reclaim"
++    ok, why = pb.live_ready(data["stats"].get("vwap_reclaim"))
++    assert ok is False and "neues Setup" in why
++    mat = {r["setup"]: r for r in pb.maturity_overview(data["stats"], data["disabled"],
++                                                        data["live_blocked"], data["live_stats"])}
++    assert mat["vwap_reclaim"]["custom"] is True
++    # Max-Anzahl
++    for i in range(pb.MAX_CUSTOM_SETUPS + 2):
++        await pb.propose_custom_setup(db, f"idea_{i}", "eine ausreichend lange Beschreibung des Setups")
++    doc = await db.settings.find_one({"_id": pb.STATE_ID})
++    assert len(doc["custom"]) == pb.MAX_CUSTOM_SETUPS
++    # schwaches KI-Setup -> gesperrt UND ausgemustert (kein Re-Test), Wiedervorschlag abgelehnt
++    await db.auto_trades.insert_many([
++        {"id": f"v{i}", "strategy_id": "ai_trader", "status": "closed", "mode": "paper",
++         "data_collection": True, "setup": "vwap_reclaim", "realized_pnl": -1.0,
++         "opened_at": iso(days=1)} for i in range(10)])
++    data = await pb.refresh(db)
++    assert "vwap_reclaim" not in data["custom"]
++    doc = await db.settings.find_one({"_id": pb.STATE_ID})
++    assert "vwap_reclaim" in doc["custom_retired"]
++    assert (await pb.propose_custom_setup(db, "vwap_reclaim", "nochmal eine lange Beschreibung dazu"))["status"] == "rejected"
++    pb.set_custom_cache({})
++    print("  ✓ KI-Setups: Shadow-Test, Limit, Ausmusterung")
++
++    # ---- Boot-Migration risk_sizing_v1: setzt risk, respektiert Trader-Wahl, idempotent
++    class _Eng:
++        config = {}
++    await db.settings.update_one({"_id": "ai_trader_config"}, {"$set": {"enabled": True}}, upsert=True)
++    eng = _Eng()
++    await bm.migrate_risk_sizing(db, eng)
++    doc = await db.settings.find_one({"_id": "ai_trader_config"})
++    assert doc["sizing_mode"] == "risk" and doc["risk_per_trade_pct"] == 2.0
++    assert eng.config["sizing_mode"] == "risk"
++    await db.settings.update_one({"_id": "ai_trader_config"}, {"$set": {"sizing_mode": "legacy"}})
++    await bm.migrate_risk_sizing(db, eng)   # Marker gesetzt -> keine Wiederholung
++    assert (await db.settings.find_one({"_id": "ai_trader_config"}))["sizing_mode"] == "legacy"
++    await client.drop_database(TEST_DB)
++    await db.settings.update_one({"_id": "ai_trader_config"},
++                                 {"$set": {"sizing_mode": "legacy"}}, upsert=True)
++    await bm.migrate_risk_sizing(db, None)  # Trader hat selbst gewählt -> unangetastet
++    assert (await db.settings.find_one({"_id": "ai_trader_config"}))["sizing_mode"] == "legacy"
++    await client.drop_database(TEST_DB)
++    print("  ✓ Boot-Migration risk_sizing_v1")
++
++
++def test_db_flows():
++    asyncio.run(_db_tests())
++
++
++# ------------------------------------------------------------------ Integration bitunix_trade
++async def _exec_signal_sizing():
++    """execute_signal mit ai_sizing -> Marge/Hebel aus dem Risiko-Budget (Paper,
++    kein Netzwerk); ohne ai_sizing bleibt der Legacy-Pfad exakt erhalten."""
++    from services import bitunix_trade as bt
++    client = AsyncIOMotorClient(os.environ["MONGO_URL"], serverSelectionTimeoutMS=5000)
++    db = client[TEST_DB + "_exec"]
++    await client.drop_database(db.name)
++    mgr = bt.AutoTradeManager(bt.BitunixTradeClient())
++    mgr.db = db
++    mgr.config = {"enabled": True, "coins": {}, "strategy_coin_configs": {},
++                  "capital_allocation": {"paper": {"mode": "full", "value": 0, "base_balance": 1000.0},
++                                         "live": {"mode": "full", "value": 0}}}
++    cfg = dict(bt.DEFAULT_COIN_CFG)
++    cfg.update({"enabled": True, "mode": "paper", "max_capital": 30.0, "leverage": 7.2})
++    mgr.config["coins"]["DOTUSDT"] = cfg
++    mgr.config["strategy_coin_configs"]["ai_trader_DOTUSDT"] = dict(cfg)
++    candles = _candles(200, start=0.85)
++    entry = candles[-1]["close"]
++    await db.settings.update_one({"_id": "ai_trader_config"}, {"$set": {
++        "fee_guard_enabled": False, "max_trades_per_coin": 1}}, upsert=True)
++    base = {"symbol": "DOTUSDT", "type": "SHORT", "entry_price": entry,
++            "strategy_id": "ai_trader", "strategy_name": "KI Trader", "timeframe": "1m",
++            "use_ai_levels": True, "stop_loss": entry * 1.005, "take_profit_1": entry * 0.99,
++            "take_profit_full": entry * 0.98, "ai_max_capital": 100.0, "ai_capital_pct": 30,
++            "ml_risk_scale": 0.5, "candles": candles}
++    return mgr, db, client, mgr.on_signal, base, entry
++
++
++def test_execute_signal_uses_risk_sizing():
++    async def run():
++        from services import position_sizing as ps
++        mgr, db, client, fn, base, entry = await _exec_signal_sizing()
++        # Legacy: 30 × 0.3 × 0.5 = 4.5 USDT @ 7.2x
++        await fn(dict(base), base["candles"])
++        t_legacy = await db.auto_trades.find_one({"symbol": "DOTUSDT"}, sort=[("opened_at", -1)])
++        assert t_legacy, "Legacy-Trade wurde nicht angelegt"
++        assert approx(float(t_legacy["max_capital"]), 4.5), t_legacy["max_capital"]
++        assert float(t_legacy["leverage"]) == 7.2
++        assert t_legacy.get("sizing") is None
++        await db.auto_trades.delete_many({})
++        # Risiko-Modus: Equity 1000 (Paper-Basis) × 2 % = 20 USDT Risiko, aber
++        # Skalierung min(conv 0.611, ML 0.5) = 0.5 -> 10 USDT Risiko, SL 0,5 %
++        sig2 = dict(base)
++        sig2["ai_sizing"] = ps.build_params(dict(ps.DEFAULTS), {"capital_pct": 30},
++                                            is_swing=False, ml_scale=0.5)
++        await fn(sig2, base["candles"])
++        t = await db.auto_trades.find_one({"symbol": "DOTUSDT"}, sort=[("opened_at", -1)])
++        assert t, "Risiko-Trade wurde nicht angelegt"
++        s = t.get("sizing") or {}
++        assert s.get("risk_usdt") and approx(s["risk_usdt"], 10.0, 0.05), s
++        assert float(t["leverage"]) == 50.0, t["leverage"]        # 1/(0,5+0,5+0,5 %) = 66 -> 50
++        assert approx(float(t["max_capital"]), 10.0 / 0.005 / 50, 0.05), t["max_capital"]  # ~40 USDT
++        assert float(t["max_capital"]) > 4.5 * 5
++        await client.drop_database(db.name)
++        print("  ✓ execute_signal: Legacy unverändert, Risiko-Modus Marge 40 USDT @ 50x")
++    asyncio.run(run())
++
++
++if __name__ == "__main__":
++    for name, fn in list(globals().items()):
++        if name.startswith("test_") and callable(fn):
++            print(f"- {name}")
++            fn()
++    print("ALLE TESTS GRÜN")

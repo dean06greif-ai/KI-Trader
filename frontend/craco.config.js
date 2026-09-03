@@ -108,6 +108,18 @@ let webpackConfig = {
 };
 
 webpackConfig.devServer = (devServerConfig) => {
+  // Proxy API + WebSocket requests to the FastAPI backend (port 8001).
+  // Needed because the ingress routes everything (incl. /api) to port 3000 here.
+  devServerConfig.proxy = [
+    {
+      context: ["/api"],
+      target: "http://localhost:8001",
+      changeOrigin: true,
+      ws: true,
+    },
+  ];
+  devServerConfig.allowedHosts = "all";
+
   // Add health check endpoints if enabled
   if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
     const originalSetupMiddlewares = devServerConfig.setupMiddlewares;
