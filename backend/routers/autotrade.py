@@ -12,6 +12,7 @@ from core.defaults import DEFAULT_STRATEGY_OVERRIDE, DEFAULT_STRATEGY_COIN_CFG
 from core.state import scanner, autotrader, trade_client
 from core.instruments import kline_available
 from core.utils import _enrich_trade, slippage_aggregate
+from routers.analytics import is_stale_strategy
 from services.bitunix_trade import DEFAULT_COIN_CFG
 
 logger = logging.getLogger(__name__)
@@ -235,11 +236,15 @@ async def get_trades(status: str = None, limit: int = 50, mode: str = None,
     ex_by_id, ex_by_key = ({}, {})
     if any(t.get("status") == "open" and t.get("mode") == "live" for t in trades):
         ex_by_id, ex_by_key = await _live_position_map()
-    out = {"trades": [
+    enriched = [
         _enrich_trade(t, scanner.current_price(t["symbol"]) if t.get("status") == "open" else None,
                       exchange=_exchange_pos_for(t, ex_by_id, ex_by_key))
         for t in trades
-    ]}
+    ]
+    # Karteileiche: Trade einer gelöschten/nicht mehr existierenden Strategie
+    for t in enriched:
+        t["stale_strategy"] = is_stale_strategy(t.get("strategy_id") or "external")
+    out = {"trades": enriched}
     if status:
         out["total"] = await state.db.auto_trades.count_documents(q)
     return out
@@ -693,8 +698,19 @@ async def get_balance():
     mode = autotrader.config.get("mode", "paper")
 
     # ---- Primary mode stats (live or paper) ----
-    open_ct = await state.db.auto_trades.count_documents({"status": "open"})
-    closed = await state.db.auto_trades.find({"status": "closed"}).to_list(1000)
+    # Nur der aktuelle Modus zählt; Datensammel-Trades (data_collection) und
+    # Karteileichen (gelöschte Strategien) sind KEINE Performance.
+    def _counts(rows):
+        return [t for t in rows
+                if not is_stale_strategy(t.get("strategy_id") or "external")]
+
+    base_q = {"mode": mode, "data_collection": {"$ne": True}}
+    open_rows = await state.db.auto_trades.find(
+        {**base_q, "status": "open"}, {"_id": 0, "strategy_id": 1}).to_list(500)
+    closed = _counts(await state.db.auto_trades.find(
+        {**base_q, "status": "closed"},
+        {"_id": 0, "strategy_id": 1, "realized_pnl": 1}).to_list(5000))
+    open_ct = len(_counts(open_rows))
     pnl = round(sum(t.get("realized_pnl", 0) for t in closed), 4)
 
     result = {
@@ -741,13 +757,13 @@ async def get_balance():
     # Only add paper stats if mode is live AND there are paper trades in DB
     if mode == "live":
         try:
-            # Datensammel-Trades des KI-Traders sind KEINE Paper-Performance
-            paper_open = await state.db.auto_trades.count_documents(
-                {"status": "open", "mode": "paper", "data_collection": {"$ne": True}}
-            )
-            paper_closed = await state.db.auto_trades.find(
-                {"status": "closed", "mode": "paper", "data_collection": {"$ne": True}}
-            ).to_list(500)
+            # Datensammel-Trades und Karteileichen sind KEINE Paper-Performance
+            pq = {"mode": "paper", "data_collection": {"$ne": True}}
+            paper_open = len(_counts(await state.db.auto_trades.find(
+                {**pq, "status": "open"}, {"_id": 0, "strategy_id": 1}).to_list(500)))
+            paper_closed = _counts(await state.db.auto_trades.find(
+                {**pq, "status": "closed"},
+                {"_id": 0, "strategy_id": 1, "realized_pnl": 1}).to_list(5000))
             paper_pnl = round(sum(t.get("realized_pnl", 0) for t in paper_closed), 4)
             # Only include if there's actual paper activity
             if paper_open > 0 or paper_pnl != 0 or len(paper_closed) > 0:

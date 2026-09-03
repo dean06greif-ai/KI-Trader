@@ -75,3 +75,8 @@ verbessert werden (Originalstruktur beibehalten, Render-Deploy). Vier Punkte:
 - Supervisor läuft jetzt direkt aus `/app/backend` + `/app/frontend`.
 - pytest: 986 passed; vorbestehende Failures: test_strategy_insights::test_daily_quota_cooldown_until_utc_midnight, test_iter49_empty_response_retry::test_empty_response_single_retry_succeeds, test_fix_custom_ai_trades::test_reject_deregisters_strategy_and_closes_trades. iter38-API-Tests benötigen KITRADER_BASE_URL=http://localhost:8001.
 - Offen (P1): Gelöschte Strategien ("Karteileichen") in Performance-Analytics ausblenden (routers/ai.py get_performance/get_daily_analytics, PerformanceAnalytics.js).
+
+## 2026-06 – Karteileichen + Paper-Badge
+- `/api/autotrade/balance`: Primär-Stats nur noch für aktuellen Modus, ohne data_collection und ohne Karteileichen (is_stale_strategy); Paper-Overlay ebenso.
+- `/api/autotrade/trades`: neues Feld `stale_strategy` je Trade.
+- PerformanceAnalytics.js: `filterFn` blendet `stale_strategy` überall aus; PnL-Summe immer aus gefilterten Trades.

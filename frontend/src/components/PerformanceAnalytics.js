@@ -142,7 +142,9 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
   // Globaler Live/Paper-Filter (obere Auswahl) für den GESAMTEN Analyse-Bereich
   // Datensammel-Trades des KI-Traders (data_collection) sind KEINE Paper-
   // Performance: 'paper' zeigt nur echte Paper-Trades, 'collection' nur die Sammlung.
+  // Karteileichen (Trades gelöschter Strategien) sind überall ausgeblendet.
   const filterFn = (t) => {
+    if (t.stale_strategy) return false;
     if (pnlFilter === 'all') return true;
     if (pnlFilter === 'live') return t.mode === 'live';
     if (pnlFilter === 'collection') return !!t.data_collection;
@@ -204,9 +206,7 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
   const coinClosedTrades = closedTrades.filter(t => t.symbol === selectedCoin);
   const coinOpenTrades = openTrades.filter(t => t.symbol === selectedCoin);
 
-  const pnlTotal = pnlFilter === 'all'
-    ? (balance?.realized_pnl || 0)
-    : closedTrades.reduce((a, t) => a + (t.realized_pnl || 0), 0);
+  const pnlTotal = closedTrades.reduce((a, t) => a + (t.realized_pnl || 0), 0);
   const coinPnl = coinClosedTrades.reduce((a, t) => a + (t.realized_pnl || 0), 0);
 
   // Performance je Strategie für den GEWÄHLTEN COIN.
