@@ -86,3 +86,4 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+kitrader/frontend/node_modules/.cache/default-development/0.pack

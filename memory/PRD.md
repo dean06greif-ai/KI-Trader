@@ -44,7 +44,16 @@ verbessert werden (Originalstruktur beibehalten, Render-Deploy). Vier Punkte:
 - Live gegen Bitunix: Mini-Order XRPUSDT → in-flight nicht übernommen → Karenz → Übernahme →
   Dedupe → Close → echter PnL −0.0017625 USDT übernommen. Copilot-Antwort: „16 % des Startkapitals“.
 
+## Iteration 2 (2026-06) – Nacht-Serie + Paper-Statistik
+- Nacht-Serie/Job-Warteschlange: `services/job_series.py`, `routers/job_series.py`, UI `JobSeriesPanel.js`,
+  `SeriesResultDetail.js`, „+ Serie“-Buttons in Backtester/Optimizer/Regime-Lab, Telegram-Toggle `job_series`.
+- Bugfix: Datensammel-Trades (data_collection) nicht mehr in Paper-Statistik (strategy-comparison, balance-Overlay,
+  performance, Analyse-Filter mit neuem „Sammlung“-Filter); Karteileichen im Strategie-Vergleich ausgeblendet
+  (include_stale/include_collection Flags, Badge „gelöscht“).
+- Tests: `test_job_series.py`, `test_paper_stats_collection_stale.py`, `test_iter39_*` (Testing-Agent) – alle grün.
+
 ## Backlog / Nächste Schritte
+- P2: Karteileichen-Ausblendung auch in der Strategie-Performance-Liste des Analyse-Panels.
 - P1: `test_iter37_lifecycle_resources_api` erwartet 10 Setups (jetzt 13) – Test aktualisieren.
 - P1: Vorbestehende Unit-Fehler (3) prüfen.
 - P2: Watchdog-Karenz (`adopt_grace_sec`) als Eingabefeld im SettingsPanel.
