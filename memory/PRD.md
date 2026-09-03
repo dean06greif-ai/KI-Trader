@@ -59,3 +59,11 @@ verbessert werden (Originalstruktur beibehalten, Render-Deploy). Vier Punkte:
 - P2: Watchdog-Karenz (`adopt_grace_sec`) als Eingabefeld im SettingsPanel.
 - P2: PnL-Abgleich-Status (letzter Lauf, korrigierte Trades) im Settings-/Analytics-Panel anzeigen.
 - P2: Alte geschlossene Live-Trades (>48 h) optional per Admin-Endpoint nachziehen.
+
+## Iteration 3 (2026-06) – Render-Deploy-Fix (Root-Template)
+- Render-Logs zeigten Fehler aus dem Emergent-Root (`/app/frontend`, `/app/backend`), nicht aus `/app/kitrader`.
+- `/app/frontend/package.json`: react-day-picker 8.10.1 → 9.14.0 (React-19-Peer), date-fns 4.1.0 bleibt; `ui/calendar.jsx` auf v9-API
+  (identisch zu kitrader). `npm install` löst jetzt ohne `--legacy-peer-deps` auf; `yarn build` grün.
+- `/app/backend/requirements.txt`: `emergentintegrations==0.2.0` entfernt (nicht genutzt, privater Index).
+- Nutzer-Aufgabe: Render „Root Directory“ auf `kitrader/backend` bzw. `kitrader/frontend` prüfen, falls Repo den Unterordner enthält.
+- Backlog verschoben („Später“): Karteileichen-Filter in Strategie-Performance-Liste des Analyse-Panels.
