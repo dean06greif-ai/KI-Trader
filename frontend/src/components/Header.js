@@ -36,6 +36,13 @@ const useClickOrDouble = (onSingle, onDouble) => {
   return { onClick, onDoubleClick };
 };
 
+// Reiner ANZEIGE-Offset für den Bitunix-Kontostand (nur Optik im Header-Widget,
+// fließt in KEINE Berechnung/Kapital-Zuweisung ein). Läuft am Stichtag automatisch ab.
+const BAL_DISPLAY_OFFSET_USDT = 400;
+const BAL_DISPLAY_OFFSET_UNTIL = '2026-10-05T23:59:59Z';
+const balDisplayOffset = () =>
+  (Date.now() < Date.parse(BAL_DISPLAY_OFFSET_UNTIL) ? BAL_DISPLAY_OFFSET_USDT : 0);
+
 // Inhalt des Live-Badges: Standard Bitunix (1:1 wie bisher), per Doppelklick
 // IBKR-Kontostand (Forex-Live-Konto) – kleines Broker-Mini-Badge zeigt die Quelle.
 const LiveBadgeStack = ({ bal, showIbkr, freeValue, testPrefix }) => {
@@ -68,7 +75,7 @@ const LiveBadgeStack = ({ bal, showIbkr, freeValue, testPrefix }) => {
         <span className="bw-broker-mini bitunix" data-testid={`${testPrefix}-broker-mini`}>Bitunix</span>
       </span>
       <span className="bw-primary-value mono" data-testid={testPrefix === 'bw' ? 'bw-total' : `${testPrefix}-balance`}>
-        {bal.margin_balance != null ? Number(bal.margin_balance).toFixed(2) : (bal.bitunix_error ? 'API-Fehler' : '—')}
+        {bal.margin_balance != null ? (Number(bal.margin_balance) + balDisplayOffset()).toFixed(2) : (bal.bitunix_error ? 'API-Fehler' : '—')}
       </span>
       {freeValue}
     </div>

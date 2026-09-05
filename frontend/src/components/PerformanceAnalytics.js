@@ -7,6 +7,7 @@ import PendingEntryOrders from './PendingEntryOrders';
 import KeyLevelLimitOrders from './KeyLevelLimitOrders';
 import TradeDetailCard from './TradeDetailCard';
 import { PnlFilter, TradeListControls } from './TradeFilters';
+import { filterExternalTrades } from '../lib/displayFilters';
 import SlippageStatsCard from './SlippageStatsCard';
 import './PerformanceAnalytics.css';
 
@@ -125,7 +126,7 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
     .slice(0, 5);
 
   const loadTrades = useCallback(() => {
-    fetch(`${API_URL}/api/autotrade/trades?limit=200`).then(r => r.json()).then(d => setTrades(d.trades || [])).catch(() => {});
+    fetch(`${API_URL}/api/autotrade/trades?limit=200`).then(r => r.json()).then(d => setTrades(filterExternalTrades(d.trades || []))).catch(() => {});
     fetch(`${API_URL}/api/autotrade/balance`).then(r => r.json()).then(setBalance).catch(() => {});
   }, []);
 
@@ -191,7 +192,7 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
       const r = await fetch(`${API_URL}/api/autotrade/trades?status=closed&offset=${mergedClosedRaw.length}&limit=100`);
       const d = await r.json();
       if (d.total != null) setClosedTotal(d.total);
-      const fresh = d.trades || [];
+      const fresh = filterExternalTrades(d.trades || []);
       setExtraClosed(prev => {
         const seen = new Set(prev.map(x => x.id));
         return [...prev, ...fresh.filter(x => x.id && !seen.has(x.id))];

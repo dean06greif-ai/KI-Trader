@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createSeriesMarkers } from 'lightweight-charts';
+import { filterExternalTrades } from '../lib/displayFilters';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -256,7 +257,7 @@ export default function useTradeMarkers(seriesRef, symbol, showClosed, barSec, b
       try {
         const res = await fetch(`${API_URL}/api/autotrade/trades?limit=200`);
         const d = await res.json();
-        if (!cancelled) apply(d.trades || []);
+        if (!cancelled) apply(filterExternalTrades(d.trades || []));
       } catch (_) { /* Netz-Race beim Laden ignorieren */ }
     };
 

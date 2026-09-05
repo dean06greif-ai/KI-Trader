@@ -3,6 +3,7 @@ import { Flask, Brain, ChartLine, Database, ArrowsClockwise, Lightbulb, Cpu, Tra
 import { toast } from '../lib/toast';
 import { authHeaders } from '../auth';
 import { fmtShort } from '../lib/time';
+import { filterExternalTrades } from '../lib/displayFilters';
 import GateShadowPanel from './GateShadowPanel';
 import './AILabPanel.css';
 
@@ -60,7 +61,7 @@ const AILabPanel = () => {
         fetch(`${API_URL}/api/autotrade/trades?status=open`).then(r => r.json()),
         fetch(`${API_URL}/api/ai/trade/status?limit=15`).then(r => r.json()),
       ]);
-      setTrades(t.trades || []);
+      setTrades(filterExternalTrades(t.trades || []));
       setActions(a.actions || []);
     } catch (e) { /* silent */ }
   }, []);
