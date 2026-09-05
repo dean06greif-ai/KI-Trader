@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 33 (backend only, sparsam): Neue Suite test_ram_queue_and_worker_datadir.py 8/8 grün (-n 0). Regression test_worker_token_fix + test_local_worker + test_key_rotation_improvements 32/32 grün. Neue Review-Suite test_iter33_ramqueue_datadir_review.py 4/4 grün: EIN kurzer Cloud-Backtest (1 Strategie, BTCUSDT, 1 Tag) -> 200 mit status=started + ram_queued=false, Status-Polling bis 'completed' mit result != null; per-Worker data_dir E2E (Set testA -> Poll testA liefert 'D:/nur-testA', Poll testB nicht, settings ohne data_dirs-Leak, /api/localworker/status enthält settings.data_dirs und workers[].data_dir_override, Cleanup mit data_dir='' entfernt Eintrag); Auth-Negativtests (data-dir ohne JWT 401, /api/worker/poll ohne X-Worker-Token 401). RAM-Warte-Pfad nur per Unit/monkeypatch bestätigt (free_mb=10 -> Phase 'Wartet auf freien Server-RAM', free_mb=10000 -> Autostart, Cancel entfernt Wartenden). Frontend nur Smoke: HTTP 200. Keine LLM-Calls, kein zweiter/langer Backtest.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "ram_queue.queue_public()", "issue": "Funktion wird von keinem Endpoint/Frontend genutzt (Dead Code); wartende Cloud-Jobs sind nur indirekt über job.phase sichtbar. ram_queued wird im Frontend nirgends gelesen -> Nutzer sieht 'wartet auf RAM' nicht explizit."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter33_ramqueue_datadir_review.py",
+    "/app/backend/tests/test_ram_queue_and_worker_datadir.py",
+    "/app/test_reports/pytest/iter33_ramqueue.xml",
+    "/app/test_reports/pytest/iter33_regression.xml",
+    "/app/test_reports/pytest/iter33_e2e.xml"
+  ],
+  "action_items": [
+    "Optional: ram_queue.queue_public() über einen Endpoint (z.B. /api/system/status oder /api/backtest/active) ausliefern und ram_queued im UI anzeigen, sonst Dead Code",
+    "local_worker/worker.py apply_settings: neuen data_dir erst validieren (makedirs) und DANACH in worker_config.json/CANDLE_CACHE_DIR persistieren - aktuell wird ein nicht anlegbarer Pfad dauerhaft gespeichert"
+  ],
+  "critical_code_review_comments": [
+    "ram_queue.submit(): reiht bei RAM-Knappheit ein, aber wenn _ensure_watcher() keinen Event-Loop bekommt (RuntimeError -> _watcher=None) bleibt der Job dauerhaft 'running' ohne Watcher. In Router-Kontext unkritisch, ein Fallback-Log/Fehlerstatus wäre robuster.",
+    "Cancel eines wartenden Queue-Jobs wird erst beim nächsten Watcher-Tick (bis 10s) wirksam; UI-Status bleibt so lange 'running' - ggf. beim Cancel direkt _try_start_next() bzw. Queue-Entfernung anstoßen.",
+    "local_exec.save_settings() normalisiert data_dirs korrekt und entfernt leere Werte; global data_dir bleibt als Fallback erhalten - Verhalten wie gewünscht (kein gegenseitiges Überschreiben mehr)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter33_ramqueue_datadir_review.py"],
+  "success_rate": {"backend": "100% (44/44 Tests)", "frontend": "nicht getestet (nur HTTP-200-Smoke)"},
+  "seed_data_creation": "Temporäre data_dirs-Einträge (pytest-wA, testA) wurden im Test wieder entfernt; ein kurzer Backtest-Job (BTCUSDT, 1 Tag) in db.backtests.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Alle Suiten IMMER mit -n 0 laufen lassen (xdist bricht Monkeypatch/Token-Tests). Backtest-Start-Endpoint heißt /api/backtest/run (NICHT /api/backtest/start) und blockt parallele Läufe mit 409. RAM ist auf dem Dev-Pod reichlich -> ram_queued immer false, Warte-Pfad nur per monkeypatch von ram_queue.free_mb testen. Per-Worker data_dir E2E ist in /app/backend/tests/test_iter33_ramqueue_datadir_review.py abgedeckt (inkl. Cleanup).",
+  "rca_of_the_issue": "Keine Defekte gefunden - beide Features funktionieren wie spezifiziert."
+}

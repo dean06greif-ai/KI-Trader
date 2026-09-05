@@ -1,0 +1,40 @@
+{
+  "summary": "Backend-only Review der Key-Rotation-Verbesserungen (Minuten-Limit-Cooldown 65s, Upstream-Overload ohne Key-Sperre) + neuer Diagnose-Endpoint GET /api/ai/openrouter/keys. Ergebnisse: tests/test_key_rotation_improvements.py 9/9 grün; -k 'provider or rotation or keys or 402' 92 passed / 2 skipped; Worker-Token-Regression 23+ Tests grün (nach Fix einer VERALTETEN Assertion, s.u.); neues Review-Testfile test_iter32_key_endpoint_review.py 5/5 grün (Auth 401 ohne/mit falschem JWT, 200 mit Admin-JWT, exakt 5 Keys, Maskierung 'sk-or-v1-xxxxx…xxxx', kein Klartext-Key in der Antwort, runtime_limits+note, /api/ai/status key_status.openrouter.total == 5). Zusaetzlich neu abgedeckt: stream_chain-Upstream-Branch (Chat-Streaming) via Monkeypatch – wechselt zum naechsten Modell und sperrt KEINE Keys. Keine Massen-LLM-Calls ausgefuehrt; nur billige /v1/key-Abfragen (5x HTTP 200 in Backend-Logs).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/ai/openrouter/keys", "issue": "Keine Account-Gruppierung: die note sagt korrekt 'Limits gelten pro KONTO', der Endpoint kann aber nicht anzeigen, welche Keys zum selben Konto gehoeren (OpenRouter /v1/key liefert u.a. 'label'/'limit' – koennte zur Heuristik/Anzeige ergaenzt werden)."},
+      {"endpoint": "GET /api/ai/openrouter/keys", "issue": "Kein Caching/Ratenlimit: jeder Aufruf feuert 5 sequentielle Live-Requests (~1s je Key). Bei haeufigem Frontend-Polling unnoetig langsam; asyncio.gather + kurzer Cache (z.B. 60s) waere besser."},
+      {"endpoint": "services/ai_providers.py stream_chain", "issue": "Kommentar-Fehlstand (kosmetisch, vorbestehend): innerhalb von 'if not paid_transient: mark_key_limited(...)' steht der Kommentar 'Bezahl-Modell: Minuten-Limit, Key nicht poisonen' – Logik ist korrekt, Kommentar irrefuehrend."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter32_key_endpoint_review.py",
+    "/app/backend/tests/test_key_rotation_improvements.py",
+    "/app/test_reports/pytest/iter32_keyrot.xml",
+    "/app/test_reports/pytest/iter32_sel.xml",
+    "/app/test_reports/pytest/iter32_worker.xml",
+    "/app/test_reports/pytest/iter32_endpoint.xml"
+  ],
+  "action_items": [
+    "Optional: /api/ai/openrouter/keys parallelisieren (asyncio.gather) + 60s-Cache, damit die Key-Ampel im Frontend nicht 5s blockiert.",
+    "Optional: Account-Zuordnung/Label pro Key anzeigen (Limits gelten pro Konto) – hilft dem User zu erkennen, dass mehrere Keys aus einem Konto nichts bringen.",
+    "Fachliche Beobachtung fuer den User (kein Bug): Live-Abfrage zeigt 4 von 5 Keys als Free-Tier (50 Free-Requests/Tag), nur Key 1 ist ein aufgeladenes Konto (usage 17.87 USD, 1000/Tag). Effektives Tageskontingent ist damit ~1200, nicht 5x1000 – deckt die Diagnose 'Key-Anzahl ist nicht der Engpass' und sollte im UI-Hinweis prominent sein."
+  ],
+  "critical_code_review_comments": [
+    "_quota_cooldown_s: Substring-Matching auf 'rpm'/'tpm'/'rpd'/'tpd' ist anfaellig fuer False Positives in beliebigem Provider-Text (z.B. Modellnamen). Daily wird zuerst geprueft, daher heute unkritisch – ein Word-Boundary-Regex waere robuster.",
+    "is_upstream_overload wird in generate_chain und stream_chain korrekt VOR mark_key_limited geprueft und durch 'not is_payment_error(e)' gegen 402-Verwechslung geschuetzt – Logik verifiziert (Unit-Tests fuer beide Pfade vorhanden)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter32_key_endpoint_review.py",
+    "/app/backend/tests/test_worker_token_fix.py"
+  ],
+  "success_rate": {"backend": "100% (129 relevante Tests gruen, 2 skipped)", "frontend": "nicht getestet (backend only)"},
+  "seed_data_creation": "keine",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / Dean06Greif!/Admin (funktioniert, JWT ok)",
+  "context_for_next_testing_agent": "Iter32: Key-Rotation + /api/ai/openrouter/keys vollstaendig gruen. Neu: tests/test_iter32_key_endpoint_review.py (Endpoint-Auth/Maskierung/5 Keys/status-total + stream_chain-Upstream-Unit). WICHTIG: alle Monkeypatch-Suites mit '-n 0' laufen lassen. In tests/test_worker_token_fix.py wurde die VERALTETE Assertion 'test_minute_limit_stays_short == KEY_LIMIT_COOLDOWN_S (600)' auf das neue Sollverhalten (== MINUTE_LIMIT_COOLDOWN_S = 65 < 600) korrigiert – reine Testanpassung, keine App-Aenderung.",
+  "rca_of_the_issue": "Einziger Fehlschlag im Lauf war tests/test_worker_token_fix.py::test_minute_limit_stays_short: der Test aus Iter31 fixierte den alten 10-min-Default fuer Minuten-Limits und widersprach der neuen (gewollten) 65s-Klassifikation. Assertion auf MINUTE_LIMIT_COOLDOWN_S umgestellt; danach 28/28 gruen."
+}
