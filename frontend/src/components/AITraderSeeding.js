@@ -159,7 +159,7 @@ export default function AITraderSeeding({ selCoins, days, dateMode }) {
           <span className="bt-ram">alle</span>
           <select className="bt-select" value={auto.interval_hours} disabled={!admin} onChange={e => saveAuto({ interval_hours: Number(e.target.value) })}
             data-testid="ai-seed-auto-interval">
-            {[12, 24, 48, 72, 168].map(h => <option key={h} value={h}>{h < 48 ? `${h} h` : `${h / 24} Tage`}</option>)}
+            {[6, 12, 24, 48, 72, 168].map(h => <option key={h} value={h}>{h < 48 ? `${h} h` : `${h / 24} Tage`}</option>)}
           </select>
           <span className="bt-ram">Zeitraum</span>
           <select className="bt-select" value={auto.days} disabled={!admin} onChange={e => saveAuto({ days: Number(e.target.value) })}
@@ -179,6 +179,26 @@ export default function AITraderSeeding({ selCoins, days, dateMode }) {
             {auto.last_run_at ? ` · letzter: ${fmtTs(auto.last_run_at)}${auto.last_summary ? ` (${auto.last_summary.passed ?? 0}/${auto.last_summary.tested ?? 0} mit Edge)` : ''}` : ''}
             {auto.last_error ? ` · Fehler: ${auto.last_error}` : ''}
           </span>
+          {(auto.history || []).length > 0 && (
+            <div style={{ width: '100%' }} data-testid="ai-seed-auto-history">
+              <div className="btc-sub" style={{ marginTop: 6 }}>AUTOMATIK-VERLAUF (letzte {Math.min(10, auto.history.length)} Läufe)</div>
+              <table className="bt-table" data-testid="ai-seed-auto-history-table">
+                <thead><tr><th>Zeit</th><th>Modus</th><th>Zeitraum</th><th>Klassen</th><th title="Setups mit Edge / getestete Setups">Edge-Treffer</th><th>Status</th></tr></thead>
+                <tbody>
+                  {[...auto.history].reverse().map((h, i) => (
+                    <tr key={h.at || i} data-testid={`ai-seed-auto-history-row-${i}`}>
+                      <td className="mono">{fmtTs(h.at)}</td>
+                      <td>{h.mode === 'loop' ? 'Auto-Schleife' : 'Einmal'}</td>
+                      <td className="mono">{h.days} Tage</td>
+                      <td>{(h.asset_classes || []).map(c => CLASS_LABELS[c] || c).join(', ')}</td>
+                      <td className={`mono ${(h.passed || 0) > 0 ? 'pos' : ''}`}>{h.passed ?? 0}/{h.tested ?? 0}</td>
+                      <td style={{ color: h.error ? '#FF3366' : '#00FF66' }}>{h.error ? `Fehler: ${h.error}` : 'ok'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
       {result && (

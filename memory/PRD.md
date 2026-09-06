@@ -36,13 +36,18 @@ Aufträge 06.09.2026: (1) verlorene Daten (Paper-Trades, MasterPrompt-Regeln, Le
 - Prozess: `tests/README_TESTING.md` (nie gegen Prod-DB testen); Dev/Preview läuft auf lokaler DB
   `crypto_scanner_dev`. Patch: `KI_TRADER_CHANGES_0609.patch` (28 Dateien, keine Secrets).
 
-## Backlog (Vorschläge aus der Analyse – erst nach Freigabe)
-- P1: Strategie-Labor: Ghost-Trade-Pfad reparieren oder Kandidaten in Playbook-`new_setups` überführen
-  (33 Kandidaten, 0 Ghost-Trades).
+## Umgesetzt (06.09.2026, 2. Runde)
+- Strategie-Labor → Playbook (`migrate_to_playbook`, Boot-Migration `strategy_lab_to_playbook_v1`): 32 Test-
+  Kandidaten gelöscht, 1 KI-Idee = Alias von trend_follow (geschlossen mit Hinweis), Labor stillgelegt
+  (allow_ai_create/auto_develop aus, Prompt-Block „STILLGELEGT“), Test `tests/test_strategy_lab_to_playbook.py`.
+- Markt-Beobachter LLM-Kurz-Einschätzung aus (`observer_llm_off_v1`); Tages-Reporter bewusst beim LLM belassen.
+- Seeding-Panel: Automatik-Verlauf-Tabelle (auto.history). Testing-Agent Iteration 47 grün.
+
+## Backlog (Vorschläge – erst nach Freigabe)
 - P1: ML-Findings (2 481) aus `ai_knowledge` heraushalten (nur ML-Gate-Report).
-- P2: LLM-Rollen konsolidieren (Markt-Beobachter/Summarizer ohne LLM), Chat-Archiv-Housekeeping.
-- P2: Alt-Artefakte (`custom_14f031fftest`-Signale, Collection `db.ai_lesson_candidates`) aufräumen.
-- P2: Seeding-Automatik-Verlauf (auto.history) im UI als Liste anzeigen.
+- P2: Analyst-Budget (80 % der Tokens): Intervall/Prompt-Variante prüfen.
+- P2: Chat-Archiv-Housekeeping; Alt-Artefakte (`custom_14f031fftest`-Signale, Collection
+  `db.ai_lesson_candidates`) aufräumen.
 
 ## Nächste Schritte für den User
 1. Patch anwenden/pushen, Render deployt → Log `Boot-Migration Data-Recovery` bzw. `GET /api/admin/recovery/report`.

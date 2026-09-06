@@ -239,6 +239,39 @@ async def migrate_data_recovery(db):
     await _mark(db, "data_recovery_0906_v1")
 
 
+async def migrate_strategy_lab_to_playbook(db):
+    """Aufräumen 06.09.2026: Strategie-Labor hatte 33 Kandidaten und 0 Ghost-Trades
+    (toter Pfad). Aktive Kandidaten werden Playbook-Setups (voller Lebenszyklus
+    Paper -> Reife-Gate -> Live), Test-Kandidaten gelöscht, KI-Erzeugung + Autopilot
+    aus (UI: KI-Labor -> Einstellungen, jederzeit wieder aktivierbar)."""
+    if await _done(db, "strategy_lab_to_playbook_v1"):
+        return
+    from services.ai_strategy_lab import strategy_lab
+    res = await strategy_lab.migrate_to_playbook()
+    logger.info(f"Boot-Migration Strategie-Labor -> Playbook: {len(res['migrated'])} übernommen, "
+                f"{len(res['skipped'])} nicht übernommen, {res['deleted_test']} Test-Kandidaten gelöscht")
+    await _mark(db, "strategy_lab_to_playbook_v1")
+
+
+async def migrate_observer_llm_off(db):
+    """Markt-Beobachter ohne LLM (06.09.2026): seine Kurz-Einschätzung fließt in keine
+    Handelsentscheidung ein (nur Status-Anzeige) – Feature-Berechnung bleibt komplett.
+    Tages-Reporter bleibt beim LLM (1 Aufruf/Tag, Fallback wäre Qualitätsverlust)."""
+    if await _done(db, "observer_llm_off_v1"):
+        return
+    doc = await db.settings.find_one({"_id": "ai_roles_config"}) or {}
+    if (doc.get("market_observer") or {}).get("llm_summary"):
+        await db.settings.update_one({"_id": "ai_roles_config"},
+                                     {"$set": {"market_observer.llm_summary": False}})
+        try:
+            from services.ai_roles import role_manager
+            await role_manager.load(db)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Rollen-Reload nach Migration: {e}")
+        logger.info("Boot-Migration: Markt-Beobachter LLM-Kurz-Einschätzung AUS (rein datengetrieben)")
+    await _mark(db, "observer_llm_off_v1")
+
+
 async def run_boot_migrations(db, engine):
     for fn, args in ((migrate_cerebras_shutdown, (db,)),
                      (migrate_heatmap_off, (db, engine)),
@@ -247,7 +280,9 @@ async def run_boot_migrations(db, engine):
                      (migrate_manual_lev_display, (db,)),
                      (migrate_risk_sizing, (db, engine)),
                      (migrate_leverage_cap, (db, engine)),
-                     (migrate_data_recovery, (db,))):
+                     (migrate_data_recovery, (db,)),
+                     (migrate_strategy_lab_to_playbook, (db,)),
+                     (migrate_observer_llm_off, (db,))):
         try:
             await fn(*args)
         except Exception as e:

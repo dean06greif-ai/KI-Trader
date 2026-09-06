@@ -90,6 +90,23 @@ Jetzt:
 4. Offen (Empfehlung, nicht umgesetzt): Ghost-Trade-Pfad entweder reparieren oder entfernen; ML-Findings aus
    dem Gedächtnis nehmen; Rollen-Konsolidierung – jeweils erst nach deiner Entscheidung, weil es Workflows ändert.
 
+## 3b. Nachtrag 06.09. (2. Runde) – umgesetzt
+- **Strategie-Labor → Playbook** (`ai_strategy_lab.migrate_to_playbook`, Boot-Migration
+  `strategy_lab_to_playbook_v1`): Befund in Prod: von 33 Kandidaten waren **32 Test-Artefakte** (`TEST_…`,
+  gelöscht) und 1 echte KI-Idee („Bollinger-Band-Trend-Volume Reversion“) – das Playbook erkennt sie korrekt als
+  Alias von `trend_follow` (kein Duplikat, Kandidat mit Hinweis geschlossen). Neue Ideen laufen nur noch über
+  `new_setups` im Playbook (voller Lebenszyklus); der Prompt sagt der KI „Labor stillgelegt“. `allow_ai_create`
+  und `auto_develop_enabled` sind aus – im KI-Labor-UI jederzeit wieder einschaltbar. Vom Trader freigegebene
+  Kandidaten (paper/live) bleiben unangetastet.
+- **Rollen verschlanken – bewusst nur teilweise:** Token-Verbrauch in Prod: Analyst 103 Mio. (≈ 80 %),
+  Trade-Manager 11,7 Mio., Markt-Beobachter 0,9 Mio., Tages-Reporter 0,02 Mio. Der Markt-Beobachter war schon
+  datengetrieben; seine optionale LLM-Kurz-Einschätzung fließt in **keine** Handelsentscheidung (nur Status-Text)
+  → aus (`observer_llm_off_v1`), kein Qualitätsverlust. Der **Tages-Reporter bleibt beim LLM**: 1 Aufruf/Tag,
+  der statistische Fallback wäre ein echter Qualitätsverlust bei praktisch null Ersparnis. Der Hebel fürs
+  Budget liegt beim Analyst-Intervall/-Prompt – nicht bei den Nebenrollen.
+- **Automatik-Verlauf** im Seeding-Panel: Tabelle der letzten 10 Automatik-Läufe (Zeit, Modus, Zeitraum,
+  Klassen, Edge-Treffer x/y, Status).
+
 ## 4. Deploy-Hinweise (Render, Struktur unverändert)
 - Keine neuen Abhängigkeiten. Neue Dateien: `backend/services/data_recovery.py`, `backend/services/trade_trash.py`,
   `backend/services/setup_backtest/auto.py`, `backend/routers/recovery.py`,
@@ -97,3 +114,5 @@ Jetzt:
   `tests/test_seed_auto_and_tuning.py`.
 - Nach dem Deploy: Log-Zeile `Boot-Migration Data-Recovery: …` prüfen oder `GET /api/admin/recovery/report`.
 - Danach optional im Backtester → „KI Trader · Setups“ → Automatik einschalten.
+- Log-Zeilen der 2. Runde: `Boot-Migration Strategie-Labor -> Playbook: …` und
+  `Boot-Migration: Markt-Beobachter LLM-Kurz-Einschätzung AUS`.

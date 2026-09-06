@@ -28,9 +28,42 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
+import re
+
 from services.ai_memory import memory
 
 logger = logging.getLogger(__name__)
+
+# ---- Überführung ins Playbook (Aufräumen 06.09.2026) -------------------------
+# Befund: 33 Kandidaten, 0 Ghost-Trades – die Ghost-Phase wurde nie durchlaufen.
+# Neue Strategie-Ideen laufen seitdem als Playbook-Setups (ai_playbook.custom,
+# `new_setups`), die den vollständigen Lebenszyklus Paper → Reife-Gate → Live haben.
+_TEST_NAME_RE = re.compile(r"^(TEST_|QA_|\[QA)", re.I)
+
+
+def is_test_candidate(cand: Dict) -> bool:
+    return bool(_TEST_NAME_RE.search(str((cand or {}).get("name") or "")))
+
+
+def candidate_setup_id(name: str) -> str:
+    """Kandidaten-Name -> snake_case-Setup-ID (3-24 Zeichen, rein, testbar)."""
+    s = str(name or "").lower()
+    s = (s.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+         .replace("‑", "_").replace("-", "_"))
+    s = re.sub(r"[^a-z0-9_]+", "_", s).strip("_")
+    s = re.sub(r"_+", "_", s)
+    if not s or not s[0].isalpha():
+        s = "ki_" + s
+    return s[:24].rstrip("_").ljust(3, "x")
+
+
+def candidate_setup_desc(cand: Dict) -> str:
+    thesis = str(cand.get("thesis") or "").strip()
+    rules = str(cand.get("rules_text") or "").strip()
+    desc = thesis if thesis else rules
+    if rules and rules != thesis and len(desc) < 200:
+        desc = f"{desc} Regeln: {rules}"
+    return desc[:300]
 
 COLL = "ai_strategy_candidates"
 # Makro-/Struktur-Parameter, die pro eigener KI-Strategie individuell gelten dürfen
@@ -955,7 +988,59 @@ class StrategyLab:
                 "note": "Im Backtester/Optimizer wählbar. " + TESTING_NOTE}
 
     # ---------------- Prompt-Kontext ----------------
+    async def migrate_to_playbook(self) -> Dict:
+        """Aufräumen: aktive Kandidaten (ghost/live_pending) als Playbook-Setup
+        weiterführen, Test-Kandidaten löschen, KI-Kandidaten-Erzeugung und
+        Autopilot abschalten (im UI jederzeit wieder aktivierbar)."""
+        from services import ai_playbook
+        out = {"migrated": [], "skipped": [], "deleted_test": 0}
+        rows = await self.db[COLL].find({}).to_list(1000)
+        for c in rows:
+            if is_test_candidate(c):
+                await self.db[COLL].delete_one({"id": c["id"]})
+                await self.db[GHOST_COLL].delete_many({"candidate_id": c["id"]})
+                self._cache.pop(c["id"], None)
+                out["deleted_test"] += 1
+                continue
+            if c.get("stage") not in ("ghost", "live_pending"):
+                continue
+            sid = candidate_setup_id(c.get("name"))
+            res = await ai_playbook.propose_custom_setup(
+                self.db, sid, candidate_setup_desc(c), source="strategy_lab")
+            note = (f"Migration 06.09.: als Playbook-Setup '{res.get('id', sid)}' weitergeführt"
+                    if res.get("status") in ("ok", "exists")
+                    else f"Migration 06.09.: nicht übernommen ({res.get('reason')})")
+            if res.get("status") == "rejected" and "Alias" in str(res.get("reason")):
+                alias = ai_playbook.normalize_setup(sid)
+                note += f" – Idee entspricht dem bestehenden Playbook-Setup '{alias}'"
+                res["alias_of"] = alias
+            await self.db[COLL].update_one({"id": c["id"]}, {"$set": {
+                "stage": "rejected", "decision_note": note, "migrated_to": res.get("id"),
+                "updated_at": _now_iso()}})
+            if c["id"] in self._cache:
+                self._cache[c["id"]].update({"stage": "rejected", "decision_note": note})
+            (out["migrated"] if res.get("status") in ("ok", "exists") else out["skipped"]).append(
+                {"candidate": c.get("name"), "setup": res.get("id", sid), "status": res.get("status"),
+                 "reason": res.get("reason"), "alias_of": res.get("alias_of")})
+        await self.update_settings({"allow_ai_create": False, "auto_develop_enabled": False})
+        logger.info(f"Strategie-Labor -> Playbook: {out}")
+        return out
+
     async def context_text(self) -> str:
+        if not self.settings.get("allow_ai_create", True):
+            # Labor stillgelegt: neue Ideen laufen ausschließlich als Playbook-Setups
+            try:
+                rows = [c for c in await self.list_candidates(include_rejected=False)
+                        if c.get("stage") in ("paper", "live")]
+            except Exception:
+                rows = []
+            lines = ["=== STRATEGIE-LABOR: STILLGELEGT ===",
+                     "Neue Strategie-Ideen NICHT als 'new_strategies' zurückgeben – ausschließlich "
+                     "als Playbook-Setup über 'new_setups' (siehe STRATEGIE-PLAYBOOK). Keine "
+                     "'strategy_candidate_id' mehr verwenden."]
+            for c in rows[:5]:
+                lines.append(f"- vom Trader freigegebene Strategie {c['id']} „{c['name']}“ [{c['stage']}]")
+            return "\n".join(lines)
         try:
             rows = await self.list_candidates(include_rejected=False)
         except Exception:

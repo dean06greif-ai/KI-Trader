@@ -1,103 +1,7 @@
-diff -ruN a/.gitignore b/.gitignore
---- a/.gitignore	2026-09-06 18:46:30.230499758 +0000
-+++ b/.gitignore	1970-01-01 00:00:00.000000000 +0000
-@@ -1,92 +0,0 @@
--# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
--
--# IDE and editors
--.idea/
--.vscode/
--
--# Dependencies
--node_modules/
--/node_modules
--/.pnp
--.pnp.js
--.yarn/install-state.gz
--.yarn/*
--!.yarn/patches
--!.yarn/plugins
--!.yarn/releases
--!.yarn/versions
--
--# Testing
--/coverage
--
--# Next.js
--/.next/
--/out/
--next-env.d.ts
--*.tsbuildinfo
--
--# Production builds
--/build
--dist/
--dist
--
--# Environment files (comprehensive coverage)
--
--*token.json*
--*credentials.json*
--
--# Logs and debug files
--npm-debug.log*
--yarn-debug.log*
--yarn-error.log*
--.pnpm-debug.log*
--dump.rdb
--
--# System files
--.DS_Store
--*.pem
--
--# Python
--__pycache__/
--*pyc*
--venv/
--.venv/
--
--# Development tools
--chainlit.md
--.chainlit
--.ipynb_checkpoints/
--.ac
--
--# Deployment
--.vercel
--
--# Data and databases
--agenthub/agents/youtube/db
--
--# Archive files and large assets
--**/*.zip
--**/*.tar.gz
--**/*.tar
--**/*.tgz
--*.pack
--*.deb
--*.dylib
--
--# Build caches
--.cache/
--
--memory/test_credentials.md
--
--# Mobile development
--android-sdk/frontend/node_modules/.cache/default-development/0.pack
--.env
--.env.*
--*.env
--credentials.json
--*.key
--.credentials
--frontend/node_modules/.cache/default-development/0.pack
--frontend/node_modules/.cache/default-development/2.pack
--frontend/node_modules/.cache/default-development/1.pack
--frontend/node_modules/.cache/default-development/3.pack
 diff -ruN a/KI_TRADER_ANALYSE_0609.md b/KI_TRADER_ANALYSE_0609.md
 --- a/KI_TRADER_ANALYSE_0609.md	1970-01-01 00:00:00.000000000 +0000
-+++ b/KI_TRADER_ANALYSE_0609.md	2026-09-06 18:39:15.103501499 +0000
-@@ -0,0 +1,99 @@
++++ b/KI_TRADER_ANALYSE_0609.md	2026-09-06 19:16:59.159492518 +0000
+@@ -0,0 +1,118 @@
 +# KI-Trader – Analyse & Maßnahmen (06.09.2026)
 +
 +## 1. Datenverlust – Ursache (RCA)
@@ -190,6 +94,23 @@ diff -ruN a/KI_TRADER_ANALYSE_0609.md b/KI_TRADER_ANALYSE_0609.md
 +4. Offen (Empfehlung, nicht umgesetzt): Ghost-Trade-Pfad entweder reparieren oder entfernen; ML-Findings aus
 +   dem Gedächtnis nehmen; Rollen-Konsolidierung – jeweils erst nach deiner Entscheidung, weil es Workflows ändert.
 +
++## 3b. Nachtrag 06.09. (2. Runde) – umgesetzt
++- **Strategie-Labor → Playbook** (`ai_strategy_lab.migrate_to_playbook`, Boot-Migration
++  `strategy_lab_to_playbook_v1`): Befund in Prod: von 33 Kandidaten waren **32 Test-Artefakte** (`TEST_…`,
++  gelöscht) und 1 echte KI-Idee („Bollinger-Band-Trend-Volume Reversion“) – das Playbook erkennt sie korrekt als
++  Alias von `trend_follow` (kein Duplikat, Kandidat mit Hinweis geschlossen). Neue Ideen laufen nur noch über
++  `new_setups` im Playbook (voller Lebenszyklus); der Prompt sagt der KI „Labor stillgelegt“. `allow_ai_create`
++  und `auto_develop_enabled` sind aus – im KI-Labor-UI jederzeit wieder einschaltbar. Vom Trader freigegebene
++  Kandidaten (paper/live) bleiben unangetastet.
++- **Rollen verschlanken – bewusst nur teilweise:** Token-Verbrauch in Prod: Analyst 103 Mio. (≈ 80 %),
++  Trade-Manager 11,7 Mio., Markt-Beobachter 0,9 Mio., Tages-Reporter 0,02 Mio. Der Markt-Beobachter war schon
++  datengetrieben; seine optionale LLM-Kurz-Einschätzung fließt in **keine** Handelsentscheidung (nur Status-Text)
++  → aus (`observer_llm_off_v1`), kein Qualitätsverlust. Der **Tages-Reporter bleibt beim LLM**: 1 Aufruf/Tag,
++  der statistische Fallback wäre ein echter Qualitätsverlust bei praktisch null Ersparnis. Der Hebel fürs
++  Budget liegt beim Analyst-Intervall/-Prompt – nicht bei den Nebenrollen.
++- **Automatik-Verlauf** im Seeding-Panel: Tabelle der letzten 10 Automatik-Läufe (Zeit, Modus, Zeitraum,
++  Klassen, Edge-Treffer x/y, Status).
++
 +## 4. Deploy-Hinweise (Render, Struktur unverändert)
 +- Keine neuen Abhängigkeiten. Neue Dateien: `backend/services/data_recovery.py`, `backend/services/trade_trash.py`,
 +  `backend/services/setup_backtest/auto.py`, `backend/routers/recovery.py`,
@@ -197,6 +118,8 @@ diff -ruN a/KI_TRADER_ANALYSE_0609.md b/KI_TRADER_ANALYSE_0609.md
 +  `tests/test_seed_auto_and_tuning.py`.
 +- Nach dem Deploy: Log-Zeile `Boot-Migration Data-Recovery: …` prüfen oder `GET /api/admin/recovery/report`.
 +- Danach optional im Backtester → „KI Trader · Setups“ → Automatik einschalten.
++- Log-Zeilen der 2. Runde: `Boot-Migration Strategie-Labor -> Playbook: …` und
++  `Boot-Migration: Markt-Beobachter LLM-Kurz-Einschätzung AUS`.
 diff -ruN a/backend/routers/__init__.py b/backend/routers/__init__.py
 --- a/backend/routers/__init__.py	2026-09-06 18:46:30.232499758 +0000
 +++ b/backend/routers/__init__.py	2026-09-06 18:17:20.621313546 +0000
@@ -428,7 +351,7 @@ diff -ruN a/backend/routers/setup_backtest.py b/backend/routers/setup_backtest.p
      cls = body.get("asset_class") or None
 diff -ruN a/backend/scripts/copy_prod_subset_to_dev.py b/backend/scripts/copy_prod_subset_to_dev.py
 --- a/backend/scripts/copy_prod_subset_to_dev.py	1970-01-01 00:00:00.000000000 +0000
-+++ b/backend/scripts/copy_prod_subset_to_dev.py	2026-09-06 18:47:27.023499530 +0000
++++ b/backend/scripts/copy_prod_subset_to_dev.py	2026-09-06 18:46:54.638499660 +0000
 @@ -0,0 +1,29 @@
 +"""Kopiert die für die Recovery relevanten Collections aus PROD (read-only) in die lokale Dev-DB.
 +
@@ -592,10 +515,117 @@ diff -ruN a/backend/services/ai_rewards.py b/backend/services/ai_rewards.py
      if cleared_at:
          flt["closed_at"] = {"$gt": cleared_at}
      have = {r.get("trade_id") async for r in
+diff -ruN a/backend/services/ai_strategy_lab.py b/backend/services/ai_strategy_lab.py
+--- a/backend/services/ai_strategy_lab.py	2026-09-06 18:46:30.247499758 +0000
++++ b/backend/services/ai_strategy_lab.py	2026-09-06 19:11:08.425493864 +0000
+@@ -28,10 +28,43 @@
+ from datetime import datetime, timedelta, timezone
+ from typing import Dict, List, Optional
+ 
++import re
++
+ from services.ai_memory import memory
+ 
+ logger = logging.getLogger(__name__)
+ 
++# ---- Überführung ins Playbook (Aufräumen 06.09.2026) -------------------------
++# Befund: 33 Kandidaten, 0 Ghost-Trades – die Ghost-Phase wurde nie durchlaufen.
++# Neue Strategie-Ideen laufen seitdem als Playbook-Setups (ai_playbook.custom,
++# `new_setups`), die den vollständigen Lebenszyklus Paper → Reife-Gate → Live haben.
++_TEST_NAME_RE = re.compile(r"^(TEST_|QA_|\[QA)", re.I)
++
++
++def is_test_candidate(cand: Dict) -> bool:
++    return bool(_TEST_NAME_RE.search(str((cand or {}).get("name") or "")))
++
++
++def candidate_setup_id(name: str) -> str:
++    """Kandidaten-Name -> snake_case-Setup-ID (3-24 Zeichen, rein, testbar)."""
++    s = str(name or "").lower()
++    s = (s.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
++         .replace("‑", "_").replace("-", "_"))
++    s = re.sub(r"[^a-z0-9_]+", "_", s).strip("_")
++    s = re.sub(r"_+", "_", s)
++    if not s or not s[0].isalpha():
++        s = "ki_" + s
++    return s[:24].rstrip("_").ljust(3, "x")
++
++
++def candidate_setup_desc(cand: Dict) -> str:
++    thesis = str(cand.get("thesis") or "").strip()
++    rules = str(cand.get("rules_text") or "").strip()
++    desc = thesis if thesis else rules
++    if rules and rules != thesis and len(desc) < 200:
++        desc = f"{desc} Regeln: {rules}"
++    return desc[:300]
++
+ COLL = "ai_strategy_candidates"
+ # Makro-/Struktur-Parameter, die pro eigener KI-Strategie individuell gelten dürfen
+ MACRO_PARAM_KEYS = ("sl_fixed_percent", "sl_atr_mult", "tp1_crv", "tpf_crv",
+@@ -955,7 +988,59 @@
+                 "note": "Im Backtester/Optimizer wählbar. " + TESTING_NOTE}
+ 
+     # ---------------- Prompt-Kontext ----------------
++    async def migrate_to_playbook(self) -> Dict:
++        """Aufräumen: aktive Kandidaten (ghost/live_pending) als Playbook-Setup
++        weiterführen, Test-Kandidaten löschen, KI-Kandidaten-Erzeugung und
++        Autopilot abschalten (im UI jederzeit wieder aktivierbar)."""
++        from services import ai_playbook
++        out = {"migrated": [], "skipped": [], "deleted_test": 0}
++        rows = await self.db[COLL].find({}).to_list(1000)
++        for c in rows:
++            if is_test_candidate(c):
++                await self.db[COLL].delete_one({"id": c["id"]})
++                await self.db[GHOST_COLL].delete_many({"candidate_id": c["id"]})
++                self._cache.pop(c["id"], None)
++                out["deleted_test"] += 1
++                continue
++            if c.get("stage") not in ("ghost", "live_pending"):
++                continue
++            sid = candidate_setup_id(c.get("name"))
++            res = await ai_playbook.propose_custom_setup(
++                self.db, sid, candidate_setup_desc(c), source="strategy_lab")
++            note = (f"Migration 06.09.: als Playbook-Setup '{res.get('id', sid)}' weitergeführt"
++                    if res.get("status") in ("ok", "exists")
++                    else f"Migration 06.09.: nicht übernommen ({res.get('reason')})")
++            if res.get("status") == "rejected" and "Alias" in str(res.get("reason")):
++                alias = ai_playbook.normalize_setup(sid)
++                note += f" – Idee entspricht dem bestehenden Playbook-Setup '{alias}'"
++                res["alias_of"] = alias
++            await self.db[COLL].update_one({"id": c["id"]}, {"$set": {
++                "stage": "rejected", "decision_note": note, "migrated_to": res.get("id"),
++                "updated_at": _now_iso()}})
++            if c["id"] in self._cache:
++                self._cache[c["id"]].update({"stage": "rejected", "decision_note": note})
++            (out["migrated"] if res.get("status") in ("ok", "exists") else out["skipped"]).append(
++                {"candidate": c.get("name"), "setup": res.get("id", sid), "status": res.get("status"),
++                 "reason": res.get("reason"), "alias_of": res.get("alias_of")})
++        await self.update_settings({"allow_ai_create": False, "auto_develop_enabled": False})
++        logger.info(f"Strategie-Labor -> Playbook: {out}")
++        return out
++
+     async def context_text(self) -> str:
++        if not self.settings.get("allow_ai_create", True):
++            # Labor stillgelegt: neue Ideen laufen ausschließlich als Playbook-Setups
++            try:
++                rows = [c for c in await self.list_candidates(include_rejected=False)
++                        if c.get("stage") in ("paper", "live")]
++            except Exception:
++                rows = []
++            lines = ["=== STRATEGIE-LABOR: STILLGELEGT ===",
++                     "Neue Strategie-Ideen NICHT als 'new_strategies' zurückgeben – ausschließlich "
++                     "als Playbook-Setup über 'new_setups' (siehe STRATEGIE-PLAYBOOK). Keine "
++                     "'strategy_candidate_id' mehr verwenden."]
++            for c in rows[:5]:
++                lines.append(f"- vom Trader freigegebene Strategie {c['id']} „{c['name']}“ [{c['stage']}]")
++            return "\n".join(lines)
+         try:
+             rows = await self.list_candidates(include_rejected=False)
+         except Exception:
 diff -ruN a/backend/services/boot_migrations.py b/backend/services/boot_migrations.py
 --- a/backend/services/boot_migrations.py	2026-09-06 18:46:30.248499758 +0000
-+++ b/backend/services/boot_migrations.py	2026-09-06 18:17:13.621313515 +0000
-@@ -223,6 +223,22 @@
++++ b/backend/services/boot_migrations.py	2026-09-06 19:08:36.181494459 +0000
+@@ -223,6 +223,55 @@
      await _mark(db, "leverage_cap_v1")
  
  
@@ -615,16 +645,51 @@ diff -ruN a/backend/services/boot_migrations.py b/backend/services/boot_migratio
 +    await _mark(db, "data_recovery_0906_v1")
 +
 +
++async def migrate_strategy_lab_to_playbook(db):
++    """Aufräumen 06.09.2026: Strategie-Labor hatte 33 Kandidaten und 0 Ghost-Trades
++    (toter Pfad). Aktive Kandidaten werden Playbook-Setups (voller Lebenszyklus
++    Paper -> Reife-Gate -> Live), Test-Kandidaten gelöscht, KI-Erzeugung + Autopilot
++    aus (UI: KI-Labor -> Einstellungen, jederzeit wieder aktivierbar)."""
++    if await _done(db, "strategy_lab_to_playbook_v1"):
++        return
++    from services.ai_strategy_lab import strategy_lab
++    res = await strategy_lab.migrate_to_playbook()
++    logger.info(f"Boot-Migration Strategie-Labor -> Playbook: {len(res['migrated'])} übernommen, "
++                f"{len(res['skipped'])} nicht übernommen, {res['deleted_test']} Test-Kandidaten gelöscht")
++    await _mark(db, "strategy_lab_to_playbook_v1")
++
++
++async def migrate_observer_llm_off(db):
++    """Markt-Beobachter ohne LLM (06.09.2026): seine Kurz-Einschätzung fließt in keine
++    Handelsentscheidung ein (nur Status-Anzeige) – Feature-Berechnung bleibt komplett.
++    Tages-Reporter bleibt beim LLM (1 Aufruf/Tag, Fallback wäre Qualitätsverlust)."""
++    if await _done(db, "observer_llm_off_v1"):
++        return
++    doc = await db.settings.find_one({"_id": "ai_roles_config"}) or {}
++    if (doc.get("market_observer") or {}).get("llm_summary"):
++        await db.settings.update_one({"_id": "ai_roles_config"},
++                                     {"$set": {"market_observer.llm_summary": False}})
++        try:
++            from services.ai_roles import role_manager
++            await role_manager.load(db)
++        except Exception as e:  # noqa: BLE001
++            logger.debug(f"Rollen-Reload nach Migration: {e}")
++        logger.info("Boot-Migration: Markt-Beobachter LLM-Kurz-Einschätzung AUS (rein datengetrieben)")
++    await _mark(db, "observer_llm_off_v1")
++
++
  async def run_boot_migrations(db, engine):
      for fn, args in ((migrate_cerebras_shutdown, (db,)),
                       (migrate_heatmap_off, (db, engine)),
-@@ -230,7 +246,8 @@
+@@ -230,7 +279,10 @@
                       (migrate_leverage_proposals, (db, engine)),
                       (migrate_manual_lev_display, (db,)),
                       (migrate_risk_sizing, (db, engine)),
 -                     (migrate_leverage_cap, (db, engine))):
 +                     (migrate_leverage_cap, (db, engine)),
-+                     (migrate_data_recovery, (db,))):
++                     (migrate_data_recovery, (db,)),
++                     (migrate_strategy_lab_to_playbook, (db,)),
++                     (migrate_observer_llm_off, (db,))):
          try:
              await fn(*args)
          except Exception as e:
@@ -1371,7 +1436,7 @@ diff -ruN a/frontend/src/components/AIGovernancePanel.js b/frontend/src/componen
          <>
 diff -ruN a/frontend/src/components/AITraderSeeding.js b/frontend/src/components/AITraderSeeding.js
 --- a/frontend/src/components/AITraderSeeding.js	2026-09-06 18:46:30.266499758 +0000
-+++ b/frontend/src/components/AITraderSeeding.js	2026-09-06 18:27:57.462504195 +0000
++++ b/frontend/src/components/AITraderSeeding.js	2026-09-06 19:13:30.656493320 +0000
 @@ -1,5 +1,5 @@
  import React, { useEffect, useRef, useState } from 'react';
 -import { Play, X, Repeat, ArrowRight, ArrowCounterClockwise } from '@phosphor-icons/react';
@@ -1420,7 +1485,7 @@ diff -ruN a/frontend/src/components/AITraderSeeding.js b/frontend/src/components
  
    return (
      <div className="btc-panel" data-testid="ai-seed-panel" style={{ marginTop: 10 }}>
-@@ -128,10 +149,42 @@
+@@ -128,10 +149,62 @@
            </div>
          </div>
        )}
@@ -1434,7 +1499,7 @@ diff -ruN a/frontend/src/components/AITraderSeeding.js b/frontend/src/components
 +          <span className="bt-ram">alle</span>
 +          <select className="bt-select" value={auto.interval_hours} disabled={!admin} onChange={e => saveAuto({ interval_hours: Number(e.target.value) })}
 +            data-testid="ai-seed-auto-interval">
-+            {[12, 24, 48, 72, 168].map(h => <option key={h} value={h}>{h < 48 ? `${h} h` : `${h / 24} Tage`}</option>)}
++            {[6, 12, 24, 48, 72, 168].map(h => <option key={h} value={h}>{h < 48 ? `${h} h` : `${h / 24} Tage`}</option>)}
 +          </select>
 +          <span className="bt-ram">Zeitraum</span>
 +          <select className="bt-select" value={auto.days} disabled={!admin} onChange={e => saveAuto({ days: Number(e.target.value) })}
@@ -1454,6 +1519,26 @@ diff -ruN a/frontend/src/components/AITraderSeeding.js b/frontend/src/components
 +            {auto.last_run_at ? ` · letzter: ${fmtTs(auto.last_run_at)}${auto.last_summary ? ` (${auto.last_summary.passed ?? 0}/${auto.last_summary.tested ?? 0} mit Edge)` : ''}` : ''}
 +            {auto.last_error ? ` · Fehler: ${auto.last_error}` : ''}
 +          </span>
++          {(auto.history || []).length > 0 && (
++            <div style={{ width: '100%' }} data-testid="ai-seed-auto-history">
++              <div className="btc-sub" style={{ marginTop: 6 }}>AUTOMATIK-VERLAUF (letzte {Math.min(10, auto.history.length)} Läufe)</div>
++              <table className="bt-table" data-testid="ai-seed-auto-history-table">
++                <thead><tr><th>Zeit</th><th>Modus</th><th>Zeitraum</th><th>Klassen</th><th title="Setups mit Edge / getestete Setups">Edge-Treffer</th><th>Status</th></tr></thead>
++                <tbody>
++                  {[...auto.history].reverse().map((h, i) => (
++                    <tr key={h.at || i} data-testid={`ai-seed-auto-history-row-${i}`}>
++                      <td className="mono">{fmtTs(h.at)}</td>
++                      <td>{h.mode === 'loop' ? 'Auto-Schleife' : 'Einmal'}</td>
++                      <td className="mono">{h.days} Tage</td>
++                      <td>{(h.asset_classes || []).map(c => CLASS_LABELS[c] || c).join(', ')}</td>
++                      <td className={`mono ${(h.passed || 0) > 0 ? 'pos' : ''}`}>{h.passed ?? 0}/{h.tested ?? 0}</td>
++                      <td style={{ color: h.error ? '#FF3366' : '#00FF66' }}>{h.error ? `Fehler: ${h.error}` : 'ok'}</td>
++                    </tr>
++                  ))}
++                </tbody>
++              </table>
++            </div>
++          )}
 +        </div>
 +      )}
        {result && (
@@ -1563,6 +1648,110 @@ diff -ruN a/frontend/src/components/TradeTrashPanel.js b/frontend/src/components
 +    </div>
 +  );
 +}
+diff -ruN a/memory/PRD.md b/memory/PRD.md
+--- a/memory/PRD.md	2026-09-06 18:46:30.273499758 +0000
++++ b/memory/PRD.md	2026-09-06 19:16:59.159492518 +0000
+@@ -1,50 +1,55 @@
+-# KI-Trader – Backtest-Seeding (Phase 1)
++# KI-Trader – PRD / Arbeitsstand
+ 
+-## Original-Problemstellung (Kurz)
+-Bestehende, produktiv laufende Daytrading-Website (Repo `dean06greif-ai/KI-Trader`, Branch
+-`conflict_060926_1107`, Deploy auf Render – Ordnerstruktur unverändert lassen). Verbesserung:
+-Datensammlung/Reife-Gates des KI-Traders beschleunigen → **Phase 1 aus `BACKTEST_SEEDING_PLAN.md`**
+-als Funktion im Backtester („KI Trader“ auswählen): Setups je Anlageklasse regelbasiert auf der
+-Vergangenheit testen, Einmal-Durchlauf oder Auto-Schleife (Anpassung → erneut testen), Overfitting
+-vermeiden, immer innerhalb der ganzen Anlageklasse testen. Ein erfolgreicher Backtest macht ein
+-Setup NICHT live-reif – echte Paper-Trades bleiben Pflicht.
++## Original-Problemstellung
++Produktive, extern auf Render deployte Daytrading-Website (Repo `dean06greif-ai/KI-Trader`, Branch
++`conflict_060926_1414`; Ordnerstruktur bleibt, Änderungen als Patch/Dateien zum Selbst-Pushen). Grundsatz:
++sauber, modular, rückwärtskompatibel, Regressionstests vor größeren Änderungen.
++Aufträge 06.09.2026: (1) verlorene Daten (Paper-Trades, MasterPrompt-Regeln, Lektions-Regeln) wiederherstellen,
++(2) KI-Trader kritisch prüfen (zu viel / sinnlos / fehlt) und wichtigste Punkte umsetzen,
++(3) Backtest-Seeding der Setups: „Testen → verbessern → erneut testen“ als echter Prozess/Automatik.
+ 
+ ## Nutzer-Entscheidungen
+-- Nur manuell im Backtester (kein Hintergrund-Scheduler – RAM/Worker).
+-- Nur Reife-Gate-Zähler seeden (klar getrennt), Walk-Forward/OOS zur Overfitting-Bremse erwünscht.
+-- Produktive .env (MongoDB Atlas) in der Preview.
+-- Bereits live-reife Setups einer Klasse werden nicht angefasst.
+-
+-## Architektur (neu, modular)
+-- `backend/services/setup_backtest/`
+-  - `detectors.py` – 9 reine Detektoren (breakout, squeeze_breakout, range_fade, mean_reversion,
+-    htf_range, session_open, trend_follow, pullback, divergence), je 3 Parameter-Varianten,
+-    Handelszeit-Filter je Klasse + ATR-Boden, kein Look-Ahead (15m/1h nur geschlossene Kerzen).
+-  - `simulator.py` – konservativ (SL vor TP, TP1 50 % + Break-Even, Zeit-Exit, Gebühren je Klasse,
+-    `setup_asset_class.clamp_levels`), Notional 100 USDT.
+-  - `weights.py` – Backtest ×0.5, gedeckelt auf 3 gewichtete Trades; Boost nur mit ≥2 echten,
+-    profitablen Paper-Trades; TTL 60 Tage; Collection `setup_backtest_trades`.
+-  - `runner.py` – Job (JOBS), Kerzen via `candle_cache` (+ Disk-Persist), IS/OOS 70/30,
+-    Varianten-Schleife (`single`/`loop`), State `settings.setup_backtest_state`, Feed-Meldung,
+-    `ai_playbook.refresh()`.
+-- `backend/routers/setup_backtest.py`: `GET /api/ai/playbook/backtest`, `POST …/run`
+-  (`asset_classes|symbols, days, mode, setups`), `GET …/status/{job}`, `POST …/cancel/{job}`,
+-  `POST …/reset` (Admin).
+-- Playbook-Einbindung (`ai_playbook.py`): `_refresh_scope` → `bt_stats`/`bt_promoted`, Boost nur
+-  Sammeln→Live (nie Rückstufung/live_stats), `_class_cache.stats[sid].backtest_promoted` →
+-  `setup_capital.SETUP_FACTOR["backtest"]=0.4`, `maturity_overview(... backtest, bt_promoted)`,
+-  Prompt-Blöcke `BACKTEST-EDGE` / `BACKTEST OHNE EDGE`, `invalidate_cache()`.
+-- Frontend: `AITraderSeeding.js` (Chip „🤖 KI Trader · Setups“ im Backtester, Modus, Start,
+-  Fortschritt, Ergebnis-Tabelle, Reset), Spalte „BT“ + Badge in `SetupMaturityTable.js`.
+-- `routers/backtest.py`: gegenseitiger 409-Schutz normaler Backtest ↔ Seeding.
++- Datenquelle unbekannt → im Code analysieren; Produktiv-DB read-only prüfen und ggf. wiederherstellen.
++- Datenwiederherstellung + Backtest/Seeding-Prozess + KI-Trader-Analyse mit Umsetzung der wichtigsten Punkte.
++- Änderungen auf Branch `conflict_060926_1414` vorbereiten, User pusht selbst.
++
++## Architektur-Erkenntnisse
++- Daten: MongoDB Atlas `crypto_scanner` (Supabase nur ai_memory-Tabelle). MasterPrompt/Lektionen in
++  `settings` (`ai_master_prompt`, `ai_lessons`), Paper-Trades in `auto_trades` (mode=paper).
++- RCA Datenverlust: Testing-Agent-Läufe (GCP-IPs, python-requests) gegen Preview, die an der PRODUKTIV-DB hing
++  → `ai/trader/reset` (134 Trades), 23× `analytics/clear`, MasterPrompt 20× mit Test-Text überschrieben,
++  Test-Lektion angelegt. Details: `KI_TRADER_ANALYSE_0609.md`.
+ 
+ ## Umgesetzt (06.09.2026)
+-- Phase 1 komplett, 24 Regressionstests `tests/test_setup_backtest_seeding.py`; bestehende
+-  Playbook-Suites grün (65 Tests). E2E-Läufe Indizes/Rohstoffe 90 Tage: Pipeline ok, Ergebnis
+-  ehrlich „kein Edge“ (alle Varianten IS/OOS negativ) – nichts geseedet.
+-
+-## Backlog
+-- P1: Phase 2 (order_block/fvg_fill via smc_zones, liquidity_sweep, funding_fade mit Funding-Historie).
+-- P1: Krypto-Lauf (11 Symbole, 90 Tage) – Laufzeit/RAM auf Render beobachten; ggf. lokaler Worker.
+-- P2: Detektor-Feintuning nur mit Blick auf OOS (keine weiteren Varianten ohne Hypothese).
+-- P2: Seeding-Ergebnis-Historie (History je Setup) in der UI ausklappbar.
++- `services/data_recovery.py` + `routers/recovery.py` + Boot-Migration `data_recovery_0906_v1`
++  (MasterPrompt aus History, Test-Lektionen raus, 160 Paper-Trades aus `ai_trade_actions` rekonstruiert,
++  `recovered: True`; lokal gegen Prod-Kopie verifiziert).
++- Papierkorb `services/trade_trash.py` (`auto_trades_trash`) für `analytics/clear` + `ai/trader/reset`;
++  API `/api/analytics/trash[...]`, UI `TradeTrashPanel` im Lösch-Dialog.
++- MasterPrompt-History 50 + `POST /api/ai/master-prompt/restore`; UI „Frühere Versionen“.
++- Lektions-History `ai_lessons_history` + `GET /api/ai/lessons/history`, `POST /api/ai/lessons/restore/{id}`.
++- Seeding: Feintuning (`detectors.tune_candidates`, `runner.tune`, Status `tuned`), Automatik
++  (`setup_backtest/auto.py`, `GET/POST /api/ai/playbook/backtest/auto`, Loop in `server.py`), UI im
++  Seeding-Panel. Default aus.
++- Tests: `tests/test_data_recovery_and_trash.py`, `tests/test_seed_auto_and_tuning.py`, bestehende
++  `test_setup_backtest_seeding.py` grün; Testing-Agent Iteration 46: 17/17 Backend, Frontend ok.
++- Prozess: `tests/README_TESTING.md` (nie gegen Prod-DB testen); Dev/Preview läuft auf lokaler DB
++  `crypto_scanner_dev`. Patch: `KI_TRADER_CHANGES_0609.patch` (28 Dateien, keine Secrets).
++
++## Umgesetzt (06.09.2026, 2. Runde)
++- Strategie-Labor → Playbook (`migrate_to_playbook`, Boot-Migration `strategy_lab_to_playbook_v1`): 32 Test-
++  Kandidaten gelöscht, 1 KI-Idee = Alias von trend_follow (geschlossen mit Hinweis), Labor stillgelegt
++  (allow_ai_create/auto_develop aus, Prompt-Block „STILLGELEGT“), Test `tests/test_strategy_lab_to_playbook.py`.
++- Markt-Beobachter LLM-Kurz-Einschätzung aus (`observer_llm_off_v1`); Tages-Reporter bewusst beim LLM belassen.
++- Seeding-Panel: Automatik-Verlauf-Tabelle (auto.history). Testing-Agent Iteration 47 grün.
++
++## Backlog (Vorschläge – erst nach Freigabe)
++- P1: ML-Findings (2 481) aus `ai_knowledge` heraushalten (nur ML-Gate-Report).
++- P2: Analyst-Budget (80 % der Tokens): Intervall/Prompt-Variante prüfen.
++- P2: Chat-Archiv-Housekeeping; Alt-Artefakte (`custom_14f031fftest`-Signale, Collection
++  `db.ai_lesson_candidates`) aufräumen.
++
++## Nächste Schritte für den User
++1. Patch anwenden/pushen, Render deployt → Log `Boot-Migration Data-Recovery` bzw. `GET /api/admin/recovery/report`.
++2. MasterPrompt im UI prüfen (Hebel-Deckel 50 = letzter echter Stand; falls anders gewünscht, anpassen).
++3. Backtester → „KI Trader · Setups“ → Automatik einschalten (z. B. 48 h, 90 Tage, gewünschte Klassen).
 diff -ruN a/memory/test_credentials.md b/memory/test_credentials.md
 --- a/memory/test_credentials.md	1970-01-01 00:00:00.000000000 +0000
 +++ b/memory/test_credentials.md	2026-09-06 18:39:40.631501397 +0000
@@ -1605,8 +1794,8 @@ diff -ruN a/tests/README_TESTING.md b/tests/README_TESTING.md
 +- `tests/test_seed_auto_and_tuning.py` – Seeding-Automatik, Feintuning
 diff -ruN a/tests/test_data_recovery_and_trash.py b/tests/test_data_recovery_and_trash.py
 --- a/tests/test_data_recovery_and_trash.py	1970-01-01 00:00:00.000000000 +0000
-+++ b/tests/test_data_recovery_and_trash.py	2026-09-06 18:33:30.520502874 +0000
-@@ -0,0 +1,268 @@
++++ b/tests/test_data_recovery_and_trash.py	2026-09-06 19:11:29.314493784 +0000
+@@ -0,0 +1,272 @@
 +"""Regressionstests: Daten-Wiederherstellung (services/data_recovery.py),
 +Trade-Papierkorb (services/trade_trash.py), MasterPrompt-/Lektions-History."""
 +import asyncio
@@ -1711,6 +1900,10 @@ diff -ruN a/tests/test_data_recovery_and_trash.py b/tests/test_data_recovery_and
 +
 +    def skip(self, n):
 +        self.rows = self.rows[n:]
++        return self
++
++    def limit(self, n):
++        self.rows = self.rows[:n]
 +        return self
 +
 +    async def to_list(self, n=None):
@@ -1981,6 +2174,76 @@ diff -ruN a/tests/test_seed_auto_and_tuning.py b/tests/test_seed_auto_and_tuning
 +    # feingetunte Setups zählen NICHT als "ohne Edge"
 +    assert runner.no_edge_line("X", {"a": {"status": "tuned"}, "b": {"status": "exhausted"}}) == \
 +        runner.no_edge_line("X", {"b": {"status": "exhausted"}})
++
++
++if __name__ == "__main__":
++    sys.exit(pytest.main([__file__, "-q", "-n", "0"]))
+diff -ruN a/tests/test_strategy_lab_to_playbook.py b/tests/test_strategy_lab_to_playbook.py
+--- a/tests/test_strategy_lab_to_playbook.py	1970-01-01 00:00:00.000000000 +0000
++++ b/tests/test_strategy_lab_to_playbook.py	2026-09-06 19:10:51.022493931 +0000
+@@ -0,0 +1,66 @@
++"""Regressionstests: Strategie-Labor -> Playbook (Aufräumen 06.09.2026)."""
++import asyncio
++import os
++import sys
++
++import pytest
++
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
++sys.path.insert(0, os.path.dirname(__file__))
++
++from services import ai_playbook, ai_strategy_lab as lab  # noqa: E402
++from test_data_recovery_and_trash import _Coll, _DB  # noqa: E402
++
++
++def test_candidate_setup_id_and_desc():
++    assert lab.candidate_setup_id("Bollinger‑Band‑Trend‑Volume Reversion") == "bollinger_band_trend_vol"
++    assert lab.candidate_setup_id("RSI < 30 kaufen!") == "rsi_30_kaufen"
++    assert lab.candidate_setup_id("42 Strategie") == "ki_42_strategie"
++    assert lab.candidate_setup_id("Übergröße") == "uebergroesse"
++    # Alias eines bestehenden Setups wird vom Playbook (korrekt) abgelehnt
++    sid = lab.candidate_setup_id("Bollinger‑Band‑Trend‑Volume Reversion")
++    assert not ai_playbook.valid_custom_setup(sid, "Preis kehrt nach Band-Berührung zurück, Volumen bestätigt")[0]
++    assert ai_playbook.valid_custom_setup("vol_climax_exit", "Lücke zur Vortages-Schlusskerze wird am Open gefüllt")[0]
++    d = lab.candidate_setup_desc({"thesis": "These A.", "rules_text": "Regel B"})
++    assert d == "These A. Regeln: Regel B"
++    assert len(lab.candidate_setup_desc({"thesis": "x" * 500})) == 300
++    assert lab.is_test_candidate({"name": "TEST_RSI_Rule"}) and lab.is_test_candidate({"name": "QA_x"})
++    assert not lab.is_test_candidate({"name": "Testlauf Momentum"})
++
++
++def test_migrate_to_playbook_moves_active_and_deletes_test_candidates():
++    db = _DB()
++    db.ai_strategy_candidates = _Coll([
++        {"id": "c1", "name": "Vol Climax Exit", "stage": "ghost",
++         "thesis": "Lücke zur Vortages-Schlusskerze wird nach dem Open gefüllt, Einstieg gegen den Gap."},
++        {"id": "c5", "name": "Bollinger‑Band‑Trend‑Volume Reversion", "stage": "live_pending",
++         "thesis": "Preis kehrt nach Berührung der Bollinger-Bänder zurück, Volumen bestätigt."},
++        {"id": "c2", "name": "TEST_RSI_Rule", "stage": "rejected", "thesis": "RSI<30 kaufen"},
++        {"id": "c3", "name": "Alte Idee", "stage": "rejected", "thesis": "..."},
++        {"id": "c4", "name": "Trader Live", "stage": "live", "thesis": "vom Trader freigegeben"},
++    ])
++    db.ai_ghost_trades = _Coll([{"id": "g1", "candidate_id": "c2"}])
++    db.ai_chat = _Coll()
++    ai_playbook.set_custom_cache({})
++    store = lab.StrategyLab()
++    store.setup(type("Eng", (), {"db": db})())
++    res = asyncio.run(store.migrate_to_playbook())
++    assert res["deleted_test"] == 1 and len(res["migrated"]) == 1 and len(res["skipped"]) == 1
++    assert res["migrated"][0]["setup"] == "vol_climax_exit"
++    assert res["skipped"][0]["alias_of"] in ai_playbook.SETUPS          # Alias -> bestehendes Setup benannt
++    ids = {c["id"]: c for c in db.ai_strategy_candidates.rows}
++    assert "c2" not in ids and ids["c1"]["stage"] == "rejected" and ids["c1"]["migrated_to"] == "vol_climax_exit"
++    assert ids["c5"]["stage"] == "rejected" and "entspricht dem bestehenden" in ids["c5"]["decision_note"]
++    assert ids["c3"]["stage"] == "rejected" and ids["c4"]["stage"] == "live"      # unangetastet
++    assert db.ai_ghost_trades.rows == []
++    pb = asyncio.run(db.settings.find_one({"_id": ai_playbook.STATE_ID}))
++    assert "vol_climax_exit" in pb["custom"] and "bollinger_band_trend_vol" not in pb["custom"]
++    assert store.settings["allow_ai_create"] is False and store.settings["auto_develop_enabled"] is False
++    # Prompt-Block: Labor stillgelegt, keine 'new_strategies' mehr
++    txt = asyncio.run(store.context_text())
++    assert "STILLGELEGT" in txt and "new_setups" in txt and "new_strategies" in txt
++    assert "Trader Live" in txt
 +
 +
 +if __name__ == "__main__":

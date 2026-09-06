@@ -104,6 +104,10 @@ class _Cursor:
         self.rows = self.rows[n:]
         return self
 
+    def limit(self, n):
+        self.rows = self.rows[:n]
+        return self
+
     async def to_list(self, n=None):
         return list(self.rows)
 
