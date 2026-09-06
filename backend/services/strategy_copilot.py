@@ -502,7 +502,7 @@ class StrategyCopilot:
         try:
             from services.ai_memory import memory
             know = await memory.context_text(
-                kinds=["copilot_note", "research_insight", "ml_finding", "idea"],
+                kinds=["copilot_note", "research_insight", "idea"],
                 per_kind=2, max_chars=1500)
             if know:
                 parts.append("GETEILTES KI-GEDÄCHTNIS (KI-Trader & Copilot):\n" + know)

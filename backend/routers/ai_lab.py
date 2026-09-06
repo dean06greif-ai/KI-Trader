@@ -129,6 +129,14 @@ async def ml_status():
     return ml_lab.status()
 
 
+@router.get("/api/ai/ml/findings")
+async def ml_findings_list(limit: int = 20, kind: Optional[str] = None):
+    """ML-Befunde (Modell-Kennzahlen, Erklärungen, Regeln) – nur hier, nicht im KI-Gedächtnis."""
+    from core import state
+    from services import ml_findings
+    return {"findings": await ml_findings.recent(state.db, limit=limit, kind=kind)}
+
+
 @router.post("/api/ai/ml/train")
 async def ml_train(body: Optional[Dict] = None, _: bool = Depends(require_admin)):
     body = body or {}

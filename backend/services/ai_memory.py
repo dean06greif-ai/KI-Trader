@@ -222,7 +222,7 @@ class KnowledgeStore:
     async def context_text(self, kinds: Optional[List[str]] = None,
                            per_kind: int = 3, max_chars: int = 2500) -> str:
         """Kompakter Prompt-Block mit dem jüngsten Wissen je Art."""
-        kinds = kinds or ["research_insight", "ml_finding", "idea"]
+        kinds = kinds or ["research_insight", "idea"]   # ml_finding: nur ML-Report (services/ml_findings.py)
         blocks: List[str] = []
         for kind in kinds:
             rows = await self.recall(kind=kind, limit=per_kind)

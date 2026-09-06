@@ -130,6 +130,11 @@ class _Coll:
         def ok(r):
             for k, v in (q or {}).items():
                 if isinstance(v, dict):
+                    if "$regex" in v:
+                        import re as _re
+                        flags = _re.I if "i" in str(v.get("$options", "")) else 0
+                        if not _re.search(v["$regex"], str(r.get(k, "")), flags):
+                            return False
                     if "$in" in v and r.get(k) not in v["$in"]:
                         return False
                     if "$ne" in v and r.get(k) == v["$ne"]:

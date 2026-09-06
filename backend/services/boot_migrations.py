@@ -5,6 +5,7 @@ Traders werden dadurch NIE überschrieben. Hintergrund: 10. Handover 26.08. –
 Klick-Liste nach User-Freigabe automatisiert (siehe memory/ML_REBUILD_STATUS.md).
 """
 import logging
+from typing import Dict
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -272,6 +273,48 @@ async def migrate_observer_llm_off(db):
     await _mark(db, "observer_llm_off_v1")
 
 
+async def migrate_ml_findings_decouple(db):
+    """06.09.2026: ML-Befunde raus aus dem KI-Gedächtnis (2 465 `ml_finding` in ai_knowledge,
+    Prompt-Rauschen ohne Entscheidungsnutzen) -> eigene Collection `ml_findings`,
+    sichtbar nur im ML-Labor-Report (GET /api/ai/ml/findings)."""
+    if await _done(db, "ml_findings_decouple_v1"):
+        return
+    from services import ml_findings
+    n = await ml_findings.migrate_from_memory(db)
+    logger.info(f"Boot-Migration ML-Befunde: {n} Einträge aus ai_knowledge nach ml_findings verschoben")
+    await _mark(db, "ml_findings_decouple_v1")
+
+
+TEST_STRATEGY_RE = r"test"
+
+
+async def cleanup_test_artifacts(db) -> Dict:
+    """Signale verwaister Test-Strategien (id enthält 'test', Strategie existiert nicht mehr)
+    und die versehentlich als 'db.ai_lesson_candidates' benannte Collection entfernen."""
+    out = {"signals": 0, "strategies": [], "dropped": []}
+    known = {s.get("id") for s in await db.strategies.find({}, {"id": 1}).to_list(5000)}
+    cur = db.signals.find({"strategy_id": {"$regex": TEST_STRATEGY_RE, "$options": "i"}}, {"strategy_id": 1})
+    orphan = {s.get("strategy_id") for s in await cur.to_list(100000)} - known
+    for sid in sorted(x for x in orphan if x):
+        r = await db.signals.delete_many({"strategy_id": sid})
+        out["signals"] += r.deleted_count
+        out["strategies"].append(sid)
+    names = await db.list_collection_names()
+    for bad in [n for n in names if n.startswith("db.")]:
+        await db.drop_collection(bad)
+        out["dropped"].append(bad)
+    return out
+
+
+async def migrate_test_artifacts(db):
+    if await _done(db, "test_artifacts_cleanup_v1"):
+        return
+    out = await cleanup_test_artifacts(db)
+    logger.info(f"Boot-Migration Alt-Artefakte: {out['signals']} Signale von {out['strategies']} "
+                f"gelöscht, Collections entfernt: {out['dropped']}")
+    await _mark(db, "test_artifacts_cleanup_v1")
+
+
 async def run_boot_migrations(db, engine):
     for fn, args in ((migrate_cerebras_shutdown, (db,)),
                      (migrate_heatmap_off, (db, engine)),
@@ -282,7 +325,9 @@ async def run_boot_migrations(db, engine):
                      (migrate_leverage_cap, (db, engine)),
                      (migrate_data_recovery, (db,)),
                      (migrate_strategy_lab_to_playbook, (db,)),
-                     (migrate_observer_llm_off, (db,))):
+                     (migrate_observer_llm_off, (db,)),
+                     (migrate_ml_findings_decouple, (db,)),
+                     (migrate_test_artifacts, (db,))):
         try:
             await fn(*args)
         except Exception as e:

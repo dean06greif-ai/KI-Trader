@@ -100,6 +100,14 @@ const AILabPanel = () => {
   const observer = lab?.observer || {};
   const mem = lab?.memory || {};
   const mlSettings = ml.settings || {};
+  const [findings, setFindings] = useState(null);
+  const toggleFindings = async () => {
+    if (findings) { setFindings(null); return; }
+    try {
+      const d = await fetch(`${API_URL}/api/ai/ml/findings?limit=15`).then(r => r.json());
+      setFindings(d.findings || []);
+    } catch (e) { toast.error('ML-Befunde konnten nicht geladen werden'); }
+  };
   const tm = lab?.trade_manager || {};
   const tmSettings = tm.settings || {};
   const cl = lab?.closed_loop || {};
@@ -411,6 +419,19 @@ const AILabPanel = () => {
                 <div className="ai-lab-code">
                   Beste Hyperparameter (Optuna): {Object.entries(model.best_params).map(([k, v]) => `${k}=${typeof v === 'number' ? Number(v).toFixed(3) : v}`).join(', ')}
                 </div>
+              )}
+              <button className="ai-action-btn" onClick={toggleFindings} data-testid="ai-lab-findings-toggle" style={{ marginTop: 6 }}>
+                <Database size={12} weight="bold" /> {findings ? 'ML-Befunde schließen' : 'Frühere ML-Befunde (nur hier, nicht im KI-Gedächtnis)'}
+              </button>
+              {findings && (
+                <ul className="ai-lab-list" data-testid="ai-lab-findings">
+                  {findings.length === 0 && <li>Noch keine Befunde.</li>}
+                  {findings.map(f => (
+                    <li key={f.id} data-testid={`ai-lab-finding-${f.id}`}>
+                      <span style={{ opacity: 0.6 }}>{String(f.ts || '').slice(0, 16).replace('T', ' ')} · {f.kind}</span> <b>{f.title}</b>: {String(f.content || '').slice(0, 220)}{(f.content || '').length > 220 ? '…' : ''}
+                    </li>
+                  ))}
+                </ul>
               )}
             </>
           ) : (

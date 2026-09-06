@@ -24,7 +24,7 @@ import time
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from services.ai_memory import memory
+from services import ml_findings
 
 # Trainingsmengen-Limits: 6000/30000 waren die 512-MB-Sparwerte (transiente
 # RAM-Spitzen beim Auto-Training). Ab ~1,5 GB RAM: mehr Lernmasse fürs ML-Gate.
@@ -437,15 +437,12 @@ class MLLab:
                 f"Beste Hyperparameter: "
                 + ", ".join(f"{k}={v}" for k, v in list(res["best_params"].items())[:6])
             )
-            await memory.remember("ml_finding",
-                                  f"ML-Modell {doc['trained_at'][:16]}", finding,
-                                  meta={"cv_auc": res["cv_auc"],
-                                        "cv_accuracy": res["cv_accuracy"],
-                                        "importances": res["importances"][:8],
-                                        "best_params": res["best_params"],
-                                        "dataset": meta},
-                                  tags=["ml", "xgboost", "optuna"], weight=3,
-                                  source="ml_lab")
+            await ml_findings.add(self.db, "model", f"ML-Modell {doc['trained_at'][:16]}", finding,
+                                  source="ml_lab", meta={"cv_auc": res["cv_auc"],
+                                                         "cv_accuracy": res["cv_accuracy"],
+                                                         "importances": res["importances"][:8],
+                                                         "best_params": res["best_params"],
+                                                         "dataset": meta})
 
             explanation = None
             if self.settings.get("explain_with_llm") and self.engine and self.engine.key:
@@ -501,12 +498,10 @@ class MLLab:
             if self.model_meta is not None:
                 self.model_meta["explanation"] = expl
                 self.model_meta["rules"] = rules
-            await memory.remember_many("ml_finding", rules, source=f"ml_lab/{model}",
-                                       weight=3, tags=["ml", "regel"])
+            await ml_findings.add_rules(self.db, rules, source=f"ml_lab/{model}")
             if expl:
-                await memory.remember("ml_finding", f"ML-Erklärung {_now_iso()[:16]}", expl,
-                                      tags=["ml", "erklärung"], weight=3,
-                                      source=f"ml_lab/{model}")
+                await ml_findings.add(self.db, "explanation", f"ML-Erklärung {_now_iso()[:16]}",
+                                      expl, source=f"ml_lab/{model}")
             return expl
         except Exception as e:
             logger.warning(f"ML-Erklärung fehlgeschlagen: {str(e)[:150]}")

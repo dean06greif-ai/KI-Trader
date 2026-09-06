@@ -183,7 +183,15 @@ async def propose_custom_setup(db, sid: str, desc: str, source: str = "ki") -> D
     """Neues KI-Setup anlegen (Shadow: kein Live bis Reife-Gate). Idempotent."""
     ok, res = valid_custom_setup(sid, desc)
     if not ok:
-        return {"status": "rejected", "reason": res}
+        out = {"status": "rejected", "reason": res}
+        if "Alias" in str(res):
+            alias = normalize_setup(sid)
+            out["alias_of"] = alias
+            # Rückmeldung an die KI: sie sieht die Ablehnung im nächsten Zyklus (Feed)
+            await _feed(db, None, (f"KI-Setup-Vorschlag '{sid}' abgelehnt: entspricht dem bestehenden "
+                                   f"Playbook-Setup '{alias}' – bitte '{alias}' direkt nutzen statt ein "
+                                   "Duplikat vorzuschlagen."), source=source, kind="alias_rejected")
+        return out
     sid = res
     doc = await db.settings.find_one({"_id": STATE_ID}) or {}
     custom = dict(doc.get("custom") or {})
@@ -1070,7 +1078,21 @@ async def context_text(db, classes: Optional[List[str]] = None) -> str:
                  f"Paper-Shadow, live je Klasse nach {lifecycle.MIN_TRADES_PROMOTE}+ Trades mit PnL>0 "
                  f"oder WR≥{lifecycle.PROMOTE_MIN_WINRATE:.0f}%. Kapital je Setup×Asset wird automatisch "
                  "nach Historie skaliert – ein einzelnes schlechtes Asset stuft das Setup nicht zurück.")
+    lines.append(alias_check_text())
     return "\n".join(lines)
+
+
+def alias_check_text() -> str:
+    """Kompakte Alias-Tabelle für den Prompt: welche Begriffe bereits ein Setup SIND
+    (rein, testbar). Verhindert Duplikat-Vorschläge über 'new_setups'."""
+    by_target: Dict[str, List[str]] = {}
+    for needle, target in _ALIASES:
+        if needle != target:
+            by_target.setdefault(target, []).append(needle)
+    parts = [f"{t}({'/'.join(n)})" for t, n in by_target.items()]
+    return ("ALIAS-CHECK vor 'new_setups': Ideen mit diesen Begriffen sind KEIN neues Setup, "
+            "sondern das genannte bestehende – dann dieses Setup direkt verwenden: "
+            + ", ".join(parts) + ". Vorschläge, die darauf mappen, werden automatisch abgelehnt.")
 
 
 def maturity_overview(stats: Dict[str, Dict], disabled: Dict[str, Dict],

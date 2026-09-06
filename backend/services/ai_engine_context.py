@@ -865,7 +865,7 @@ class AIEngineContextMixin:
         if not review:
             try:
                 from services.ai_memory import memory
-                mem = await memory.context_text(kinds=["idea", "ml_finding"], per_kind=3)
+                mem = await memory.context_text(kinds=["idea"], per_kind=3)
                 if mem:
                     parts.append("=== KI-GEDÄCHTNIS (jüngstes Team-Wissen) ===\n" + mem)
             except Exception as e:
