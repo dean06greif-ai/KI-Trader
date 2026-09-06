@@ -1,0 +1,42 @@
+{
+  "summary": "Alle 6 Punkte des Iteration-6-Reviews GRÜN. Unit-Suite: 824 passed, 1 skipped in 17.31s (erwartet 824/1). Neue Regressionsdatei tests/test_key_level_and_live_gate.py isoliert: 15 passed in 0.28s. Local Mongo hat beide Seed-Trades (BTCUSDT-seed1 ai_trader mit bitunix_client_id='KIT-aitrader-1234567890', BTCUSDT-seed2 external/manual_trade=True). Frontend (https://trader-maintenance-1.preview.emergentagent.com) lädt, view-trades Tab wechselt sofort, beide Trade-Karten [data-testid=trade-card-BTCUSDT-seed1/seed2] sind sichtbar, beide öffnen sich per Klick auf trade-card-toggle-* ohne PageError. data-testid=trade-origin-BTCUSDT-seed1 zeigt exakt 'Website · KI Trader · KIT-aitrader-1234567890' und die <b>-Farbe ist rgb(14,203,129) (=var(--long, #0ecb81), grün). trade-origin-BTCUSDT-seed2 zeigt 'Manuell (Bitunix)' in rgb(240,185,11) (=#f0b90b, gelb). Kein JS-Crash beim Aufklappen. Code-Review services/ai_engine.py (_setup_live_gate Z.2309-2350): zählt heutige KI-Live-Trades ohne data_collection via db.auto_trades.count_documents und ruft live_gate_bypass_ok(confidence, min_confidence, opened_today, self.config) auf; bei True setzt dec['live_gate_bypass']=True und gibt None zurück (Live erlaubt). Code-Review services/bitunix_trade.py (_manage_trade Key-Level-Block Z.2571-2591): holt candles via core.state.scanner.candle_buffer[symbol][-180:], erlaubt candle-buffer-Fehler ohne Trade zu killen, berechnet risk aus initial_sl-Fallback, key_level_trail_sl garantiert Verbesserung (LONG: new_sl>cur_sl>entry, SHORT: new_sl<cur_sl) und synchronisiert bei mode==live via _live_move_sl.",
+  "feature_verdicts": [
+    "Unit-Suite komplett grün - pass - pytest -m unit -q => 824 passed, 1 skipped, 3 warnings in 17.31s. Junit: /app/test_reports/pytest/iter6_unit.xml.",
+    "Neue Regression tests/test_key_level_and_live_gate.py isoliert - pass - pytest -o addopts='' -q => 15 passed in 0.28s (TestFindSwingLevels 2, TestKeyLevelTrailSl 7, TestLiveGateBypass 6).",
+    "Frontend Herkunft KI-Trade (seed1) - pass - data-testid=trade-origin-BTCUSDT-seed1 innerText='HERKUNFT\\nWebsite · KI Trader · KIT-aitrader-1234567890', <b>-Farbe rgb(14,203,129) (grün, var(--long)).",
+    "Frontend Herkunft manueller Trade (seed2) - pass - data-testid=trade-origin-BTCUSDT-seed2 innerText='HERKUNFT\\nManuell (Bitunix)', <b>-Farbe rgb(240,185,11) (=#f0b90b, gelb).",
+    "Kein JS-Crash beim Aufklappen - pass - beide trade-card-toggle-* Klicks OK, keine PageErrors, keine sichtbaren Error-Elemente. Nur 2 transient 'TypeError: Failed to fetch' beim Cold-Start-Bundle-Init (fetchNotif) wie in Iteration 4 dokumentiert - kein Blocker.",
+    "Code-Review _setup_live_gate Bypass - pass - ai_engine.py:2309-2350 ruft live_gate_bypass_ok(confidence, min_confidence, opened_today, cfg) und setzt bei True dec['live_gate_bypass']=True + return None; opened_today via count_documents({strategy_id:'ai_trader', mode:'live', data_collection: {$ne: True}, opened_at: {$gte: day_start}}).",
+    "Code-Review _manage_trade Key-Level - pass - bitunix_trade.py:2571-2591 lädt candles aus state.scanner.candle_buffer[symbol][-180:], nutzt initial_sl-Fallback für risk, key_level_trail_sl (Z.814-840) prüft in_profit>=1R und garantiert LONG new_sl>cur_sl AND new_sl<price / SHORT price<new_sl<cur_sl (kein Rückschritt); live-Sync via _live_move_sl bei mode=='live'."
+  ],
+  "skills_loaded": [],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Cold-Start Fetches", "issue": "2 transient 'TypeError: Failed to fetch' beim ersten Rendern (fetchNotif) - bereits in iter4 dokumentiert, kein Blocker, App rendert vollständig weiter, keine PageErrors.", "affected_selectors": []}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/iter6_unit.xml",
+    "/app/backend/tests/test_key_level_and_live_gate.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "services/ai_engine.py:456-468 live_gate_bypass_ok ist reine, testbare Funktion (keine DB) mit sauberem TypeError/ValueError-Guard - super Trennung von Policy und I/O; enabled=False, per_day<=0, confidence<min+margin, opened_today>=per_day werden ALLE zu False, keine Regression möglich.",
+    "services/ai_engine.py:2325-2344 zählt opened_today mit data_collection:{$ne:True} - korrekt, damit reine Daten-Trades den Bypass-Bucket nicht verbrauchen. Fallback opened_today=999 bei DB-Fehler blockt Bypass sicher (fail-closed).",
+    "services/bitunix_trade.py:814-840 key_level_trail_sl verlangt in_profit >= min_r*risk und liefert cur_sl<new_sl<price für LONG bzw. price<new_sl<cur_sl für SHORT - kein Rückschritt möglich; buffer_pct=0.15 defaultmäßig gut gewählt für BTC-Ticksize.",
+    "services/bitunix_trade.py:2571-2591 wraps candle-load in try/except und degradiert stumm zu leerer Liste - Key-Level-Trailing kann nie den Trade-Watchdog killen. Live-Sync über _live_move_sl nur wenn mode=='live', kein doppeltes DB-Update.",
+    "frontend/PerformanceAnalytics.js:173-190 Herkunfts-Renderer: isManual korrekt aus manual_trade || strategy_id==='external'; adopted_from_limit-Sonderfall behandelt; grüne Farbe direkt via var(--long, #0ecb81) statt CSS-Klasse - konsistent mit anderen Long/Short-Farben im Component.",
+    "Kleine Beobachtung (kein Bug): _strategy_performance_text limitiert auf letzte 20 Trades ALLER Quellen; ok für Prompt-Länge. Falls das Konto sehr aktiv wird, kann days=14 im Aggregate bereits >20 sein und die \"letzten 20\" Zeilen überschreiben teilweise die Strategie-Zeilen im Prompt - Kontext bleibt lesbar, aber ggf. später Sektions-Header trennen."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (824/825 unit passed + 15/15 neue Regression)", "frontend": "100% (beide Herkunft-Felder inkl. Farb-Verifikation + kein JS-Crash)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (nicht benötigt für Iter6 – Trades-View ist public).",
+  "seed_data_creation": "Kein neuer Seed erzeugt; vorhandene BTCUSDT-seed1/seed2 in mongodb://localhost:27017/crypto_scanner.auto_trades wurden verifiziert und für Frontend-Test genutzt.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend via supervisor auf 8001. Public URL https://trader-maintenance-1.preview.emergentagent.com. Iteration 6 fügt hinzu: (a) key_level_trail_sl + find_swing_levels + trade['key_level_trail'] Default true über AI_PROTECTION_DEFAULTS.level_trail (bitunix_trade.py); (b) live_gate_bypass_ok + Config-Defaults live_gate_bypass_enabled/margin/per_day + Bypass-Block in _setup_live_gate (ai_engine.py); (c) Herkunfts-Feld in PerformanceAnalytics (grün/gelb, data-testid=trade-origin-<id>); (d) _strategy_performance_text zeigt zusätzlich letzte 20 Trades ALLER Quellen mit 'DU SELBST'-Markierung; (e) Bot-Orders speichern bitunix_client_id am Trade. Preview absichtlich OHNE Bitunix/Telegram/AI-Keys - Live-Marker weiter NICHT ausführen.",
+  "rca of the issue": "N/A - kein Bug gefunden. Alle 5 Features (Key-Level-Trailing, Live-Gate-Bypass, Herkunft-UI, KI-Konto-Verlauf, bitunix_client_id-Persistenz) sind korrekt implementiert und durch neue Unit-Tests + Frontend-Playwright-Verifikation abgedeckt."
+}

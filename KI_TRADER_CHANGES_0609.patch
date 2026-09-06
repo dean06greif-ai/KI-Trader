@@ -1,0 +1,1987 @@
+diff -ruN a/.gitignore b/.gitignore
+--- a/.gitignore	2026-09-06 18:46:30.230499758 +0000
++++ b/.gitignore	1970-01-01 00:00:00.000000000 +0000
+@@ -1,92 +0,0 @@
+-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+-
+-# IDE and editors
+-.idea/
+-.vscode/
+-
+-# Dependencies
+-node_modules/
+-/node_modules
+-/.pnp
+-.pnp.js
+-.yarn/install-state.gz
+-.yarn/*
+-!.yarn/patches
+-!.yarn/plugins
+-!.yarn/releases
+-!.yarn/versions
+-
+-# Testing
+-/coverage
+-
+-# Next.js
+-/.next/
+-/out/
+-next-env.d.ts
+-*.tsbuildinfo
+-
+-# Production builds
+-/build
+-dist/
+-dist
+-
+-# Environment files (comprehensive coverage)
+-
+-*token.json*
+-*credentials.json*
+-
+-# Logs and debug files
+-npm-debug.log*
+-yarn-debug.log*
+-yarn-error.log*
+-.pnpm-debug.log*
+-dump.rdb
+-
+-# System files
+-.DS_Store
+-*.pem
+-
+-# Python
+-__pycache__/
+-*pyc*
+-venv/
+-.venv/
+-
+-# Development tools
+-chainlit.md
+-.chainlit
+-.ipynb_checkpoints/
+-.ac
+-
+-# Deployment
+-.vercel
+-
+-# Data and databases
+-agenthub/agents/youtube/db
+-
+-# Archive files and large assets
+-**/*.zip
+-**/*.tar.gz
+-**/*.tar
+-**/*.tgz
+-*.pack
+-*.deb
+-*.dylib
+-
+-# Build caches
+-.cache/
+-
+-memory/test_credentials.md
+-
+-# Mobile development
+-android-sdk/frontend/node_modules/.cache/default-development/0.pack
+-.env
+-.env.*
+-*.env
+-credentials.json
+-*.key
+-.credentials
+-frontend/node_modules/.cache/default-development/0.pack
+-frontend/node_modules/.cache/default-development/2.pack
+-frontend/node_modules/.cache/default-development/1.pack
+-frontend/node_modules/.cache/default-development/3.pack
+diff -ruN a/KI_TRADER_ANALYSE_0609.md b/KI_TRADER_ANALYSE_0609.md
+--- a/KI_TRADER_ANALYSE_0609.md	1970-01-01 00:00:00.000000000 +0000
++++ b/KI_TRADER_ANALYSE_0609.md	2026-09-06 18:39:15.103501499 +0000
+@@ -0,0 +1,99 @@
++# KI-Trader – Analyse & Maßnahmen (06.09.2026)
++
++## 1. Datenverlust – Ursache (RCA)
++
++**Befund aus `audit_log` und `settings.ai_master_prompt.history` der Produktiv-DB (read-only geprüft):**
++
++| Zeit (UTC) | Quelle | Aktion | Wirkung |
++|---|---|---|---|
++| 20.08. 08:03 | `python-requests`, GCP-IP 34.16.x | `POST /api/ai/trader/reset` | **134 Paper-Trades + 169 Signale + 119 Rewards gelöscht** |
++| 15.08., 05.09. (10:49–12:07, 20:44–21:10) | `python-requests`, GCP-IPs 34./35./104. | 23× `analytics/clear`, 9× `ai_rewards_clear` | weitere Paper-Trades/Rewards/Trade-Stats gelöscht |
++| 05.09. 11:50–21:04 | dito | 20× `POST /api/ai/master-prompt` | MasterPrompt-Text → `UI-TEXT-42`, Lektions-Regeln → `COMBO-POLICY-42`, Regeln (Hebel 0/50, `max_trades_per_day 7`, `forbidden_terms martingale/all-in`) hin- und hergeschaltet |
++| 05.09. | dito | `POST /api/ai/lessons` | Test-Lektion `TEST_Lektion_ChatCmd` (locked!) angelegt; MasterPrompt-Audit mit Test-Regeln löschte echte Lektionen |
++
++Die IPs/User-Agents sind **automatisierte Test-Läufe (Testing-Agent) der letzten Entwicklungs-Sessions**, die
++gegen die Preview liefen – und die Preview hing laut altem `memory/PRD.md` („Produktive .env (MongoDB Atlas) in
++der Preview“) **direkt an der Produktiv-Datenbank**. Kein Bug im Code, sondern ein Prozess-Fehler.
++
++**Nicht mehr rekonstruierbar:** Paper-Trades, die per SL/TP-Treffer geschlossen wurden (kein Protokoll mehr;
++132 Stück). **Rekonstruierbar (160 Stück):** Trades, die der Trade-Manager/Trader per Aktion geschlossen hat –
++`ai_trade_actions` enthält Symbol, Seite, Modus, PnL, Ergebnis, Zeiten; Entry/SL/TP kommen aus dem passenden
++Signal (26 Trades). MasterPrompt: letzter echter Stand (v118 ≙ v102: Standard-Text, Hebel-Deckel 50) liegt in
++der History.
++
++## 2. Umgesetzt
++
++### Wiederherstellung (`services/data_recovery.py`, `routers/recovery.py`, Boot-Migration `data_recovery_0906_v1`)
++- läuft **einmalig automatisch beim nächsten Deploy** (idempotent, Marker in `settings.boot_migrations`)
++- oder manuell: `GET /api/admin/recovery/preview` (nur lesen) → `POST /api/admin/recovery/run`; Report unter
++  `GET /api/admin/recovery/report`
++- MasterPrompt: neuester History-Stand ohne Test-Marker; Lektionen: nur eindeutige `TEST_`/`[QA` Titel entfernt;
++  Paper-Trades: rekonstruiert mit `recovered: True` (Sekunden-Trades manuell per API = Test-Artefakte werden
++  ausgelassen; Reward-Backfill ignoriert rekonstruierte Trades)
++- lokal gegen eine **Kopie** der Produktiv-Daten verifiziert: MasterPrompt v118 zurück, 1 Test-Lektion weg,
++  160 Paper-Trades zurück (26 mit Levels), 14 Test-Artefakte übersprungen
++
++### Schutz vor Wiederholung (strukturell)
++- **Trade-Papierkorb** `services/trade_trash.py`: `analytics/clear` und `ai/trader/reset` löschen Trades nicht
++  mehr endgültig, sondern als wiederherstellbaren Batch (`auto_trades_trash`, 30 Batches).
++  UI: im Lösch-Dialog der Analyse („Papierkorb“), API `GET /api/analytics/trash`,
++  `POST /api/analytics/trash/restore/{batch}`.
++- **MasterPrompt-History** 20 → 50 Versionen + `POST /api/ai/master-prompt/restore {version}`; UI-Knopf
++  „Frühere Versionen“ im MasterPrompt-Panel.
++- **Lektions-History** `ai_lessons_history` (Snapshot vor jeder Bestandsänderung, 30 Stände) +
++  `GET /api/ai/lessons/history`, `POST /api/ai/lessons/restore/{id}`.
++- **Prozess-Regel** (`tests/README_TESTING.md`): Preview/Tests NIE gegen die Produktiv-DB. Diese Session lief
++  komplett gegen eine lokale DB (`crypto_scanner_dev`).
++
++### Backtest-Seeding – vom Klick-Werkzeug zum Prozess
++Vorher: nur manueller Start; „Anpassung“ = nächste von 3 festen Varianten; nach `exhausted` fing der
++Einmal-Durchlauf wieder bei Variante 1 an (sichtbar in der Prod-History: identische Wiederholungen). Keine
++Automatik, kein echtes Verbessern.
++
++Jetzt:
++- **Feintuning-Schritt** (`detectors.tune_candidates`, `runner.tune`): scheitern alle Varianten, werden um die
++  beste In-Sample-Variante nur Risiko/Ziel (`sl_atr`, `tp_r` ×0,8/×1,25, max. 4 Kandidaten) variiert; nur ein
++  Out-of-Sample-bestandener Kandidat wird übernommen (Status `tuned`, Parameter im State, wird beim nächsten
++  Lauf zuerst erneut bestätigt). Overfitting-Bremse bleibt: Signal-Logik unverändert, wenige Kandidaten, OOS-Pflicht.
++- **Automatik** (`services/setup_backtest/auto.py`): Schalter im Seeding-Panel, Intervall (12 h–7 Tage),
++  Zeitraum, Anlageklassen; läuft im selben Job-Pfad wie der manuelle Start (Fortschritt sichtbar), nie parallel
++  zu anderen Backtests, nie bei RAM-Knappheit, Verlauf der letzten 10 Läufe im State.
++  API `GET/POST /api/ai/playbook/backtest/auto`. Standard **aus** (bewusste Entscheidung des Traders).
++- Verifiziert: Lauf Indizes/30 Tage/Auto-Schleife → 9 Setups, je 3 Varianten + Feintuning (`tried 7`), Ergebnis
++  ehrlich `exhausted` (auf 30 Tagen QQQ/SPY kein Edge nach Gebühren).
++
++## 3. KI-Trader – Bewertung (was ist zu viel / fehlt)
++
++**Datenbasis (Prod):** 73 230 `ai_decisions` (≈ 92 % HOLD), 82 279 `ai_chat_archive`, 4 011 `ai_knowledge`
++(davon 2 481 `ml_finding`), 33 Strategie-Kandidaten mit **0 Ghost-Trades**, 2 015 Proposals, 57 ML-Gate-Modelle.
++
++**Zu viel / fraglich**
++1. **Strategie-Labor (`ai_strategy_lab`)**: 33 Kandidaten, `ai_ghost_trades` leer, `auto_develop` alle 7 Tage
++   an. Die Ghost-Phase wird faktisch nie durchlaufen → das Labor erzeugt Kandidaten und LLM-Kosten ohne
++   Ergebnis. Empfehlung: `allow_ai_create`/`auto_develop` abschalten oder Kandidaten direkt als Playbook-Setup
++   (`new_setups`) führen – dort existiert bereits der komplette Lebenszyklus (Paper → Reife-Gate → Live).
++   Zwei parallele „neue Strategie“-Pfade sind einer zu viel.
++2. **Zwei Lern-Pfade für Lektionen**: `learning_memory`/`ai_knowledge` (Forschungs-Analyst, ML-Findings 2 481)
++   und `ai_lessons`. Die 2 481 ML-Findings landen nie als prüfbare Lektion. Empfehlung: ML-Findings nur noch
++   in den ML-Gate-Report, nicht ins Gedächtnis.
++3. **Rollen-Anzahl** (9 LLM-Rollen + Radar, Supervisor, Copilot, Model-Watch): auf Free-Tier-Modellen
++   (Cerebras tot, OpenRouter `:free`) bedeutet das viele Ausfälle (`news watcher LLM failed`). Kern-Rollen sind
++   Analyst, Trade-Manager, Lern-Modul, News-Wächter. Markt-Beobachter (62 230 Snapshots) und Summarizer sind
++   rein deterministisch/berichtend und bräuchten kein LLM.
++4. **Chat-Archiv** 82 k Einträge ohne Nutzen für Entscheidungen → Housekeeping-Fenster verkürzen.
++5. `custom_14f031fftest`-Signale (50) und eine Collection namens `db.ai_lesson_candidates` sind Alt-Artefakte.
++
++**Was fehlt / war schwach**
++1. **Kein Schutz destruktiver Endpunkte** → jetzt Papierkorb + Historien (oben).
++2. **Backtest → Verbesserung → erneuter Test** war kein Kreislauf → jetzt Feintuning + Automatik.
++3. **Sichtbarkeit rekonstruierter/gelöschter Daten** → `recovered`-Flag, Papierkorb-UI, Recovery-Report.
++4. Offen (Empfehlung, nicht umgesetzt): Ghost-Trade-Pfad entweder reparieren oder entfernen; ML-Findings aus
++   dem Gedächtnis nehmen; Rollen-Konsolidierung – jeweils erst nach deiner Entscheidung, weil es Workflows ändert.
++
++## 4. Deploy-Hinweise (Render, Struktur unverändert)
++- Keine neuen Abhängigkeiten. Neue Dateien: `backend/services/data_recovery.py`, `backend/services/trade_trash.py`,
++  `backend/services/setup_backtest/auto.py`, `backend/routers/recovery.py`,
++  `frontend/src/components/TradeTrashPanel.js`, Tests `tests/test_data_recovery_and_trash.py`,
++  `tests/test_seed_auto_and_tuning.py`.
++- Nach dem Deploy: Log-Zeile `Boot-Migration Data-Recovery: …` prüfen oder `GET /api/admin/recovery/report`.
++- Danach optional im Backtester → „KI Trader · Setups“ → Automatik einschalten.
+diff -ruN a/backend/routers/__init__.py b/backend/routers/__init__.py
+--- a/backend/routers/__init__.py	2026-09-06 18:46:30.232499758 +0000
++++ b/backend/routers/__init__.py	2026-09-06 18:17:20.621313546 +0000
+@@ -1,7 +1,7 @@
+ """Alle API-Router. Neue Bereiche hier registrieren."""
+ from routers import auth, general, ws, analytics, strategies, backtest, optimizer, \
+     autotrade, control, ai, ai_lab, ai_governance, local_worker, macro, dynamic, \
+-    regime_lab, liquidity, notify, ml_gate, copilot, job_series, setup_backtest
++    regime_lab, liquidity, notify, ml_gate, copilot, job_series, setup_backtest, recovery
+ 
+ ALL_ROUTERS = [
+     auth.router,
+@@ -11,6 +11,7 @@
+     strategies.router,
+     backtest.router,
+     setup_backtest.router,
++    recovery.router,
+     optimizer.router,
+     autotrade.router,
+     control.router,
+diff -ruN a/backend/routers/ai.py b/backend/routers/ai.py
+--- a/backend/routers/ai.py	2026-09-06 18:46:30.232499758 +0000
++++ b/backend/routers/ai.py	2026-09-06 18:16:50.628313413 +0000
+@@ -394,11 +394,14 @@
+     db = ai_engine.db
+     live_untouched = await db.auto_trades.count_documents(
+         {"strategy_id": "ai_trader", "mode": "live"})
+-    trades = await db.auto_trades.delete_many(
+-        {"strategy_id": "ai_trader", "mode": {"$ne": "live"}})
++    # Papierkorb statt endgültigem Löschen (services/trade_trash.py)
++    from services import trade_trash
++    trash = await trade_trash.archive(
++        db, {"strategy_id": "ai_trader", "mode": {"$ne": "live"}}, "ai_trader_reset",
++        actor=str(request.client.host if request.client else ""))
+     signals = await db.signals.delete_many({"strategy_id": "ai_trader"})
+     rewards = await ai_rewards.clear(db)
+-    details = {"trades_deleted": trades.deleted_count,
++    details = {"trades_deleted": trash["count"], "trash_batch": trash["batch_id"],
+                "signals_deleted": signals.deleted_count,
+                "rewards_deleted": rewards,
+                "live_trades_untouched": live_untouched}
+diff -ruN a/backend/routers/ai_governance.py b/backend/routers/ai_governance.py
+--- a/backend/routers/ai_governance.py	2026-09-06 18:46:30.232499758 +0000
++++ b/backend/routers/ai_governance.py	2026-09-06 18:16:06.327313217 +0000
+@@ -74,6 +74,41 @@
+     return {"status": "success", "master_prompt": snap, "lesson_audit": audit}
+ 
+ 
++@router.post("/api/ai/master-prompt/restore")
++async def restore_master_prompt(body: Dict, _: bool = Depends(require_admin)):
++    """Früheren MasterPrompt-Stand aus der Versions-History reaktivieren
++    (z.B. nach einer versehentlichen Überschreibung)."""
++    try:
++        version = int(body.get("version"))
++    except (TypeError, ValueError):
++        raise HTTPException(status_code=400, detail="version erforderlich")
++    snap = await master_prompt.restore(version)
++    if not snap:
++        raise HTTPException(status_code=404, detail=f"Version {version} nicht in der History")
++    _opinion("MasterPrompt", f"Der Trader hat den MasterPrompt auf den Stand v{version} "
++                             f"zurückgesetzt (jetzt v{snap['version']}).")
++    return {"status": "success", "master_prompt": snap}
++
++
++@router.get("/api/ai/lessons/history")
++async def lessons_history(limit: int = 20):
++    """Frühere Lektions-Stände (vor jeder Änderung des Bestands gesichert)."""
++    return {"history": await lesson_store.history(limit)}
++
++
++@router.post("/api/ai/lessons/restore/{snapshot_id}")
++async def lessons_restore(snapshot_id: str, body: Optional[Dict] = None,
++                          _: bool = Depends(require_admin)):
++    """Lektions-Stand wiederherstellen (Default: fehlende Lektionen ergänzen;
++    replace=true ersetzt den Bestand komplett)."""
++    res = await lesson_store.restore(snapshot_id, merge=not bool((body or {}).get("replace")))
++    if not res:
++        raise HTTPException(status_code=404, detail="Snapshot nicht gefunden")
++    if ai_engine.learning:
++        ai_engine.learning.invalidate_lessons()
++    return {"status": "success", **res}
++
++
+ # ---------------- Lektionen ----------------
+ @router.get("/api/ai/lessons")
+ async def list_lessons():
+diff -ruN a/backend/routers/analytics.py b/backend/routers/analytics.py
+--- a/backend/routers/analytics.py	2026-09-06 18:46:30.233499758 +0000
++++ b/backend/routers/analytics.py	2026-09-06 18:16:35.519313346 +0000
+@@ -13,6 +13,7 @@
+ from core.state import scanner, open_signal_evals
+ from core.pipeline import broadcast
+ from core.utils import _clean, _enrich_trade
++from services import trade_trash
+ from strategies.registry import registry as strategy_registry
+ 
+ logger = logging.getLogger(__name__)
+@@ -20,6 +21,34 @@
+ router = APIRouter(tags=["analytics"])
+ 
+ 
++def _actor(request: Request) -> str:
++    return f"{request.client.host if request.client else '?'} {request.headers.get('user-agent', '')[:60]}"
++
++
++@router.get("/api/analytics/trash")
++async def trash_list():
++    """Papierkorb gelöschter Trades (Batches aus analytics/clear und KI-Reset)."""
++    return {"batches": await trade_trash.list_batches(state.db)}
++
++
++@router.post("/api/analytics/trash/restore/{batch_id}")
++async def trash_restore(batch_id: str, request: Request, _: bool = Depends(require_admin)):
++    res = await trade_trash.restore(state.db, batch_id)
++    if not res:
++        raise HTTPException(status_code=404, detail="Batch nicht gefunden")
++    await rebuild_performance()
++    await log_action(request, "trades_trash_restore", res)
++    await broadcast({"type": "analytics_cleared", "range": "restore", "scope": "trash"})
++    return {"status": "success", **res}
++
++
++@router.delete("/api/analytics/trash/{batch_id}")
++async def trash_discard(batch_id: str, _: bool = Depends(require_admin)):
++    if not await trade_trash.discard(state.db, batch_id):
++        raise HTTPException(status_code=404, detail="Batch nicht gefunden")
++    return {"status": "success"}
++
++
+ @router.get("/api/performance")
+ async def get_performance():
+     """Return per-symbol performance (wins/losses aus auto_trades + Signal-Zählern)."""
+@@ -256,11 +285,16 @@
+ 
+     deleted: Dict[str, int] = {}
+ 
+-    # Fast path: full wipe over everything (previous behaviour)
++    # Fast path: full wipe over everything (previous behaviour) – Trades wandern
++    # in den Papierkorb (services/trade_trash.py) statt endgültig zu verschwinden
+     if rng == "all" and scope == "all":
+-        for coll in ["signals", "performance", "analytics_daily", "trade_stats", "auto_trades"]:
++        for coll in ["signals", "performance", "analytics_daily", "trade_stats"]:
+             r = await state.db[coll].delete_many({})
+             deleted[coll] = r.deleted_count
++        trash = await trade_trash.archive(state.db, {}, "analytics_clear all/all",
++                                          actor=_actor(request))
++        deleted["auto_trades"] = trash["count"]
++        deleted["trash_batch"] = trash["batch_id"]
+         open_signal_evals.clear()
+         for sym in list(scanner.rule_states.keys()):
+             scanner.rule_states[sym] = {}
+@@ -281,8 +315,10 @@
+ 
+     r = await state.db.signals.delete_many(sig_filter)
+     deleted["signals"] = r.deleted_count
+-    r = await state.db.auto_trades.delete_many(trade_filter)
+-    deleted["auto_trades"] = r.deleted_count
++    trash = await trade_trash.archive(state.db, trade_filter,
++                                      f"analytics_clear {rng}/{scope}", actor=_actor(request))
++    deleted["auto_trades"] = trash["count"]
++    deleted["trash_batch"] = trash["batch_id"]
+ 
+     if scope == "all":
+         # time-scoped full delete: drop aggregated day docs directly (previous behaviour)
+diff -ruN a/backend/routers/recovery.py b/backend/routers/recovery.py
+--- a/backend/routers/recovery.py	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/routers/recovery.py	2026-09-06 18:17:01.191313460 +0000
+@@ -0,0 +1,31 @@
++"""Daten-Wiederherstellung (services/data_recovery.py) – Vorschau, Ausführung, Report."""
++from fastapi import APIRouter, Depends, Request
++
++from core import state
++from core.audit import log_action
++from core.auth import require_admin
++from services import data_recovery
++
++router = APIRouter(tags=["recovery"])
++
++
++@router.get("/api/admin/recovery/preview")
++async def recovery_preview(_: bool = Depends(require_admin)):
++    """Nur lesen: was WÜRDE wiederhergestellt (MasterPrompt, Test-Lektionen, Paper-Trades)?"""
++    return await data_recovery.run(state.db, dry_run=True)
++
++
++@router.post("/api/admin/recovery/run")
++async def recovery_run(request: Request, _: bool = Depends(require_admin)):
++    report = await data_recovery.run(state.db, dry_run=False)
++    await log_action(request, "data_recovery_run", {
++        "master": (report.get("master_prompt") or {}).get("restored"),
++        "lessons_removed": len((report.get("lessons") or {}).get("removed") or []),
++        "trades_recovered": (report.get("paper_trades") or {}).get("recovered")})
++    return report
++
++
++@router.get("/api/admin/recovery/report")
++async def recovery_report():
++    doc = await state.db.settings.find_one({"_id": "data_recovery"}, {"_id": 0}) or {}
++    return {"last_report": doc.get("last_report")}
+diff -ruN a/backend/routers/setup_backtest.py b/backend/routers/setup_backtest.py
+--- a/backend/routers/setup_backtest.py	2026-09-06 18:46:30.235499758 +0000
++++ b/backend/routers/setup_backtest.py	2026-09-06 18:19:32.204314128 +0000
+@@ -11,6 +11,7 @@
+ from services import setup_asset_class as ac
+ from services import backtester as bt
+ from services.setup_backtest import runner
++from services.setup_backtest import auto as seed_auto
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -63,6 +64,18 @@
+     return {"status": "cancelling", "job_id": job_id}
+ 
+ 
++@router.get("/api/ai/playbook/backtest/auto")
++async def seeding_auto_get():
++    """Automatik-Einstellungen + nächster/letzter Lauf."""
++    return await seed_auto.get(state.db)
++
++
++@router.post("/api/ai/playbook/backtest/auto")
++async def seeding_auto_set(body: Dict, _: bool = Depends(require_admin)):
++    """Automatik ein/aus, Intervall (Stunden), Zeitraum (Tage), Modus, Klassen."""
++    return await seed_auto.save(state.db, body or {})
++
++
+ @router.post("/api/ai/playbook/backtest/reset")
+ async def seeding_reset(body: Dict, _: bool = Depends(require_admin)):
+     cls = body.get("asset_class") or None
+diff -ruN a/backend/scripts/copy_prod_subset_to_dev.py b/backend/scripts/copy_prod_subset_to_dev.py
+--- a/backend/scripts/copy_prod_subset_to_dev.py	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/scripts/copy_prod_subset_to_dev.py	2026-09-06 18:47:27.023499530 +0000
+@@ -0,0 +1,29 @@
++"""Kopiert die für die Recovery relevanten Collections aus PROD (read-only) in die lokale Dev-DB.
++
++Aufruf: PROD_MONGO_URL="mongodb+srv://..." python scripts/copy_prod_subset_to_dev.py
++(Die Produktiv-URL NIE in Dateien ablegen – nur als Umgebungsvariable übergeben.)"""
++import os
++import sys
++
++from pymongo import MongoClient
++
++if not os.environ.get("PROD_MONGO_URL"):
++    sys.exit("PROD_MONGO_URL fehlt")
++SRC = MongoClient(os.environ["PROD_MONGO_URL"], serverSelectionTimeoutMS=15000)[
++    os.environ.get("PROD_DB_NAME", "crypto_scanner")]
++DST = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))[
++    os.environ.get("DB_NAME", "crypto_scanner_dev")]
++
++for coll, q in (("ai_trade_actions", {}), ("auto_trades", {}),
++                ("signals", {"strategy_id": "ai_trader"})):
++    rows = list(SRC[coll].find(q))
++    DST[coll].delete_many({})
++    if rows:
++        DST[coll].insert_many(rows)
++    print(coll, len(rows))
++for sid in ("ai_master_prompt", "ai_lessons"):
++    doc = SRC.settings.find_one({"_id": sid})
++    DST.settings.replace_one({"_id": sid}, doc, upsert=True)
++    print("settings", sid, "ok")
++DST.settings.update_one({"_id": "boot_migrations"}, {"$unset": {"data_recovery_0906_v1": ""}})
++print("done")
+diff -ruN a/backend/server.py b/backend/server.py
+--- a/backend/server.py	2026-09-06 18:46:30.244499758 +0000
++++ b/backend/server.py	2026-09-06 18:19:39.585314160 +0000
+@@ -311,6 +311,9 @@
+     # Nacht-Serie / Job-Warteschlange (Backtests, Optimierungen, Regime-Analysen)
+     from services import job_series
+     asyncio.create_task(job_series.run_loop(app.mongodb, telegram))
++    # Seeding-Automatik: fällige Setup-Backtests (Varianten + Feintuning) ohne Klick
++    from services.setup_backtest import auto as seed_auto
++    asyncio.create_task(seed_auto.run_loop(app.mongodb))
+     from services import dynamic_live
+     asyncio.create_task(dynamic_live.watch_loop())
+     # Modell-Wächter: prüft wöchentlich alle konfigurierten Modell-Slugs live
+diff -ruN a/backend/services/ai_lessons.py b/backend/services/ai_lessons.py
+--- a/backend/services/ai_lessons.py	2026-09-06 18:46:30.246499758 +0000
++++ b/backend/services/ai_lessons.py	2026-09-06 18:15:51.657313152 +0000
+@@ -20,6 +20,7 @@
+ logger = logging.getLogger(__name__)
+ 
+ DOC_ID = "ai_lessons"
++HISTORY_KEEP = 30   # Stände in ai_lessons_history (Wiederherstellung)
+ WEIGHT_LABELS = {1: "basis", 2: "mittel", 3: "hoch", 4: "sehr hoch"}
+ 
+ 
+@@ -484,11 +485,55 @@
+ 
+     async def save_all(self, lessons: List[Dict]) -> List[Dict]:
+         lessons = normalize_all(lessons)
++        await self._snapshot_before_write(lessons)
+         await self.db.settings.update_one(
+             {"_id": DOC_ID}, {"$set": {"lessons": lessons, "updated_at": _now_iso()}},
+             upsert=True)
+         return lessons
+ 
++    # ---- Versions-History (Wiederherstellung nach Fehl-Löschungen) ----
++    async def _snapshot_before_write(self, new_lessons: List[Dict]) -> None:
++        """Bisherigen Stand in `ai_lessons_history` sichern, wenn sich der
++        Bestand (Titel-Menge) ändert. Nur die letzten HISTORY_KEEP Stände."""
++        try:
++            old = normalize_all((await self._doc()).get("lessons"))
++            if {l["id"] for l in old} == {l["id"] for l in new_lessons}:
++                return
++            if not old:
++                return
++            await self.db.ai_lessons_history.insert_one({
++                "id": f"lh_{uuid.uuid4().hex[:10]}", "ts": _now_iso(),
++                "count": len(old), "titles": [l.get("title") for l in old][:40],
++                "lessons": old})
++            stale = await (self.db.ai_lessons_history.find({}, {"id": 1}).sort("ts", -1)
++                           .skip(HISTORY_KEEP).to_list(100))
++            if stale:
++                await self.db.ai_lessons_history.delete_many(
++                    {"id": {"$in": [s["id"] for s in stale]}})
++        except Exception as e:  # noqa: BLE001
++            logger.warning(f"Lektionen-History-Snapshot fehlgeschlagen: {e}")
++
++    async def history(self, limit: int = 20) -> List[Dict]:
++        return await (self.db.ai_lessons_history.find({}, {"_id": 0, "lessons": 0})
++                      .sort("ts", -1).to_list(max(1, min(limit, HISTORY_KEEP))))
++
++    async def restore(self, snapshot_id: str, merge: bool = True) -> Optional[Dict]:
++        """Stand wiederherstellen. merge=True: fehlende Lektionen (per id) zum
++        aktuellen Bestand hinzufügen; merge=False: Bestand komplett ersetzen."""
++        snap = await self.db.ai_lessons_history.find_one({"id": snapshot_id})
++        if not snap:
++            return None
++        old = normalize_all(snap.get("lessons"))
++        if merge:
++            current = await self.all()
++            have = {l["id"] for l in current}
++            added = [l for l in old if l["id"] not in have]
++            result = current + added
++        else:
++            added, result = old, old
++        await self.save_all(result)
++        return {"snapshot_id": snapshot_id, "restored": len(added), "total": len(result)}
++
+     async def create(self, title: str, detail: str, weight: int = 3) -> Dict:
+         lesson = normalize({
+             "id": f"les_{uuid.uuid4().hex[:10]}", "title": title, "detail": detail,
+diff -ruN a/backend/services/ai_master_prompt.py b/backend/services/ai_master_prompt.py
+--- a/backend/services/ai_master_prompt.py	2026-09-06 18:46:30.246499758 +0000
++++ b/backend/services/ai_master_prompt.py	2026-09-06 18:15:28.837313051 +0000
+@@ -22,6 +22,7 @@
+ logger = logging.getLogger(__name__)
+ 
+ DOC_ID = "ai_master_prompt"
++HISTORY_KEEP = 50   # Versions-History (Wiederherstellung nach Fehl-Speicherungen)
+ 
+ DEFAULT_TEXT = (
+     "ROLLE: Du bist der KI-Daytrader dieser Plattform – eine Strategie von vielen. Dein Auftrag "
+@@ -409,7 +410,7 @@
+             {"$set": {"text": self.text, "lesson_policy": self.lesson_policy,
+                       "rules": self.rules, "version": self.version,
+                       "updated_at": self.updated_at, "editor": editor},
+-             "$push": {"history": {"$each": [history_entry], "$slice": -20}}},
++             "$push": {"history": {"$each": [history_entry], "$slice": -HISTORY_KEEP}}},
+             upsert=True)
+         logger.info(f"MasterPrompt gespeichert (v{self.version}, {editor})")
+         return self.snapshot()
+@@ -418,6 +419,18 @@
+         doc = await self.db.settings.find_one({"_id": DOC_ID}) or {}
+         return list(reversed(doc.get("history") or []))[:limit]
+ 
++    async def restore(self, version: int) -> Optional[Dict]:
++        """Früheren Stand aus der History wieder aktivieren (Trader-Aktion).
++        Der aktuelle Stand wandert dabei selbst in die History – nichts geht verloren."""
++        doc = await self.db.settings.find_one({"_id": DOC_ID}) or {}
++        src = next((h for h in (doc.get("history") or [])
++                    if int(h.get("version") or 0) == int(version)), None)
++        if not src:
++            return None
++        return await self.save(text=src.get("text"), rules=src.get("rules"),
++                               lesson_policy=src.get("lesson_policy"),
++                               editor=f"trader(restore v{version})")
++
+     # ---------------- Prompt-Injektion ----------------
+     def prompt_block(self) -> str:
+         return (
+diff -ruN a/backend/services/ai_rewards.py b/backend/services/ai_rewards.py
+--- a/backend/services/ai_rewards.py	2026-09-06 18:46:30.247499758 +0000
++++ b/backend/services/ai_rewards.py	2026-09-06 18:15:11.040312972 +0000
+@@ -164,7 +164,9 @@
+                                      {"$unset": {"cleared_at": ""}})
+         logger.info("Reward-Backfill: cleared_at aufgehoben (include_cleared)")
+         cleared_at = None
+-    flt = {"strategy_id": "ai_trader", "status": "closed"}
++    # Rekonstruierte Trades (services/data_recovery.py) haben keine Entry-
++    # Snapshots/Levels -> nicht nachbewerten.
++    flt = {"strategy_id": "ai_trader", "status": "closed", "recovered": {"$ne": True}}
+     if cleared_at:
+         flt["closed_at"] = {"$gt": cleared_at}
+     have = {r.get("trade_id") async for r in
+diff -ruN a/backend/services/boot_migrations.py b/backend/services/boot_migrations.py
+--- a/backend/services/boot_migrations.py	2026-09-06 18:46:30.248499758 +0000
++++ b/backend/services/boot_migrations.py	2026-09-06 18:17:13.621313515 +0000
+@@ -223,6 +223,22 @@
+     await _mark(db, "leverage_cap_v1")
+ 
+ 
++async def migrate_data_recovery(db):
++    """Vorfall 05./06.09.2026: Test-Lauf gegen die Produktiv-DB (MasterPrompt
++    überschrieben, Test-Lektionen, Paper-Trades gelöscht). Einmalige, konservative
++    Wiederherstellung (services/data_recovery.py) – idempotent, Report in
++    settings.data_recovery.last_report bzw. GET /api/admin/recovery/report."""
++    if await _done(db, "data_recovery_0906_v1"):
++        return
++    from services import data_recovery
++    report = await data_recovery.run(db, dry_run=False)
++    logger.info("Boot-Migration Data-Recovery: "
++                f"MasterPrompt {'wiederhergestellt' if (report.get('master_prompt') or {}).get('restored') else 'unverändert'}, "
++                f"{len((report.get('lessons') or {}).get('removed') or [])} Test-Lektionen entfernt, "
++                f"{(report.get('paper_trades') or {}).get('recovered', 0)} Paper-Trades rekonstruiert")
++    await _mark(db, "data_recovery_0906_v1")
++
++
+ async def run_boot_migrations(db, engine):
+     for fn, args in ((migrate_cerebras_shutdown, (db,)),
+                      (migrate_heatmap_off, (db, engine)),
+@@ -230,7 +246,8 @@
+                      (migrate_leverage_proposals, (db, engine)),
+                      (migrate_manual_lev_display, (db,)),
+                      (migrate_risk_sizing, (db, engine)),
+-                     (migrate_leverage_cap, (db, engine))):
++                     (migrate_leverage_cap, (db, engine)),
++                     (migrate_data_recovery, (db,))):
+         try:
+             await fn(*args)
+         except Exception as e:
+diff -ruN a/backend/services/data_recovery.py b/backend/services/data_recovery.py
+--- a/backend/services/data_recovery.py	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/services/data_recovery.py	2026-09-06 18:33:16.590502929 +0000
+@@ -0,0 +1,213 @@
++"""Wiederherstellung verlorener Daten (Vorfall 05./06.09.2026).
++
++Befund (audit_log + settings.history): Ein automatisierter Test-Lauf lief gegen
++die PRODUKTIV-Datenbank und hat dabei
++  * den MasterPrompt mit Test-Text ("UI-TEXT-42", "COMBO-POLICY-42") überschrieben,
++  * Test-Lektionen ("TEST_…") angelegt,
++  * über `analytics/clear` und `ai/trader/reset` Paper-Trades gelöscht.
++
++Was hier wiederhergestellt wird – bewusst konservativ und idempotent:
++  1. MasterPrompt: der letzte NICHT-Test-Stand aus der Versions-History.
++  2. Lektionen: Test-Lektionen entfernen (nur eindeutige Test-Marker).
++  3. Paper-Trades: aus `ai_trade_actions` (close/partial_close) rekonstruiert –
++     PnL/Ergebnis/Zeiten sind dort exakt protokolliert; Entry/SL/TP kommen, wo
++     vorhanden, aus dem passenden Signal. Rekonstruierte Trades tragen
++     `recovered: True` (im UI erkennbar, für Reward-Backfill ausgeschlossen).
++
++Trades, die per SL/TP-Treffer ohne KI-Aktion geschlossen wurden, hinterlassen
++keine Spur mehr und sind NICHT rekonstruierbar – der Report nennt die Zahl.
++Reine Prüf-/Bau-Funktionen sind modul-global (ohne DB) und testbar.
++"""
++import logging
++import re
++from datetime import datetime, timedelta, timezone
++from typing import Dict, List, Optional, Tuple
++
++logger = logging.getLogger(__name__)
++
++MIN_REAL_TEXT_LEN = 200
++MIN_REAL_POLICY_LEN = 100
++_TEST_MARK_RE = re.compile(r"UI-TEXT-\d+|COMBO-POLICY|TESTPOLICY|\[QA_TE|QA_TEST|TEST_Lektion", re.I)
++_TEST_LESSON_RE = re.compile(r"^(TEST_|QA_TEST|\[QA)|\bQA_TEST\b|TEST_Lektion", re.I)
++SIGNAL_MATCH_WINDOW_MIN = 3
++
++
++def _now_iso() -> str:
++    return datetime.now(timezone.utc).isoformat()
++
++
++# ---------------------------------------------------------------- MasterPrompt
++def is_test_artifact(text: str, lesson_policy: str) -> bool:
++    """Erkennt Test-Überbleibsel (rein, testbar): zu kurz oder mit Test-Marker."""
++    t, p = str(text or ""), str(lesson_policy or "")
++    if _TEST_MARK_RE.search(t) or _TEST_MARK_RE.search(p):
++        return True
++    return len(t.strip()) < MIN_REAL_TEXT_LEN or len(p.strip()) < MIN_REAL_POLICY_LEN
++
++
++def pick_restorable_master(history: List[Dict]) -> Optional[Dict]:
++    """Neuester History-Eintrag, der kein Test-Artefakt ist."""
++    for h in sorted(history or [], key=lambda x: int(x.get("version") or 0), reverse=True):
++        if not is_test_artifact(h.get("text"), h.get("lesson_policy")):
++            return h
++    return None
++
++
++# ---------------------------------------------------------------- Lektionen
++def is_test_lesson(lesson: Dict) -> bool:
++    return bool(_TEST_LESSON_RE.search(str((lesson or {}).get("title") or "")))
++
++
++# ---------------------------------------------------------------- Paper-Trades
++def trade_open_ms(trade_id: str) -> Optional[int]:
++    """Trade-IDs haben das Format SYMBOL-<epoch_ms>."""
++    try:
++        return int(str(trade_id).rsplit("-", 1)[1])
++    except (IndexError, ValueError):
++        return None
++
++
++MIN_MANUAL_DURATION_S = 60
++
++
++def is_test_like_duration(opened_at: str, closed_at: str) -> bool:
++    """Manuell per API geöffnet und binnen Sekunden wieder geschlossen = Test-Lauf."""
++    try:
++        a = datetime.fromisoformat(str(opened_at).replace("Z", "+00:00"))
++        b = datetime.fromisoformat(str(closed_at).replace("Z", "+00:00"))
++    except (TypeError, ValueError):
++        return False
++    return 0 <= (b - a).total_seconds() < MIN_MANUAL_DURATION_S
++
++
++def rebuild_trade(trade_id: str, actions: List[Dict], signal: Optional[Dict] = None) -> Optional[Dict]:
++    """Geschlossenen Paper-Trade aus seinen Aktionen rekonstruieren (rein, testbar).
++
++    Ohne `close`-Aktion ist kein Endzustand bekannt -> None."""
++    acts = sorted([a for a in actions if isinstance(a, dict)], key=lambda a: str(a.get("ts") or ""))
++    close = next((a for a in reversed(acts) if a.get("action") == "close"), None)
++    if not close:
++        return None
++    first = acts[0]
++    open_ms = trade_open_ms(trade_id)
++    opened_at = (datetime.fromtimestamp(open_ms / 1000, tz=timezone.utc).isoformat()
++                 if open_ms else str(first.get("ts") or ""))
++    pnl = 0.0
++    for a in acts:
++        if a.get("action") in ("close", "partial_close"):
++            try:
++                pnl += float(((a.get("result") or {}).get("realized_pnl")) or 0)
++            except (TypeError, ValueError):
++                continue
++    res = (close.get("result") or {}).get("result")
++    if res not in ("win", "loss", "breakeven"):
++        res = "win" if pnl > 0 else ("loss" if pnl < 0 else "breakeven")
++    source = str(close.get("source") or first.get("source") or "ki")
++    manual = source in ("user", "manual", "manuell")
++    if manual and is_test_like_duration(opened_at, str(close.get("ts") or "")):
++        return None   # Sekunden-Trades per API = Test-Artefakt, nicht rekonstruieren
++    sig = signal or {}
++    trade = {
++        "id": trade_id, "symbol": first.get("symbol"), "side": first.get("side"),
++        "mode": first.get("mode") or "paper", "status": "closed", "result": res,
++        "realized_pnl": round(pnl, 6), "opened_at": opened_at,
++        "closed_at": str(close.get("ts") or ""), "trade_date": opened_at[:10],
++        "strategy_id": "manual" if manual else "ai_trader",
++        "strategy_name": "Manuell" if manual else "KI Trader",
++        "manual_trade": manual, "close_reason": str(close.get("reason") or "")[:300],
++        "entry": sig.get("entry_price"), "sl": sig.get("stop_loss"),
++        "tp1": sig.get("take_profit_1"), "tpf": sig.get("take_profit_full"),
++        "signal_id": sig.get("id"), "decision_id": sig.get("decision_id"),
++        "ai_confidence": sig.get("ai_confidence"), "setup": sig.get("ai_setup"),
++        "horizon": sig.get("ai_horizon"), "ai_reasoning": sig.get("ai_reasoning"),
++        "data_collection": bool(sig.get("data_collection")) if sig else False,
++        "recovered": True, "recovered_from": "ai_trade_actions",
++        "recovered_at": _now_iso(), "actions_count": len(acts),
++    }
++    return {k: v for k, v in trade.items() if v is not None}
++
++
++async def _find_signal(db, symbol: str, open_ms: Optional[int]) -> Optional[Dict]:
++    if not open_ms or not symbol:
++        return None
++    t0 = datetime.fromtimestamp(open_ms / 1000, tz=timezone.utc)
++    win = timedelta(minutes=SIGNAL_MATCH_WINDOW_MIN)
++    return await db.signals.find_one(
++        {"symbol": symbol, "strategy_id": "ai_trader",
++         "timestamp": {"$gte": (t0 - win).isoformat(), "$lte": (t0 + win).isoformat()}},
++        {"_id": 0})
++
++
++async def _recover_trades(db, dry_run: bool) -> Dict:
++    existing = {t["id"] for t in await db.auto_trades.find({}, {"id": 1}).to_list(100000)}
++    by_trade: Dict[str, List[Dict]] = {}
++    async for a in db.ai_trade_actions.find({"mode": "paper"}, {"_id": 0}):
++        tid = a.get("trade_id")
++        if tid and tid not in existing:
++            by_trade.setdefault(tid, []).append(a)
++    recovered: List[Dict] = []
++    unrecoverable = 0
++    with_levels = 0
++    skipped_test_like = 0
++    for tid, acts in by_trade.items():
++        sig = await _find_signal(db, acts[0].get("symbol"), trade_open_ms(tid))
++        trade = rebuild_trade(tid, acts, sig)
++        if trade is None:
++            if any(a.get("action") == "close" for a in acts):
++                skipped_test_like += 1
++            else:
++                unrecoverable += 1
++            continue
++        with_levels += 1 if trade.get("entry") else 0
++        recovered.append(trade)
++    if recovered and not dry_run:
++        await db.auto_trades.insert_many([dict(t) for t in recovered])
++    pnl = round(sum(float(t.get("realized_pnl") or 0) for t in recovered), 2)
++    return {"missing_paper_trades": len(by_trade), "recovered": len(recovered),
++            "with_levels": with_levels, "unrecoverable_no_close": unrecoverable,
++            "skipped_test_like": skipped_test_like, "recovered_pnl": pnl,
++            "sample": [{k: t.get(k) for k in ("id", "side", "result", "realized_pnl", "opened_at")}
++                       for t in recovered[:5]]}
++
++
++async def _recover_master(db, dry_run: bool) -> Dict:
++    from services.ai_master_prompt import DOC_ID, master_prompt
++    doc = await db.settings.find_one({"_id": DOC_ID}) or {}
++    if not is_test_artifact(doc.get("text"), doc.get("lesson_policy")):
++        return {"restored": False, "reason": "aktueller Stand ist kein Test-Artefakt"}
++    src = pick_restorable_master(doc.get("history") or [])
++    if not src:
++        return {"restored": False, "reason": "kein brauchbarer History-Stand"}
++    out = {"restored": True, "from_version": src.get("version"),
++           "rules": src.get("rules"), "text_head": str(src.get("text") or "")[:80]}
++    if not dry_run:
++        await master_prompt.save(text=src.get("text"), rules=src.get("rules"),
++                                 lesson_policy=src.get("lesson_policy"),
++                                 editor="recovery")
++    return out
++
++
++async def _clean_lessons(db, dry_run: bool) -> Dict:
++    from services.ai_lessons import lesson_store
++    lessons = await lesson_store.all()
++    bad = [l for l in lessons if is_test_lesson(l)]
++    if bad and not dry_run:
++        await lesson_store.save_all([l for l in lessons if not is_test_lesson(l)])
++    return {"removed": [l.get("title") for l in bad], "kept": len(lessons) - len(bad)}
++
++
++async def run(db, dry_run: bool = False) -> Dict:
++    """Alle Schritte ausführen (dry_run=True: nur Report, keine Schreibzugriffe)."""
++    report = {"dry_run": dry_run, "at": _now_iso()}
++    for key, fn in (("master_prompt", _recover_master), ("lessons", _clean_lessons),
++                    ("paper_trades", _recover_trades)):
++        try:
++            report[key] = await fn(db, dry_run)
++        except Exception as e:  # noqa: BLE001
++            logger.exception(f"Recovery-Schritt {key} fehlgeschlagen: {e}")
++            report[key] = {"error": str(e)[:300]}
++    if not dry_run:
++        await db.settings.update_one({"_id": "data_recovery"},
++                                     {"$set": {"last_report": report}}, upsert=True)
++        logger.info(f"Data-Recovery: {report}")
++    return report
+diff -ruN a/backend/services/setup_backtest/auto.py b/backend/services/setup_backtest/auto.py
+--- a/backend/services/setup_backtest/auto.py	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/services/setup_backtest/auto.py	2026-09-06 18:19:11.898314038 +0000
+@@ -0,0 +1,152 @@
++"""Automatik des Backtest-Seedings: prüft periodisch, ob ein Lauf fällig ist,
++und startet dann die Auto-Schleife (Varianten + Feintuning) für die gewählten
++Anlageklassen – ohne Klick. Einstellungen liegen in
++settings.setup_backtest_state.auto, der Lauf selbst nutzt runner.run_job
++(gleicher Pfad wie der manuelle Start, gleicher Job-Status fürs UI).
++
++Sicherheitsregeln: nie parallel zu einem laufenden Backtest/Seeding, nie bei
++RAM-Knappheit (ram_queue), Fehler beenden die Schleife nicht.
++"""
++import asyncio
++import logging
++from datetime import datetime, timedelta, timezone
++from typing import Dict, Optional
++
++from services import setup_asset_class as ac
++
++logger = logging.getLogger(__name__)
++
++STATE_ID = "setup_backtest_state"
++DEFAULTS: Dict = {"enabled": False, "interval_hours": 24, "days": 90, "mode": "loop",
++                  "asset_classes": list(ac.CLASSES)}
++HISTORY_KEEP = 10
++CHECK_EVERY_S = 60
++
++
++def _now() -> datetime:
++    return datetime.now(timezone.utc)
++
++
++def _parse(ts) -> Optional[datetime]:
++    try:
++        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
++        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
++    except (TypeError, ValueError):
++        return None
++
++
++def normalize(raw: Optional[Dict]) -> Dict:
++    """Einstellungen auf das erlaubte Schema bringen (rein, testbar)."""
++    raw = raw or {}
++    cfg = dict(DEFAULTS)
++    cfg["enabled"] = bool(raw.get("enabled", False))
++    try:
++        cfg["interval_hours"] = max(6, min(24 * 14, int(raw.get("interval_hours", 24))))
++    except (TypeError, ValueError):
++        pass
++    try:
++        cfg["days"] = max(14, min(365, int(raw.get("days", 90))))
++    except (TypeError, ValueError):
++        pass
++    cfg["mode"] = "single" if raw.get("mode") == "single" else "loop"
++    classes = [c for c in (raw.get("asset_classes") or []) if c in ac.CLASSES]
++    cfg["asset_classes"] = classes or list(ac.CLASSES)
++    for k in ("last_run_at", "last_summary", "history", "last_error"):
++        if raw.get(k) is not None:
++            cfg[k] = raw[k]
++    return cfg
++
++
++def next_run_at(cfg: Dict) -> Optional[str]:
++    if not cfg.get("enabled"):
++        return None
++    last = _parse(cfg.get("last_run_at"))
++    if not last:
++        return _now().isoformat()
++    return (last + timedelta(hours=int(cfg["interval_hours"]))).isoformat()
++
++
++def is_due(cfg: Dict, now: Optional[datetime] = None) -> bool:
++    """Fällig, wenn aktiviert und seit dem letzten Lauf >= interval_hours (rein)."""
++    if not cfg.get("enabled"):
++        return False
++    last = _parse(cfg.get("last_run_at"))
++    if not last:
++        return True
++    return (now or _now()) - last >= timedelta(hours=int(cfg["interval_hours"]))
++
++
++def public_state(raw: Optional[Dict]) -> Dict:
++    cfg = normalize(raw)
++    cfg["next_run_at"] = next_run_at(cfg)
++    cfg["due"] = is_due(cfg)
++    return cfg
++
++
++async def get(db) -> Dict:
++    doc = await db.settings.find_one({"_id": STATE_ID}, {"auto": 1}) or {}
++    return public_state(doc.get("auto"))
++
++
++async def save(db, raw: Dict) -> Dict:
++    cur = normalize(((await db.settings.find_one({"_id": STATE_ID}, {"auto": 1}) or {}).get("auto")))
++    merged = normalize({**cur, **{k: v for k, v in (raw or {}).items()
++                                  if k in ("enabled", "interval_hours", "days", "mode", "asset_classes")}})
++    await db.settings.update_one({"_id": STATE_ID}, {"$set": {"auto": merged}}, upsert=True)
++    return public_state(merged)
++
++
++async def _record(db, cfg: Dict, summary: Optional[Dict], error: Optional[str]) -> None:
++    hist = list(cfg.get("history") or [])
++    entry = {"at": _now().isoformat(), "passed": (summary or {}).get("passed"),
++             "tested": (summary or {}).get("tested"), "mode": cfg["mode"], "days": cfg["days"],
++             "asset_classes": cfg["asset_classes"], "error": error}
++    hist = (hist + [entry])[-HISTORY_KEEP:]
++    upd = {"auto.last_run_at": entry["at"], "auto.history": hist, "auto.last_error": error}
++    if summary is not None:
++        upd["auto.last_summary"] = {k: summary.get(k) for k in ("passed", "tested", "finished_at", "mode", "days")}
++    await db.settings.update_one({"_id": STATE_ID}, {"$set": upd}, upsert=True)
++
++
++def _busy() -> bool:
++    from services import backtester as bt
++    from services.setup_backtest import runner
++    return runner.running_job() is not None or any(j["status"] == "running" for j in bt.JOBS.values())
++
++
++async def run_once(db, cfg: Optional[Dict] = None) -> Optional[Dict]:
++    """Einen Automatik-Lauf ausführen (blockiert bis fertig). None = übersprungen."""
++    from services import ram_queue
++    from services.setup_backtest import runner
++    cfg = normalize(cfg or (await db.settings.find_one({"_id": STATE_ID}, {"auto": 1}) or {}).get("auto"))
++    if _busy():
++        logger.info("Seeding-Automatik: übersprungen (anderer Backtest läuft)")
++        return None
++    if ram_queue.free_mb() < ram_queue.MIN_FREE_MB:
++        logger.info("Seeding-Automatik: übersprungen (RAM knapp)")
++        return None
++    params = {"kind": "ai_seed", "asset_classes": cfg["asset_classes"], "days": cfg["days"],
++              "mode": cfg["mode"], "setups": None, "trigger": "auto"}
++    job_id = runner.create_job(params)
++    logger.info(f"Seeding-Automatik: Lauf {job_id} gestartet ({cfg['asset_classes']}, "
++                f"{cfg['days']} Tage, {cfg['mode']})")
++    await runner.run_job(job_id, db, cfg["asset_classes"], cfg["days"], cfg["mode"], None,
++                         trigger="auto")
++    job = runner.JOBS.get(job_id) or {}
++    summary = job.get("result") if job.get("status") == "done" else None
++    await _record(db, cfg, summary, job.get("error") if job.get("status") == "error" else None)
++    return job
++
++
++async def run_loop(db) -> None:
++    await asyncio.sleep(180)   # Boot abwarten (Kerzen-Bootstrap, Backfill)
++    while True:
++        try:
++            cfg = await get(db)
++            if cfg["due"]:
++                await run_once(db, cfg)
++        except asyncio.CancelledError:
++            raise
++        except Exception as e:  # noqa: BLE001
++            logger.warning(f"Seeding-Automatik: {e}")
++        await asyncio.sleep(CHECK_EVERY_S)
+diff -ruN a/backend/services/setup_backtest/detectors.py b/backend/services/setup_backtest/detectors.py
+--- a/backend/services/setup_backtest/detectors.py	2026-09-06 18:46:30.252499758 +0000
++++ b/backend/services/setup_backtest/detectors.py	2026-09-06 18:17:34.217313606 +0000
+@@ -487,3 +487,34 @@
+     fn = DETECTORS[setup]
+     variants = VARIANTS[setup]
+     return fn(f, variants[variant_idx % len(variants)])
++
++
++def run_detector_params(setup: str, f: Features, params: Dict) -> List[Signal]:
++    """Detektor mit freiem Parameter-Satz (Feintuning, siehe tune_candidates)."""
++    return DETECTORS[setup](f, params)
++
++
++# Feintuning nach erfolglosen Varianten: nur die Risiko-/Ziel-Parameter werden
++# in kleinen Schritten um die Basis-Variante variiert (Overfitting-Bremse:
++# max. 4 Kandidaten, Signal-Logik selbst bleibt unangetastet).
++TUNE_KEYS = ("sl_atr", "tp_r")
++TUNE_FACTORS = (0.8, 1.25)
++
++
++def tune_candidates(setup: str, base: Dict) -> List[Dict]:
++    keys = [k for k in TUNE_KEYS if k in base]
++    if not keys:
++        return []
++    out: List[Dict] = []
++    if len(keys) == 1:
++        k = keys[0]
++        for fac in TUNE_FACTORS:
++            out.append({**base, k: round(base[k] * fac, 3),
++                        "name": f"{base.get('name', 'v')}·{k}×{fac:g}"})
++        return out
++    for f1 in TUNE_FACTORS:
++        for f2 in TUNE_FACTORS:
++            out.append({**base, keys[0]: round(base[keys[0]] * f1, 3),
++                        keys[1]: round(base[keys[1]] * f2, 3),
++                        "name": f"{base.get('name', 'v')}·{keys[0]}×{f1:g}·{keys[1]}×{f2:g}"})
++    return out
+diff -ruN a/backend/services/setup_backtest/runner.py b/backend/services/setup_backtest/runner.py
+--- a/backend/services/setup_backtest/runner.py	2026-09-06 18:46:30.252499758 +0000
++++ b/backend/services/setup_backtest/runner.py	2026-09-06 18:18:40.544313899 +0000
+@@ -39,6 +39,7 @@
+ MAX_DAYS = 365
+ 
+ JOBS: Dict[str, Dict] = {}
++PASSED_STATES = ("passed", "tuned")
+ 
+ 
+ def _now_iso() -> str:
+@@ -80,17 +81,20 @@
+ 
+ 
+ def run_variant(setup: str, feats: Dict[str, Features], variant_idx: int, asset_class: str,
+-                split_ts: int, job_id: str) -> Dict:
+-    """Ein Setup, eine Variante über alle Symbole der Klasse (rein, CPU)."""
++                split_ts: int, job_id: str, params: Optional[Dict] = None) -> Dict:
++    """Ein Setup, eine Variante (oder freier Parameter-Satz `params`) über alle
++    Symbole der Klasse (rein, CPU)."""
+     fee = simulator.FEES_RT_PCT.get(asset_class, 0.06)
+-    variant = detectors.VARIANTS[setup][variant_idx]
++    variant = params or detectors.VARIANTS[setup][variant_idx]
+     is_trades: List[Dict] = []
+     oos_trades: List[Dict] = []
+     signals = 0
+     for sym, f in feats.items():
+         busy_until = -1
+         c = f.c5
+-        for sig in detectors.run_detector(setup, f, variant_idx):
++        sigs = (detectors.run_detector_params(setup, f, params) if params
++                else detectors.run_detector(setup, f, variant_idx))
++        for sig in sigs:
+             if sig.idx <= busy_until:
+                 continue
+             sig = simulator.clamp_signal(asset_class, sig)
+@@ -119,7 +123,30 @@
+     return {"setup": setup, "variant": variant_idx, "variant_name": variant["name"],
+             "variants_total": len(detectors.VARIANTS[setup]), "signals": signals,
+             "is": is_st, "oos": oos_st, "passed": passed(is_st, oos_st),
+-            "oos_trades": oos_trades}
++            "oos_trades": oos_trades, "params": dict(params) if params else None}
++
++
++def best_base_variant(history: List[Dict]) -> Optional[int]:
++    """Variante mit dem besten In-Sample-PnL (bei genug Trades) als Tuning-Basis."""
++    cands = [h for h in (history or []) if int((h.get("is") or {}).get("trades") or 0) >= MIN_IS_TRADES]
++    if not cands:
++        return None
++    return int(max(cands, key=lambda h: float((h.get("is") or {}).get("pnl") or 0)).get("variant") or 0)
++
++
++def tune(setup: str, feats: Dict[str, Features], base_idx: int, asset_class: str,
++         split_ts: int, job_id: str) -> Dict:
++    """Feintuning um die beste Variante (rein): alle Kandidaten testen, den
++    besten Out-of-Sample-Bestandenen zurückgeben. Rückgabe {'best', 'tried'}."""
++    base = detectors.VARIANTS[setup][base_idx % len(detectors.VARIANTS[setup])]
++    best = None
++    tried = 0
++    for params in detectors.tune_candidates(setup, base):
++        res = run_variant(setup, feats, base_idx, asset_class, split_ts, job_id, params=params)
++        tried += 1
++        if res["passed"] and (best is None or float(res["oos"]["pnl"]) > float(best["oos"]["pnl"])):
++            best = res
++    return {"best": best, "tried": tried}
+ 
+ 
+ # --------------------------------------------------------------------------
+@@ -130,7 +157,8 @@
+ 
+ 
+ async def save_state(db, state: Dict) -> None:
+-    doc = {k: v for k, v in state.items() if k != "_id"}
++    # "auto" (Automatik-Einstellungen) wird von setup_backtest.auto separat gepflegt
++    doc = {k: v for k, v in state.items() if k not in ("_id", "auto")}
+     await db.settings.update_one({"_id": STATE_ID}, {"$set": doc}, upsert=True)
+ 
+ 
+@@ -164,6 +192,7 @@
+     Klasse OHNE Edge blieben – Hinweis für die KI, kein Ausschluss."""
+     bad = sorted(sid for sid, e in (cls_state or {}).items()
+                  if isinstance(e, dict) and e.get("status") == "exhausted")
++    # (Feingetunte Setups – status "tuned" – gelten als Setups MIT Edge)
+     if not bad:
+         return None
+     return (f"BACKTEST OHNE EDGE {label} (alle regelbasierten 5m-Varianten IS/OOS negativ, "
+@@ -223,7 +252,8 @@
+ 
+ 
+ async def run_job(job_id: str, db, asset_classes: List[str], days: int = DEFAULT_DAYS,
+-                  mode: str = "single", setups: Optional[List[str]] = None) -> None:
++                  mode: str = "single", setups: Optional[List[str]] = None,
++                  trigger: str = "manual") -> None:
+     from services import ai_playbook
+     job = JOBS[job_id]
+     days = min(max(int(days or DEFAULT_DAYS), 14), MAX_DAYS)
+@@ -276,21 +306,50 @@
+                     history = list(entry.get("history") or [])[-9:]
+                     tried = 0
+                     res = None
+-                    while True:
+-                        res = await asyncio.to_thread(run_variant, sid, feats, vi, cls, split_ts, job_id)
++                    # Bereits feingetunter Parameter-Satz: zuerst erneut bestätigen
++                    tuned = entry.get("tuned") if isinstance(entry.get("tuned"), dict) else None
++                    if tuned:
++                        res = await asyncio.to_thread(run_variant, sid, feats, vi, cls, split_ts,
++                                                      job_id, tuned)
+                         tried += 1
+                         history.append({"variant": vi, "name": res["variant_name"], "is": res["is"],
+-                                        "oos": res["oos"], "passed": res["passed"], "at": _now_iso()})
+-                        if res["passed"] or mode == "single" or tried >= res["variants_total"]:
+-                            break
+-                        vi = (vi + 1) % res["variants_total"]
++                                        "oos": res["oos"], "passed": res["passed"], "tuned": True,
++                                        "at": _now_iso()})
++                    if res is None or not res["passed"]:
++                        while True:
++                            res = await asyncio.to_thread(run_variant, sid, feats, vi, cls, split_ts, job_id)
++                            tried += 1
++                            history.append({"variant": vi, "name": res["variant_name"], "is": res["is"],
++                                            "oos": res["oos"], "passed": res["passed"], "at": _now_iso()})
++                            if res["passed"] or mode == "single" or tried >= res["variants_total"] + (1 if tuned else 0):
++                                break
++                            vi = (vi + 1) % res["variants_total"]
++                    tuned_now = False
++                    if not res["passed"] and mode == "loop":
++                        # Verbesserungsschritt: Feintuning um die beste Variante
++                        base_idx = best_base_variant(history)
++                        if base_idx is not None:
++                            job["phase"] = f"{label}: {sid} · Feintuning"
++                            tr = await asyncio.to_thread(tune, sid, feats, base_idx, cls, split_ts, job_id)
++                            tried += tr["tried"]
++                            if tr["best"]:
++                                res, tuned_now = tr["best"], True
++                                history.append({"variant": base_idx, "name": res["variant_name"],
++                                                "is": res["is"], "oos": res["oos"], "passed": True,
++                                                "tuned": True, "at": _now_iso()})
+                     if res["passed"]:
+-                        entry.update({"variant": vi, "status": "passed"})
++                        entry.update({"variant": vi if not tuned_now else int(res["variant"]),
++                                      "status": "tuned" if (tuned_now or res.get("params")) else "passed"})
++                        if res.get("params"):
++                            entry["tuned"] = res["params"]
++                        else:
++                            entry.pop("tuned", None)
+                     else:
+                         nxt = next_variant(vi, res["variants_total"])
+                         if mode == "loop":
+                             nxt["status"] = "exhausted"
+                         entry.update(nxt)
++                        entry.pop("tuned", None)
+                     entry.update({"name": res["variant_name"], "is": res["is"], "oos": res["oos"],
+                                   "history": history[-10:], "updated_at": _now_iso(), "days": days,
+                                   "symbols": sorted(feats), "signals": res["signals"],
+@@ -308,7 +367,7 @@
+                                  "stored": len(res["oos_trades"]) if res["passed"] else 0,
+                                  "symbols": sorted(feats)})
+                 classes_state[cls] = cls_state
+-                n_pass = sum(1 for r in rows if r.get("asset_class") == cls and r.get("status") == "passed")
++                n_pass = sum(1 for r in rows if r.get("asset_class") == cls and r.get("status") in PASSED_STATES)
+                 n_test = sum(1 for r in rows if r.get("asset_class") == cls and r.get("is"))
+                 if n_test:
+                     await _feed(db, (f"Backtest-Seeding {label} ({days} Tage, {mode}): {n_test} Setups getestet, "
+@@ -319,8 +378,8 @@
+         state["classes"] = classes_state
+         summary = {"kind": "ai_seed", "mode": mode, "days": days, "asset_classes": asset_classes,
+                    "rows": rows, "finished_at": _now_iso(),
+-                   "passed": sum(1 for r in rows if r.get("status") == "passed"),
+-                   "tested": sum(1 for r in rows if r.get("is"))}
++                   "passed": sum(1 for r in rows if r.get("status") in PASSED_STATES),
++                   "tested": sum(1 for r in rows if r.get("is")), "trigger": trigger}
+         state["last_result"] = summary
+         await save_state(db, state)
+         ai_playbook.invalidate_cache()
+@@ -339,8 +398,10 @@
+     from services import ai_playbook
+     state = await load_state(db)
+     library = ai_playbook.all_setups()
++    from services.setup_backtest import auto as seed_auto
+     return {"classes": state.get("classes") or {},
+             "last_result": state.get("last_result"),
++            "auto": seed_auto.public_state(state.get("auto")),
+             "eligible": {cls: eligible_setups(cls, library) for cls in ac.CLASSES},
+             "not_backtestable": detectors.NOT_BACKTESTABLE,
+             "variants": {sid: [v["name"] for v in vs] for sid, vs in detectors.VARIANTS.items()},
+diff -ruN a/backend/services/trade_trash.py b/backend/services/trade_trash.py
+--- a/backend/services/trade_trash.py	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/services/trade_trash.py	2026-09-06 18:14:38.791312830 +0000
+@@ -0,0 +1,69 @@
++"""Papierkorb für Trades: Lösch-Endpunkte (analytics/clear, ai/trader/reset)
++entfernen auto_trades nicht mehr endgültig, sondern verschieben sie als Batch in
++`auto_trades_trash`. Jeder Batch ist per Klick wiederherstellbar.
++
++Hintergrund: Vorfall 05.09.2026 – ein Test-Lauf gegen die Produktiv-DB hat
++Paper-Trades unwiederbringlich gelöscht. Analog zu services/lab_trash.py."""
++import logging
++import uuid
++from datetime import datetime, timezone
++from typing import Dict, List, Optional
++
++logger = logging.getLogger(__name__)
++
++COLLECTION = "auto_trades_trash"
++KEEP_BATCHES = 30
++
++
++def _now_iso() -> str:
++    return datetime.now(timezone.utc).isoformat()
++
++
++async def archive(db, trade_filter: Dict, reason: str, actor: str = "") -> Dict:
++    """Trades passend zum Filter in den Papierkorb verschieben. Rückgabe:
++    {'batch_id', 'count'} – count 0 => nichts gelöscht, kein Batch angelegt."""
++    docs = await db.auto_trades.find(trade_filter, {"_id": 0}).to_list(200000)
++    if not docs:
++        return {"batch_id": None, "count": 0}
++    batch_id = uuid.uuid4().hex[:12]
++    await db[COLLECTION].insert_one({
++        "id": batch_id, "deleted_at": _now_iso(), "reason": reason, "actor": actor,
++        "count": len(docs), "filter": {k: str(v) for k, v in trade_filter.items()},
++        "modes": sorted({str(d.get("mode")) for d in docs}),
++        "trades": docs})
++    await db.auto_trades.delete_many({"id": {"$in": [d["id"] for d in docs if d.get("id")]}})
++    try:
++        old = await (db[COLLECTION].find({}, {"id": 1}).sort("deleted_at", -1)
++                     .skip(KEEP_BATCHES).to_list(100))
++        if old:
++            await db[COLLECTION].delete_many({"id": {"$in": [r["id"] for r in old]}})
++    except Exception as e:  # noqa: BLE001
++        logger.warning(f"Trade-Papierkorb Kappung fehlgeschlagen: {e}")
++    logger.info(f"Trade-Papierkorb: {len(docs)} Trades archiviert ({reason}, Batch {batch_id})")
++    return {"batch_id": batch_id, "count": len(docs)}
++
++
++async def list_batches(db) -> List[Dict]:
++    return await (db[COLLECTION].find({}, {"_id": 0, "trades": 0})
++                  .sort("deleted_at", -1).to_list(KEEP_BATCHES))
++
++
++async def restore(db, batch_id: str) -> Optional[Dict]:
++    """Batch zurück nach auto_trades (nur IDs, die dort noch nicht existieren)."""
++    doc = await db[COLLECTION].find_one({"id": batch_id})
++    if not doc:
++        return None
++    trades = doc.get("trades") or []
++    existing = {t["id"] for t in await db.auto_trades.find(
++        {"id": {"$in": [t.get("id") for t in trades]}}, {"id": 1}).to_list(len(trades) + 1)}
++    todo = [{k: v for k, v in t.items() if k != "_id"} for t in trades
++            if t.get("id") and t["id"] not in existing]
++    if todo:
++        await db.auto_trades.insert_many(todo)
++    await db[COLLECTION].delete_one({"id": batch_id})
++    return {"batch_id": batch_id, "restored": len(todo), "skipped_existing": len(trades) - len(todo)}
++
++
++async def discard(db, batch_id: str) -> bool:
++    res = await db[COLLECTION].delete_one({"id": batch_id})
++    return res.deleted_count > 0
+diff -ruN a/frontend/src/components/AIGovernancePanel.js b/frontend/src/components/AIGovernancePanel.js
+--- a/frontend/src/components/AIGovernancePanel.js	2026-09-06 18:46:30.265499758 +0000
++++ b/frontend/src/components/AIGovernancePanel.js	2026-09-06 18:27:00.237504422 +0000
+@@ -1,5 +1,5 @@
+ import React, { useState, useEffect, useCallback } from 'react';
+-import { Crown, FloppyDisk, ArrowCounterClockwise, ShieldCheck, Drop } from '@phosphor-icons/react';
++import { Crown, FloppyDisk, ArrowCounterClockwise, ShieldCheck, Drop, ClockCounterClockwise } from '@phosphor-icons/react';
+ import { toast } from '../lib/toast';
+ import { authHeaders } from '../auth';
+ import './AIGovernance.css';
+@@ -19,6 +19,30 @@
+   const [aiCfg, setAiCfg] = useState(null);
+   const [liqSymbols, setLiqSymbols] = useState('');
+   const [saving, setSaving] = useState(false);
++  const [history, setHistory] = useState(null);
++
++  const toggleHistory = async () => {
++    if (history) { setHistory(null); return; }
++    try {
++      const d = await fetch(`${API_URL}/api/ai/master-prompt?history=true`).then(r => r.json());
++      setHistory(d.history || []);
++    } catch (e) { toast.error('History konnte nicht geladen werden'); }
++  };
++
++  const restoreVersion = async (version) => {
++    if (!window.confirm(`MasterPrompt auf Version v${version} zurücksetzen? (Der aktuelle Stand bleibt in der History.)`)) return;
++    try {
++      const res = await fetch(`${API_URL}/api/ai/master-prompt/restore`, {
++        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
++        body: JSON.stringify({ version }),
++      });
++      const data = await res.json();
++      if (!res.ok) throw new Error(data.detail || 'Wiederherstellen fehlgeschlagen');
++      toast.success(`MasterPrompt v${version} wiederhergestellt (jetzt v${data.master_prompt.version})`);
++      setHistory(null);
++      load();
++    } catch (e) { toast.error(e.message); }
++  };
+ 
+   const load = useCallback(async () => {
+     try {
+@@ -222,7 +246,30 @@
+         <button className="gov-btn" onClick={resetDefaults} data-testid="master-prompt-reset">
+           <ArrowCounterClockwise size={14} weight="bold" /> Voreinstellung
+         </button>
++        <button className="gov-btn" onClick={toggleHistory} data-testid="master-prompt-history-toggle">
++          <ClockCounterClockwise size={14} weight="bold" /> {history ? 'History schließen' : 'Frühere Versionen'}
++        </button>
+       </div>
++      {history && (
++        <div className="gov-cands" data-testid="master-prompt-history">
++          {history.length === 0 && <div className="gov-empty">Noch keine früheren Versionen.</div>}
++          {history.map(h => (
++            <div key={h.version} className="gov-card" data-testid={`master-prompt-history-${h.version}`}>
++              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
++                <b style={{ color: '#FFD60A' }}>v{h.version}</b>
++                <span className="gov-meta">ersetzt {String(h.replaced_at || '').slice(0, 16).replace('T', ' ')}</span>
++                <span className="gov-meta" style={{ flex: 1 }}>
++                  Hebel {h.rules?.max_leverage || '–'} · Trades/Tag {h.rules?.max_trades_per_day || '∞'} · {h.rules?.forbidden_terms?.length ? `verboten: ${h.rules.forbidden_terms.join(', ')}` : ''}
++                </span>
++                <button className="gov-btn" onClick={() => restoreVersion(h.version)} data-testid={`master-prompt-restore-${h.version}`}>
++                  <ArrowCounterClockwise size={12} weight="bold" /> Wiederherstellen
++                </button>
++              </div>
++              <div className="gov-empty" style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{String(h.text || '').slice(0, 220)}{(h.text || '').length > 220 ? '…' : ''}</div>
++            </div>
++          ))}
++        </div>
++      )}
+ 
+       {validation && (
+         <>
+diff -ruN a/frontend/src/components/AITraderSeeding.js b/frontend/src/components/AITraderSeeding.js
+--- a/frontend/src/components/AITraderSeeding.js	2026-09-06 18:46:30.266499758 +0000
++++ b/frontend/src/components/AITraderSeeding.js	2026-09-06 18:27:57.462504195 +0000
+@@ -1,5 +1,5 @@
+ import React, { useEffect, useRef, useState } from 'react';
+-import { Play, X, Repeat, ArrowRight, ArrowCounterClockwise } from '@phosphor-icons/react';
++import { Play, X, Repeat, ArrowRight, ArrowCounterClockwise, Clock } from '@phosphor-icons/react';
+ import { toast } from '../lib/toast';
+ import { authHeaders, isAdmin } from '../auth';
+ import useInstruments from '../hooks/useInstruments';
+@@ -10,11 +10,13 @@
+ const GROUP_CLASS = { 'TOP 10 COINS': 'crypto', RESOURCES: 'resources', INDICES: 'indices', FOREX: 'forex' };
+ const STATUS = {
+   passed: { l: 'Edge bestätigt', c: '#00FF66' },
++  tuned: { l: 'Edge nach Feintuning', c: '#00E5A0' },
+   failed: { l: 'kein Edge → nächste Variante', c: '#FFB020' },
+-  exhausted: { l: 'alle Varianten ohne Edge', c: '#FF3366' },
++  exhausted: { l: 'alle Varianten + Feintuning ohne Edge', c: '#FF3366' },
+   live: { l: 'schon live (übersprungen)', c: '#8FB3FF' },
+   no_data: { l: 'keine Historie', c: '#FF3366' },
+ };
++const fmtTs = (ts) => (ts ? String(ts).slice(0, 16).replace('T', ' ') : '—');
+ 
+ const money = (v) => `${(v ?? 0) >= 0 ? '+' : ''}${Number(v ?? 0).toFixed(2)}`;
+ const cell = (st) => (st && st.trades ? `${st.trades}T · ${st.winrate}% · ${money(st.pnl)}` : '—');
+@@ -89,6 +91,25 @@
+   const running = job?.status === 'running';
+   const rules = info?.rules || {};
+   const rows = (result?.rows || []).filter(r => r.setup);
++  const auto = info?.auto;
++
++  const saveAuto = async (patch) => {
++    const r = await fetch(`${API_URL}/api/ai/playbook/backtest/auto`, {
++      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
++      body: JSON.stringify({ ...(auto || {}), ...patch }),
++    });
++    const d = await r.json().catch(() => ({}));
++    if (!r.ok) { toast.error(d.detail || 'Speichern fehlgeschlagen'); return; }
++    setInfo(prev => ({ ...(prev || {}), auto: d }));
++    toast.success(d.enabled ? `Automatik aktiv – nächster Lauf ${fmtTs(d.next_run_at)}` : 'Automatik aus');
++  };
++
++  const toggleAutoClass = (c) => {
++    const cur = auto?.asset_classes || [];
++    const next = cur.includes(c) ? cur.filter(x => x !== c) : [...cur, c];
++    if (!next.length) { toast.error('Mindestens eine Anlageklasse'); return; }
++    saveAuto({ asset_classes: next });
++  };
+ 
+   return (
+     <div className="btc-panel" data-testid="ai-seed-panel" style={{ marginTop: 10 }}>
+@@ -128,10 +149,42 @@
+           </div>
+         </div>
+       )}
++      {auto && (
++        <div className="bt-tools" style={{ marginTop: 8, flexWrap: 'wrap', gap: 8 }} data-testid="ai-seed-auto">
++          <label className="bt-ram" style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: admin ? 'pointer' : 'default' }}>
++            <input type="checkbox" checked={!!auto.enabled} disabled={!admin} onChange={e => saveAuto({ enabled: e.target.checked })}
++              data-testid="ai-seed-auto-toggle" />
++            <Clock size={13} weight="bold" /> Automatik: Auto-Schleife (Varianten + Feintuning) regelmäßig ohne Klick
++          </label>
++          <span className="bt-ram">alle</span>
++          <select className="bt-select" value={auto.interval_hours} disabled={!admin} onChange={e => saveAuto({ interval_hours: Number(e.target.value) })}
++            data-testid="ai-seed-auto-interval">
++            {[12, 24, 48, 72, 168].map(h => <option key={h} value={h}>{h < 48 ? `${h} h` : `${h / 24} Tage`}</option>)}
++          </select>
++          <span className="bt-ram">Zeitraum</span>
++          <select className="bt-select" value={auto.days} disabled={!admin} onChange={e => saveAuto({ days: Number(e.target.value) })}
++            data-testid="ai-seed-auto-days">
++            {[30, 60, 90, 180, 365].map(d => <option key={d} value={d}>{d} Tage</option>)}
++          </select>
++          <span className="bt-ram">Klassen:</span>
++          {Object.keys(CLASS_LABELS).map(c => (
++            <button key={c} className={`bt-tool-btn ${(auto.asset_classes || []).includes(c) ? 'on' : ''}`}
++              style={{ opacity: (auto.asset_classes || []).includes(c) ? 1 : 0.45 }}
++              disabled={!admin} onClick={() => toggleAutoClass(c)} data-testid={`ai-seed-auto-class-${c}`}>
++              {CLASS_LABELS[c]}
++            </button>
++          ))}
++          <span className="bt-ram" data-testid="ai-seed-auto-next">
++            {auto.enabled ? `nächster Lauf: ${fmtTs(auto.next_run_at)}` : 'Automatik aus'}
++            {auto.last_run_at ? ` · letzter: ${fmtTs(auto.last_run_at)}${auto.last_summary ? ` (${auto.last_summary.passed ?? 0}/${auto.last_summary.tested ?? 0} mit Edge)` : ''}` : ''}
++            {auto.last_error ? ` · Fehler: ${auto.last_error}` : ''}
++          </span>
++        </div>
++      )}
+       {result && (
+         <div style={{ marginTop: 10 }} data-testid="ai-seed-result">
+           <div className="btc-sub">
+-            ERGEBNIS · {result.mode === 'loop' ? 'Auto-Schleife' : 'Einmal-Durchlauf'} · {result.days} Tage · {result.passed ?? 0}/{result.tested ?? 0} Setups mit Edge
++            ERGEBNIS · {result.mode === 'loop' ? 'Auto-Schleife' : 'Einmal-Durchlauf'}{result.trigger === 'auto' ? ' (Automatik)' : ''} · {result.days} Tage · {result.passed ?? 0}/{result.tested ?? 0} Setups mit Edge
+           </div>
+           <table className="bt-table" data-testid="ai-seed-table">
+             <thead>
+diff -ruN a/frontend/src/components/BacktesterExtra.css b/frontend/src/components/BacktesterExtra.css
+--- a/frontend/src/components/BacktesterExtra.css	2026-09-06 18:46:30.267499758 +0000
++++ b/frontend/src/components/BacktesterExtra.css	2026-09-06 18:28:21.716504099 +0000
+@@ -92,3 +92,8 @@
+   color: #7CFFB2; border-radius: 5px; padding: 1px 7px; font-size: 10px;
+   font-weight: 700; margin-right: 7px; vertical-align: 1px;
+ }
++
++/* Seeding-Automatik (AITraderSeeding) */
++.bt-select { background: #0A0A0A; border: 1px solid #2A2D3A; border-radius: 6px; padding: 3px 6px; color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
++.bt-tool-btn.on { background: rgba(0,255,102,0.12); border-color: rgba(0,255,102,0.4); color: #00FF66; }
++.bt-tools .bt-ram { margin-right: 0; }
+diff -ruN a/frontend/src/components/PerformanceAnalytics.js b/frontend/src/components/PerformanceAnalytics.js
+--- a/frontend/src/components/PerformanceAnalytics.js	2026-09-06 18:46:30.269499758 +0000
++++ b/frontend/src/components/PerformanceAnalytics.js	2026-09-06 18:21:06.324314544 +0000
+@@ -9,6 +9,7 @@
+ import { PnlFilter, TradeListControls } from './TradeFilters';
+ import { filterExternalTrades } from '../lib/displayFilters';
+ import SlippageStatsCard from './SlippageStatsCard';
++import TradeTrashPanel from './TradeTrashPanel';
+ import './PerformanceAnalytics.css';
+ 
+ const API_URL = process.env.REACT_APP_BACKEND_URL;
+@@ -691,14 +692,15 @@
+                   </>
+                 )}
+             </div>
+-            <div className="clear-warn"><Warning size={14} weight="bold" /> Gelöschte Signale &amp; Statistiken können nicht wiederhergestellt werden. Jede Löschung wird protokolliert (Audit-Log).</div>
++            <div className="clear-warn"><Warning size={14} weight="bold" /> Gelöschte Signale &amp; Statistiken können nicht wiederhergestellt werden. Gelöschte Trades wandern in den Papierkorb (unten) und sind dort wiederherstellbar. Jede Löschung wird protokolliert (Audit-Log).</div>
++            <TradeTrashPanel onRestored={() => { loadTrades(); onCleared && onCleared(); }} />
+             {auditLog.length > 0 && (
+               <div className="clear-summary" data-testid="clear-audit-log" style={{ maxHeight: 110, overflowY: 'auto' }}>
+                 <b>Letzte Löschungen (Audit-Log):</b>
+                 {auditLog.map((a, i) => (
+                   <div key={i} style={{ opacity: 0.85, fontSize: 11, marginTop: 3 }} data-testid={`audit-entry-${i}`}>
+                     {String(a.ts || '').slice(0, 16).replace('T', ' ')} · {a.user || 'Admin'}{a.ip ? ` (${a.ip})` : ''} · {a.action}
+-                    {a.details?.deleted ? ` · ${Object.values(a.details.deleted).reduce((x, y) => x + y, 0)} Einträge` : ''}
++                    {a.details?.deleted ? ` · ${Object.values(a.details.deleted).filter(v => typeof v === 'number').reduce((x, y) => x + y, 0)} Einträge` : ''}
+                     {a.details?.range ? ` · ${a.details.range}/${a.details.scope}` : ''}
+                     {a.details?.strategy_id && !a.details?.range ? ` · ${a.details.strategy_id}` : ''}
+                   </div>
+diff -ruN a/frontend/src/components/TradeTrashPanel.js b/frontend/src/components/TradeTrashPanel.js
+--- a/frontend/src/components/TradeTrashPanel.js	1970-01-01 00:00:00.000000000 +0000
++++ b/frontend/src/components/TradeTrashPanel.js	2026-09-06 18:20:34.950314405 +0000
+@@ -0,0 +1,54 @@
++import React, { useEffect, useState } from 'react';
++import { ArrowCounterClockwise, Trash } from '@phosphor-icons/react';
++import { toast } from '../lib/toast';
++import { authHeaders } from '../auth';
++
++const API_URL = process.env.REACT_APP_BACKEND_URL;
++
++/** Papierkorb gelöschter Trades (analytics/clear, KI-Reset) – jeder Batch ist wiederherstellbar. */
++export default function TradeTrashPanel({ onRestored }) {
++  const [batches, setBatches] = useState([]);
++  const [busy, setBusy] = useState(null);
++
++  const load = () => fetch(`${API_URL}/api/analytics/trash`).then(r => r.json())
++    .then(d => setBatches(d.batches || [])).catch(() => {});
++  useEffect(() => { load(); }, []);
++
++  const restore = async (b) => {
++    if (!window.confirm(`${b.count} Trades aus dem Papierkorb wiederherstellen?`)) return;
++    setBusy(b.id);
++    try {
++      const r = await fetch(`${API_URL}/api/analytics/trash/restore/${b.id}`, { method: 'POST', headers: authHeaders() });
++      const d = await r.json().catch(() => ({}));
++      if (!r.ok) throw new Error(d.detail || 'Wiederherstellen fehlgeschlagen');
++      toast.success(`${d.restored} Trades wiederhergestellt`);
++      load();
++      onRestored && onRestored();
++    } catch (e) { toast.error(e.message); } finally { setBusy(null); }
++  };
++
++  const discard = async (b) => {
++    if (!window.confirm('Batch endgültig löschen?')) return;
++    await fetch(`${API_URL}/api/analytics/trash/${b.id}`, { method: 'DELETE', headers: authHeaders() });
++    load();
++  };
++
++  if (!batches.length) return null;
++  return (
++    <div className="clear-summary" data-testid="trade-trash-panel" style={{ maxHeight: 150, overflowY: 'auto' }}>
++      <b><Trash size={12} weight="bold" /> Papierkorb (wiederherstellbar):</b>
++      {batches.map(b => (
++        <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, marginTop: 4 }} data-testid={`trash-batch-${b.id}`}>
++          <span style={{ flex: 1, opacity: 0.85 }}>
++            {String(b.deleted_at || '').slice(0, 16).replace('T', ' ')} · {b.count} Trades ({(b.modes || []).join('/')}) · {b.reason}
++          </span>
++          <button className="clear-cancel" style={{ padding: '2px 8px' }} onClick={() => restore(b)} disabled={busy === b.id}
++            data-testid={`trash-restore-${b.id}`} title="Wiederherstellen">
++            <ArrowCounterClockwise size={12} weight="bold" />
++          </button>
++          <button className="clear-cancel" style={{ padding: '2px 8px' }} onClick={() => discard(b)} data-testid={`trash-discard-${b.id}`} title="Endgültig löschen">×</button>
++        </div>
++      ))}
++    </div>
++  );
++}
+diff -ruN a/memory/test_credentials.md b/memory/test_credentials.md
+--- a/memory/test_credentials.md	1970-01-01 00:00:00.000000000 +0000
++++ b/memory/test_credentials.md	2026-09-06 18:39:40.631501397 +0000
+@@ -0,0 +1,10 @@
++# Test Credentials
++# Agent writes here when creating/modifying auth credentials (admin accounts, test users).
++# Testing agent reads this before auth tests. Fork/continuation agents read on startup.
++
++Admin-Login (POST /api/auth/login, JSON {"username","password"} -> {"token"}; Header `Authorization: Bearer <token>`):
++- username: Admin
++- password: Dean06Greif!/Admin
++
++WICHTIG: Preview/Dev läuft gegen die LOKALE MongoDB (DB_NAME=crypto_scanner_dev). Niemals die Produktiv-MONGO_URL
++(Atlas) in backend/.env eintragen – siehe tests/README_TESTING.md.
+diff -ruN a/tests/README_TESTING.md b/tests/README_TESTING.md
+--- a/tests/README_TESTING.md	1970-01-01 00:00:00.000000000 +0000
++++ b/tests/README_TESTING.md	2026-09-06 18:39:31.783501432 +0000
+@@ -0,0 +1,22 @@
++# Testen – Regeln (verbindlich)
++
++**Niemals gegen die Produktiv-Datenbank testen.** Der Datenverlust vom 05./06.09.2026 (MasterPrompt
++überschrieben, Paper-Trades gelöscht) entstand, weil die Preview-Umgebung mit der Produktiv-`MONGO_URL`
++lief und automatisierte Tests dort `analytics/clear`, `ai/trader/reset`, `POST /api/ai/master-prompt` und
++`POST /api/ai/lessons` ausgeführt haben.
++
++## Regeln
++1. `backend/.env` in Dev/Preview: `MONGO_URL=mongodb://localhost:27017`, `DB_NAME=crypto_scanner_dev`
++   (oder ein anderer Nicht-Produktiv-Name). Die Produktiv-`MONGO_URL` gehört ausschließlich in die
++   Render-Umgebung.
++2. Unit-Tests (`tests/*.py`, Marker `unit`) laufen ohne DB/Netz: `python -m pytest tests -q -n 0`.
++3. E2E-Tests (Marker `live`) nur gegen eine Preview mit lokaler DB. Vor dem Lauf prüfen:
++   `curl $URL/api/admin/recovery/report` darf keine Produktiv-Daten zeigen bzw. `DB_NAME` muss `*_dev`/`*_test` sein.
++4. Destruktive Endpunkte sind seit 06.09. abgesichert (Papierkorb `auto_trades_trash`, MasterPrompt-History
++   50 Versionen + Restore, Lektions-History + Restore) – das ist ein Sicherheitsnetz, kein Freifahrtschein.
++5. Produktiv-Daten für lokale Prüfungen nur als **Kopie** in die Dev-DB holen
++   (`backend/scripts/copy_prod_subset_to_dev.py`, liest Prod read-only).
++
++## Neue Regressionstests (06.09.)
++- `tests/test_data_recovery_and_trash.py` – Wiederherstellung, Papierkorb, MasterPrompt-Restore
++- `tests/test_seed_auto_and_tuning.py` – Seeding-Automatik, Feintuning
+diff -ruN a/tests/test_data_recovery_and_trash.py b/tests/test_data_recovery_and_trash.py
+--- a/tests/test_data_recovery_and_trash.py	1970-01-01 00:00:00.000000000 +0000
++++ b/tests/test_data_recovery_and_trash.py	2026-09-06 18:33:30.520502874 +0000
+@@ -0,0 +1,268 @@
++"""Regressionstests: Daten-Wiederherstellung (services/data_recovery.py),
++Trade-Papierkorb (services/trade_trash.py), MasterPrompt-/Lektions-History."""
++import asyncio
++import os
++import sys
++
++import pytest
++
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
++
++from services import data_recovery as dr  # noqa: E402
++from services.ai_master_prompt import DEFAULT_TEXT, DEFAULT_LESSON_POLICY  # noqa: E402
++from services.ai_master_prompt import MasterPromptStore, HISTORY_KEEP  # noqa: E402
++
++
++# ---------------------------------------------------------------- Test-Artefakte
++def test_test_artifact_detection():
++    assert dr.is_test_artifact("UI-TEXT-42", "COMBO-POLICY-42")
++    assert dr.is_test_artifact(DEFAULT_TEXT, "TESTPOLICY-XYZ")
++    assert dr.is_test_artifact(DEFAULT_TEXT + "\n[QA_TEST marker]", DEFAULT_LESSON_POLICY)
++    assert dr.is_test_artifact("kurz", DEFAULT_LESSON_POLICY)
++    assert not dr.is_test_artifact(DEFAULT_TEXT, DEFAULT_LESSON_POLICY)
++
++
++def test_pick_restorable_master_prefers_newest_real_version():
++    hist = [
++        {"version": 102, "text": DEFAULT_TEXT, "lesson_policy": DEFAULT_LESSON_POLICY,
++         "rules": {"max_leverage": 50}},
++        {"version": 103, "text": DEFAULT_TEXT, "lesson_policy": "TESTPOLICY-XYZ"},
++        {"version": 104, "text": "UI-TEXT-42", "lesson_policy": "COMBO-POLICY-42"},
++        {"version": 108, "text": DEFAULT_TEXT + "[QA_TE", "lesson_policy": DEFAULT_LESSON_POLICY},
++    ]
++    src = dr.pick_restorable_master(hist)
++    assert src["version"] == 102 and src["rules"]["max_leverage"] == 50
++    assert dr.pick_restorable_master([hist[2]]) is None
++
++
++def test_test_lesson_detection():
++    assert dr.is_test_lesson({"title": "TEST_Lektion_ChatCmd"})
++    assert dr.is_test_lesson({"title": "[QA] irgendwas"})
++    assert not dr.is_test_lesson({"title": "Stop-Loss-Abstand zu eng – 1.5 ATR nötig"})
++    assert not dr.is_test_lesson({"title": "Test der Unterstützung abwarten"})   # 'Test' als Wort ist ok
++
++
++# ---------------------------------------------------------------- Trade-Rekonstruktion
++ACTIONS = [
++    {"trade_id": "BTCUSDT-1785345367568", "symbol": "BTCUSDT", "side": "SHORT", "mode": "paper",
++     "action": "adjust_sl", "source": "ki", "ts": "2026-07-29T16:30:00+00:00", "result": {"sl": 1.0}},
++    {"trade_id": "BTCUSDT-1785345367568", "symbol": "BTCUSDT", "side": "SHORT", "mode": "paper",
++     "action": "partial_close", "source": "ki", "ts": "2026-07-29T17:00:00+00:00",
++     "result": {"realized_pnl": 0.5}},
++    {"trade_id": "BTCUSDT-1785345367568", "symbol": "BTCUSDT", "side": "SHORT", "mode": "paper",
++     "action": "close", "source": "ki", "ts": "2026-07-29T17:21:26+00:00",
++     "reason": "Fed in 25 Min", "result": {"result": "loss", "realized_pnl": -1.377023}},
++]
++
++
++def test_rebuild_trade_from_actions():
++    t = dr.rebuild_trade("BTCUSDT-1785345367568", ACTIONS)
++    assert t["status"] == "closed" and t["mode"] == "paper" and t["side"] == "SHORT"
++    assert t["result"] == "loss" and abs(t["realized_pnl"] - (-0.877023)) < 1e-6
++    assert t["opened_at"].startswith("2026-07-29T") and t["closed_at"].startswith("2026-07-29T17:21")
++    assert t["recovered"] is True and t["strategy_id"] == "ai_trader" and t["actions_count"] == 3
++    assert "entry" not in t          # kein Signal -> keine erfundenen Levels
++
++
++def test_rebuild_trade_with_signal_levels_and_manual_source():
++    sig = {"id": "s1", "entry_price": 100.0, "stop_loss": 99.0, "take_profit_1": 101.0,
++           "take_profit_full": 102.0, "ai_confidence": 70, "ai_setup": "breakout"}
++    acts = [dict(a, source="user") for a in ACTIONS]
++    t = dr.rebuild_trade("BTCUSDT-1785345367568", acts, sig)
++    assert t["entry"] == 100.0 and t["sl"] == 99.0 and t["tp1"] == 101.0 and t["tpf"] == 102.0
++    assert t["signal_id"] == "s1" and t["setup"] == "breakout"
++    assert t["manual_trade"] is True and t["strategy_id"] == "manual"
++
++
++def test_rebuild_trade_requires_close():
++    assert dr.rebuild_trade("X-1", ACTIONS[:2]) is None
++    assert dr.trade_open_ms("BTCUSDT-1785345367568") == 1785345367568
++    assert dr.trade_open_ms("kaputt") is None
++
++
++def test_rebuild_skips_manual_seconds_trades_as_test_artifacts():
++    # manuell per API geöffnet und 6 s später geschlossen (Test-Lauf 05.09.) -> kein Trade
++    acts = [{"trade_id": "BTCUSDT-1788641797521", "symbol": "BTCUSDT", "side": "LONG", "mode": "paper",
++             "action": "close", "source": "manual", "ts": "2026-09-05T20:56:44+00:00",
++             "result": {"result": "loss", "realized_pnl": -0.07}}]
++    assert dr.rebuild_trade("BTCUSDT-1788641797521", acts) is None
++    # dieselbe Dauer per KI ('ki') bleibt erhalten
++    assert dr.rebuild_trade("BTCUSDT-1788641797521", [dict(acts[0], source="ki")]) is not None
++    assert dr.is_test_like_duration("2026-09-05T20:56:37+00:00", "2026-09-05T20:56:44+00:00")
++    assert not dr.is_test_like_duration("2026-09-05T20:56:37+00:00", "2026-09-05T21:56:44+00:00")
++
++
++# ---------------------------------------------------------------- Fake-DB für async Pfade
++class _Cursor:
++    def __init__(self, rows):
++        self.rows = rows
++
++    def sort(self, *a, **kw):
++        return self
++
++    def skip(self, n):
++        self.rows = self.rows[n:]
++        return self
++
++    async def to_list(self, n=None):
++        return list(self.rows)
++
++    def __aiter__(self):
++        self._it = iter(self.rows)
++        return self
++
++    async def __anext__(self):
++        try:
++            return next(self._it)
++        except StopIteration:
++            raise StopAsyncIteration
++
++
++class _Coll:
++    def __init__(self, rows=None):
++        self.rows = [dict(r) for r in (rows or [])]
++
++    def _match(self, q):
++        def ok(r):
++            for k, v in (q or {}).items():
++                if isinstance(v, dict):
++                    if "$in" in v and r.get(k) not in v["$in"]:
++                        return False
++                    if "$ne" in v and r.get(k) == v["$ne"]:
++                        return False
++                    if "$gte" in v and not (str(r.get(k, "")) >= v["$gte"]):
++                        return False
++                    if "$lte" in v and not (str(r.get(k, "")) <= v["$lte"]):
++                        return False
++                elif r.get(k) != v:
++                    return False
++            return True
++        return [r for r in self.rows if ok(r)]
++
++    def find(self, q=None, proj=None):
++        return _Cursor(self._match(q))
++
++    async def find_one(self, q=None, proj=None):
++        m = self._match(q)
++        return dict(m[0]) if m else None
++
++    async def insert_one(self, d):
++        self.rows.append(dict(d))
++
++    async def insert_many(self, ds):
++        self.rows.extend(dict(d) for d in ds)
++
++    async def delete_many(self, q):
++        before = len(self.rows)
++        self.rows = [r for r in self.rows if r not in self._match(q)]
++
++        class R:
++            deleted_count = before - len(self.rows)
++        return R()
++
++    async def delete_one(self, q):
++        m = self._match(q)
++        if m:
++            self.rows.remove(m[0])
++
++        class R:
++            deleted_count = 1 if m else 0
++        return R()
++
++    async def update_one(self, q, upd, upsert=False):
++        m = self._match(q)
++        if not m and upsert:
++            self.rows.append(dict(q))
++            m = self._match(q)
++        if not m:
++            return
++        row = m[0]
++        for k, v in (upd.get("$set") or {}).items():
++            row[k] = v
++        for k, spec in (upd.get("$push") or {}).items():
++            arr = list(row.get(k) or []) + list(spec.get("$each") or [])
++            sl = spec.get("$slice")
++            row[k] = arr[sl:] if sl else arr
++
++
++class _DB:
++    def __init__(self):
++        self.auto_trades = _Coll()
++        self.auto_trades_trash = _Coll()
++        self.settings = _Coll()
++        self.ai_lessons_history = _Coll()
++
++    def __getitem__(self, name):
++        return getattr(self, name)
++
++
++# ---------------------------------------------------------------- Papierkorb
++def test_trade_trash_archive_and_restore():
++    from services import trade_trash
++    db = _DB()
++    asyncio.run(db.auto_trades.insert_many([
++        {"id": "a", "mode": "paper", "strategy_id": "ai_trader"},
++        {"id": "b", "mode": "live", "strategy_id": "ai_trader"},
++        {"id": "c", "mode": "paper", "strategy_id": "x"}]))
++    res = asyncio.run(trade_trash.archive(db, {"strategy_id": "ai_trader", "mode": {"$ne": "live"}},
++                                          "ai_trader_reset"))
++    assert res["count"] == 1 and res["batch_id"]
++    assert {r["id"] for r in db.auto_trades.rows} == {"b", "c"}
++    batches = asyncio.run(trade_trash.list_batches(db))
++    assert batches[0]["count"] == 1 and batches[0]["reason"] == "ai_trader_reset"
++    out = asyncio.run(trade_trash.restore(db, res["batch_id"]))
++    assert out["restored"] == 1 and {r["id"] for r in db.auto_trades.rows} == {"a", "b", "c"}
++    assert asyncio.run(trade_trash.restore(db, res["batch_id"])) is None
++    # leerer Filter-Treffer -> kein Batch
++    assert asyncio.run(trade_trash.archive(db, {"id": "zzz"}, "x"))["count"] == 0
++
++
++# ---------------------------------------------------------------- MasterPrompt-History / Restore
++def test_master_prompt_history_keep_and_restore():
++    db = _DB()
++    mp = MasterPromptStore()
++    mp.setup(db)
++    asyncio.run(mp.load())
++    asyncio.run(mp.save(text=DEFAULT_TEXT + " v2", editor="trader"))          # v2
++    asyncio.run(mp.save(text="UI-TEXT-42", lesson_policy="COMBO", editor="trader"))  # v3 (Test-Müll)
++    assert mp.text == "UI-TEXT-42"
++    snap = asyncio.run(mp.restore(2))
++    assert snap and mp.text == DEFAULT_TEXT + " v2" and mp.lesson_policy == DEFAULT_LESSON_POLICY
++    assert mp.version == 4
++    assert asyncio.run(mp.restore(999)) is None
++    assert HISTORY_KEEP >= 50
++
++
++def test_recovery_run_restores_master_and_cleans_lessons_dry_and_real():
++    from services import ai_master_prompt, ai_lessons
++    db = _DB()
++    ai_master_prompt.master_prompt.setup(db)
++    ai_lessons.lesson_store.setup(db)
++    asyncio.run(db.settings.insert_one({
++        "_id": "ai_master_prompt", "text": "UI-TEXT-42", "lesson_policy": "COMBO-POLICY-42",
++        "rules": {"max_leverage": 0}, "version": 122, "editor": "trader",
++        "history": [{"version": 102, "text": DEFAULT_TEXT, "lesson_policy": DEFAULT_LESSON_POLICY,
++                     "rules": {"max_leverage": 50}},
++                    {"version": 121, "text": "UI-TEXT-42", "lesson_policy": "X"}]}))
++    asyncio.run(db.settings.insert_one({"_id": "ai_lessons", "lessons": [
++        {"id": "l1", "title": "TEST_Lektion_ChatCmd", "detail": "x", "locked": True},
++        {"id": "l2", "title": "Stop-Loss-Abstand zu eng", "detail": "1.5 ATR"}]}))
++    db.ai_trade_actions = _Coll([dict(a) for a in ACTIONS])
++    db.signals = _Coll()
++    rep = asyncio.run(dr.run(db, dry_run=True))
++    assert rep["master_prompt"]["restored"] and rep["master_prompt"]["from_version"] == 102
++    assert rep["lessons"]["removed"] == ["TEST_Lektion_ChatCmd"]
++    assert rep["paper_trades"]["recovered"] == 1 and not db.auto_trades.rows   # dry-run schreibt nichts
++    rep = asyncio.run(dr.run(db, dry_run=False))
++    doc = asyncio.run(db.settings.find_one({"_id": "ai_master_prompt"}))
++    assert doc["text"] == DEFAULT_TEXT and doc["rules"]["max_leverage"] == 50
++    assert [l["title"] for l in asyncio.run(db.settings.find_one({"_id": "ai_lessons"}))["lessons"]] == ["Stop-Loss-Abstand zu eng"]
++    assert len(db.auto_trades.rows) == 1 and db.auto_trades.rows[0]["recovered"]
++    # idempotent: zweiter Lauf ändert nichts mehr
++    rep2 = asyncio.run(dr.run(db, dry_run=False))
++    assert rep2["master_prompt"]["restored"] is False and rep2["paper_trades"]["recovered"] == 0
++    assert len(db.auto_trades.rows) == 1
++
++
++if __name__ == "__main__":
++    sys.exit(pytest.main([__file__, "-q", "-n", "0"]))
+diff -ruN a/tests/test_seed_auto_and_tuning.py b/tests/test_seed_auto_and_tuning.py
+--- a/tests/test_seed_auto_and_tuning.py	1970-01-01 00:00:00.000000000 +0000
++++ b/tests/test_seed_auto_and_tuning.py	2026-09-06 18:30:21.669503623 +0000
+@@ -0,0 +1,106 @@
++"""Regressionstests: Seeding-Automatik (services/setup_backtest/auto.py) und
++Feintuning (detectors.tune_candidates, runner.tune / run_variant mit params)."""
++import os
++import sys
++from datetime import datetime, timedelta, timezone
++
++import numpy as np
++import pytest
++
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
++
++from services import setup_asset_class as ac  # noqa: E402
++from services.candles import CandleArray  # noqa: E402
++from services.setup_backtest import auto, detectors, runner  # noqa: E402
++from services.setup_backtest.detectors import Features  # noqa: E402
++
++M1 = 60_000
++T0 = 1_700_000_000_000 - (1_700_000_000_000 % (5 * M1))
++
++
++# ---------------------------------------------------------------- Automatik-Einstellungen
++def test_auto_normalize_defaults_and_bounds():
++    cfg = auto.normalize(None)
++    assert cfg["enabled"] is False and cfg["interval_hours"] == 24 and cfg["days"] == 90
++    assert cfg["mode"] == "loop" and cfg["asset_classes"] == list(ac.CLASSES)
++    cfg = auto.normalize({"enabled": 1, "interval_hours": 1, "days": 9999, "mode": "single",
++                          "asset_classes": ["crypto", "quatsch"]})
++    assert cfg["enabled"] is True and cfg["interval_hours"] == 6 and cfg["days"] == 365
++    assert cfg["mode"] == "single" and cfg["asset_classes"] == ["crypto"]
++    assert auto.normalize({"interval_hours": "abc"})["interval_hours"] == 24
++
++
++def test_auto_due_and_next_run():
++    now = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
++    assert not auto.is_due({"enabled": False}, now)
++    assert auto.is_due(auto.normalize({"enabled": True}), now)            # noch nie gelaufen
++    cfg = auto.normalize({"enabled": True, "interval_hours": 24,
++                          "last_run_at": (now - timedelta(hours=23)).isoformat()})
++    assert not auto.is_due(cfg, now)
++    cfg["last_run_at"] = (now - timedelta(hours=25)).isoformat()
++    assert auto.is_due(cfg, now)
++    assert auto.next_run_at(cfg).startswith((now - timedelta(hours=1)).isoformat()[:13])
++    assert auto.next_run_at({"enabled": False}) is None
++    pub = auto.public_state({"enabled": True, "last_run_at": "kaputt"})
++    assert pub["due"] is True and pub["next_run_at"]
++
++
++# ---------------------------------------------------------------- Feintuning
++def test_tune_candidates_vary_only_risk_keys():
++    base = detectors.VARIANTS["breakout"][0]
++    cands = detectors.tune_candidates("breakout", base)
++    assert len(cands) == 4
++    for c in cands:
++        assert c["lookback"] == base["lookback"] and c["vol_mult"] == base["vol_mult"]
++        assert c["sl_atr"] in (round(base["sl_atr"] * 0.8, 3), round(base["sl_atr"] * 1.25, 3))
++        assert c["name"].startswith("standard·")
++    # nur ein Tuning-Schlüssel -> 2 Kandidaten; keiner -> leer
++    assert len(detectors.tune_candidates("range_fade", detectors.VARIANTS["range_fade"][0])) == 2
++    assert detectors.tune_candidates("x", {"name": "n", "foo": 1}) == []
++
++
++def _ca(closes, spread=0.001, vol=None):
++    closes = np.asarray(closes, dtype=float)
++    n = len(closes)
++    op = np.concatenate([[closes[0]], closes[:-1]])
++    hi = np.maximum(op, closes) * (1 + spread)
++    lo = np.minimum(op, closes) * (1 - spread)
++    v = np.full(n, 100.0) if vol is None else np.asarray(vol, dtype=float)
++    return CandleArray(T0 + np.arange(n) * M1, op, hi, lo, closes, v)
++
++
++def _flat_then_breakout(n_flat=1500, level=100.0):
++    rng = np.random.default_rng(1)
++    flat = level + rng.normal(0, 0.05, n_flat)
++    spike = np.linspace(level, level * 1.03, 40)
++    after = level * 1.03 + rng.normal(0, 0.05, 300)
++    vol = np.concatenate([np.full(n_flat, 100.0), np.full(40, 500.0), np.full(300, 100.0)])
++    return _ca(np.concatenate([flat, spike, after]), vol=vol)
++
++
++def test_run_variant_with_params_and_tune_shape():
++    f = Features(_flat_then_breakout())
++    split = int(f.c5.ts[0] + (f.c5.ts[-1] - f.c5.ts[0]) * 0.5)
++    params = dict(detectors.VARIANTS["breakout"][0], name="standard·test")
++    res = runner.run_variant("breakout", {"QQQUSDT": f}, 0, ac.INDICES, split, "job", params=params)
++    assert res["variant_name"] == "standard·test" and res["params"] == params
++    base = runner.run_variant("breakout", {"QQQUSDT": f}, 0, ac.INDICES, split, "job")
++    assert base["params"] is None and base["variants_total"] == 3
++    tr = runner.tune("breakout", {"QQQUSDT": f}, 0, ac.INDICES, split, "job")
++    assert tr["tried"] == 4 and (tr["best"] is None or tr["best"]["passed"])
++
++
++def test_best_base_variant_and_passed_states():
++    hist = [{"variant": 0, "is": {"trades": 12, "pnl": -1.0}},
++            {"variant": 2, "is": {"trades": 30, "pnl": 3.5}},
++            {"variant": 1, "is": {"trades": 2, "pnl": 9.0}}]       # zu wenig Trades
++    assert runner.best_base_variant(hist) == 2
++    assert runner.best_base_variant([{"variant": 1, "is": {"trades": 1, "pnl": 1}}]) is None
++    assert "tuned" in runner.PASSED_STATES and "passed" in runner.PASSED_STATES
++    # feingetunte Setups zählen NICHT als "ohne Edge"
++    assert runner.no_edge_line("X", {"a": {"status": "tuned"}, "b": {"status": "exhausted"}}) == \
++        runner.no_edge_line("X", {"b": {"status": "exhausted"}})
++
++
++if __name__ == "__main__":
++    sys.exit(pytest.main([__file__, "-q", "-n", "0"]))

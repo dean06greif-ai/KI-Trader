@@ -1,0 +1,16 @@
+{
+  "summary": "Verified new AI-Trader coin-override feature. Backend unit tests (/app/tests/test_ai_coin_overrides.py) all 3 PASS. Backend regression endpoint GET /api/autotrade/strategy/ai_trader/coin/BTCUSDT returns 200 with max_capital=30 and auto_leverage_enabled=false as expected. Frontend: StrategyAutoTradeModal for KI Trader (ai_trader, LIVE mode) shows sat-ai-note + sat-max-capital + sat-leverage + sat-auto-lev + sat-signals-enabled + sat-save; hides sat-sl-structure, sat-tp-crv, sat-be-mode, sat-pre-signals, sat-ai-manage, sat-profit-secure. Regression on Scalping strategy (scalping_4_rules) after switching to PAPER (not saved): all 6 previously hidden blocks are VISIBLE and sat-ai-note is HIDDEN. NO configs were saved (sat-cancel used to close both modals).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/tests/test_ai_coin_overrides.py"],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "none - no data was written to production DB",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "AI-Trader modal correctly hides SL/TP/BE/pre-signals/ai_manage/profit_secure blocks and shows sat-ai-note. Other strategies unchanged. Backend helpers ai_leverage_override + ai_capital_base verified by unit tests. Do NOT click sat-save (production configs).",
+  "rca of the issue": "N/A - feature works as specified"
+}
