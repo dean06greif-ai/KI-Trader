@@ -1950,6 +1950,16 @@ class AutoTradeManager:
                             f"({signal.get('ml_risk_reason') or 'AUC unter Schwelle'})")
         except (TypeError, ValueError):
             pass
+        # Kapital-Zuweisung je Setup × Asset (services/setup_capital.py): Historie
+        # des Setups in der Anlageklasse und auf diesem Asset -> Faktor unter Max.
+        try:
+            sa_scale = float(signal.get("setup_asset_scale") or 0)
+            if 0.1 <= sa_scale < 1.0:
+                capital = round(capital * sa_scale, 6)
+                logger.info(f"{symbol}: Kapital-Zuweisung Setup×Asset – Margin ×{sa_scale:g} "
+                            f"({signal.get('setup_asset_reason') or ''})")
+        except (TypeError, ValueError):
+            pass
         alloc_note = None
         try:
             fc = await self.free_capital(mode)

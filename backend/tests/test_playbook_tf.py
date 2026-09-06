@@ -24,7 +24,7 @@ def test_best_tf_empty():
 
 def test_context_lines_sorted_by_pnl():
     lines = tf_context_lines(ROWS)
-    assert lines[0].startswith("TIMEFRAME-PERFORMANCE")
-    assert "breakout: bester TF 15m" in lines[1]
+    assert lines[0].startswith("BESTER TF")   # kompakte Prompt-Zeile (Token-Budget)
+    assert "breakout: 15m" in lines[1]
     assert "WR 80%" in lines[1]
-    assert "trend_follow: bester TF 5m" in lines[2]
+    assert "trend_follow: 5m" in lines[2]

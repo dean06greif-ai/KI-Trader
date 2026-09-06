@@ -53,6 +53,8 @@ from services import ai_validation
 from services.ai_validation import validation_gate
 from services import ai_providers
 from services import ai_playbook
+from services import setup_asset_class
+from services import setup_capital
 from services import position_sizing
 from services import slippage_guard
 from services import smc_zones
@@ -322,7 +324,12 @@ ANALYSIS_SYSTEM = (
     '"new_strategies": [{"name": "...", "thesis": "...", "rules_text": "...", '
     '"symbols": ["BTCUSDT"], "learned_from": "..."}], '
     '"new_setups": [{"id": "snake_case_id", "desc": "Einstieg/SL/TP/Timeframe in 1-2 Sätzen"}], '
+    '"setup_revisions": [{"setup": "id", "asset_class": "crypto|indices|resources|forex", "desc": "...", "reason": "kurz"}], '
     '"config_changes": [{"symbol": "BTCUSDT", "changes": {"leverage": 8}, "reason": "kurz"}]}\n'
+    "TOKEN-SPARSAMKEIT: Bei HOLD nur symbol, action, confidence und ein reasoning von max. 8 Wörtern – "
+    "alle anderen Felder (setup, sl/tp, capital_pct, size_reason, levels_reason, entry_type) WEGLASSEN. "
+    "Leere Listen (new_strategies, new_setups, setup_revisions, config_changes) komplett weglassen. "
+    "setup_revisions nur, wenn das Playbook ein rückgestuftes Setup für deine Klasse nennt. "
     "Regeln: sl_pct/tp1_pct/tpf_pct sind Prozent-Abstände vom aktuellen Preis. "
     "tp1_pct > sl_pct (CRV mind. 1.2), tpf_pct > tp1_pct. Für JEDES übergebene Symbol genau eine Entscheidung. "
     "ENTRY-ART: entry_type 'market' (Standard) = sofortiger Einstieg zum aktuellen Preis. "
@@ -412,7 +419,11 @@ ANALYSIS_SYSTEM_LEAN = (
     '"new_strategies": [{"name": "...", "thesis": "...", "rules_text": "...", '
     '"symbols": ["BTCUSDT"], "learned_from": "..."}], '
     '"new_setups": [{"id": "snake_case_id", "desc": "Einstieg/SL/TP/Timeframe in 1-2 Sätzen"}], '
+    '"setup_revisions": [{"setup": "id", "asset_class": "crypto|indices|resources|forex", "desc": "...", "reason": "kurz"}], '
     '"config_changes": [{"symbol": "BTCUSDT", "changes": {"leverage": 8}, "reason": "kurz"}]}\n'
+    "TOKEN-SPARSAMKEIT: Bei HOLD nur symbol, action, confidence + reasoning (max. 8 Wörter) – alle "
+    "anderen Felder weglassen. Leere Listen weglassen. setup_revisions nur für ein im Playbook als "
+    "RÜCKGESTUFT genanntes Setup deiner Klasse. "
     "Regeln: sl/tp-Prozente = Abstand vom aktuellen Preis; tp1_pct > sl_pct; tpf_pct > tp1_pct; "
     "für JEDES übergebene Symbol genau EINE Entscheidung. "
     "entry_type 'limit' nur mit klarem Key-Level (Order-Block/POC/VAH/VAL/Range-Grenze): "
@@ -1456,6 +1467,7 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
             all_new_strategies = []
             all_config_changes = []
             all_new_setups = []
+            all_setup_revisions = []
             model_used = None
             for g_label, g_syms in groups:
                 if self._should_skip_group(g_label, g_syms, snaps, open_syms, manual):
@@ -1474,8 +1486,10 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                     g_btc = self._btc_corr_block()
                     if g_btc:
                         g_btc += "\n\n"
+                g_classes = setup_asset_class.classes_for_group(g_label)
+                g_base = await self.resolve_group_blocks(prompt_base, g_classes, list(g_syms))
                 g_prompt = (
-                    prompt_base + g_liq + g_btc
+                    g_base + g_liq + g_btc
                     + f"=== MARKTDATEN (Multi-Timeframe) – FOKUS-GRUPPE: {g_label} ===\n"
                     + "\n".join(snaps[s]["text"] for s in g_syms)
                     + f"\n\nDieser Lauf behandelt NUR die Gruppe {g_label} "
@@ -1500,6 +1514,10 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                     overview_parts.append(f"[{g_label}] {ov}" if len(groups) > 1 else ov)
                 all_new_strategies += list(data.get("new_strategies") or [])
                 all_new_setups += list(data.get("new_setups") or [])
+                # Setup-Revisionen gelten nur für die Klassen dieses Gruppen-Laufs
+                for rev in list(data.get("setup_revisions") or [])[:1]:
+                    if isinstance(rev, dict):
+                        all_setup_revisions.append({**rev, "_classes": g_classes})
                 all_config_changes += list(data.get("config_changes") or [])
                 for d in data.get("decisions", []):
                     sym = d.get("symbol")
@@ -1609,6 +1627,21 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                         logger.info(f"KI-Setup-Vorschlag abgelehnt: {res.get('reason')}")
                 except Exception as se:
                     logger.error(f"KI-Setup konnte nicht angelegt werden: {se}")
+
+            # Setup-Überarbeitung je Anlageklasse: nur rückgestufte Setups, max.
+            # eine Revision pro Setup und Re-Test-Zeitraum (ai_playbook.revise_setup)
+            for rev in all_setup_revisions[:2]:
+                cls = str(rev.get("asset_class") or "").strip().lower()
+                if cls not in rev.get("_classes", []):
+                    cls = rev["_classes"][0] if len(rev.get("_classes", [])) == 1 else cls
+                try:
+                    res = await ai_playbook.revise_setup(
+                        self.db, cls, rev.get("setup"), rev.get("desc"),
+                        reason=str(rev.get("reason") or ""), source="ki")
+                    if res.get("status") == "rejected":
+                        logger.info(f"KI-Setup-Revision abgelehnt ({rev.get('setup')}@{cls}): {res.get('reason')}")
+                except Exception as se:
+                    logger.error(f"KI-Setup-Revision fehlgeschlagen: {se}")
 
             for spec in all_new_strategies[:3]:
                 if not isinstance(spec, dict):
@@ -1751,15 +1784,32 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
             from core.state import autotrader
             if autotrader.effective_mode("ai_trader", dec.get("symbol")) != "live":
                 return None
+            # Reife-Gate gilt je ANLAGEKLASSE (services/setup_asset_class.py)
+            cls = setup_asset_class.asset_class_of(dec.get("symbol"))
+            dec["asset_class"] = cls
             # Paper/Live-Divergenz: Setup läuft live nachweislich schlechter als
             # im Paper -> kein Live (auch kein Bypass), Datensammlung läuft weiter.
-            lb = ai_playbook.live_block_reason(setup)
+            lb = ai_playbook.live_block_reason(setup, asset_class=cls)
             if lb:
                 logger.info(f"{dec.get('symbol')}: Live-Gate – {lb}")
                 return lb
             stats = await ai_playbook.cached_setup_stats(self.db)
-            ok, why = ai_playbook.live_ready_for(setup, stats.get(setup))
+            ok, why = ai_playbook.live_ready_for(setup, stats.get(setup), asset_class=cls)
             if ok:
+                # Kapital-Zuweisung je Setup × Asset (services/setup_capital.py):
+                # letzte Eskalationsstufe = Live-Einstieg für DIESES Setup auf
+                # DIESEM Asset ausgesetzt -> Paper-Datensammlung läuft weiter.
+                alloc = setup_capital.allocation(
+                    ai_playbook.class_stats(cls, setup),
+                    ai_playbook.asset_stats(cls, setup, dec.get("symbol")),
+                    dec.get("confidence"), self.config.get("min_confidence", 65),
+                    setup_capital.gate_p_win(dec))
+                dec["setup_alloc"] = alloc
+                if alloc.get("suspended"):
+                    note = (f"Setup '{setup}' auf {dec.get('symbol')} ausgesetzt – "
+                            f"{alloc.get('note', '')}")
+                    logger.info(f"{dec.get('symbol')}: Live-Gate – {note}")
+                    return note
                 return None
             # Bypass: hochkonfidente Setups dürfen begrenzt live gehen (paar
             # Live-Trades/Tag), statt ALLES in die Datensammlung umzuleiten.
@@ -2143,13 +2193,34 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                 logger.info(f"AI-Signal {sym}: ML-Risiko-Skalierung ×{ml_scale:g} ({ml_why})")
         except Exception as e:
             logger.debug(f"ML-Risiko-Skalierung nicht verfügbar: {e}")
+        # Kapital-Zuweisung je Setup × Asset innerhalb der Anlageklasse
+        # (services/setup_capital.py): Historie des Setups in der Klasse, auf
+        # diesem Asset und Einstiegsqualität -> Faktor 0.25..1 unter dem Max-Kapital.
+        # Ausgesetzte Kombinationen kamen nie hier an (Live-Gate), Sammel-Trades
+        # bleiben unskaliert (Lernen braucht volle Größe).
+        if not collection and dec.get("setup"):
+            alloc = dec.get("setup_alloc")
+            if not isinstance(alloc, dict):
+                cls = setup_asset_class.asset_class_of(sym)
+                alloc = setup_capital.allocation(
+                    ai_playbook.class_stats(cls, dec["setup"]),
+                    ai_playbook.asset_stats(cls, dec["setup"], sym),
+                    dec.get("confidence"), self.config.get("min_confidence", 65),
+                    setup_capital.gate_p_win(dec))
+                dec["setup_alloc"] = alloc
+            scale = float(alloc.get("scale") or 1.0)
+            if 0 < scale < 1.0:
+                signal["setup_asset_scale"] = scale
+                signal["setup_asset_reason"] = alloc.get("note")
+                logger.info(f"AI-Signal {sym}: Kapital-Zuweisung ×{scale:g} ({alloc.get('note')})")
         # Risiko-basierte Positionsgröße (services/position_sizing.py): Marge
         # und Hebel werden in bitunix_trade aus Equity × Risiko % / SL-Abstand
         # berechnet – ersetzt im Modus 'risk' die Kette max_capital × capital_pct.
         if str(self.config.get("sizing_mode", "legacy")) == "risk":
             signal["ai_sizing"] = position_sizing.build_params(
                 self.config, dec, is_swing, float(signal.get("ml_risk_scale") or 1.0),
-                collection=bool(collection))
+                collection=bool(collection),
+                setup_scale=float(signal.get("setup_asset_scale") or 1.0))
         # Key-Level-Limit-Order: Signal NICHT sofort ausführen, sondern als
         # wartende Order am Level speichern. Fill/Ablauf prüft der Scheduler
         # (core/scheduler.py), Neu-Bewertung übernimmt jeder Analyse-Zyklus.

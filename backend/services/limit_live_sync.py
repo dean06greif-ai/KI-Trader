@@ -177,6 +177,12 @@ def plan_size(autotrader, row: Dict, equity: Optional[float] = None) -> Optional
             capital = round(capital * ml, 6)
     except (TypeError, ValueError):
         pass
+    try:
+        sa = float(sig.get("setup_asset_scale") or 0)
+        if 0.1 <= sa < 1.0:
+            capital = round(capital * sa, 6)
+    except (TypeError, ValueError):
+        pass
     sizing = sig.get("ai_sizing")
     if isinstance(sizing, dict) and sizing.get("mode") == "risk" and sl > 0:
         try:

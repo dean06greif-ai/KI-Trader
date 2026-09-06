@@ -31,6 +31,11 @@ logger = logging.getLogger(__name__)
 
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
+# Platzhalter in _analysis_extra_blocks – werden je Gruppen-Lauf durch die
+# Anlageklassen-spezifischen Blöcke ersetzt (resolve_group_blocks).
+PLAYBOOK_MARKER = "§PLAYBOOK_BLOCK§"
+COIN_SETTINGS_MARKER = "§COIN_SETTINGS_BLOCK§"
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -291,14 +296,15 @@ class AIEngineContextMixin:
         return "\n\n".join(parts)
 
     # ---------------- analysis ----------------
-    async def _ai_coin_settings_text(self) -> str:
-        """Aktuelle KI-Trader Trade-Einstellungen pro Coin (für Prompt & Self-Tuning)."""
+    async def _ai_coin_settings_text(self, symbols: Optional[List[str]] = None) -> str:
+        """Aktuelle KI-Trader Trade-Einstellungen pro Coin (für Prompt & Self-Tuning).
+        `symbols` = nur diese (Gruppen-Lauf), None = alle."""
         from core.defaults import DEFAULT_STRATEGY_COIN_CFG
         docs = await self.db.strategy_coin_configs.find(
             {"_id": {"$regex": "^ai_trader_"}}).to_list(100)
         saved = {d["_id"].replace("ai_trader_", "", 1): d.get("config", {}) for d in docs}
         lines = []
-        for sym in self.symbols:
+        for sym in (symbols if symbols is not None else self.symbols):
             c = {**DEFAULT_STRATEGY_COIN_CFG, **saved.get(sym, {})}
             sl_desc = {"structure": f"Struktur(Lookback {c.get('sl_lookback')})",
                        "fixed": f"fest {c.get('sl_fixed_percent')}%",
@@ -312,6 +318,26 @@ class AIEngineContextMixin:
                 f"TP-Full CRV {c.get('tp_full_crv')}, BE {c.get('be_mode')}, "
                 f"Profit-Secure {'an' if c.get('profit_secure_enabled') else 'aus'}")
         return "\n".join(lines)
+
+    async def resolve_group_blocks(self, text: str, classes: Optional[List[str]] = None,
+                                   symbols: Optional[List[str]] = None) -> str:
+        """Platzhalter (PLAYBOOK_MARKER, COIN_SETTINGS_MARKER) durch die Blöcke
+        der übergebenen Anlageklassen/Symbole ersetzen. None = Gesamtblock
+        (Aufrufer außerhalb des Gruppen-Laufs, z.B. Chat/Deep-Analyse)."""
+        if PLAYBOOK_MARKER in text:
+            try:
+                pb = await ai_playbook.context_text(self.db, classes=classes)
+            except Exception as e:
+                logger.warning(f"AI playbook block failed: {e}")
+                pb = ""
+            text = text.replace(PLAYBOOK_MARKER, pb)
+        if COIN_SETTINGS_MARKER in text:
+            try:
+                cs = await self._ai_coin_settings_text(symbols)
+            except Exception:
+                cs = "(nicht verfügbar)"
+            text = text.replace(COIN_SETTINGS_MARKER, cs)
+        return text
 
     def _btc_corr_block(self) -> str:
         """BTC-Korrelations-Filter: kompakter BTC-Trend (15m/1h) als weiche Regel,
@@ -773,18 +799,13 @@ class AIEngineContextMixin:
         except Exception as e:
             logger.warning(f"AI learning blocks failed: {e}")
         if not review:
-            try:
-                pb = await ai_playbook.context_text(self.db)
-                if pb:
-                    parts.append(pb)
-            except Exception as e:
-                logger.warning(f"AI playbook block failed: {e}")
+            # Platzhalter: der Gruppen-Lauf (ai_engine.run_analysis) setzt hier den
+            # Playbook-Block NUR seiner Anlageklassen ein (spart Tokens, zeigt nur
+            # dort erlaubte Setups). Andere Aufrufer erhalten den Gesamt-Block.
+            parts.append(PLAYBOOK_MARKER)
         if not review:
-            try:
-                parts.append("=== DEINE AKTUELLEN TRADE-EINSTELLUNGEN (KI Trader, pro Coin) ===\n"
-                             + await self._ai_coin_settings_text())
-            except Exception:
-                pass
+            parts.append("=== DEINE AKTUELLEN TRADE-EINSTELLUNGEN (KI Trader, pro Coin) ===\n"
+                         + COIN_SETTINGS_MARKER)
             try:
                 parts.append(f"=== PERFORMANCE DER ANDEREN STRATEGIEN (letzte 14 Tage – lerne daraus) ===\n"
                              + await self._strategy_performance_text())

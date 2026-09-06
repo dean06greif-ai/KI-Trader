@@ -100,8 +100,9 @@ def risk_leverage(cfg: Dict, params: Dict, entry: float, sl: float,
 
 
 def build_params(ai_cfg: Dict, dec: Dict, is_swing: bool, ml_scale: float = 1.0,
-                 collection: bool = False) -> Dict:
-    """Sizing-Parameter fürs Signal (ai_engine -> bitunix_trade), rein."""
+                 collection: bool = False, setup_scale: float = 1.0) -> Dict:
+    """Sizing-Parameter fürs Signal (ai_engine -> bitunix_trade), rein.
+    setup_scale = Kapital-Zuweisung je Setup × Asset (services/setup_capital.py)."""
     g = lambda k: ai_cfg.get(k, DEFAULTS[k])  # noqa: E731
     return {
         "mode": "risk",
@@ -115,6 +116,7 @@ def build_params(ai_cfg: Dict, dec: Dict, is_swing: bool, ml_scale: float = 1.0,
         "is_swing": bool(is_swing),
         "swing_cap": float(ai_cfg.get("swing_max_leverage", 8) or 8),
         "collection_scale": float(g("risk_collection_scale")) if collection else 1.0,
+        "setup_scale": max(0.1, min(1.0, float(setup_scale or 1.0))),
     }
 
 
@@ -134,6 +136,10 @@ def compute(params: Dict, cfg: Dict, entry: float, sl: float, equity: Optional[f
     conv = conviction_scale(params.get("capital_pct"), params.get("conviction_floor", 0.5))
     scale, scale_note = combined_scale(conv, params.get("ml_scale", 1.0), params.get("stack", False))
     scale *= float(params.get("collection_scale") or 1.0)
+    setup_scale = float(params.get("setup_scale") or 1.0)
+    if 0 < setup_scale < 1.0:
+        scale *= setup_scale
+        scale_note += f" × Setup/Asset ×{setup_scale:g}"
     risk_usdt = equity * float(params.get("risk_pct") or 2.0) / 100.0 * scale
     lev = risk_leverage(cfg, params, entry, sl, coin_max_lev)
     notional = risk_usdt / sl_dist

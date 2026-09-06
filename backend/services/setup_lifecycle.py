@@ -88,6 +88,30 @@ def demotion_reason(live: Optional[Dict]) -> Optional[str]:
     return None
 
 
+BREADTH_MIN_TRADES = 3            # Asset zählt erst ab N Trades des Setups
+BREADTH_SHARE = 1.0 / 3.0         # Rückstufung erst, wenn >= 1/3 der Assets negativ
+
+
+def breadth_ok(per_symbol: Optional[Dict[str, Dict]]) -> Tuple[bool, str]:
+    """Gesamtbild-Regel (rein): Ein einzelnes schlecht laufendes Asset darf ein
+    Setup in seiner Anlageklasse NICHT zurückstufen – dafür gibt es die
+    Kapital-Reduktion/-Aussetzung je Asset (services/setup_capital.py).
+    Rückstufung erst, wenn mind. 1/3 der gehandelten Assets (>= BREADTH_MIN_TRADES
+    Trades) negativ sind. Ohne Asset-Aufschlüsselung oder mit nur einem Asset
+    gilt die Setup-Statistik unverändert."""
+    rows = {s: st for s, st in (per_symbol or {}).items()
+            if int((st or {}).get("trades") or 0) >= BREADTH_MIN_TRADES}
+    if len(rows) <= 1:
+        return True, "Gesamtbild: nur ein Asset mit Daten"
+    bad = [s for s, st in rows.items() if float(st.get("pnl") or 0) < 0
+           or _wr(st) < DEMOTE_MAX_WINRATE]
+    need = max(1, int(-(-len(rows) * BREADTH_SHARE // 1)))  # ceil
+    if len(bad) >= need:
+        return True, f"Gesamtbild: {len(bad)}/{len(rows)} Assets negativ ({', '.join(sorted(bad))})"
+    return False, (f"Gesamtbild ok: nur {len(bad)}/{len(rows)} Assets negativ "
+                   f"(Rückstufung erst ab {need}) – Kapital je Asset wird stattdessen reduziert")
+
+
 def trade_params(t: Dict) -> Optional[Dict]:
     """SL-%, TP-Ratio, Hebel, Timeframe eines Trades (rein)."""
     try:
@@ -259,30 +283,38 @@ def context_lines(state: Dict) -> List[str]:
 # --------------------------------------------------------------------------
 # DB-Anbindung (dünn)
 # --------------------------------------------------------------------------
-async def refresh_profiles(db, doc: Dict, setups: List[str], lookback_days: int) -> Tuple[Dict, bool]:
-    """Profile/Versionen aller Setups fortschreiben. Rückgabe (state, changed)."""
+async def refresh_profiles(db, doc: Dict, setups: List[str], lookback_days: int,
+                           symbols: Optional[List[str]] = None,
+                           scope_label: str = "") -> Tuple[Dict, bool]:
+    """Profile/Versionen aller Setups fortschreiben. Rückgabe (state, changed).
+    `symbols` begrenzt auf eine Anlageklasse (Profile sind je Klasse getrennt –
+    Forex-SL-Prozente haben mit Krypto nichts gemein)."""
     from datetime import timedelta
     state: Dict[str, Dict] = dict(doc.get(STATE_KEY) or {})
     cutoff = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).isoformat()
+    match = {"strategy_id": "ai_trader", "status": "closed", "opened_at": {"$gte": cutoff},
+             "setup": {"$in": list(setups)}}
+    if symbols is not None:
+        match["symbol"] = {"$in": list(symbols)}
     rows = await db.auto_trades.find(
-        {"strategy_id": "ai_trader", "status": "closed", "opened_at": {"$gte": cutoff},
-         "setup": {"$in": list(setups)}},
+        match,
         {"_id": 0, "setup": 1, "entry": 1, "sl": 1, "initial_sl": 1, "tpf": 1, "leverage": 1,
          "timeframe": 1, "realized_pnl": 1, "opened_at": 1}).to_list(5000)
     by_setup: Dict[str, List[Dict]] = {}
     for r in rows:
         by_setup.setdefault(str(r.get("setup")), []).append(r)
     original = dict(doc.get(STATE_KEY) or {})
+    tag = f" [{scope_label}]" if scope_label else ""
     for sid, trades in by_setup.items():
         new_entry, event = evolve_versions(state.get(sid) or {}, trades)
         if new_entry.get("versions"):
             state[sid] = new_entry
         if event:
-            logger.info(f"Setup-Profil '{sid}': {event}")
+            logger.info(f"Setup-Profil '{sid}'{tag}: {event}")
             try:
                 await db.ai_chat.insert_one({
                     "id": str(uuid.uuid4()), "role": "playbook", "setup": sid,
-                    "text": f"Setup '{sid}' – {event}", "ts": _now_iso()})
+                    "text": f"Setup '{sid}'{tag} – {event}", "ts": _now_iso()})
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"Setup-Profil Feed '{sid}' fehlgeschlagen: {e}")
     return state, state != original

@@ -142,7 +142,8 @@ def test_refresh_demotes_instead_of_locking():
     lb = ai_playbook.live_block_reason("momentum_news")
     assert lb and "rückgestuft" in lb and "Paper-Datensammlung" in lb
     assert ai_playbook.live_ready_for("momentum_news", WEAK)[0] is False
-    assert ai_playbook.live_ready_for("breakout", GOOD) == (True, "bewährt")
+    assert ai_playbook.live_ready_for("breakout", GOOD)[0] is True
+    assert ai_playbook.live_ready_for("breakout", GOOD, asset_class="crypto") == (True, "bewährt")
     # Persistenz
     assert db.settings.doc["disabled"] == {} and "momentum_news" in db.settings.doc["live_blocked"]
 
@@ -180,7 +181,7 @@ def test_refresh_repromotes_after_good_paper_trades_and_no_pingpong():
     data = asyncio.run(ai_playbook.refresh(db))
     assert "momentum_news" not in data["live_blocked"], "Paper-Erfolg muss wieder live schalten"
     assert data["live_ready"]["momentum_news"] is True
-    assert data["eval_since"]["momentum_news"] == since
+    assert data["classes"]["crypto"]["eval_since"]["momentum_news"] == since
     assert ai_playbook.live_ready_for("momentum_news", WEAK)[0] is True
     # zweiter Lauf: alte 30-Tage-Verluste dürfen NICHT sofort erneut zurückstufen
     data2 = asyncio.run(ai_playbook.refresh(db))
@@ -193,7 +194,7 @@ def test_context_text_mentions_demotion_not_lock():
              {"_id": "ai_playbook_state", "disabled": {}, "live_ready": {}})
     text = asyncio.run(ai_playbook.context_text(db))
     assert "RÜCKGESTUFT" in text and "GESPERRT" not in text
-    assert "RÜCKGESTUFTE SETUPS" in text and "KEINE Sperre" in text
+    assert "KEINE Sperre" in text and "setup_revisions" in text
 
 
 def test_maturity_overview_uses_demotion_phase_and_judge_stats():

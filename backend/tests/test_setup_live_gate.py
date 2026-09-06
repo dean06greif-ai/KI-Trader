@@ -134,13 +134,18 @@ def test_refresh_posts_feed_message_on_transition():
              "live_ready": {"breakout": False}}
     db = _DB(rows, state)
     asyncio.run(ai_playbook.refresh(db))
-    assert len(db.ai_chat.inserted) == 1
-    msg = db.ai_chat.inserted[0]
+    # Seit 06/2026 je Anlageklasse: die Fake-DB liefert für JEDE Klasse dieselben
+    # Zeilen -> genau eine Meldung pro Klasse (+ einmaliger Umstellungs-Hinweis)
+    def _msgs():
+        return [m for m in db.ai_chat.inserted
+                if m["setup"] == "breakout" and m.get("asset_class") == "crypto"]
+    assert len(_msgs()) == 1
+    msg = _msgs()[0]
     assert msg["role"] == "playbook" and msg["setup"] == "breakout"
     assert "LIVE-freigeschaltet" in msg["text"] and "6 Trades" in msg["text"]
     # Status persistiert -> zweiter Lauf meldet NICHT erneut
     asyncio.run(ai_playbook.refresh(db))
-    assert len(db.ai_chat.inserted) == 1
+    assert len(_msgs()) == 1
 
 
 def test_refresh_no_feed_message_on_first_init():

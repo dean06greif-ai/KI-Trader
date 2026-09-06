@@ -120,7 +120,8 @@ def test_ai_engine_defaults_include_sizing_and_prompt_enum():
     for p in (ANALYSIS_SYSTEM, ANALYSIS_SYSTEM_LEAN):
         assert "order_block|fvg_fill|htf_range" in p
         assert '"new_setups"' in p
-    assert ai_playbook.SETUP_ENUM.endswith("order_block|fvg_fill|htf_range")
+    assert "order_block|fvg_fill|htf_range" in ai_playbook.SETUP_ENUM
+    assert ai_playbook.SETUP_ENUM.endswith("funding_fade|session_open|divergence")
 
 
 # ------------------------------------------------------------------ Playbook (rein)
@@ -158,7 +159,8 @@ def test_live_divergent():
     good = {"trades": 79, "wins": 38, "pnl": 40.0, "verdict": "neutral"}
     assert pb.live_divergent(weak, good) is not None
     assert pb.live_divergent({"trades": 5, "wins": 0, "pnl": -3, "verdict": "test"}, good) is None
-    assert pb.live_divergent(weak, {**good, "verdict": "schwach"}) is None
+    # Gesamt-Urteil 'schwach' ist seit 06/2026 selbst ein Rückstufungsgrund
+    assert "Gesamt-Urteil schwach" in pb.live_divergent(weak, {**good, "verdict": "schwach"})
     assert pb.live_divergent(None, good) is None
     assert pb.live_divergent({"trades": 10, "wins": 6, "pnl": 3, "verdict": "bewährt"}, good) is None
 
@@ -171,7 +173,7 @@ def test_maturity_overview_live_columns():
     lb = {"squeeze_breakout": {"reason": "live 15 Trades"}}
     rows = {r["setup"]: r for r in pb.maturity_overview(stats, {}, lb, live)}
     r = rows["squeeze_breakout"]
-    assert r["live_ready"] is False and r["reason"].startswith("live pausiert")
+    assert r["live_ready"] is False and r["reason"].startswith("rückgestuft")
     assert r["live_trades"] == 15 and r["live_winrate"] == 7
     assert rows["vwap_reclaim"]["custom"] is True and rows["order_block"]["custom"] is False
     pb.set_custom_cache({})
@@ -216,37 +218,48 @@ async def _db_tests():
     db = client[TEST_DB]
     await client.drop_database(TEST_DB)
 
-    # ---- Divergenz-Gate: Paper ok, live schwach -> live_blocked, weiter sammelbar
+    # ---- Divergenz-Gate: Paper ok, live schwach -> live_blocked (je Anlageklasse),
+    # weiter sammelbar. Seit 06/2026 laufen Reife/Rückstufung pro Klasse
+    # (services/setup_asset_class.py) -> Trades brauchen ein Symbol.
     rows = []
     for i in range(60):   # Sammel-Trades: 50 % Win
-        rows.append({"id": f"c{i}", "strategy_id": "ai_trader", "status": "closed",
+        rows.append({"id": f"c{i}", "strategy_id": "ai_trader", "status": "closed", "symbol": "BTCUSDT",
                      "mode": "paper", "data_collection": True, "setup": "squeeze_breakout",
                      "realized_pnl": 1.5 if i % 2 else -0.8, "opened_at": iso(days=2)})
     for i in range(15):   # Live: 1 Gewinner von 15
-        rows.append({"id": f"l{i}", "strategy_id": "ai_trader", "status": "closed",
+        rows.append({"id": f"l{i}", "strategy_id": "ai_trader", "status": "closed", "symbol": "BTCUSDT",
                      "mode": "live", "setup": "squeeze_breakout",
                      "realized_pnl": 0.5 if i == 0 else -1.5, "opened_at": iso(days=1)})
     await db.auto_trades.insert_many(rows)
-    data = await pb.refresh(db)
+    data = await pb.refresh(db, force=True)
     assert data["stats"]["squeeze_breakout"]["verdict"] in ("neutral", "bewährt")
-    assert "squeeze_breakout" in data["live_blocked"], data["live_blocked"]
-    assert data["live_ready"]["squeeze_breakout"] is False
+    crypto = data["classes"]["crypto"]
+    assert "squeeze_breakout" in crypto["live_blocked"], crypto["live_blocked"]
+    assert crypto["live_ready"]["squeeze_breakout"] is False
+    assert data["live_ready"]["squeeze_breakout"] is False           # global abgeleitet
+    assert "squeeze_breakout" not in data["classes"]["forex"]["live_blocked"]  # andere Klasse unberührt
     assert "squeeze_breakout" not in data["disabled"]
-    assert pb.live_block_reason("squeeze_breakout") and "live-schwach" in pb.live_block_reason("squeeze_breakout")
+    assert pb.live_block_reason("squeeze_breakout", asset_class="crypto") \
+        and "Krypto" in pb.live_block_reason("squeeze_breakout", asset_class="crypto")
+    assert pb.live_block_reason("squeeze_breakout") is None      # global: nicht in allen Klassen
+    assert pb.live_ready_for("squeeze_breakout", None, asset_class="crypto")[0] is False
     assert pb.disabled_reason("squeeze_breakout") is None   # Sammeln bleibt erlaubt
-    feed = await db.ai_chat.find_one({"role": "playbook", "setup": "squeeze_breakout"})
-    assert feed and "live deutlich schlechter" in feed["text"]
+    feed = await db.ai_chat.find_one({"role": "playbook", "setup": "squeeze_breakout", "asset_class": "crypto"})
+    assert feed and "Krypto schwach" in feed["text"]
     # Idempotent: zweiter Lauf legt keine zweite Sperre/Meldung an
-    await pb.refresh(db)
-    assert await db.ai_chat.count_documents({"role": "playbook", "setup": "squeeze_breakout"}) == 1
+    await pb.refresh(db, force=True)
+    assert await db.ai_chat.count_documents({"role": "playbook", "setup": "squeeze_breakout",
+                                             "text": {"$regex": "schwach"}}) == 1
     # Ablauf der Live-Sperre -> Re-Test freigegeben
     await db.settings.update_one({"_id": pb.STATE_ID}, {"$set": {
-        "live_blocked.squeeze_breakout.retest_at": iso(days=1)}})
+        "classes.crypto.live_blocked.squeeze_breakout.retest_at": iso(days=1)}})
     await db.auto_trades.delete_many({"mode": "live"})
-    data = await pb.refresh(db)
-    assert "squeeze_breakout" not in data["live_blocked"]
+    data = await pb.refresh(db, force=True)
+    assert "squeeze_breakout" not in data["classes"]["crypto"]["live_blocked"]
     ctx = await pb.context_text(db)
-    assert "order_block" in ctx and "new_setups" in ctx and "MULTI-TIMEFRAME" in ctx
+    assert "order_block" in ctx and "new_setups" in ctx and "MTF" in ctx
+    ctx_fx = await pb.context_text(db, classes=["forex"])
+    assert "funding_fade" not in ctx_fx and "KLASSE Forex" in ctx_fx and "Krypto" not in ctx_fx.split("\n")[0]
     print("  ✓ Divergenz-Gate (live schwach, paper ok) + Re-Test + Prompt-Block")
 
     # ---- KI-eigene Setups: anlegen, Shadow (nicht live-reif), ausmustern
@@ -255,7 +268,7 @@ async def _db_tests():
     assert res["status"] == "ok" and res["id"] == "vwap_reclaim"
     assert (await pb.propose_custom_setup(db, "vwap_reclaim", "nochmal eine lange Beschreibung dazu"))["status"] == "exists"
     assert (await pb.propose_custom_setup(db, "breakout", "kollidiert mit Playbook-Setup ....."))["status"] == "rejected"
-    data = await pb.refresh(db)
+    data = await pb.refresh(db, force=True)
     assert "vwap_reclaim" in data["custom"] and data["live_ready"]["vwap_reclaim"] is False
     assert pb.normalize_setup("vwap_reclaim") == "vwap_reclaim"
     ok, why = pb.live_ready(data["stats"].get("vwap_reclaim"))
@@ -271,9 +284,16 @@ async def _db_tests():
     # schwaches KI-Setup -> gesperrt UND ausgemustert (kein Re-Test), Wiedervorschlag abgelehnt
     await db.auto_trades.insert_many([
         {"id": f"v{i}", "strategy_id": "ai_trader", "status": "closed", "mode": "paper",
-         "data_collection": True, "setup": "vwap_reclaim", "realized_pnl": -1.0,
+         "symbol": "BTCUSDT", "data_collection": True, "setup": "vwap_reclaim", "realized_pnl": -1.0,
          "opened_at": iso(days=1)} for i in range(10)])
-    data = await pb.refresh(db)
+    data = await pb.refresh(db, force=True)
+    # schwach -> zuerst nur Rückstufung in der Klasse (Re-Test in RETEST_DAYS) ...
+    assert "vwap_reclaim" in data["classes"]["crypto"]["live_blocked"]
+    assert "vwap_reclaim" in data["custom"]
+    # ... bleibt es bis zum Re-Test schwach -> ausgemustert (kein zweiter Re-Test)
+    await db.settings.update_one({"_id": pb.STATE_ID}, {"$set": {
+        "classes.crypto.live_blocked.vwap_reclaim.retest_at": iso(days=1)}})
+    data = await pb.refresh(db, force=True)
     assert "vwap_reclaim" not in data["custom"]
     doc = await db.settings.find_one({"_id": pb.STATE_ID})
     assert "vwap_reclaim" in doc["custom_retired"]
