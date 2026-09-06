@@ -41,7 +41,7 @@ const PhaseCell = ({ r }) => {
   return <span style={{ color: '#FFB020' }}>sammelt Daten</span>;
 };
 
-export const SetupMaturityTable = ({ rows, showAssets }) => (
+export const SetupMaturityTable = ({ rows, showAssets, diagnosis }) => (
   <div style={{ overflowX: 'auto' }}>
   <table data-testid="ai-setup-maturity-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, whiteSpace: 'nowrap' }}>
     <thead>
@@ -79,7 +79,15 @@ export const SetupMaturityTable = ({ rows, showAssets }) => (
               : '—'}
           </td>
           {showAssets && <td style={{ padding: '4px 6px' }} data-testid={`ai-maturity-assets-${r.setup}`}><AssetCell assets={r.assets} /></td>}
-          <td style={{ padding: '4px 0 4px 6px' }} data-testid={`ai-maturity-phase-${r.setup}`}><PhaseCell r={r} /></td>
+          <td style={{ padding: '4px 0 4px 6px' }} data-testid={`ai-maturity-phase-${r.setup}`}>
+            <PhaseCell r={r} />
+            {diagnosis?.[r.setup]?.length > 0 && (
+              <span data-testid={`ai-maturity-diagnosis-${r.setup}`} title={diagnosis[r.setup].join('\n')}
+                style={{ marginLeft: 5, fontSize: 9.5, padding: '1px 4px', borderRadius: 3, background: '#2E2A1C', color: '#FFB020', cursor: 'help' }}>
+                Diagnose
+              </span>
+            )}
+          </td>
         </tr>
       ))}
     </tbody>

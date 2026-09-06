@@ -1541,6 +1541,11 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                         "sl_pct": float(d.get("sl_pct", 0.6) or 0.6),
                         "tp1_pct": float(d.get("tp1_pct", 0.9) or 0.9),
                         "tpf_pct": float(d.get("tpf_pct", 1.8) or 1.8),
+                        **setup_asset_class.clamp_levels(
+                            setup_asset_class.asset_class_of(sym),
+                            float(d.get("sl_pct", 0.6) or 0.6),
+                            float(d.get("tp1_pct", 0.9) or 0.9),
+                            float(d.get("tpf_pct", 1.8) or 1.8), horizon == "swing"),
                         "capital_pct": max(10, min(100, int(d.get("capital_pct", 100) or 100))),
                         # Key-Level-Limit-Orders (services/key_level_limits.py)
                         **key_level_limits.parse_decision_fields(d),
@@ -1559,6 +1564,9 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                         "prompt_version": pv,
                         "entry_market_snapshot": _observer.entry_snapshot(sym),
                     }
+                    if dec.get("levels_clamp") and action in ("LONG", "SHORT"):
+                        logger.info(f"{sym}: Klassen-Grenze angewendet – {dec['levels_clamp']}")
+                        dec["levels_reason"] = f"[Clamp: {dec['levels_clamp']}] {dec.get('levels_reason') or ''}"[:200]
                     # Gate v1 (Phase 5): Shadow-Prediction nur loggen, nie blocken
                     if action in ("LONG", "SHORT"):
                         from services.ml_gate import ml_gate

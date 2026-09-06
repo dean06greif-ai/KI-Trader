@@ -45,7 +45,7 @@ HINTS: Dict[str, str] = {
               "Übernacht dünn -> keine Breakouts außerhalb der US-Session."),
     RESOURCES: ("Makro-/News-getrieben (USD, Zinsen, Lager-/Förderdaten); Edge in "
                 "London/US-Session; SL an Struktur, nicht an Prozent-Standardwerten."),
-    FOREX: ("Geringe Vol (Tagesrange oft <1%): sl_pct 0.1-0.5 statt Krypto-Werte; "
+    FOREX: ("Geringe Vol (Tagesrange oft <1%); "
             "Range/Mean-Reversion stärker als Breakouts; Session-Überlappung London/NY."),
 }
 
@@ -56,6 +56,43 @@ GROUP_CLASSES: Dict[str, List[str]] = {
     "Indizes & Rohstoffe": [INDICES, RESOURCES],
     "Alle Assets": list(CLASSES),
 }
+
+# Harte SL/TP-Grenzen (% vom Preis) je Klasse – die KI bekommt sie als Hinweis,
+# durchgesetzt werden sie regelbasiert (clamp_levels): ein Krypto-SL von 0.6 %
+# ist in Forex das Dreifache der Tagesrange. Swing-Trades: Obergrenze ×2.
+LIMITS: Dict[str, Dict[str, float]] = {
+    CRYPTO: {"sl_min": 0.2, "sl_max": 3.0, "tpf_max": 8.0},
+    INDICES: {"sl_min": 0.1, "sl_max": 1.5, "tpf_max": 4.0},
+    RESOURCES: {"sl_min": 0.15, "sl_max": 2.0, "tpf_max": 5.0},
+    FOREX: {"sl_min": 0.05, "sl_max": 0.5, "tpf_max": 1.5},
+}
+
+
+def clamp_levels(asset_class: str, sl_pct: float, tp1_pct: float, tpf_pct: float,
+                 is_swing: bool = False) -> Dict:
+    """SL/TP-Prozente in die Klassen-Grenzen zwingen (rein & testbar). Wird der
+    SL geklemmt, skalieren die TPs im gleichen Verhältnis (CRV bleibt erhalten);
+    tpf zusätzlich an tpf_max gedeckelt. Liefert sl_pct/tp1_pct/tpf_pct und
+    levels_clamp (Notiz oder None)."""
+    lim = LIMITS.get(asset_class) or LIMITS[CRYPTO]
+    mult = 2.0 if is_swing else 1.0
+    sl_min, sl_max, tpf_max = lim["sl_min"], lim["sl_max"] * mult, lim["tpf_max"] * mult
+    sl = max(0.01, float(sl_pct or 0))
+    tp1 = max(0.0, float(tp1_pct or 0))
+    tpf = max(0.0, float(tpf_pct or 0))
+    note = None
+    new_sl = min(max(sl, sl_min), sl_max)
+    if new_sl != sl:
+        ratio = new_sl / sl
+        tp1, tpf = tp1 * ratio, tpf * ratio
+        note = f"SL {sl:.2f}%→{new_sl:.2f}% ({LABELS.get(asset_class, asset_class)}-Grenze, TPs ×{ratio:.2f})"
+        sl = new_sl
+    if tpf > tpf_max:
+        note = (note + "; " if note else "") + f"TPf {tpf:.2f}%→{tpf_max:.2f}%"
+        tpf = tpf_max
+        tp1 = min(tp1, tpf)
+    return {"sl_pct": round(sl, 4), "tp1_pct": round(tp1, 4), "tpf_pct": round(tpf, 4),
+            "levels_clamp": note}
 
 
 def asset_class_of(symbol: Optional[str]) -> str:

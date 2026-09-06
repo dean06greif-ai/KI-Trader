@@ -43,6 +43,7 @@ from typing import Dict, List, Optional, Tuple
 
 from services import setup_asset_class as ac
 from services import setup_capital
+from services import setup_diagnosis
 from services import setup_lifecycle as lifecycle
 
 logger = logging.getLogger(__name__)
@@ -950,7 +951,9 @@ async def context_text(db, classes: Optional[List[str]] = None) -> str:
         lib.update(class_setups(c))
     lines = [f"=== STRATEGIE-PLAYBOOK {labels} (Feld \"setup\" – Pflicht bei LONG/SHORT) ==="]
     for c in classes:
-        lines.append(f"KLASSE {ac.LABELS[c]}: {ac.HINTS[c]}")
+        lim = ac.LIMITS[c]
+        lines.append(f"KLASSE {ac.LABELS[c]}: {ac.HINTS[c]} Grenzen (werden erzwungen): "
+                     f"sl_pct {lim['sl_min']}-{lim['sl_max']}, tpf_pct ≤{lim['tpf_max']} (Swing ×2).")
     for sid, desc in lib.items():
         only = [c for c in classes if ac.setup_allowed(c, sid)]
         tag = f" [nur {'/'.join(ac.LABELS[c] for c in only)}]" if len(only) < len(classes) else ""
@@ -965,6 +968,16 @@ async def context_text(db, classes: Optional[List[str]] = None) -> str:
             logger.debug(f"Playbook TF-Statistik übersprungen: {e}")
         lines.extend(lifecycle.context_lines(cd.get(lifecycle.STATE_KEY) or {}))
         demoted += [f"{s}@{c}" for s in cd["live_blocked"]]
+        # Regelbasierte Fehlerdiagnose (max. 2 Setups je Klasse, ~3 Zeilen) – die
+        # Basis für eine gezielte statt geratene setup_revision
+        for sid in list(cd["live_blocked"])[:2]:
+            try:
+                diag = await setup_diagnosis.for_setup(db, c, sid)
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Setup-Diagnose {sid}@{c} übersprungen: {e}")
+                diag = []
+            if diag:
+                lines.append(f"DIAGNOSE {sid}@{c}: " + " | ".join(diag[:3]))
     if demoted:
         lines.append("RÜCKGESTUFT (nur Paper-Datensammlung, KEINE Sperre – bewusst weiter für Paper "
                      "nutzen): " + ", ".join(demoted)
@@ -1072,7 +1085,14 @@ async def status(db) -> Dict:
     classes_out = {}
     for cls in ac.CLASSES:
         cd = data["classes"][cls]
+        diag: Dict[str, List[str]] = {}
+        for sid in list(cd["live_blocked"])[:4]:
+            try:
+                diag[sid] = await setup_diagnosis.for_setup(db, cls, sid)
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Setup-Diagnose {sid}@{cls}: {e}")
         classes_out[cls] = {
+            "diagnosis": diag,
             "label": ac.LABELS[cls], "symbols": ac.symbols_of(cls),
             "excluded": sorted(ac.EXCLUDED.get(cls, set())),
             "stats": cd["stats"], "live_stats": cd["live_stats"],

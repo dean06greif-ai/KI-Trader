@@ -146,7 +146,7 @@ export const AIEquityPanel = () => {
       </div>
       {maturity === null && <div style={{ fontSize: 12, opacity: 0.7 }}>Lade…</div>}
       {Array.isArray(maturity) && maturity.length > 0 && (
-        <SetupMaturityTable rows={maturity} showAssets={pbClass !== 'all'} />
+        <SetupMaturityTable rows={maturity} showAssets={pbClass !== 'all'} diagnosis={pbClass !== 'all' ? playbook?.classes?.[pbClass]?.diagnosis : null} />
       )}
     </div>
   );
