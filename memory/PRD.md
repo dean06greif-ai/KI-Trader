@@ -31,6 +31,11 @@ Bestehende, produktiv laufende externe Daytrading-Website (GitHub: dean06greif-a
 - **UI**: Setup-Reife-Tabelle (KI-Trader → Verlauf) mit Tabs Gesamt/Krypto/Indizes/Rohstoffe/Forex, Spalte „Assets“ (×0.5 reduziert / ⏸ ausgesetzt), Badge „Rev.n“ für KI-Revisionen, Hinweis auf ausgeschlossene Setups (`SetupMaturityTable.js`). API `/api/ai/playbook` liefert zusätzlich `classes` + `class_order`.
 - **Tests**: neu `tests/test_asset_class_setups.py` (17 Tests: Mapping, Ausschlüsse, Kapital-Faktoren, Sizing, Gesamtbild-Regel, Migration, Klassen-Cache, Revisionen, Maturity); bestehende Suiten auf das Klassenmodell angepasst (test_risk_sizing_and_playbook_v2, test_playbook_demotion, test_setup_live_gate, test_playbook_tf – dort zuvor 3 veraltete Assertions). Bekannte umgebungsbedingte Fehler: `test_maturity_feed_e2e` (zählt gegen Produktions-DB), `test_iter38_*` (Port 8055).
 
+## Umgesetzt am 06.06.2026 (Nachtrag: Klassen-Grenzen + Fehlerdiagnose)
+- **SL/TP-Clamps je Anlageklasse** (`setup_asset_class.LIMITS/clamp_levels`, angewendet in `ai_engine` bei der Decision-Erzeugung): Krypto SL 0.2–3.0 %, Indizes 0.1–1.5 %, Rohstoffe 0.15–2.0 %, Forex 0.05–0.5 %; TPs skalieren mit (CRV bleibt), tpf gedeckelt, Swing ×2. Notiz landet in `levels_reason` + Log. Grenzen stehen auch im Prompt („werden erzwungen“).
+- **Regelbasierte Fehlerdiagnose** (`services/setup_diagnosis.py`, kein LLM): SL-Hit-Anteil, Schnell-Verluste (<5 Min), MFE („war im Plus“), Session-/TF-/Richtungs-Häufung. Fließt als `DIAGNOSE <setup>@<klasse>` (max. 2 Setups/Klasse, 3 Zeilen) in den Playbook-Block für rückgestufte Setups ein und als `classes.<cls>.diagnosis` in die API/UI (Badge „Diagnose“ mit Tooltip).
+- Tests: `tests/test_class_limits_and_diagnosis.py` (7 Tests).
+
 ## Backlog / Nächste Aufgaben (aktualisiert 06.06.2026)
 - P1: Manuelle Setup-Revision/Reset je Klasse über die UI (Admin-Endpoint auf `revise_setup`).
 - P1: Klassen-Hinweise (HINTS) und Ausschlüsse über Settings konfigurierbar machen.
