@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 22: verified all 7 reported changes. Seeded custom strategy 'Mein Test Strat' (custom_test9999) + closed trade into local Mongo, then validated backend slippage-stats name resolution/days-clamping via new pytest file (12/12 pass), ran the 3 requested unit-test files (16/16 pass), and verified frontend via Playwright on the preview URL: slippage card shows the clear name, TradeDetailCard ladder no longer contains peak/trough rows while meta still shows them, and StrategyAutoTradeModal has no require-all checkbox but still has the pre-signals checkbox. No regressions found; all checks green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Analytics > FILL-QUALITÄT (SLIPPAGE)", "issues": ["Strategy row renders 'Mein Test Strat · custom_test9999' in a single truncating span, so in the narrow right panel the visible label collapses to 'Mein Test Stra…' and 'Manuell (Bit…' – consider dropping the dimmed ID suffix (or moving it to the title tooltip) so the clear name is always readable"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iter22_slippage_names.py", "/app/backend/tests/_iter22_seed.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": ["Optional/minor: avoid truncating the strategy clear name in SlippageStatsCard (move '· <id>' suffix into the tooltip)"],
+  "critical_code_review_comments": [
+    "routers/autotrade.py get_slippage_stats issues a second unbounded auto_trades query (500 docs, sorted by opened_at) on every call only for the strategy_name fallback – consider limiting the query to the strategy_ids actually present in the groups to reduce DB load",
+    "days clamping 'days = 30 if days == 0 else max(1, min(days, 365))' is correct but the special-casing of 0 vs -5 (=>1) is non-obvious; a short docstring note or Query(ge=...) validation would be cleaner"
+  ],
+  "updated_files": ["/app/backend/tests/test_iter22_slippage_names.py", "/app/backend/tests/_iter22_seed.py"],
+  "success_rate": {"backend": "100% (28/28 tests)", "frontend": "100% (all 5 UI checks)"},
+  "seed_data_creation": "Seeded custom_strategies {id: custom_test9999, name: 'Mein Test Strat'} and closed auto_trade TEST_iter22_trade_1 (BTCUSDT, paper) via /app/backend/tests/_iter22_seed.py; BOTH DELETED again after testing (DB left clean). Re-run the seed script if manual re-verification is needed.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / Dean06Greif!/Admin (login worked, admin toast 'Admin angemeldet')",
+  "context_for_next_testing_agent": "Preview URL from frontend/.env is https://slippage-debug.preview.emergentagent.com. Trade list + SlippageStatsCard only render after clicking data-testid='view-trades' in the right panel (PerformanceAnalytics default view is 'overview'). Trade cards expand by clicking '.tdc-head'. Strategy AutoTrade modal opens via data-testid='strategy-trade-toggle-{id}' and triggers the admin login modal first when not authed. Bitunix keys intentionally unset - never enable live trading. Backend pytest must be run without extra -p flags (pytest.ini already sets xdist).",
+  "rca_of_the_issue": "N/A - no defects reproduced. Verified in code: bitunix_trade.py DEFAULT_COIN_CFG require_all_rules=True (l.796), PRE_SIGNAL exemption (l.1583), parse_closed_position sets net=gross when fee_included (no double funding), key_level_limits MAX_VALID_MIN_SWING=2880."
+}
