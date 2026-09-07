@@ -142,3 +142,23 @@ def test_fill_missing_fallback2_only_touches_empty_slots():
     assert nw["fallback2_provider"] != "mistral"
     assert mgr.config["learner"] == before_learner
     assert mgr._fill_missing_fallback2() == []
+
+
+def test_groq_replaced_in_large_prompt_roles_only():
+    mgr = ai_roles.AIRoleManager()
+    an = mgr.config["analyst"]
+    an.update({"provider": "openrouter", "model": "nvidia/nemotron-3-super-120b-a12b:free",
+               "fallback_provider": "groq", "fallback_model": "openai/gpt-oss-120b",
+               "fallback2_provider": "gemini", "fallback2_model": "gemini-3.5-flash-lite"})
+    tm_before = dict(mgr.config["trade_manager"])
+    swapped = mgr._replace_small_budget_models()
+    assert "analyst" in swapped
+    assert an["fallback_provider"] != "groq" and an["fallback_model"]
+    # kein Duplikat in der Kette
+    chain = [(an["provider"], an["model"]), (an["fallback_provider"], an["fallback_model"]),
+             (an["fallback2_provider"], an["fallback2_model"])]
+    assert len(set(chain)) == 3
+    assert mgr.config["trade_manager"] == tm_before  # kleine Prompts: Groq bleibt
+    for role in ai_roles.LARGE_PROMPT_ROLES:
+        for pp in ("provider", "fallback_provider", "fallback2_provider"):
+            assert ai_roles.ROLE_PRESETS[role].get(pp) != "groq"

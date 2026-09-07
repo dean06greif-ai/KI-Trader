@@ -52,17 +52,20 @@ ROLE_PRESETS: Dict[str, Dict] = {
     # eingestellt, alle Keys liefern 402 – siehe boot_migrations.migrate_cerebras_shutdown.)
     "analyst": {"provider": "openrouter", "model": "nvidia/nemotron-3-super-120b-a12b:free",
                 "fallback_provider": "gemini", "fallback_model": "gemini-3.5-flash",
-                "fallback2_provider": "groq", "fallback2_model": "openai/gpt-oss-120b"},
+                "fallback2_provider": "openrouter",
+                "fallback2_model": "nvidia/nemotron-3.5-lightning:free"},
     # Wenige Läufe pro Tag -> stärkstes verifiziertes Free-Reasoning-Modell
     "deep_analyst": {"provider": "openrouter",
                      "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
                      "fallback_provider": "gemini", "fallback_model": "gemini-3.6-flash",
-                     "fallback2_provider": "groq", "fallback2_model": "openai/gpt-oss-120b"},
+                     "fallback2_provider": "openrouter",
+                     "fallback2_model": "nvidia/nemotron-3-super-120b-a12b:free"},
     # Muss große Datenmengen sauber auswerten -> starkes Modell mit hohem Kontext
     "research_analyst": {"provider": "openrouter",
                          "model": "nvidia/nemotron-3-super-120b-a12b:free",
                          "fallback_provider": "gemini", "fallback_model": "gemini-3.5-flash",
-                         "fallback2_provider": "groq", "fallback2_model": "openai/gpt-oss-120b"},
+                         "fallback2_provider": "openrouter",
+                         "fallback2_model": "nvidia/nemotron-3.5-lightning:free"},
     # Reine Datensammlung, LLM nur optional -> günstigstes Modell
     "market_observer": {"provider": "groq", "model": "openai/gpt-oss-20b",
                         "fallback_provider": "gemini", "fallback_model": "gemini-3.1-flash-lite"},
@@ -92,6 +95,20 @@ ROLE_PRESETS: Dict[str, Dict] = {
 # Rolle (None), wird sie aus der Voreinstellung ergänzt – ohne Primär/Fallback 1
 # anzutasten (AIRoleManager.load -> _fill_missing_fallback2).
 FALLBACK2_REQUIRED_ROLES = ("trade_manager", "news_watcher", "analyst", "learner")
+
+# Rollen mit großen Prompts (Gruppen-Analyse, Backtest-/Optimizer-Auswertung):
+# Groq-Free hat ~7k Input-Budget (MODEL_INPUT_TOKEN_BUDGET) -> dort nie sinnvoll.
+LARGE_PROMPT_ROLES = ("analyst", "deep_analyst", "research_analyst")
+SMALL_BUDGET_PROVIDER = "groq"
+# Ersatz-Reihenfolge (alle mit >= 128k Kontext, gratis bzw. Free-Tier):
+LARGE_CONTEXT_CANDIDATES = (
+    ("gemini", "gemini-3.5-flash"),
+    ("openrouter", "nvidia/nemotron-3.5-lightning:free"),
+    ("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
+    ("gemini", "gemini-3.6-flash"),
+    ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),
+    ("gemini", "gemini-3.5-flash-lite"),
+)
 
 # Basis-Felder jeder Rolle. provider/model = None => erbt Haupt-Modell.
 _BASE_ROLE = {
@@ -222,7 +239,8 @@ class AIRoleManager:
                     clean["user_configured"] = owned
                     self.config[role].update(clean)
                 filled = self._fill_missing_fallback2()
-                changed = sorted(set(filled) | set(migrated))
+                swapped = self._replace_small_budget_models()
+                changed = sorted(set(filled) | set(migrated) | set(swapped))
                 if changed:
                     await db.settings.update_one(
                         {"_id": "ai_roles_config"},
@@ -231,6 +249,37 @@ class AIRoleManager:
                         logger.info(f"KI-Rollen: fehlende Fallback-2-Stufe ergänzt: {filled}")
         except Exception as e:
             logger.warning(f"AI roles load failed: {e}")
+
+    def _replace_small_budget_models(self) -> List[str]:
+        """Rollen mit großen Prompts (Analyst & Co., 10–20k Tokens): Groq-Free-
+        Modelle haben ~7k Input-Budget und werden in der Kette nur übersprungen
+        („Prompt zu groß“) – sie sind dort wertlos. Jeder Groq-Slot wird durch das
+        nächste Preset-Modell mit großem Kontext ersetzt, das noch nicht in der
+        Kette steht. Rein auf self.config; liefert geänderte Rollen."""
+        swapped: List[str] = []
+        for role in LARGE_PROMPT_ROLES:
+            cfg = self.config.get(role)
+            if not cfg:
+                continue
+            slots = (("provider", "model"), ("fallback_provider", "fallback_model"),
+                     ("fallback2_provider", "fallback2_model"))
+            used = {(cfg.get(pp), cfg.get(pm)) for pp, pm in slots if cfg.get(pm)}
+            changed = False
+            for pp, pm in slots:
+                if cfg.get(pp) != SMALL_BUDGET_PROVIDER or not cfg.get(pm):
+                    continue
+                for cand in LARGE_CONTEXT_CANDIDATES:
+                    if cand not in used and cand[1] in ai_providers.allowed_models(cand[0]):
+                        used.discard((cfg.get(pp), cfg.get(pm)))
+                        cfg[pp], cfg[pm] = cand
+                        used.add(cand)
+                        changed = True
+                        logger.info(f"AI role {role}: Groq ({pm}) hat zu kleines Token-Budget "
+                                    f"für diese Rolle -> {cand[0]}/{cand[1]}")
+                        break
+            if changed:
+                swapped.append(role)
+        return swapped
 
     def _fill_missing_fallback2(self) -> List[str]:
         """Kritische Rollen ohne zweite Fallback-Stufe aus der Voreinstellung
