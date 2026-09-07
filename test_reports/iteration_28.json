@@ -1,0 +1,34 @@
+{
+  "summary": "Fokus-Retest NUR des gefixten Strategie-Copilot-Chat-Flows (POST /api/copilot/chat). Backend 2/2 pytest passed, Frontend E2E passed. Chat antwortet jetzt in 1.5-10.3s (vorher >200s / 502 am Ingress). Modell nvidia/nemotron-3-super-120b-a12b:free greift als erstes aus FAST_MODEL_ORDER. Keine verwaisten user-Messages mehr in /api/copilot/history. Keine anderen Features getestet (laut Auftrag).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_copilot_chat_retest.py",
+    "/app/test_reports/pytest/iter28.xml"
+  ],
+  "action_items": [
+    "Optional (kein Bug): 4 Alt-Datensaetze in copilot_chat aus der Zeit VOR dem Fix (ts 09:29-09:36) sind interleaved gespeichert (user,user,assistant,assistant) - erste user-Message hat keine direkt folgende assistant-Antwort. Rein historisch, entsteht durch die neue Reihenfolge nicht mehr. Bei Bedarf per /api/copilot/history clear bereinigen."
+  ],
+  "critical_code_review_comments": [
+    "strategy_copilot.py chat(): Zeitbudget korrekt umgesetzt (PER_CALL_TIMEOUT=28, TOTAL_DEADLINE=52, remaining<6 -> break). Reihenfolge _store('user') NACH erfolgreichem LLM-Call verhindert Halb-Turns - verifiziert.",
+    "Hinweis: Bei Timeout aller Modelle wird die user-Nachricht gar nicht gespeichert - der Nutzer verliert seine Eingabe im Verlauf (Frontend zeigt sie aber optimistisch). Bewusster Trade-off, funktional ok.",
+    "StrategyCopilot.js send(): res.text()+JSON.parse-Fallback vorhanden; im Testlauf nicht ausgeloest, da alle Antworten valides JSON waren (Nicht-JSON-Pfad daher nur per Code-Review geprueft, nicht live)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter28_copilot_chat_retest.py"
+  ],
+  "success_rate": {"backend": "100% (2/2)", "frontend": "100% (1/1 Flow)"},
+  "seed_data_creation": "Mehrere Test-Chat-Nachrichten in copilot_chat (u.a. 'TEST_iter28: sag nur kurz Hallo.' und 'Bewerte kurz: trades=10, wins=6, ...'). Nicht geloescht, da /api/copilot/history ein Nutzer-Chatlog ist und clear alles loeschen wuerde.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md) - Login via POST /api/auth/login liefert token; Frontend via localStorage admin_token + admin_token_ts",
+  "context_for_next_testing_agent": "Copilot-Chat ist gefixt und verifiziert (Iteration 28). Messwerte: Backend extern 1.5-1.8s, Frontend E2E 10.3s bis Antwort-Bubble. Testdatei /app/backend/tests/test_iter28_copilot_chat_retest.py laeuft mit `pytest tests/test_iter28_copilot_chat_retest.py -n0` (pytest.ini nutzt xdist loadscope). WICHTIG fuer Frontend-Tests: Nach Klick auf copilot-send-btn zaehlt die optimistische User-Bubble + Platzhalter 'Copilot denkt nach...' bereits als 2 neue Kinder in copilot-messages -> NICHT auf Count pruefen, sondern warten bis der Text 'Copilot denkt nach' verschwindet. Navigation: tools-menu-button -> tools-menu-optimizer -> copilot-toggle -> copilot-input. Iteration 27 hat alles uebrige (HYPEUSDT, save_settings, apply/review/history/status) bereits abgedeckt.",
+  "rca_of_the_issue": "Vorheriger Fehler (Iteration 27): chat() lief die vollstaendige allowed_models-Kette ohne Zeitlimit durch; langsame Free-Modelle blockierten >200s, der Ingress lieferte 502, und die zuvor gespeicherte user-Message blieb ohne assistant-Antwort im Verlauf. Fix verifiziert: FAST_MODEL_ORDER stellt schnelle Modelle voran, asyncio.wait_for(28s) bricht haengende Calls ab, TOTAL_DEADLINE=52s haelt die Antwort unter dem 60s-Ingress-Limit, und das Speichern der user-Message erst nach erfolgreichem LLM-Call verhindert Halb-Turns."
+}
