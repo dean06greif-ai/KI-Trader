@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 10 – unabhängige Verifikation der 5 neuen Trade-Verbesserungen. Backend: neue API-Testsuite /app/backend/tests/test_iter10_trade_improvements_api.py (10 Tests, alle grün) gegen die öffentliche Preview-URL: Pagination (offset/limit/total, disjunkte Seiten, offset>total leer, ohne status kein 'total' + offene Trades immer enthalten, kein _id-Leak), MFE-Felder (computed.peak_price/peak_distance_pct/mfe_pct, Alt-Trades null, offene Trades Richtungs-Plausibilität), Trade-Chart (Struktur, candles.time in SEKUNDEN, Abdeckung opened_ts/closed_ts, 404 bei unbekannter ID). Bestehende Unit-Tests test_trade_improvements.py + test_role_fallback_attribution.py: 14/14 grün. Watchdog-Fix per Code-Review geprüft (round_up nur bei full=True, reduceOnly=True bleibt, 3x full=True im Watchdog, close_live_position gibt full durch, Teil-Close nutzt full=False). Frontend (Playwright, öffentliche URL, ANALYSE -> Tab Trades): Strategie-Filter (5 Optionen, 56->53/8 Karten, Kombination mit 'Nur BTC' -> 5 Karten, Reset auf 56), 'Mehr laden (+100)' 56->156->416 Karten mit '130 von 390'-Anzeige und Button verschwindet am Ende, Trade-Chart-Button nur bei geschlossenen Trades, Chart lädt on-demand (7 Canvas, Entry/SL/Exit-Linien sichtbar), KEIN Runtime-Error-Overlay, Toggle-Off entfernt Chart, MFE-Feld trade-peak ('—' bei Alt-Trades, lvl-peak-Zeile nur wenn peak vorhanden), Regression offene Karte (Preis-Leiter/Gebühren/KI-Begründung) intakt. Keine Schreib-/Order-Operationen ausgeführt.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/autotrade/trades/{id}/chart", "issue": "Forex-Symbole ohne Bitunix-Pair liefern leere candles[] mit HTTP 200 (geprüft: GBPUSD -> candles=[]; Krypto + SPYUSDT/QQQUSDT liefern 200 Kerzen). UI zeigt dann nur 'Keine Kerzendaten für diesen Zeitraum verfügbar'. Optional: Chart-Button für Symbole ohne Kline-Quelle ausblenden oder Fehlergrund mitliefern (z.B. {\"reason\":\"no_kline_source\"})."},
+      {"endpoint": "GET /api/autotrade/trades/{id}/chart", "issue": "Bitunix liefert immer limit=200 Kerzen (Span z.B. 3,3 h bei 0,5 h Trade), d.h. deutlich mehr Kontext als der berechnete Zeitraum – funktional ok, aber _chart_interval-Zielgröße (150 Kerzen) wird faktisch nicht respektiert; Payload ~200 Kerzen pro Chart-Öffnung."},
+      {"endpoint": "Preview-URL (Cold Start)", "issue": "Erste Anfrage nach Idle lief in 60s-Timeout (Plattform-Hibernation/Backfill); Folgeläufe antworten in <8s. Kein Applikationsfehler, nur für Testagenten relevant (erste Anfrage mit hohem Timeout absetzen)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Trade-Chart (TradeChart.js, aufgeklappte geschlossene Karte)", "issues": ["createPriceLine wird von der Auto-Skalierung nicht berücksichtigt: liegen TP1/TP Full weit außerhalb der Kerzen-Range (Beispiel ETHUSDT-1787507277786: Kerzen 2420–2460, TP1 2379, TPF 2354), sind diese Linien im Chart nicht sichtbar. Empfehlung: autoscaleInfoProvider der Serie um die Trade-Level erweitern oder Level außerhalb der Range als Randlabel markieren.", "Bei 240px Höhe in der schmalen Sidebar überlappen die Achsen-Labels (SL/Exit/Entry) sichtbar – lesbar, aber gedrängt.", "Kein ResizeObserver: der Chart behält die Breite vom Mount (Sidebar-/Fensterbreitenänderung skaliert den Chart nicht neu)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter10_trade_improvements_api.py",
+    "/app/test_reports/pytest/iter10_api.xml",
+    "/app/backend/tests/test_trade_improvements.py",
+    "/app/backend/tests/test_role_fallback_attribution.py"
+  ],
+  "action_items": [
+    "Optional (minor): TP-Linien in die Chart-Auto-Skalierung einbeziehen (autoscaleInfoProvider), sonst sind TP1/TP Full bei großen Distanzen unsichtbar.",
+    "Optional (minor): Trade-Chart für Symbole ohne Bitunix-Kline (Forex, z.B. GBPUSD) entweder ausblenden oder mit klarer Begründung im Response melden.",
+    "Optional (minor): ResizeObserver im TradeChart für Breitenänderungen."
+  ],
+  "critical_code_review_comments": [
+    "Watchdog-Fix korrekt und sicher: _fmt_qty(round_up=True) wird nur über flash_close(full=True) erreicht, reduceOnly=True bleibt in flash_close gesetzt (kein Überschließen möglich); Teil-Close (manual partial, line ~3116) nutzt full=False, TP-Ladder line ~3270 full=(left<=0) – korrekt.",
+    "loadMoreClosed() erhöht shownClosed auch bei früherem return (bereits alles geladen) – harmlos, aber die Anzeige 'x von y' nutzt Math.min(shownClosed, closedList.length), also konsistent.",
+    "PerformanceAnalytics.js hat 1020 Zeilen – wächst weiter; TradeDetailCard/Filter-Logik ließe sich in eigene Module auslagern (Wartbarkeit, >700-Zeilen-Regel).",
+    "TradeChart.js behandelt HTTP-Fehler (404) nicht explizit: r.json() eines 404 liefert {detail:...} -> Anzeige 'Keine Kerzendaten', nicht 'Chart konnte nicht geladen werden'. Nur kosmetisch, da der Button nur für existierende Trades erscheint."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter10_trade_improvements_api.py"],
+  "success_rate": {"backend": "100% (24/24: 10 neue API-Tests + 14 Unit-Tests)", "frontend": "100% der getesteten Flows (Filter, Load-More, Chart-Toggle, MFE, Regression)"},
+  "seed_data_creation": "keine – nur Lesezugriffe auf die Produktions-DB, keine Orders, keine Schreiboperationen",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin/Dean06Greif!/Admin (für die Lesetests nicht benötigt)",
+  "context_for_next_testing_agent": "Öffentliche Preview-URL funktioniert wieder (erste Anfrage kann >60s dauern – Cold Start). Neue Regressionssuite: cd /app/backend && python -m pytest tests/test_iter10_trade_improvements_api.py -n 0 -q (nutzt REACT_APP_BACKEND_URL). Aktuelle DB-Stände: 390 geschlossene / 26 offene Trades. UI-Navigation: rechte Sidebar ANALYSE -> [data-testid=view-trades]; Karten-Selektoren trade-card-toggle-{id}, trade-history-chart-btn-{id}, trade-chart-{id}, trade-peak-{id}, load-more-closed-btn, trade-filter-strategy, trade-filter-coin-toggle. Alte geschlossene Trades haben noch keinen peak_price (zeigen '—'); offene Trades liefern live berechneten Peak. Nicht getestet (bewusst, LIVE-Keys): Close-/Order-Endpoints, NewTradeModal-Absenden, Watchdog live.",
+  "rca_of_the_issue": "Kein Bug im Lieferumfang gefunden. Der einzige funktionale Randfall: /chart nutzt ausschließlich die Bitunix-Kline-API, daher liefern Forex-Symbole ohne Bitunix-Pair (GBPUSD) leere candles – die UI degradiert sauber mit Hinweistext."
+}

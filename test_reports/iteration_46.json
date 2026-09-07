@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 46 – Recovery (preview/run/report + idempotent), MasterPrompt-History/Restore (inkl. 404), Lessons-History/Restore (inkl. 404), Trade-Papierkorb (clear/list/restore + 404 auf restore & discard), Seeding-Automatik API (GET, POST, Clamps: interval_hours 1→6, days 9999→365, unbekannte asset_classes → alle 4) sowie Seeding-Ergebnisstruktur (last_result.trigger='manual', rows mit passed/tuned/failed/exhausted/live/no_data, tried>=1, is/oos-Kennzahlen) und Regression (autotrade/trades, performance, ai/lessons) via Pytest gegen REACT_APP_BACKEND_URL: 17/17 passed. Frontend: Admin-Login, KI-Trader Backtester → ai-seed-panel + ai-seed-auto (Toggle ON→'nächster Lauf 2026-09-06 18:42', OFF→'Automatik aus'), Selects (interval/days), alle 4 Klassen-Buttons, ai-seed-table mit 9 indices-Statuszellen sichtbar. MasterPrompt-Panel via KI Trader → edit-strategy-params-btn → ai-master-toggle → master-prompt-history-toggle: history sichtbar, 10 History-Einträge, 10 Restore-Buttons.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Backtester AITraderSeeding (AITraderSeeding.js:167)", "issues": ["React DOM-Warnung: <span> darf nicht Kind von <option> sein (Hydration-Warnung durch emergent-Instrumentation, kein Funktionsbug, aber die Struktur der <option>-Kinder ist zu prüfen)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter46_recovery_trash_seeding.py",
+    "/app/test_reports/pytest/iter46.xml"
+  ],
+  "action_items": [
+    "Optional: prüfen ob <option>-Elemente in AITraderSeeding.js:167 (interval-Select) inline-Ausdruck als reinen Text rendern, damit die Hydration-Warnung im DevBuild verschwindet"
+  ],
+  "critical_code_review_comments": [
+    "Recovery-Endpoints korrekt idempotent (2. run -> paper_trades.recovered=0, master_prompt.restored=false).",
+    "MasterPrompt-Restore erhöht Version wieder (audit-safe), Text ohne TESTMARKER nach Restore verifiziert.",
+    "Lessons-History-Snapshot enthält die erwarteten Felder id/ts/count/titles, Restore liefert status=success + restored count.",
+    "Trade-Trash-Listenendpunkt liefert bewusst keine trades-Arrays (Payload klein) – Restore liefert restored==count.",
+    "Auto-API Clamping robust: interval_hours<6->6, days>365->365, unbekannte Klassen -> Default alle 4.",
+    "Keine <option>-Struktur-Warnung im Build-Prozess adressiert; funktional aber unkritisch."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter46_recovery_trash_seeding.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "Lektion 'QA_TEST_History' temporär angelegt und wieder entfernt; MasterPrompt kurzzeitig mit TESTMARKER erweitert und via restore auf vorherige Version zurückgestellt; Trade-Trash für strategy=manual geleert und anschließend restauriert.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Alle backend/frontend Prüfungen der Iteration 46 grün. Ein Playwright-Skript und ein pytest-File (test_iter46_recovery_trash_seeding.py) stehen bereit. Preview-DB ist bereits recovert – deshalb liefert recovery/run auch beim ersten Aufruf paper_trades.recovered=0 (idempotent, siehe agent_to_agent_context_note)."
+}
