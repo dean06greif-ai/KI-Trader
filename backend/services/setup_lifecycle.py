@@ -196,9 +196,12 @@ def should_rollback(active: Dict, best: Dict) -> bool:
     return a < 0 or a < b * 0.5 and active.get("winrate", 0) < best.get("winrate", 0)
 
 
-def evolve_versions(entry: Dict, trades: List[Dict], now_iso: Optional[str] = None) -> Tuple[Dict, Optional[str]]:
+def evolve_versions(entry: Dict, trades: List[Dict], now_iso: Optional[str] = None,
+                    hint: Optional[Dict] = None) -> Tuple[Dict, Optional[str]]:
     """Versionen eines Setups fortschreiben (rein): initiales Profil, Tuning in
-    kleinen Schritten, Auto-Rollback. Rückgabe (neuer Eintrag, Ereignis-Text)."""
+    kleinen Schritten, Auto-Rollback. Rückgabe (neuer Eintrag, Ereignis-Text).
+    `hint` = robuster Nachanalyse-Befund {param: 'tp_ratio'|'sl_pct', factor, note}
+    -> genau EIN Parameter, Schritt gedeckelt, als eigene Version (Rollback greift)."""
     now_iso = now_iso or _now_iso()
     entry = dict(entry or {})
     versions: List[Dict] = [dict(v) for v in (entry.get("versions") or [])]
@@ -241,6 +244,22 @@ def evolve_versions(entry: Dict, trades: List[Dict], now_iso: Optional[str] = No
             event = (f"Profil v{active['v'] + 1}: SL {active['params'].get('sl_pct')}% -> {tuned['sl_pct']}%, "
                      f"TP-Ratio {active['params'].get('tp_ratio')} -> {tuned['tp_ratio']} "
                      f"(max. ±{int(TUNE_MAX_STEP * 100)} % je Schritt)")
+    # 3) Nachanalyse-Befund (robust gefiltert) als eigene Version – ein Parameter,
+    #    nur wenn die aktive Version schon bewertbar ist und der Befund neu ist.
+    if event is None and hint and hint.get("param") in ("sl_pct", "tp_ratio") \
+            and int(a_st.get("trades") or 0) >= ROLLBACK_MIN_TRADES \
+            and not str(active.get("note") or "").startswith("Nachanalyse"):
+        param, factor = hint["param"], float(hint.get("factor") or 1.0)
+        old = active["params"].get(param)
+        if old and abs(factor - 1.0) >= 0.02:
+            new_val = clamp_step(old * factor, old)
+            tuned = dict(active["params"])
+            tuned[param] = new_val
+            versions.append({"v": active["v"] + 1, "since": now_iso, "params": tuned,
+                             "note": f"Nachanalyse: {hint.get('note') or param}", "postmortem": True})
+            label = "SL" if param == "sl_pct" else "TP-Ratio"
+            event = (f"Profil v{active['v'] + 1} aus Nachanalyse: {label} {old} -> {new_val} "
+                     f"({hint.get('note') or 'robuster Befund'}; Rollback automatisch, falls schlechter)")
     if len(versions) > MAX_VERSIONS:
         versions = versions[-MAX_VERSIONS:]
     entry["versions"] = versions
@@ -305,8 +324,15 @@ async def refresh_profiles(db, doc: Dict, setups: List[str], lookback_days: int,
         by_setup.setdefault(str(r.get("setup")), []).append(r)
     original = dict(doc.get(STATE_KEY) or {})
     tag = f" [{scope_label}]" if scope_label else ""
+    # Robuste Nachanalyse-Befunde (services/trade_postmortem.py) als Versionsvorschlag
+    hints: Dict[str, Dict] = {}
+    try:
+        from services.trade_postmortem import postmortem
+        hints = await postmortem.proposals()
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"Nachanalyse-Vorschläge übersprungen: {e}")
     for sid, trades in by_setup.items():
-        new_entry, event = evolve_versions(state.get(sid) or {}, trades)
+        new_entry, event = evolve_versions(state.get(sid) or {}, trades, hint=hints.get(sid))
         if new_entry.get("versions"):
             state[sid] = new_entry
         if event:

@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from services.ai_memory import memory
+from services import runner_policy
 from services.ai_master_prompt import master_prompt
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,8 @@ TRADE_MANAGER_SYSTEM = (
     '"tpf_pct": 2.0, "leverage": null, "capital_pct": 50, "confidence": 70, "reason": "..."}], '
     '"note": "1-3 Sätze Gesamteinschätzung"}\n'
     "Zu 'horizon' bei new_trades: 'swing' = übergeordneter, langfristiger Trade mit niedrigem "
-    "Hebel und weiten Zielen (sl_pct bis 12, tp bis 60); 'runner': true nur bei swing = nach "
+    "Hebel und weiten Zielen (sl_pct bis 12, tp bis 60); 'runner': true bei swing oder bei "
+    "News-getriebenen Scalps (dann 'news_impact': 'positive'|'negative' angeben) = nach "
     "TP1 läuft der Rest mit Trailing-Stop weiter (kein festes Endziel). "
     "Zu 'leverage' bei new_trades: null = Hebel aus der Coin-Config des Traders (Standard). "
     "Setze nur dann einen eigenen Hebel, wenn du ihn in 'reason' explizit begründest."
@@ -621,7 +623,9 @@ class AITradeManager:
                 return default
 
         horizon = "swing" if str(spec.get("horizon") or "").lower() == "swing" else "scalp"
-        runner = bool(spec.get("runner")) and horizon == "swing"
+        runner = runner_policy.runner_allowed(
+            {"runner": spec.get("runner"), "horizon": horizon,
+             "news_impact": spec.get("news_impact")}, self.engine.config or {})
         if horizon == "swing":
             swing_cfg = (self.engine.config or {})
             if not swing_cfg.get("swing_enabled", True):
@@ -636,6 +640,8 @@ class AITradeManager:
             sl_pct = _f("sl_pct", 0.8, 0.15, 5.0) / 100
             tp1_pct = _f("tp1_pct", 1.2, 0.2, 8.0) / 100
             tpf_pct = max(tp1_pct, _f("tpf_pct", 2.0, 0.3, 15.0) / 100)
+            if runner:
+                tpf_pct = runner_policy.scalp_runner_tpf(sl_pct, tpf_pct)
         sign = 1 if side == "LONG" else -1
         sl = price * (1 - sign * sl_pct)
         tp1 = price * (1 + sign * tp1_pct)

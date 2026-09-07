@@ -83,6 +83,19 @@ Mongo (nie Prod-DB, siehe RCA oben) und Telegram lokal aus.
 - Tests `tests/test_trade_postmortem.py` (17 grün), Seed `tests/_seed_postmortem.py`, Testagent
   Iteration 49 grün. Bestands-Suite: 14 identische umgebungsbedingte Fehler wie Original → keine Regression.
 
+### Umgesetzt (07.09.2026, Runde 2)
+- `services/runner_policy.py` (rein): Runner auch für Scalp-/News-Trades (`runner_scalp_enabled`,
+  `runner_scalp_news_only`, Endziel 8R/max 15 %), `noise_safe_sl` (Mindestabstand SL↔Kurs =
+  max(ATR, 0.1 %/Swing 0.3 %)), `liq_safe_sl` (SL vor der Liq nach Margen-Freisetzung),
+  `trail_candidate` im Key-Level-Trailing (`bitunix_trade.py`). Hooks in `ai_engine.py`
+  (`runner_allowed`, `scalp_runner_tpf`, Prompt-Text) und `ai_trade_manager.py`.
+- Gewinnschutz für Datensammel-Trades per Policy-Schalter (`collection_enabled`, Default aus,
+  `collection_trigger_pct` 60 %) – `PATCH /api/autotrade/ai-protection`.
+- Nachanalyse → Setup-Version: `trade_postmortem.proposals()` (nur Backtest-bestätigt) →
+  `setup_lifecycle.evolve_versions(hint=…)`: genau ein Parameter, ±20 %, Note „Nachanalyse: …“,
+  nicht doppelt, Auto-Rollback greift. UI: Schalter „Runner bei News-Scalps“ im KI-Panel.
+- Tests `tests/test_runner_policy.py` (11), Gesamt-Suite ohne neue Fehler.
+
 ### Backlog (nächste Runden)
 - P0: Runner/Margin-Trick auch für News-/Scalp-Trades (Flag), Trailing an Key-Levels + Margen-
   Freisetzung kombiniert, Mindestabstand SL↔Kurs (ATR-Rauschen) und SL↔Liq prüfen.

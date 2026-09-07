@@ -37,6 +37,7 @@ from typing import Dict, List, Optional
 from core import instruments as _instruments
 from services.technical_indicators import TechnicalIndicators
 from services.backtester import effective_leverage
+from services.runner_policy import trail_candidate
 
 logger = logging.getLogger(__name__)
 
@@ -1158,6 +1159,8 @@ class AutoTradeManager:
         "margin_reduce_pct": 100.0,
         "sl_liq_buffer_pct": 0.3,   # SL bleibt sicher VOR der neuen Liq
         "level_trail": True,        # Key-Level-Trailing (SL hinter durchbrochene Levels)
+        "collection_enabled": False,  # Gewinnschutz/Margen-Trick auch für Datensammel-Trades
+        "collection_trigger_pct": 60.0,  # ... aber erst ab größerem Abstand (ML-Labels bleiben sauber)
     }
 
     async def ai_protection_policy(self, force: bool = False) -> Dict:
@@ -2498,16 +2501,19 @@ class AutoTradeManager:
         # SL in den Gewinn ziehen + Marge freisetzen bei Hebel-Maximierung,
         # SL sicher vor der Liq). Aktiv OHNE Coin-Einstellungen; dynamisch über
         # settings['ai_profit_protection'] anpass-/abschaltbar (API vorhanden).
-        if (strategy_id == "ai_trader" and not collection
-                and not trade["manual_trade"]):
+        if (strategy_id == "ai_trader" and not trade["manual_trade"]):
             pol = await self.ai_protection_policy()
-            if pol.get("enabled", True):
+            # Datensammel-Trades: nur mit explizitem Schalter und höherer Schwelle
+            coll_ok = bool(pol.get("collection_enabled", False))
+            if pol.get("enabled", True) and (not collection or coll_ok):
                 trade["ai_protection_policy"] = True
                 trade["key_level_trail"] = bool(pol.get("level_trail", True))
+                trig = float(pol.get("collection_trigger_pct", 60.0) or 60.0) if collection \
+                    else float(pol["trigger_pct"])
                 if not trade["profit_secure_enabled"]:
                     trade.update({
                         "profit_secure_enabled": True,
-                        "profit_secure_trigger_pct": max(5.0, float(pol["trigger_pct"])),
+                        "profit_secure_trigger_pct": max(5.0, trig),
                         "profit_lock_pct": float(pol["lock_pct"]),
                         "profit_secure_release_margin": bool(pol["release_margin"]),
                         "profit_secure_max_leverage": float(pol["max_leverage"]),
@@ -3119,6 +3125,10 @@ class AutoTradeManager:
             new_kl_sl = key_level_trail_sl(
                 candles, side, t["entry"], updates.get("sl", t["sl"]),
                 price, risk_kl)
+            if new_kl_sl is not None:
+                # Rausch-/Liq-Schutz (services/runner_policy.py): Mindestabstand
+                # zum Kurs (ATR) und SL vor der verschobenen Liq nach Margen-Freisetzung
+                new_kl_sl = trail_candidate(t, candles, price, new_kl_sl, updates.get("sl", t["sl"]))
             if new_kl_sl is not None:
                 updates["sl"] = new_kl_sl
                 events.append(f"KEY-LEVEL-TRAIL: SL -> {new_kl_sl} "

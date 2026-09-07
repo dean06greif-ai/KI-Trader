@@ -1925,6 +1925,18 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                 </select>
               </label>
             )}
+            <label className="ai-setup-check" title="Runner auch für Scalp-Trades erlauben (Standard: nur wenn News-getrieben). Dann kein voller TP: Endziel sehr weit, SL wird an Key-Levels nachgezogen – mit Mindestabstand gegen Rauschen und sicher vor der Liq (auch nach Margen-Freisetzung)">
+              <span>Runner bei News-Scalps</span>
+              <input type="checkbox" checked={cfg.runner_scalp_enabled !== false}
+                onChange={e => updateConfig({ runner_scalp_enabled: e.target.checked })} data-testid="ai-runner-scalp-toggle" />
+            </label>
+            {cfg.runner_scalp_enabled !== false && (
+              <label className="ai-setup-check" title="Aus = jeder Scalp mit runner=true darf laufen, nicht nur News-Trades">
+                <span>… nur News-getrieben</span>
+                <input type="checkbox" checked={cfg.runner_scalp_news_only !== false}
+                  onChange={e => updateConfig({ runner_scalp_news_only: e.target.checked })} data-testid="ai-runner-scalp-news-only-toggle" />
+              </label>
+            )}
             {/* Kosten-Dashboard: geschätzte Tokens pro KI-Rolle und Tag */}
             {tokenUsage?.days?.length > 0 && (              <div style={{ gridColumn: '1 / -1' }} data-testid="ai-token-usage">
                 <div className="ai-learn-title" style={{ margin: '6px 0 4px' }}>

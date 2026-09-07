@@ -39,6 +39,7 @@ from core import market_hours
 from services.timeframes import aggregate_candles
 from services import session_levels
 from services import range_analysis
+from services import runner_policy
 from services.technical_indicators import TechnicalIndicators
 from services.news_feed import news_feed
 from services import macro_context
@@ -214,6 +215,8 @@ DEFAULT_AI_CONFIG = {
     # Marge maximal freisetzen (Hebel steigt auf den Deckel) -> risikofreier
     # Runner bei voller Positionsgröße, Kapital wird für andere Trades frei.
     "runner_secure_enabled": True,
+    "runner_scalp_enabled": True,        # Runner auch für Scalp-/News-Trades
+    "runner_scalp_news_only": True,      # ... nur wenn News-getrieben (news_impact != neutral)
     "runner_secure_trigger_pct": 30.0,   # ab X% Gewinn auf die Marge
     "runner_secure_max_leverage": 100,   # Ziel-Hebel beim Freisetzen (max 200)
     # Gruppen-Analyse: Krypto / Forex / Indizes+Rohstoffe in getrennten
@@ -353,7 +356,10 @@ ANALYSIS_SYSTEM = (
     "nach TP1 läuft der Rest ohne festes Endziel mit Trailing-Stop weiter; zusätzlich sichert sich "
     "ein Runner-Trade nach Erreichen der Gewinnschwelle automatisch ab (SL in den Gewinn + Marge "
     "wird maximal freigesetzt, der Hebel steigt bei gleicher Positionsgröße -> risikofreier Runner). "
-    "Nutze runner=true gezielt, nur wo echtes Weiterlauf-Potenzial besteht. Ein Swing-Trade und "
+    "Nutze runner=true gezielt, nur wo echtes Weiterlauf-Potenzial besteht. Auch bei horizon 'scalp' "
+    "ist runner=true erlaubt, wenn der Trade News-getrieben ist (news_impact positive/negative): dann "
+    "wird kein voller TP genommen, das Endziel liegt sehr weit und der SL wird an Key-Levels "
+    "nachgezogen (mit Mindestabstand gegen Rauschen und vor der Liq). Ein Swing-Trade und "
     "kurzfristige Gegen-Scalps auf demselben Asset schließen sich NICHT aus – du darfst z.B. einen "
     "übergeordneten LONG halten und zwischenzeitliche Abwärtsbewegungen mit SHORT-Scalps handeln. "
     "Nutze swing nur bei klarer übergeordneter Struktur (Higher-Timeframe-Trend, Makro-These), "
@@ -435,7 +441,8 @@ ANALYSIS_SYSTEM_LEAN = (
     "setup = gehandeltes Playbook-Setup (Pflicht bei LONG/SHORT; gesperrte Setups nicht nutzen; "
     "SL/TP passend zum Setup wählen statt Standardwerte; bei HOLD weglassen). "
     "horizon 'swing' = übergeordneter Trade (Hebel wird automatisch gedeckelt, weite Ziele erlaubt: "
-    "sl_pct 0.5-12, tp1_pct 0.8-25, tpf_pct bis 60); runner=true nur bei swing (Rest läuft nach TP1 "
+    "sl_pct 0.5-12, tp1_pct 0.8-25, tpf_pct bis 60); runner=true bei swing oder bei News-getriebenen "
+    "Scalps (news_impact positive/negative): Rest läuft nach TP1 "
     "mit Trailing weiter und wird nach der Gewinnschwelle automatisch risikofrei gestellt: SL im "
     "Gewinn + Marge freigesetzt). Nur nutzen, wo echtes Weiterlauf-Potenzial besteht. "
     "Swing-Position und gegenläufige Scalps auf demselben Asset sind erlaubt. "
@@ -880,6 +887,10 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
             self.config["swing_enabled"] = bool(updates["swing_enabled"])
         if "runner_secure_enabled" in updates:
             self.config["runner_secure_enabled"] = bool(updates["runner_secure_enabled"])
+        if "runner_scalp_enabled" in updates:
+            self.config["runner_scalp_enabled"] = bool(updates["runner_scalp_enabled"])
+        if "runner_scalp_news_only" in updates:
+            self.config["runner_scalp_news_only"] = bool(updates["runner_scalp_news_only"])
         if "runner_secure_trigger_pct" in updates:
             try:
                 self.config["runner_secure_trigger_pct"] = max(
@@ -2066,7 +2077,8 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
         # je eigener Strategie, siehe services/ai_strategy_lab.py).
         macro = strategy_lab.macro_params(dec.get("strategy_candidate_id"))
         is_swing = str(dec.get("horizon") or "scalp") == "swing"
-        runner = bool(dec.get("runner")) and is_swing
+        # Runner auch für News-/Scalp-Trades (services/runner_policy.py)
+        runner = runner_policy.runner_allowed(dec, self.config)
         sl_input = macro.get("sl_fixed_percent", dec["sl_pct"])
         if is_swing:
             # Swing: eigene, weite Grenzen (niedriger Hebel wird unten gedeckelt)
@@ -2088,6 +2100,8 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
         # Trade-Rahmen: CRV-Spanne (global vorgegeben) technisch erzwingen –
         # TP1 wird in [SL*crv_min, SL*crv_max] geklemmt, TP-Full folgt.
         tp1_pct, tpf_pct = self._apply_crv_frame(sl_pct, tp1_pct, tpf_pct, is_swing)
+        if runner and not is_swing:
+            tpf_pct = runner_policy.scalp_runner_tpf(sl_pct, tpf_pct)
         sign = 1 if dec["action"] == "LONG" else -1
         sl = entry * (1 - sign * sl_pct)
         tp1 = entry * (1 + sign * tp1_pct)

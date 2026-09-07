@@ -398,6 +398,27 @@ def context_lines(setups: List[Dict], limits: Dict) -> List[str]:
             + lines)
 
 
+def proposals_from_setups(setups: List[Dict]) -> Dict[str, Dict]:
+    """Robuste Befunde -> Versionsvorschlag je Setup (rein): genau EIN Parameter.
+    TP-Variante -> tp_ratio × step, SL-Variante -> sl_pct × step; Runner-Befunde
+    ergeben keinen Parameter (dafür gibt es den Runner-Modus)."""
+    out: Dict[str, Dict] = {}
+    for s in setups:
+        k = s.get("best_variant")
+        v = (s.get("variants") or {}).get(k) if k else None
+        if not v or not v.get("robust") or v.get("kind") not in ("tp", "sl") or not v.get("step"):
+            continue
+        out[str(s["setup"])] = {
+            "param": "tp_ratio" if v["kind"] == "tp" else "sl_pct",
+            "factor": float(v["step"]),
+            "note": f"{'TP' if v['kind'] == 'tp' else 'SL'} ×{v['step']:g}, Median {v['median_delta_r']:+.2f}R "
+                    f"bei {int(v['consistency'] * 100)}% von {v['n']} Trades"
+                    + ("" if s.get("backtest_confirmed") else " (ohne Backtest-Bestätigung)"),
+            "backtest_confirmed": bool(s.get("backtest_confirmed")),
+        }
+    return out
+
+
 # --------------------------------------------------------------------------
 # DB-Anbindung (dünn)
 # --------------------------------------------------------------------------
@@ -541,6 +562,13 @@ class PostmortemService:
         except Exception as e:
             logger.debug(f"Nachanalyse-Kontext: {e}")
             return ""
+
+    async def proposals(self) -> Dict[str, Dict]:
+        """Versionsvorschläge für setup_lifecycle (nur Backtest-bestätigte Befunde)."""
+        if self.db is None:
+            return {}
+        s = await self.summary()
+        return {k: v for k, v in proposals_from_setups(s["setups"]).items() if v["backtest_confirmed"]}
 
     async def tick(self):
         if self.db is None or time.time() < self._next_due:
