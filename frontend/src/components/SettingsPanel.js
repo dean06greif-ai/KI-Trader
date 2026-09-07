@@ -33,6 +33,8 @@ const SettingsPanel = ({ onClose, focusStrategy, mode = 'all', controlState, onC
   const importParamsRef = React.useRef(null);
   const { symbols: ALL_COINS } = useInstruments();
   const [notifyCfg, setNotifyCfg] = useState(null);
+  const [confCfg, setConfCfg] = useState(null);
+  const [confStats, setConfStats] = useState(null);
   // Fill-Slippage-Übersicht (Trades-Tab): Sichtbarkeit per localStorage + Event
   const [showSlippage, setShowSlippage] = useState(
     () => localStorage.getItem('ui_show_slippage') === '1');
@@ -47,6 +49,17 @@ const SettingsPanel = ({ onClose, focusStrategy, mode = 'all', controlState, onC
   const [syncBusy, setSyncBusy] = useState(false);
   const [watchdogStatus, setWatchdogStatus] = useState(null);
   const [watchdogBusy, setWatchdogBusy] = useState(false);
+
+  const saveConfluence = async (updates) => {
+    try {
+      const res = await fetch(`${API_URL}/api/confluence/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ ...confCfg, ...updates }),
+      });
+      if (res.ok) setConfCfg(await res.json());
+    } catch (e) { /* noop */ }
+  };
 
   const NOTIFY_LABELS = {
     ai_failure: 'KI-Ausfall (Primär + Backup gescheitert, Fallback übernimmt)',
@@ -66,6 +79,8 @@ const SettingsPanel = ({ onClose, focusStrategy, mode = 'all', controlState, onC
 
   useEffect(() => {
     fetch(`${API_URL}/api/telegram/notify-config`).then(r => r.json()).then(setNotifyCfg).catch(() => {});
+    fetch(`${API_URL}/api/confluence/config`).then(r => r.json()).then(setConfCfg).catch(() => {});
+    fetch(`${API_URL}/api/confluence/stats`).then(r => r.json()).then(setConfStats).catch(() => {});
     const loadGuard = () => {
       fetch(`${API_URL}/api/trade-guard`).then(r => r.json()).then(setGuard).catch(() => {});
       fetch(`${API_URL}/api/autotrade/sync-status`).then(r => r.json()).then(setSyncStatus).catch(() => {});
@@ -827,6 +842,118 @@ const SettingsPanel = ({ onClose, focusStrategy, mode = 'all', controlState, onC
                   </label>
                 </div>
               </div>
+
+              {confCfg && (
+                <div className="settings-section" data-testid="confluence-section">
+                  <div className="setting-toggle">
+                    <div className="toggle-info">
+                      <div className="toggle-title">⚡ Confluence-Erkennung</div>
+                      <div className="toggle-description">
+                        Wenn mehrere Strategien im {confCfg.window_min}-Min-Fenster dieselbe Richtung
+                        zeigen: Signal-Badge, Telegram-Meldung & Konfidenz-Signal für den KI-Trader.
+                        Die Setups selbst bleiben unverändert.
+                      </div>
+                    </div>
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={confCfg.enabled !== false}
+                        onChange={(e) => saveConfluence({ enabled: e.target.checked })}
+                        data-testid="confluence-enabled-toggle"
+                      />
+                      <span className="slider"></span>
+                    </label>
+                  </div>
+                  {confCfg.enabled !== false && (
+                    <>
+                      <div className="setting-toggle">
+                        <div className="toggle-info">
+                          <div className="toggle-title">Kapital-Boost bei Confluence</div>
+                          <div className="toggle-description">
+                            Der Trade, der im Confluence-Moment feuert, bekommt mehr Margin
+                            (kein zusätzlicher Trade, 1-Trade-pro-Coin-Limit bleibt)
+                          </div>
+                        </div>
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={confCfg.boost_enabled !== false}
+                            onChange={(e) => saveConfluence({ boost_enabled: e.target.checked })}
+                            data-testid="confluence-boost-toggle"
+                          />
+                          <span className="slider"></span>
+                        </label>
+                      </div>
+                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+                        <label style={{ fontSize: 12 }}>
+                          Boost-Faktor{' '}
+                          <select
+                            value={confCfg.capital_boost ?? 1.5}
+                            onChange={(e) => saveConfluence({ capital_boost: Number(e.target.value) })}
+                            data-testid="confluence-boost-select"
+                          >
+                            {[1.25, 1.5, 1.75, 2, 2.5, 3].map(v => <option key={v} value={v}>×{v}</option>)}
+                          </select>
+                        </label>
+                        <label style={{ fontSize: 12 }}>
+                          Zeitfenster{' '}
+                          <select
+                            value={confCfg.window_min ?? 15}
+                            onChange={(e) => saveConfluence({ window_min: Number(e.target.value) })}
+                            data-testid="confluence-window-select"
+                          >
+                            {[5, 10, 15, 30, 60].map(v => <option key={v} value={v}>{v} min</option>)}
+                          </select>
+                        </label>
+                        <label style={{ fontSize: 12 }}>
+                          Min. Strategien{' '}
+                          <select
+                            value={confCfg.min_strategies ?? 2}
+                            onChange={(e) => saveConfluence({ min_strategies: Number(e.target.value) })}
+                            data-testid="confluence-min-select"
+                          >
+                            {[2, 3, 4].map(v => <option key={v} value={v}>{v}</option>)}
+                          </select>
+                        </label>
+                        <label style={{ fontSize: 12 }}>
+                          Telegram{' '}
+                          <select
+                            value={confCfg.notify_enabled === false ? 'off' : 'on'}
+                            onChange={(e) => saveConfluence({ notify_enabled: e.target.value === 'on' })}
+                            data-testid="confluence-notify-select"
+                          >
+                            <option value="on">an</option>
+                            <option value="off">aus</option>
+                          </select>
+                        </label>
+                        <label style={{ fontSize: 12 }}>
+                          KI-Kontext{' '}
+                          <select
+                            value={confCfg.ai_context_enabled === false ? 'off' : 'on'}
+                            onChange={(e) => saveConfluence({ ai_context_enabled: e.target.value === 'on' })}
+                            data-testid="confluence-ai-select"
+                          >
+                            <option value="on">an</option>
+                            <option value="off">aus</option>
+                          </select>
+                        </label>
+                      </div>
+                      {confStats && (confStats.confluence?.total > 0 || confStats.normal?.total > 0) && (
+                        <div className="text-muted" style={{ fontSize: 12, marginTop: 10 }} data-testid="confluence-stats">
+                          Confluence-Trades: {confStats.confluence?.total ?? 0}
+                          {confStats.confluence?.closed > 0 && (
+                            <> · Winrate {confStats.confluence.win_rate}% · PnL {confStats.confluence.pnl} $</>
+                          )}
+                          {' '}| Normal: {confStats.normal?.total ?? 0}
+                          {confStats.normal?.closed > 0 && (
+                            <> · Winrate {confStats.normal.win_rate}%</>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </>
           )}
 

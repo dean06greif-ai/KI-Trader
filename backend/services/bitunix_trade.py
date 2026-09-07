@@ -226,15 +226,15 @@ def fee_guard_check(ai_cfg: Dict, cfg: Dict, entry: float, sl: float,
     if not ai_cfg.get("fee_guard_enabled", True):
         return True, ""
     try:
-        mult = float(ai_cfg.get("fee_guard_mult", 4.0) or 0)
+        mult = float(ai_cfg.get("fee_guard_mult", 2.5) or 0)
     except (TypeError, ValueError):
-        mult = 4.0
+        mult = 2.5
     if mult <= 0 or not entry or not sl:
         return True, ""
     try:
-        atr_mult = float(ai_cfg.get("fee_guard_atr_mult", 4.0) or 0)
+        atr_mult = float(ai_cfg.get("fee_guard_atr_mult", 2.5) or 0)
     except (TypeError, ValueError):
-        atr_mult = 4.0
+        atr_mult = 2.5
     legs = 1
     broker_note = ""
     if symbol:
@@ -1963,6 +1963,15 @@ class AutoTradeManager:
                             f"({signal.get('setup_asset_reason') or ''})")
         except (TypeError, ValueError):
             pass
+        # Confluence-Boost: mehrere Strategien zeigen dieselbe Richtung ->
+        # erhöhte Margin für diesen einen Trade (services/confluence.py).
+        try:
+            c_boost = float(signal.get("capital_boost") or 0)
+            if 1.0 < c_boost <= 3.0:
+                capital = round(capital * c_boost, 6)
+                logger.info(f"{symbol}: Confluence-Boost – Margin ×{c_boost:g}")
+        except (TypeError, ValueError):
+            pass
         alloc_note = None
         try:
             fc = await self.free_capital(mode)
@@ -2521,6 +2530,11 @@ class AutoTradeManager:
                         "profit_secure_sl_liq_buffer_pct": float(pol["sl_liq_buffer_pct"]),
                     })
 
+        # Confluence-Markierung am Trade: separates Tracking (Stats-Vergleich)
+        if signal.get("confluence"):
+            trade["confluence"] = signal["confluence"]
+            if signal.get("capital_boost"):
+                trade["confluence_boost"] = signal["capital_boost"]
         if collection:
             trade["data_collection"] = True
             if signal.get("collection_reason"):

@@ -147,11 +147,13 @@ DEFAULT_AI_CONFIG = {
     # Fees (2 × fee_percent des Coins, Standard 0,12%) beträgt. Blockt nur
     # mathematisch garantierte Fee-Verlierer – Scalpen bleibt sonst frei.
     # Gilt für alle KI-Trades inkl. Sammel-Trades; NICHT in der KI-Whitelist.
+    # Default 2.5× (vorher 4×): reale Bitunix-Gebühren liegen durch VIP-Level
+    # und Discount-Voucher meist unter der Standard-Taker-Fee.
     "fee_guard_enabled": True,
-    "fee_guard_mult": 4.0,
+    "fee_guard_mult": 2.5,
     # V2: zusätzliches dynamisches SL-Minimum = fee_guard_atr_mult × 1m-ATR%.
     # Verhindert Stops im Markt-Rauschen (KI klebte SLs ans 0,5%-Fee-Minimum).
-    "fee_guard_atr_mult": 4.0,
+    "fee_guard_atr_mult": 2.5,
     # V3: bei hohem CRV (>=2 / >=3) darf das Fee-Minimum um 15% / 25%
     # unterschritten werden – knappe, aber fette Setups werden fair bewertet.
     "fee_guard_crv_relax": True,
@@ -1418,9 +1420,9 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
             # Fee-Wächter in den Prompt: sonst schlägt die KI weiter Stops vor,
             # die technisch geblockt werden (gleiche Logik wie SL-Ratchet-Regel).
             if self.config.get("fee_guard_enabled", True):
-                fg_mult = float(self.config.get("fee_guard_mult", 4.0) or 0)
+                fg_mult = float(self.config.get("fee_guard_mult", 2.5) or 0)
                 if fg_mult > 0:
-                    fg_atr = float(self.config.get("fee_guard_atr_mult", 4.0) or 0)
+                    fg_atr = float(self.config.get("fee_guard_atr_mult", 2.5) or 0)
                     atr_note = (f" Zusätzlich gilt ein dynamisches Minimum von {fg_atr:g}× der "
                                 f"aktuellen 1m-ATR des Coins (es zählt das GRÖSSERE Minimum)."
                                 if fg_atr > 0 else "")

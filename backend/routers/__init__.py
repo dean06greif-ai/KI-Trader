@@ -2,7 +2,7 @@
 from routers import auth, general, ws, analytics, strategies, backtest, optimizer, \
     autotrade, control, ai, ai_lab, ai_governance, local_worker, macro, dynamic, \
     regime_lab, liquidity, notify, ml_gate, copilot, job_series, setup_backtest, recovery, \
-    postmortem
+    postmortem, confluence
 
 ALL_ROUTERS = [
     auth.router,
@@ -29,4 +29,5 @@ ALL_ROUTERS = [
     ml_gate.router,
     copilot.router,
     job_series.router,
+    confluence.router,
 ]

@@ -97,6 +97,23 @@ async def process_signal(signal: Dict, candles: List[Dict]):
     signal["id"] = str(uuid.uuid4())
     notify = scanner.is_notify_enabled(symbol)
     signal["notify"] = notify
+    # Confluence: mehrere Strategien zeigen gerade dieselbe Richtung auf dem
+    # Coin -> Signal markieren (Badge), optional Kapital-Boost für den Trade
+    # und Telegram-Meldung. Die Setups selbst bleiben unverändert
+    # (services/confluence.py). VOR dem Insert, damit das Badge im Signal-Doc landet.
+    if signal.get("signal_class") != "PRE_SIGNAL" and not signal.get("data_collection") \
+            and not signal.get("manual_trade") and not signal.get("suppress_signal"):
+        try:
+            from services import confluence
+            conf = await confluence.check(state.db, signal)
+            if conf:
+                signal["confluence"] = conf["summary"]
+                if conf.get("boost"):
+                    signal["capital_boost"] = conf["boost"]
+                if conf.get("new_event") and conf.get("notify"):
+                    await confluence.notify(telegram, conf["event"])
+        except Exception as e:
+            logger.warning(f"Confluence-Check fehlgeschlagen ({symbol}): {e}")
     # Manuelle Website-Trades laufen zwar durch die Pipeline (Guards, Kapital,
     # Ausführung), erzeugen aber KEIN sichtbares Signal (Bug-Report).
     suppress = bool(signal.get("suppress_signal"))

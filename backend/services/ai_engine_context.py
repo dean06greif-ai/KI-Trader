@@ -772,6 +772,17 @@ class AIEngineContextMixin:
         macro = await self._macro_block()
         if macro:
             parts.append(macro)
+        # Confluence-Ereignisse (mehrere Strategien, gleiche Richtung) als
+        # Konfidenz-Signal für die KI (services/confluence.py, abschaltbar).
+        if not review:
+            try:
+                from core import state as _state
+                from services import confluence as _confluence
+                cblock = await _confluence.ai_context_block(_state.db)
+                if cblock:
+                    parts.append(cblock)
+            except Exception as e:
+                logger.warning(f"AI confluence block failed: {e}")
         if not review:
             # Session-Open-Fenster (London/US): Opening-Range + Vol-Regime für
             # das Playbook-Setup 'session_open' – leer außerhalb des Fensters.

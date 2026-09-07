@@ -117,6 +117,24 @@ const SignalPanel = ({ symbol, ruleState, latestSignal, strategyMeta, onShowInCh
             <span className={`badge ${latestSignal.type === 'LONG' ? 'badge-long' : 'badge-short'}`}>
               {latestSignal.signal_class === 'PRE_SIGNAL' ? 'PRE-' : ''}{latestSignal.type} SIGNAL
             </span>
+            {latestSignal.confluence && (
+              <span
+                className="badge badge-confluence"
+                data-testid="confluence-badge"
+                title={`Confluence: ${latestSignal.confluence.count} Strategien zeigen dieselbe Richtung (${(latestSignal.confluence.strategies || []).map(s => s.name).join(' + ')})`}
+              >
+                ⚡ CONF ×{latestSignal.confluence.count}
+              </span>
+            )}
+            {latestSignal.confluence && (
+              <span
+                className="badge badge-confluence"
+                data-testid="confluence-badge"
+                title={`Confluence: ${latestSignal.confluence.count} Strategien zeigen dieselbe Richtung (${(latestSignal.confluence.strategies || []).map(s => s.name).join(' + ')})`}
+              >
+                ⚡ CONF ×{latestSignal.confluence.count}
+              </span>
+            )}
             <span className="mono text-muted" style={{ fontSize: '11px' }}>
               {new Date(latestSignal.timestamp).toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin' })}
             </span>

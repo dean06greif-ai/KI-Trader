@@ -1601,16 +1601,16 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                 <option value="off">aus</option>
               </select>
             </label>
-            <label title="Mindest-SL-Distanz als Vielfaches der Roundtrip-Fees (0,12% bei 0,06% je Seite). Beispiel: 4× = 0,48% Mindest-SL-Distanz.">
+            <label title="Mindest-SL-Distanz als Vielfaches der Roundtrip-Fees (0,12% bei 0,06% je Seite). Beispiel: 2,5× = 0,30% Mindest-SL-Distanz. Tipp: Mit VIP-Level/Discount-Vouchern sind die realen Bitunix-Gebühren oft niedriger – dann reicht ein kleinerer Faktor.">
               <span>Fee-Faktor (× Fees)</span>
-              <select value={cfg.fee_guard_mult ?? 4} onChange={e => updateConfig({ fee_guard_mult: Number(e.target.value) })} data-testid="ai-fee-guard-mult-select">
-                {[2, 3, 4, 5, 6, 8, 10].map(v => <option key={v} value={v}>{v}×</option>)}
+              <select value={cfg.fee_guard_mult ?? 2.5} onChange={e => updateConfig({ fee_guard_mult: Number(e.target.value) })} data-testid="ai-fee-guard-mult-select">
+                {[1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map(v => <option key={v} value={v}>{v}×</option>)}
               </select>
             </label>
             <label title="Fee-Wächter V2: zusätzliches dynamisches SL-Minimum als Vielfaches der aktuellen 1m-ATR des Coins. Verhindert, dass die KI Stops ins Markt-Rauschen legt (z.B. pauschal 0,5%), wenn der Markt gerade stärker schwankt. Es gilt immer das GRÖSSERE Minimum aus Fee-Faktor und ATR-Faktor. 4× ≈ Rauschband einer 15-Minuten-Haltedauer. 0 = aus.">
               <span>ATR-Faktor (× ATR)</span>
-              <select value={cfg.fee_guard_atr_mult ?? 4} onChange={e => updateConfig({ fee_guard_atr_mult: Number(e.target.value) })} data-testid="ai-fee-guard-atr-select">
-                {[0, 2, 3, 4, 6, 8].map(v => <option key={v} value={v}>{v === 0 ? 'aus' : `${v}×`}</option>)}
+              <select value={cfg.fee_guard_atr_mult ?? 2.5} onChange={e => updateConfig({ fee_guard_atr_mult: Number(e.target.value) })} data-testid="ai-fee-guard-atr-select">
+                {[0, 1.5, 2, 2.5, 3, 4, 6, 8].map(v => <option key={v} value={v}>{v === 0 ? 'aus' : `${v}×`}</option>)}
               </select>
             </label>
             <label title="Stale-Price-Guard: blockt KI-Einstiege, wenn die letzte Kurskerze des Coins älter ist als das Limit (hängender Datenfeed, z.B. Forex-Feed am Wochenende). 0 = aus.">

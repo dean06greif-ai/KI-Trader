@@ -316,6 +316,32 @@ async def migrate_test_artifacts(db):
     await _mark(db, "test_artifacts_cleanup_v1")
 
 
+async def migrate_fee_guard_relax(db, engine):
+    """Fee-Wächter lockern: alte Defaults 4× (Fees/ATR) -> 2.5×. Nutzer-Feedback:
+    zu streng – reale Bitunix-Gebühren liegen durch VIP-Level/Voucher niedriger.
+    Nur Werte migrieren, die noch exakt auf dem alten Default 4.0 stehen –
+    explizit abweichende Nutzer-Werte bleiben unangetastet."""
+    if await _done(db, "fee_guard_relax_v1"):
+        return
+    doc = await db.settings.find_one({"_id": "ai_trader_config"}) or {}
+    updates = {}
+    for key in ("fee_guard_mult", "fee_guard_atr_mult"):
+        v = doc.get(key)
+        try:
+            if v is not None and float(v) == 4.0:
+                updates[key] = 2.5
+        except (TypeError, ValueError):
+            pass
+    if updates:
+        await db.settings.update_one({"_id": "ai_trader_config"},
+                                     {"$set": updates}, upsert=True)
+        if engine is not None:
+            engine.config.update(updates)
+        logger.info(f"Boot-Migration: Fee-Wächter gelockert {updates} "
+                    "(im KI-Setup jederzeit änderbar)")
+    await _mark(db, "fee_guard_relax_v1")
+
+
 async def run_boot_migrations(db, engine):
     for fn, args in ((migrate_cerebras_shutdown, (db,)),
                      (migrate_heatmap_off, (db, engine)),
@@ -328,7 +354,8 @@ async def run_boot_migrations(db, engine):
                      (migrate_strategy_lab_to_playbook, (db,)),
                      (migrate_observer_llm_off, (db,)),
                      (migrate_ml_findings_decouple, (db,)),
-                     (migrate_test_artifacts, (db,))):
+                     (migrate_test_artifacts, (db,)),
+                     (migrate_fee_guard_relax, (db, engine))):
         try:
             await fn(*args)
         except Exception as e:

@@ -267,3 +267,12 @@
   color: #00A8FF;
   font-weight: 700;
 }
+
+/* Confluence: mehrere Strategien zeigen dieselbe Richtung */
+.badge-confluence {
+  background: rgba(255, 200, 0, 0.14);
+  color: #ffc800;
+  border: 1px solid rgba(255, 200, 0, 0.45);
+  margin-left: 6px;
+  font-weight: 700;
+}
