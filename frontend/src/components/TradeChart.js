@@ -45,7 +45,8 @@ const TradeChart = ({ trade }) => {
     const t = d.trade || {};
     // Trade-Level in die Auto-Skalierung einbeziehen, sonst sind SL/TP-Linien
     // außerhalb der Kerzen-Range unsichtbar (Testing-Agent-Finding)
-    const levels = [t.entry, t.sl, t.initial_sl, t.tp1, t.tpf, t.exit_price, t.peak_price, t.trough_price]
+    const levels = [t.entry, t.sl, t.initial_sl, t.tp1, t.tpf, t.exit_price, t.peak_price, t.trough_price,
+      d.review?.after_high, d.review?.after_low]
       .map(Number).filter(v => v > 0);
     const series = chart.addSeries(CandlestickSeries, {
       upColor: '#0ecb81', downColor: '#f6465d', borderUpColor: '#0ecb81',
@@ -75,6 +76,10 @@ const TradeChart = ({ trade }) => {
     addLine(t.exit_price, '#FFB800', 'Exit', LineStyle.Solid);
     if (t.peak_price) addLine(t.peak_price, '#E4E6EE', t.side === 'LONG' ? 'Hoch im Trade' : 'Tief im Trade', LineStyle.Dotted);
     if (t.trough_price) addLine(t.trough_price, '#C97A8A', t.side === 'LONG' ? 'Tief im Trade' : 'Hoch im Trade', LineStyle.Dotted);
+    // Nachanalyse: Kursextreme NACH dem Exit (Nachlauf-Fenster) einzeichnen
+    const rv = d.review;
+    if (rv?.after_high && rv.after_high !== t.exit_price) addLine(rv.after_high, '#7dd3fc', `Nachlauf ${rv.mfe_r >= 0 ? '+' : ''}${Number(rv.mfe_r).toFixed(1)}R`, LineStyle.Dotted);
+    if (rv?.after_low && rv.after_low !== t.exit_price) addLine(rv.after_low, '#f59e0b', `Nachlauf -${Number(rv.mae_r).toFixed(1)}R`, LineStyle.Dotted);
     chart.timeScale().fitContent();
     const ro = new ResizeObserver(() => {
       if (boxRef.current) chart.applyOptions({ width: boxRef.current.clientWidth });
@@ -92,6 +97,12 @@ const TradeChart = ({ trade }) => {
     <div className="trade-chart-box" data-testid={`trade-chart-${trade.id}`}>
       <div ref={boxRef} className="trade-chart-canvas" />
       <div className="trade-chart-note mono">{state.data.interval} · Bitunix Kline (on-demand geladen)</div>
+      {state.data.review && (
+        <div className="trade-chart-note" data-testid={`trade-chart-review-${trade.id}`} style={{ color: '#a9b1d1' }}>
+          Nachanalyse ({state.data.review.after_minutes} min nach Exit): {state.data.review.verdict_text}
+          {state.data.review.best_variant && ` · beste Variante: ${state.data.review.best_variant.replace('tp_x', 'TP×').replace('sl_x', 'SL×')}`}
+        </div>
+      )}
     </div>
   );
 };

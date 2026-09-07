@@ -37,7 +37,7 @@ from typing import Dict, List, Optional
 from core import instruments as _instruments
 from services.technical_indicators import TechnicalIndicators
 from services.backtester import effective_leverage
-from services.runner_policy import trail_candidate
+from services.runner_policy import trail_decision
 
 logger = logging.getLogger(__name__)
 
@@ -3125,14 +3125,24 @@ class AutoTradeManager:
             new_kl_sl = key_level_trail_sl(
                 candles, side, t["entry"], updates.get("sl", t["sl"]),
                 price, risk_kl)
+            trail_note = ""
             if new_kl_sl is not None:
                 # Rausch-/Liq-Schutz (services/runner_policy.py): Mindestabstand
                 # zum Kurs (ATR) und SL vor der verschobenen Liq nach Margen-Freisetzung
-                new_kl_sl = trail_candidate(t, candles, price, new_kl_sl, updates.get("sl", t["sl"]))
+                dec_tr = trail_decision(t, candles, price, new_kl_sl, updates.get("sl", t["sl"]))
+                new_kl_sl, trail_note = dec_tr["sl"], dec_tr["note"]
+                if new_kl_sl is None:
+                    # Ablehnung nachvollziehbar im Trade-Detail – nur bei neuem Grund
+                    if trail_note != t.get("trail_reject_note"):
+                        events.append(trail_note)
+                        updates["trail_reject_note"] = trail_note
+                elif t.get("trail_reject_note"):
+                    updates["trail_reject_note"] = None
             if new_kl_sl is not None:
                 updates["sl"] = new_kl_sl
                 events.append(f"KEY-LEVEL-TRAIL: SL -> {new_kl_sl} "
-                              "(hinter durchbrochenem Level)")
+                              "(hinter durchbrochenem Level)"
+                              + (f" · {trail_note}" if trail_note else ""))
                 if t.get("mode") == "live":
                     if not await self._live_move_sl(t, new_kl_sl, qty_rem):
                         events.append(f"Exchange KEY-LEVEL-SL {new_kl_sl} FAILED (local only)")

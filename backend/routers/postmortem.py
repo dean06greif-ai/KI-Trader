@@ -30,6 +30,20 @@ async def postmortem_context():
     return {"text": await postmortem.context_text()}
 
 
+@router.get("/api/ai/runner-stats")
+async def runner_stats(days: int = Query(30, ge=1, le=365), mode: Optional[str] = Query(None)):
+    """News-Runner-Auswertung: realisiertes R vs. 'voller TP' (alles bei TP1 zu)."""
+    from datetime import datetime, timezone, timedelta
+    from services.runner_policy import runner_stats as _stats
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    match = {"strategy_id": "ai_trader", "status": "closed", "ai_runner": True,
+             "closed_at": {"$gte": cutoff}}
+    if mode in ("live", "paper"):
+        match["mode"] = mode
+    rows = await postmortem.db.auto_trades.find(match, {"_id": 0}).to_list(3000)
+    return {"days": days, "mode": mode or "all", **_stats(rows)}
+
+
 @router.post("/api/ai/postmortem/run")
 async def postmortem_run(_: bool = Depends(require_admin)):
     """Ausstehende Reviews sofort verarbeiten (sonst alle 10 min automatisch)."""

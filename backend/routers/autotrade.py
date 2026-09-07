@@ -323,9 +323,29 @@ async def get_trade_chart(trade_id: str):
                 "trade": trade_payload}
     dur = max((closed_dt - opened).total_seconds(), 60.0)
     pad = max(dur * 0.25, 900.0)  # min. 15 Minuten Kontext vor/nach dem Trade
-    interval, _sec = _chart_interval(dur + 2 * pad)
+    # Nachanalyse vorhanden -> Nachlauf-Fenster mit in den Chart (Kursverlauf danach)
+    review = await state.db.trade_reviews.find_one({"trade_id": trade_id}, {"_id": 0})
+    review_payload = None
+    if review and t.get("closed_at"):
+        after = review.get("after") or {}
+        pad_after = max(pad, float(after.get("minutes") or 0) * 60 + 300)
+        risk = float(review.get("risk") or 0)
+        exit_p = float(review.get("exit") or t.get("exit_price") or 0)
+        sign = 1 if str(t.get("side")).upper() == "LONG" else -1
+        review_payload = {
+            "verdict": review.get("verdict"), "verdict_text": review.get("verdict_text"),
+            "after_minutes": after.get("minutes"), "mfe_r": after.get("mfe_r"), "mae_r": after.get("mae_r"),
+            "after_high": round(exit_p + sign * float(after.get("mfe_r") or 0) * risk, 6) if exit_p and risk else None,
+            "after_low": round(exit_p - sign * float(after.get("mae_r") or 0) * risk, 6) if exit_p and risk else None,
+            "best_variant": max((review.get("variants") or {}).items(),
+                                key=lambda kv: float(kv[1].get("delta_r") or 0), default=(None, {}))[0],
+            "base_r": review.get("base_r"),
+        }
+    else:
+        pad_after = pad
+    interval, _sec = _chart_interval(dur + pad + pad_after)
     start_ms = int((opened.timestamp() - pad) * 1000)
-    end_ms = int(min(closed_dt.timestamp() + pad, now.timestamp()) * 1000)
+    end_ms = int(min(closed_dt.timestamp() + pad_after, now.timestamp()) * 1000)
     from services.bitunix_client import fetch_klines_range
     b_symbol = trade_client.to_bitunix_symbol(t["symbol"])
     candles = await fetch_klines_range(b_symbol, interval,
@@ -334,6 +354,7 @@ async def get_trade_chart(trade_id: str):
         "symbol": t["symbol"], "interval": interval, "candles": candles,
         "chart_available": True,
         "trade": trade_payload,
+        "review": review_payload,
     }
 
 

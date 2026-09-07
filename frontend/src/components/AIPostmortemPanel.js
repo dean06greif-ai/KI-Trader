@@ -61,6 +61,36 @@ const SetupRow = ({ s }) => {
   );
 };
 
+const RunnerStats = ({ days, mode }) => {
+  const [rs, setRs] = useState(null);
+  useEffect(() => {
+    const q = `days=${days}${mode !== 'all' ? `&mode=${mode}` : ''}`;
+    fetch(`${API_URL}/api/ai/runner-stats?${q}`).then(r => r.ok ? r.json() : null).then(setRs).catch(() => {});
+  }, [days, mode]);
+  if (!rs) return null;
+  const Row = ({ label, a, testid }) => (
+    <div className="pm-runner-row" data-testid={testid}>
+      <b>{label}</b>
+      {a.n === 0 ? <span className="pm-meta">noch keine Runner-Trades</span> : (
+        <>
+          <span>{a.n} Trades</span>
+          <span className={a.sum_delta_r >= 0 ? 'pos' : 'neg'}>Δ gesamt {fmtR(a.sum_delta_r)}</span>
+          <span className={a.avg_delta_r >= 0 ? 'pos' : 'neg'}>Ø {fmtR(a.avg_delta_r)} / Trade</span>
+          <span className="pm-meta">Runner {fmtR(a.sum_real_r)} vs. voller TP {fmtR(a.sum_full_tp_r)} · besser {a.better} / schlechter {a.worse}</span>
+        </>
+      )}
+    </div>
+  );
+  return (
+    <div className="pm-runner" data-testid="pm-runner-stats">
+      <div className="pm-runner-title">Runner vs. voller TP <span className="pm-meta">(realisiertes R gegenüber „alles bei TP1 geschlossen“)</span></div>
+      <Row label="News-Runner" a={rs.news} testid="pm-runner-news" />
+      <Row label="Scalp-Runner" a={rs.scalp} testid="pm-runner-scalp" />
+      <Row label="Swing-Runner" a={rs.swing} testid="pm-runner-swing" />
+    </div>
+  );
+};
+
 const AIPostmortemPanel = () => {
   const [data, setData] = useState(null);
   const [days, setDays] = useState(30);
@@ -138,6 +168,7 @@ const AIPostmortemPanel = () => {
         </div>
       )}
       {setups.map((s) => <SetupRow key={s.setup} s={s} />)}
+      <RunnerStats days={days} mode={mode} />
       {limits.n > 0 && (
         <div className="pm-limits" data-testid="pm-limits">
           <b>Limit-Orders (nicht gefüllt):</b>{' '}

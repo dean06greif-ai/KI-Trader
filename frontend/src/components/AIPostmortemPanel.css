@@ -44,6 +44,12 @@
 .pm-chip.neg { color: #7c839c; opacity: 0.7; }
 .pm-chip.robust { border-color: #4ade80; color: #4ade80; }
 .pm-limits { margin-top: 8px; padding-top: 8px; border-top: 1px solid #1f2640; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pm-runner { margin-top: 8px; padding: 7px 10px; border: 1px solid #1f2640; border-radius: 8px; background: #0d1224; }
+.pm-runner-title { color: #e5e7eb; font-weight: 600; margin-bottom: 4px; }
+.pm-runner-row { display: flex; gap: 12px; flex-wrap: wrap; padding: 2px 0; }
+.pm-runner-row b { color: #a9b1d1; min-width: 96px; }
+.pm-runner-row .pos { color: #4ade80; }
+.pm-runner-row .neg { color: #f87171; }
 .pm-recent { margin-top: 8px; }
 .pm-link { background: none; border: none; color: #7dd3fc; cursor: pointer; font-size: 11.5px; padding: 0; }
 .pm-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 11px; }

@@ -85,6 +85,45 @@ def test_atr_basic():
     assert rp.atr([]) == 0.0
 
 
+def test_trail_decision_reasons():
+    candles = _c([100 + i * 0.1 for i in range(30)], spread=0.2)
+    t = {"side": "LONG", "entry": 100.0, "leverage": 100.0, "profit_margin_released": True}
+    d = rp.trail_decision(t, candles, 103.0, 102.9, 101.0)
+    assert d["reason"] == "adjusted_noise" and d["sl"] == 102.6 and "Rausch-Schutz" in d["note"]
+    d2 = rp.trail_decision(t, candles, 103.0, 100.5, 101.0)
+    assert d2["reason"] == "rejected_noise" and d2["sl"] is None and d2["note"].startswith("TRAIL-SKIP")
+    # Liq-Ablehnung: Kurs knapp über der nötigen SL-Marke (Hebel 100 -> Liq 99.5)
+    d3 = rp.trail_decision(t, [], 99.85, 99.84, 99.0)
+    assert d3["reason"] == "rejected_liq" and "Liq-Schutz" in d3["note"]
+    # Liq-Anpassung: SL 99.2 hinter der Liq -> angehoben
+    d4 = rp.trail_decision(t, [], 101.5, 99.2, 99.0)
+    assert d4["reason"] == "adjusted_liq" and d4["sl"] > 99.5
+    d5 = rp.trail_decision({"side": "LONG", "entry": 100.0}, [], 103.0, 102.0, 101.0)
+    assert d5["reason"] == "ok" and d5["sl"] == 102.0 and d5["note"] == ""
+
+
+def _runner_trade(real_exit, peak, tp1=101.0, runner=True, news="positive", horizon="scalp"):
+    return {"id": "r", "symbol": "BTCUSDT", "side": "LONG", "entry": 100.0, "initial_sl": 99.0,
+            "tp1": tp1, "exit_price": real_exit, "peak_price": peak, "ai_runner": runner,
+            "ai_news_impact": news, "ai_horizon": horizon, "realized_pnl": 1.0,
+            "closed_at": "2026-06-01T00:00:00+00:00"}
+
+
+def test_runner_stats_vs_full_tp():
+    trades = [
+        _runner_trade(103.0, 103.5),                      # Runner lief: +3R statt +1R -> Δ +2
+        _runner_trade(100.5, 101.2),                      # TP1 erreicht, Runner zurückgekommen: +0.5 statt +1 -> Δ -0.5
+        _runner_trade(99.0, 100.3),                       # TP1 nie erreicht -> Δ 0
+        _runner_trade(102.0, 102.5, runner=False),        # kein Runner -> ignoriert
+        _runner_trade(104.0, 104.0, news="neutral", horizon="swing"),
+    ]
+    s = rp.runner_stats(trades)
+    assert s["all"]["n"] == 4 and s["news"]["n"] == 3 and s["swing"]["n"] == 1
+    assert s["news"]["sum_delta_r"] == 1.5 and s["news"]["better"] == 1 and s["news"]["worse"] == 1
+    assert s["swing"]["sum_delta_r"] == 3.0
+    assert rp.runner_stats([])["all"]["n"] == 0
+
+
 # ---------------- Nachanalyse -> Version ----------------
 def _setup(best, kind, step, robust=True, bt=True):
     return {"setup": "breakout", "best_variant": best, "backtest_confirmed": bt,

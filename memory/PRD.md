@@ -96,6 +96,12 @@ Mongo (nie Prod-DB, siehe RCA oben) und Telegram lokal aus.
   nicht doppelt, Auto-Rollback greift. UI: Schalter „Runner bei News-Scalps“ im KI-Panel.
 - Tests `tests/test_runner_policy.py` (11), Gesamt-Suite ohne neue Fehler.
 
+- Runde 3 (07.09.): `runner_policy.trail_decision` (Grund: Rauschen/Liq) → Trade-Events
+  „TRAIL-SKIP …“ / „Rausch-Schutz …“ (dedupliziert über `trail_reject_note`); Trade-Chart-Endpoint
+  liefert `review` (Nachlauf-Fenster + Extreme) → `TradeChart.js` zeichnet „Nachlauf ±R“-Linien und
+  Nachanalyse-Notiz; `GET /api/ai/runner-stats` + `runner_policy.runner_stats` (Runner vs. voller TP)
+  im Nachanalyse-Panel. Tests: `test_runner_policy.py` 13 grün.
+
 ### Backlog (nächste Runden)
 - P0: Runner/Margin-Trick auch für News-/Scalp-Trades (Flag), Trailing an Key-Levels + Margen-
   Freisetzung kombiniert, Mindestabstand SL↔Kurs (ATR-Rauschen) und SL↔Liq prüfen.
