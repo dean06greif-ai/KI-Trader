@@ -40,22 +40,27 @@ export default function LocalWorkerPanel({ onClose }) {
     } catch { /* keep last */ }
   }, []);
 
-  const loadToken = useCallback(async (retries = 4) => {
-    if (!isAdmin()) return;
+  const loadToken = useCallback(async (retries = 3) => {
+    if (!isAdmin()) {
+      // Kein (gültiges) Admin-Login im Browser -> klar anzeigen statt endlos "lädt…"
+      setToken(null);
+      setTokenError('login');
+      return;
+    }
     try {
       const r = await fetch(`${API_URL}/api/localworker/token`, { headers: authHeaders() });
-      const d = await r.json();
+      if (r.status === 401) { setToken(null); setTokenError('login'); return; }
+      const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.token) {
         if (retries > 0) { setTimeout(() => loadToken(retries - 1), 1500); return; }
-        setTokenError(true);
-        toast.error('Worker-Token konnte nicht geladen werden – Admin-Login abgelaufen? Bitte neu einloggen.');
+        setTokenError('server');
         return;
       }
       setToken(d.token);
       setTokenError(false);
     } catch {
       if (retries > 0) { setTimeout(() => loadToken(retries - 1), 1500); return; }
-      setTokenError(true);
+      setTokenError('server');
     }
   }, []);
 
@@ -255,39 +260,30 @@ export default function LocalWorkerPanel({ onClose }) {
                 </button>
                 <button className="lw-mini" data-testid="lw-cmd-copy"
                   onClick={() => {
-                    if (!token) { loadToken(); toast.info('Token wird geladen – gleich erneut kopieren'); return; }
+                    if (!token) { loadToken(); toast.info(tokenError === 'login' ? 'Admin-Login erforderlich' : 'Token wird geladen – gleich erneut kopieren'); return; }
                     copy(`python worker.py --server ${API_URL} --token ${token}`, 'Startbefehl');
                   }}>
                   <Copy size={12} weight="bold" /> Befehl kopieren
                 </button>
-              </div>
-              {/* Token einzeln – immer markierbar (Fallback, wenn der Copy-Button
-                  vom Browser blockiert wird / kein Clipboard-Zugriff besteht). */}
-              <div className="lw-cmd" data-testid="lw-token-row" style={{ marginTop: 6 }}>
-                <input type={showToken ? 'text' : 'password'} readOnly
-                  value={token || ''} placeholder={tokenError ? 'Token nicht geladen' : 'lädt…'}
-                  onFocus={e => e.target.select()}
-                  data-testid="lw-token-field"
-                  style={{ flex: 1, minWidth: 180, fontFamily: 'monospace', fontSize: 12,
-                    background: '#12141C', color: '#7CFFB2', border: '1px solid #2A2D3A',
-                    borderRadius: 4, padding: '4px 8px', userSelect: 'all' }} />
                 <button className="lw-mini" data-testid="lw-token-copy"
                   onClick={() => {
-                    if (!token) { loadToken(); toast.info('Token wird geladen – gleich erneut kopieren'); return; }
+                    if (!token) { loadToken(); toast.info(tokenError === 'login' ? 'Admin-Login erforderlich' : 'Token wird geladen – gleich erneut kopieren'); return; }
                     copy(token, 'Token');
                   }}>
-                  <Copy size={12} weight="bold" /> Token kopieren
+                  <Key size={12} weight="bold" /> Token kopieren
                 </button>
                 {tokenError && (
                   <button className="lw-mini" data-testid="lw-token-reload" onClick={() => loadToken()}>
-                    Token neu laden
+                    <ArrowsClockwise size={12} weight="bold" /> neu laden
                   </button>
                 )}
               </div>
               {tokenError && (
                 <span className="lw-token-error" data-testid="lw-token-error"
                   style={{ color: 'var(--danger, #e5484d)', fontSize: 11 }}>
-                  Token nicht geladen – Admin-Login abgelaufen, bitte neu einloggen und „Token neu laden".
+                  {tokenError === 'login'
+                    ? 'Token nicht geladen – Admin-Login fehlt oder abgelaufen: über das Schloss-Symbol neu einloggen, dann „neu laden".'
+                    : 'Token nicht geladen – Server nicht erreichbar, bitte „neu laden".'}
                 </span>
               )}
             </li>
