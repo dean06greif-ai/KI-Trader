@@ -796,6 +796,20 @@ class BitunixTradeClient:
     async def get_balance(self):
         return await self._get("/api/v1/futures/account", {"marginCoin": "USDT"})
 
+    async def get_all_mark_prices(self) -> Dict[str, float]:
+        """EIN Public-Call für ALLE Ticker – der schnelle Preis-Wächter
+        (services/price_watch.py) aktualisiert damit alle offenen Trades im
+        Sekundentakt ohne Rate-Limit-Druck. {} bei jedem Fehler."""
+        url = f"{self.base}/api/v1/futures/market/tickers"
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                    payload = await r.json()
+        except Exception as e:
+            logger.warning(f"get_all_mark_prices failed: {e}")
+            return {}
+        return parse_ticker_prices(payload)
+
     async def get_mark_price(self, symbol: str) -> Optional[float]:
         """Public endpoint: latest mark price for a Bitunix futures symbol.
         Returns None on any failure – caller should degrade gracefully."""
@@ -865,6 +879,29 @@ def ai_capital_base(cfg_capital: float, ai_max_cap: float) -> float:
 # zählt NICHT gegen das Paper-Guthaben (unendliches Sammel-Guthaben, siehe
 # used_margin). PnL wird normal getrackt.
 COLLECTION_MARGIN_USDT = 100.0
+
+
+def parse_ticker_prices(payload) -> Dict[str, float]:
+    """Bitunix /market/tickers Antwort -> {SYMBOL: Mark-/Last-Preis} (rein &
+    testbar). Basis des schnellen Preis-Wächters (services/price_watch.py)."""
+    data = payload.get("data") if isinstance(payload, dict) else None
+    rows = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
+    out: Dict[str, float] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sym = str(row.get("symbol") or row.get("symbolName") or "").upper()
+        if not sym:
+            continue
+        for key in ("markPrice", "mark_price", "lastPrice", "last", "close"):
+            try:
+                f = float(row.get(key))
+            except (TypeError, ValueError):
+                continue
+            if f > 0:
+                out[sym] = f
+                break
+    return out
 
 
 def breakeven_price(entry: float, side: str, fee_percent: float) -> float:
@@ -1133,6 +1170,9 @@ class AutoTradeManager:
         self.config = {"mode": "paper", "coins": {}}
         self._last_pos_sync = 0.0  # Throttle für den Bitunix-Positions-Abgleich
         self._avail_cache = (0.0, None)  # 10s-Cache für das Börsen-Guthaben
+        # Scanner-Tick UND schneller Preis-Wächter rufen monitor() auf – das
+        # Lock verhindert überlappende Läufe (kein Doppel-Close/Doppel-BE).
+        self._monitor_lock = asyncio.Lock()
 
     def set_db(self, db):
         self.db = db
@@ -2619,7 +2659,15 @@ class AutoTradeManager:
         return trade
 
     async def monitor(self, prices: Dict[str, float]):
-        """Called periodically. Manage open trades against live prices."""
+        """Called periodically. Manage open trades against live prices.
+        Wird vom Scanner-Tick UND vom schnellen Preis-Wächter aufgerufen –
+        läuft bereits ein Durchlauf, wird der neue übersprungen (Lock)."""
+        if self._monitor_lock.locked():
+            return
+        async with self._monitor_lock:
+            await self._monitor_tick(prices)
+
+    async def _monitor_tick(self, prices: Dict[str, float]):
         if self.db is None:
             return
         cursor = self.db.auto_trades.find({"status": "open"})
