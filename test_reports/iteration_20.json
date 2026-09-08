@@ -1,0 +1,41 @@
+{
+  "summary": "Backend-only Verifikation der Guard-Separation-Bugfixes (Sammel- vs. Live-Trades). Alle geforderten Suites laufen komplett grün, Backend ist gesund, keine neuen Tracebacks. Bug (Richtungs-Guard blockt Live-Einstieg wegen Sammel-Trades) ist verifiziert behoben.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "test_guard_separation.py": "7/7 PASS (Haupt-Bugfix inkl. Repro Block 1: 10 offene Sammel-LONGs blocken Live-LONG NICHT mehr; Block 2: 3 Live-LONGs blocken weiter, SHORT/Hedge erlaubt; Block 3: 5+ Sammel-LONGs blocken Sammel-Einstieg via collection_max_same_direction, 4 erlaubt; Blocks 4-7 Cluster-Guard, _open_ai_trades_count, _today_risk, _insert_proposal Supersede-Logik)",
+    "test_boot_migrations_and_guards.py": "7/7 PASS (Regression grün)",
+    "test_smart_skip_and_fill_source.py": "3/3 PASS (Regression grün)",
+    "pytest -m unit": "892 passed, 1 skipped, 0 failed in 77.8s (bekannter Flake-Skip, wie in Task-Note)",
+    "scripts/leverage_effect_check.py --days 3": "Exit 0, read-only gegen lokale Dev-DB, leeres Ergebnis (0 Trades in 3 Tagen) wie erwartet",
+    "GET /api/ai/status": "HTTP 200, config sichtbar (KI Trader enabled:false in Dev, korrekt)",
+    "backend.err.log": "Keine neuen Tracebacks nach Restart, nur normale INFO/WARN (Orderflow-WS close, candle_cache MISS)"
+  },
+  "test_report_links": [
+    "/app/tests/test_guard_separation.py",
+    "/app/tests/test_boot_migrations_and_guards.py",
+    "/app/tests/test_smart_skip_and_fill_source.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ai_engine._diversification_gate trennt rows_checked korrekt nach data_collection-Flag; Sammel-Welt nutzt jetzt collection_max_same_direction (vorher tote Config) - saubere Trennung.",
+    "ai_engine_governance._insert_proposal zentralisiert Supersede-Logik (scope+symbol+change-keys). Alle 5 insert-Stellen migriert - DRY-konform.",
+    "Skript scripts/leverage_effect_check.py ist strikt read-only (kein --write Flag) - PROD_MONGO_URL-Schutz eingehalten.",
+    "PROD_MONGO_URL im backend/.env: nur read-only genutzt, Tests laufen gegen eigene Test-DB crypto_scanner_test_guardsep - richtig."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "n/a (skipped per request)"},
+  "test_credentials": "nicht benötigt (kein Auth-Flow im Scope)",
+  "seed_data_creation": "keine (Testdatei nutzt eigene Test-DB crypto_scanner_test_guardsep und räumt selbst auf)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Guard-Separation ist verifiziert (iteration_20). Alle Regressions-Suiten (test_boot_migrations_and_guards, test_smart_skip_and_fill_source, test_guard_separation, unit-Suite 892/1skip) sind grün. Bei zukünftigen Guard-Änderungen bitte test_guard_separation.py als Regressions-Referenz nutzen. Bekannter Flake: 1 skipped in unit-Suite ist erwartet (Task-Note). KI Trader in Dev enabled:false lassen. Für Guard-Tests mit mehreren LONGs unkorrelierte Symbole (ADAUSDT/EURUSD/XRPUSDT) verwenden - BTC/ETH/SOL zählen als EIN Risiko.",
+  "rca of the issue": "RCA: In services/ai_engine._diversification_gate wurden vor dem Fix ALLE offenen KI-Trades (auch data_collection=true) für den Richtungs-Guard-Zähler herangezogen. Dadurch blockten 10 offene Sammel-LONGs (die keine echten Risiko-Positionen sind) den Live-LONG-Einstieg mit 'Richtungs-Guard ... Limit 3'. Fix: Trennung der rows_checked nach data_collection-Flag; Live-Guard zählt nur data_collection!=true, Sammel-Guard nutzt eigene Einstellung collection_max_same_direction. Analog getrennt: _open_ai_trades_count und _today_risk. Verifikation via test_guard_separation.py Block 1 (exakte Bug-Repro) grün."
+}

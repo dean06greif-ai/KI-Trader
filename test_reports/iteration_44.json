@@ -1,0 +1,31 @@
+{
+  "summary": "Iter44 verified class-scoped setup maturity (crypto/indices/resources/forex). Backend: /api/health 200, /api/auth/login returns token, /api/ai/status 200, /api/ai/playbook 200 with 16 setups, maturity list of 16, class_order == [crypto,indices,resources,forex], crypto excluded=[] and 16 maturity rows, indices/resources/forex excluded=['funding_fade'] and 15 rows (no funding_fade). rules.breadth_share present, asset_reduce_factor=0.5, asset_suspend_trades=6, hard_locks=false. Per-setup live_ready consistent (global == OR over classes). Regression suites (asset_class_setups, setup_lifecycle, risk_sizing_and_playbook_v2, playbook_demotion, setup_live_gate, playbook_tf, limit_live_sync, funding_session_partialfill) => 95 passed in 30s. New pytest tests/test_iter44_playbook_classes.py => 7 passed. Frontend: KI-Trader tab -> edit-strategy-params-btn shows admin-login-modal, login Admin/Dean06Greif!/Admin, re-click opens ai-trading-panel. ai-equity-toggle opens Setup-Reife section; tabs 'Gesamt/Krypto/Indizes/Rohstoffe/Forex' all present. Row counts: all=16, crypto=16, indices=15, resources=15, forex=15 (no funding_fade row). ai-setup-class-excluded visible on indices/resources/forex with text mentioning 'funding_fade'. In crypto tab: momentum_news assets column shows ai-maturity-asset-BTCUSDT='BTC \u00d70.5'; phase order_block='\u2713 live'; phase squeeze_breakout starts with 'r\u00fcckgestuft'. ai-panel-close closes the panel. No React crash / ErrorBoundary. Console shows some unrelated 'Failed to fetch' from background polling (news/session/notif) at initial mount \u2013 not a regression (present in previous iterations, no user-facing impact).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/test_iter44_playbook_classes.py",
+    "/app/tests/test_asset_class_setups.py",
+    "/app/tests/test_setup_lifecycle.py",
+    "/app/tests/test_risk_sizing_and_playbook_v2.py",
+    "/app/backend/tests/test_playbook_demotion.py",
+    "/app/backend/tests/test_setup_live_gate.py",
+    "/app/backend/tests/test_playbook_tf.py",
+    "/app/backend/tests/test_limit_live_sync.py",
+    "/app/backend/tests/test_funding_session_partialfill.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Background fetch calls (session/notif and 5 other useEffect fetches) throw 'Failed to fetch' TypeErrors in browser console at first mount \u2013 non-fatal but noisy; consider try/catch or AbortController to avoid Sentry-style noise."
+  ],
+  "updated_files": ["/app/tests/test_iter44_playbook_classes.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "none \u2013 read-only GET calls, no writes, no trades",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Playbook endpoint takes ~15\u201320s (Atlas aggregation). Use timeout>=60s. In crypto tab: order_block is live, squeeze_breakout is r\u00fcckgestuft, momentum_news has BTCUSDT \u00d70.5 factor badge. Classes: crypto=16 rows, others=15 (funding_fade excluded). Suites test_maturity_feed_e2e (writes trade) and test_iter38_* (needs port 8055) intentionally skipped per instructions."
+}
