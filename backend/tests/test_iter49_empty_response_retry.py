@@ -46,7 +46,7 @@ def _patch(monkeypatch, gen, keys=("k1", "k2")):
 def test_empty_response_single_retry_succeeds(monkeypatch):
     calls = []
 
-    async def gen(provider, model, key, prompt, system, temperature, json_mode):
+    async def gen(provider, model, key, prompt, system, temperature, json_mode, **kw):
         calls.append(key)
         if len(calls) == 1:
             raise RuntimeError(f"Leere Antwort (keine choices) von {provider}/{model}")
@@ -57,13 +57,14 @@ def test_empty_response_single_retry_succeeds(monkeypatch):
         [("openrouter", "openai/gpt-oss-20b:free")], "p", "s"))
     assert text == '{"ok": true}'
     assert model == "openai/gpt-oss-20b:free"
-    assert calls == ["k1", "k1"], "Retry muss auf DEMSELBEN Key passieren"
+    # Free-Modelle: Backup-Key zuerst (Hauptkonto = Reserve) – Retry auf DEMSELBEN Key
+    assert len(calls) == 2 and calls[0] == calls[1], "Retry muss auf DEMSELBEN Key passieren"
 
 
 def test_empty_response_rotates_keys_then_next_model(monkeypatch):
     calls = []
 
-    async def gen(provider, model, key, prompt, system, temperature, json_mode):
+    async def gen(provider, model, key, prompt, system, temperature, json_mode, **kw):
         calls.append((model, key))
         if model == "openai/gpt-oss-20b:free":
             raise RuntimeError(f"Leere Antwort (keine choices) von {provider}/{model}")
@@ -84,7 +85,7 @@ def test_empty_response_rotates_keys_then_next_model(monkeypatch):
 def test_other_errors_still_skip_model_immediately(monkeypatch):
     calls = []
 
-    async def gen(provider, model, key, prompt, system, temperature, json_mode):
+    async def gen(provider, model, key, prompt, system, temperature, json_mode, **kw):
         calls.append((model, key))
         if model == "kaputt":
             raise RuntimeError("Error code: 500 - internal")
@@ -99,7 +100,7 @@ def test_other_errors_still_skip_model_immediately(monkeypatch):
 
 
 def test_all_empty_raises_last_error(monkeypatch):
-    async def gen(provider, model, key, prompt, system, temperature, json_mode):
+    async def gen(provider, model, key, prompt, system, temperature, json_mode, **kw):
         raise RuntimeError(f"Leere Antwort (keine choices) von {provider}/{model}")
 
     _patch(monkeypatch, gen, keys=("k1",))
@@ -109,7 +110,7 @@ def test_all_empty_raises_last_error(monkeypatch):
 
 
 def test_health_detail_explains_overload(monkeypatch):
-    async def gen(provider, model, key, prompt, system, temperature, json_mode):
+    async def gen(provider, model, key, prompt, system, temperature, json_mode, **kw):
         if model == "openai/gpt-oss-20b:free":
             raise RuntimeError(f"Leere Antwort (keine choices) von {provider}/{model}")
         return "ok"

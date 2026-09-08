@@ -278,6 +278,16 @@ def is_upstream_overload(err: Exception) -> bool:
             or "model is overloaded" in s)
 
 
+# Mistral Free ("Experiment"): 1 Request/Sekunde pro WORKSPACE (Code 1300) –
+# alle Keys eines Workspaces teilen sich das Limit. Kurzer Retry auf demselben
+# Key statt 10-min-Sperre; Cooldown danach nur ~65s (Minuten-Klasse).
+MISTRAL_RPS_RETRY_S = 1.5
+
+
+def is_mistral_rps_limit(provider: str, err: Exception) -> bool:
+    return provider == "mistral" and is_rate_limit_error(err) and not is_payment_error(err)
+
+
 def is_empty_response_error(err: Exception) -> bool:
     """Transient: Free-Modell (v.a. OpenRouter) liefert 200 mit leeren
     choices/Content – typisch Überlastung des Upstream-Providers.
@@ -412,7 +422,9 @@ def _quota_cooldown_s(detail: str) -> float:
         return max(30 * 60.0, (nxt - now).total_seconds())
     minute = any(k in s for k in ("per minute", "per-min", "free-models-per-min",
                                   "per_minute", "rpm", "tpm", "requests per min",
-                                  "tokens per min"))
+                                  "tokens per min",
+                                  # Mistral Code 1300 = Sekunden-/Minuten-Limit des Workspaces
+                                  "'code': '1300'", '"code":"1300"', '"code": "1300"'))
     if minute:
         return MINUTE_LIMIT_COOLDOWN_S
     return KEY_LIMIT_COOLDOWN_S
@@ -493,18 +505,13 @@ def record_result(provider: str, model: str, status: str, detail: str = "",
     if status != "ok":
         # Verlauf für die UI: WAS ist ausgefallen (Rate-Limit / Budget / Fehler),
         # WELCHER Assistent (Rolle) war betroffen.
+        # Sichtbar im KI-Status-Verlauf. KEINE Glocken-Warnung pro Einzel-
+        # Ausfall mehr (Trader-Entscheid 09/2026): gemeldet wird nur noch ein
+        # KOMPLETT-Ausfall der Rolle (generate_chain -> notify_ai_failure).
         _recent_failures.append({
             "ts": _now(), "provider": provider, "model": model, "role": role,
             "reason": status, "detail": str(detail)[:200],
         })
-        # Gleiche Details zusätzlich in die Website-Glocke (Cooldown gegen Spam)
-        try:
-            import asyncio
-            from services.notifications import notify_model_failure
-            asyncio.get_running_loop().create_task(
-                notify_model_failure(role, provider, model, status, str(detail)))
-        except Exception:  # noqa: BLE001 – kein Loop (z.B. Tests) -> still
-            pass
     if status == "ok":
         _last_call.update({
             "provider": provider, "model": model, "role": role,
@@ -717,8 +724,46 @@ async def _gemini_generate(model: str, key: str, prompt: str, system: str,
     return text
 
 
+# OpenRouter-Reasoning-Modelle (Nemotron 3): ohne max_tokens frisst das
+# "Denken" das Ausgabe-Budget des Free-Providers -> finish_reason=length,
+# content leer. Grosszügiges Budget lässt Reasoning UND Antwort Platz.
+OPENROUTER_MAX_TOKENS = 8192
+
+
+def _reasoning_text(msg) -> str:
+    """Reasoning-Feld eines OpenAI-kompatiblen Message-Objekts (Nemotron auf
+    OpenRouter schreibt die Antwort teils NUR dorthin, content bleibt leer)."""
+    for attr in ("reasoning", "reasoning_content"):
+        v = getattr(msg, attr, None)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    extra = getattr(msg, "model_extra", None) or {}
+    for attr in ("reasoning", "reasoning_content"):
+        v = extra.get(attr)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _json_from_reasoning(reasoning: str) -> str:
+    """Letztes vollständiges JSON-Objekt aus einem Reasoning-Text ziehen
+    (Modell hat die fertige Antwort im Denk-Feld abgelegt). '' wenn keins."""
+    if not reasoning or "{" not in reasoning:
+        return ""
+    try:
+        from services.ai_json import parse_json_lenient
+        start = reasoning.find("{")
+        candidate = reasoning[start:]
+        if parse_json_lenient(candidate):
+            return candidate.strip()
+    except Exception:  # noqa: BLE001 – Reasoning ohne verwertbares JSON
+        pass
+    return ""
+
+
 async def _oai_generate(provider: str, model: str, key: str, prompt: str, system: str,
-                        temperature: float, json_mode: bool) -> str:
+                        temperature: float, json_mode: bool,
+                        reasoning_off: bool = False) -> str:
     client = _oai_client(provider, key)
     kwargs = dict(model=model,
                   messages=[{"role": "system", "content": system},
@@ -726,22 +771,42 @@ async def _oai_generate(provider: str, model: str, key: str, prompt: str, system
                   temperature=temperature)
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
+    if provider == "openrouter":
+        kwargs["max_tokens"] = OPENROUTER_MAX_TOKENS
+        if reasoning_off:
+            # Retry nach Leerantwort: Denken abschalten -> Antwort landet
+            # garantiert in content (Qualitäts-Pfad bleibt der 1. Versuch).
+            kwargs["extra_body"] = {"reasoning": {"enabled": False}}
     try:
         resp = await client.chat.completions.create(**kwargs)
     except Exception as inner:
-        if json_mode and ("response_format" in str(inner).lower() or "json_object" in str(inner).lower()):
+        low = str(inner).lower()
+        retry = False
+        if json_mode and ("response_format" in low or "json_object" in low):
             kwargs.pop("response_format", None)
-            resp = await client.chat.completions.create(**kwargs)
-        else:
+            retry = True
+        if "max_tokens" in low and kwargs.pop("max_tokens", None):
+            retry = True
+        if not retry:
             raise
+        resp = await client.chat.completions.create(**kwargs)
     # Defensive: einige OpenRouter-Free-Modelle liefern choices=None/leer
     # ('NoneType' object is not subscriptable) – als klarer Fehler behandeln.
     choices = getattr(resp, "choices", None) or []
     if not choices or getattr(choices[0], "message", None) is None:
         raise RuntimeError(f"Leere Antwort (keine choices) von {provider}/{model}")
-    text = (choices[0].message.content or "").strip()
+    msg = choices[0].message
+    text = (msg.content or "").strip()
     if not text:
-        raise RuntimeError(f"Leere Antwort von {provider}/{model}")
+        reasoning = _reasoning_text(msg)
+        salvaged = _json_from_reasoning(reasoning) if json_mode else ""
+        if salvaged:
+            logger.info(f"{provider}/{model}: content leer – JSON aus Reasoning-Feld übernommen")
+            return salvaged
+        finish = getattr(choices[0], "finish_reason", None)
+        hint = " (Reasoning ohne Antwort)" if reasoning else ""
+        raise RuntimeError(f"Leere Antwort von {provider}/{model}{hint} "
+                           f"[finish_reason={finish}]")
     return text
 
 
@@ -810,18 +875,31 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
             key = keys[i]
             tried_any = True
             try:
-                async def _gen_once():
+                async def _gen_once(reasoning_off: bool = False):
                     if provider == "gemini":
                         return await _gemini_generate(model, key, prompt, system, temperature, json_mode)
+                    if reasoning_off:
+                        return await _oai_generate(provider, model, key, prompt, system, temperature,
+                                                   json_mode, reasoning_off=True)
                     return await _oai_generate(provider, model, key, prompt, system, temperature, json_mode)
                 try:
                     text = await _gen_once()
                 except Exception as e1:
                     if is_empty_response_error(e1):
-                        # Leere Antwort ist meist transient (Free-Tier überlastet):
-                        # einmaliger Retry auf demselben Key, dann Key-Wechsel.
-                        logger.info(f"{provider}/{model}: leere Antwort – einmaliger Retry in 2s…")
+                        # Leere Antwort: bei OpenRouter-Reasoning-Modellen (Nemotron)
+                        # steckt die Antwort im Denk-Feld oder das Denken frisst das
+                        # Budget -> Retry OHNE Reasoning; sonst transient -> Retry.
+                        off = provider == "openrouter"
+                        logger.info(f"{provider}/{model}: leere Antwort – Retry in 2s"
+                                    f"{' (Reasoning aus)' if off else ''}…")
                         await asyncio.sleep(2)
+                        text = await _gen_once(reasoning_off=off)
+                    elif is_mistral_rps_limit(provider, e1):
+                        # Mistral Free: 1 Request/Sekunde pro Workspace – kurz
+                        # warten und denselben Key erneut nutzen statt Key-Sperre.
+                        logger.info(f"{provider}/{model}: Sekunden-Limit – Retry in "
+                                    f"{MISTRAL_RPS_RETRY_S}s…")
+                        await asyncio.sleep(MISTRAL_RPS_RETRY_S)
                         text = await _gen_once()
                     elif (model in PAID_MODELS_NO_FALLBACK
                           and is_rate_limit_error(e1) and not is_payment_error(e1)):
@@ -850,17 +928,13 @@ async def generate_chain(chain: List[Tuple[str, str]], prompt: str, system: str,
                 clear_key_limited(provider, i)
                 record_result(provider, model, "ok", key_index=i,
                               requested=chain[0][1] if chain else None, role=role)
-                # KI-Ausfall-Meldung: Primär- UND Backup-Provider gescheitert,
-                # ein Notfall-Fallback musste übernehmen.
-                if len(failed_providers - {provider}) >= 2:
-                    try:
-                        from services.notifications import notify_ai_failure
-                        await notify_ai_failure(
-                            role or "KI-Anfrage",
-                            failed_models, f"{provider}/{model}",
-                            failures=failure_details)
-                    except Exception:
-                        pass
+                # Erfolgreicher Fallback = KEINE Glocken-Meldung mehr (Trader-
+                # Entscheid 09/2026); der aktive Fallback bleibt im KI-Status
+                # (health_status.active_fallbacks) sichtbar. Gemeldet wird nur
+                # noch der Komplett-Ausfall am Ende der Kette.
+                if failed_providers - {provider}:
+                    logger.info(f"{role or 'KI'}: Fallback {provider}/{model} übernimmt "
+                                f"nach Ausfall von {', '.join(failed_models[:4])}")
                 return text, provider, model
             except Exception as e:
                 last_err = e

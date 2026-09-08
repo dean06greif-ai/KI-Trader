@@ -43,6 +43,26 @@ aggressiven Änderungen.
   NICHT ins Repo; Render-Env-Variablen des Nutzers bleiben unberührt.
 - Lokale Testumgebung nutzt bewusst KEINE echten Bitunix/LLM-Keys (kein Live-Trade-Risiko).
 
+## Umgesetzt (09/2026 – Iteration 53: Fallback-Spam & Ursachen)
+Auslöser: Glocke voll mit "KI-Warnung … Fallback-Kette übernimmt" (Nemotron leere
+Antwort, Mistral 429 Code 1300). Diagnose: KEIN Key-Problem.
+- **A) Nemotron/OpenRouter Leerantwort** (`ai_providers.py`): Reasoning-Modelle
+  legen Antwort in `message.reasoning` ab / Denken frisst Ausgabe-Budget.
+  Fix: `max_tokens=8192` für OpenRouter, JSON aus Reasoning-Feld übernehmen
+  (`_reasoning_text`, `_json_from_reasoning`), Retry nach Leerantwort mit
+  `reasoning: {enabled: false}` (nur Retry-Pfad → keine Qualitätseinbuße im
+  Normalfall). Analyst-Preset bewusst bei nemotron-3-super belassen.
+- **B) Mistral 1-RPS-Limit** (Code 1300 = pro Workspace, Backup-Keys nutzlos):
+  Retry nach 1,5 s auf demselben Key (`is_mistral_rps_limit`), Cooldown 65 s
+  statt 10 min (`_quota_cooldown_s` erkennt `'code': '1300'`).
+- **C) Glocke nur noch bei KOMPLETT-Ausfall einer Rolle** (Trader-Entscheid):
+  `record_result` löst keine `notify_model_failure` mehr aus; erfolgreicher
+  Fallback (auch Notfall außerhalb Team) meldet nicht mehr – bleibt im
+  KI-Status (`health_status.active_fallbacks`, `_recent_failures`) sichtbar.
+  `notify_model_failure`/`summarize_model_failures` bleiben als Funktionen erhalten.
+- Tests: `backend/tests/test_iter53_nemotron_reasoning_mistral_rps.py` (9 grün),
+  Regression 69/69 in den betroffenen Provider-/Notify-Tests.
+
 ## Backlog / offen
 - P2: Sammel-Statistik ggf. zusätzlich in der globalen Equity-Kurve spiegeln.
 - P2: Frühere Fetch-Fehler beim Cold-Start durch Retry/ErrorBoundary glätten (Log-Noise).
