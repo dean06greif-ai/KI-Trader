@@ -1,0 +1,51 @@
+{
+  "summary": "Backend-only API-Smoke/Regression gegen den KI-Trader Dev-Server (http://localhost:8055, echte Bitunix-Live-Keys, READ-ONLY - keine Orders/Closes ausgelöst). Neue Suite /app/kitrader/backend/tests/test_iter38_watchdog_pnl_playbook_api.py (15 Tests) + /app/kitrader/backend/tests/test_iter38_pnl_reconcile_live.py (1 E2E-Test gegen echte Bitunix-Positions-Historie): 16/16 grün. Ergebnisse: watchdog/status liefert settings.adopt_grace_sec=90, adopt_deferred/deduped=0, inflight_entries=[] (Array), errors=[]; watchdog/config klemmt korrekt (120->120, 5000->900, 0->0, 'abc' ignoriert/bleibt 90, -5->0) und wurde am Ende wieder auf 90 gesetzt (verifiziert per GET); watchdog/run zweimal hintereinander status=success, result.positions=7 (echte Börsen-Positionen), adopted=0, adopt_deferred=0, deduped=0, errors=[]; ohne Admin-Token 401 für run/config/pnl-reconcile-run. pnl-reconcile/status configured=true, run -> success/checked/reconciled/changed. PnL-Abgleich zusätzlich echt verifiziert: temporärer TEST-Trade (nur DB, danach gelöscht) mit einer realen Position-ID aus get_history_positions wurde von realized_pnl -999 auf den echten Bitunix-Netto-PnL +2.258105 USDT korrigiert (fees_paid 0.835895, funding 0.0, result=win, pnl_local_estimate=-999, Event 'PNL-ABGLEICH (Bitunix)') und der zweite Lauf war idempotent (keine Doppel-Events). /api/ai/playbook: disabled={}, hard_locks=false, live_blocked={} (Objekt), maturity 13 Einträge, alle phase='sammelt' mit Feld paper_since_demotion, rules.promote_min_trades=5, rules.demote_min_live_trades=8. /api/autotrade/trades?status=open: 7 offene Live-Trades, alle 'Manuell (Bitunix)' mit manual_trade=true und gesetzter bitunix_position_id, KEINE doppelten bitunix_position_id (Dedupe ok, auch direkt in Mongo geprüft), kein _id-Leak. /api/copilot/chat (Admin): 200 in ~3.7s (openrouter, nvidia/nemotron-3-super-120b-a12b:free), Antwort 'Der maximale Drawdown beträgt 16 % des Startkapitals.' - korrekte Einheit, kein '1600 %'. Regression: /api/health 200, /api/autotrade/sync-status 200 (configured=true). Bestehende Unit-/Modul-Suiten für die neuen Module ebenfalls grün (test_position_watchdog, test_watchdog_inflight_dedupe, test_pnl_reconcile, test_copilot_metric_units, test_playbook_demotion, test_watchdog_sync_only, test_iter46_watchdog_leftover: 66 passed).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/autotrade/pnl-reconcile/run",
+        "issue": "Nicht-blockierende Beobachtung: In der DB gab es 0 geschlossene Live-Trades <48h, d.h. der periodische Pfad war nur über den geseedeten TEST-Trade prüfbar. Dabei fiel auf, dass get_history_positions auch eine Position-ID zurückgibt (7397090786450648719), die lokal noch als OFFENER Trade (DOTUSDT LONG, 'Manuell (Bitunix)') geführt wird - Bitunix listet offenbar teil-geschlossene/aufgelöste Positionen in der Historie. Aktuell harmlos, weil reconcile_pending nur status=closed filtert; sollte aber im Auge behalten werden, falls der Abgleich künftig auch offene Trades einbezieht."
+      },
+      {
+        "endpoint": "tests/test_watchdog_api_review.py",
+        "issue": "Alt-Testdatei nutzt Default REACT_APP_BACKEND_URL/http://localhost:8001 (Template-Backend) -> 4 failed / 6 errors (404). Mit REACT_APP_BACKEND_URL=http://localhost:8055 laufen alle 10 Tests grün. Kein Produktfehler, nur irreführende Test-Defaults; Empfehlung: auf KITRADER_BASE_URL (8055) umstellen."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/kitrader/backend/tests/test_iter38_watchdog_pnl_playbook_api.py",
+    "/app/kitrader/backend/tests/test_iter38_pnl_reconcile_live.py",
+    "/app/kitrader/backend/tests/_iter38_dump.py",
+    "/app/kitrader/backend/tests/_iter38_db_check.py",
+    "/app/kitrader/test_reports/pytest/iter38.xml"
+  ],
+  "action_items": [
+    "Optional: Default-BASE_URL in tests/test_watchdog_api_review.py auf KITRADER_BASE_URL/8055 umstellen (läuft sonst gegen das Template-Backend auf 8001 und schlägt mit 404 fehl).",
+    "Optional/Beobachtung: get_history_positions liefert auch IDs noch offener Positionen - beim Ausbau des PnL-Abgleichs (z.B. auf offene Trades) Position-Status mitprüfen."
+  ],
+  "critical_code_review_comments": [
+    "position_watchdog._adoption_allowed(): Karenz-Fallback über _first_seen ist korrekt begrenzt (Aufräumen verschwundener pids in check()) - keine Leck-Gefahr; grace<=0 wird bewusst als 'keine Karenz' behandelt und ist per API erreichbar (0 wird gespeichert, nicht auf Default zurückgesetzt) - passt zur Anforderung.",
+    "entry_inflight.duplicate_of(): Der Zeitfenster-Zweig greift nur, wenn eine der beiden Position-IDs fehlt (not opid or not pid) - damit kann keine fremde Position gelöscht werden; Dedupe im Watchdog löscht ausschließlich is_watchdog_adoption()-Trades, der KI-Trade bleibt führend. Logik verifiziert.",
+    "pnl_reconcile.build_updates(): setzt pnl_exchange_exact + result neu und schreibt Events nur bei Δ>=0.005 USDT - idempotent bestätigt (2. Lauf ohne Änderung/ohne Event-Duplikat).",
+    "/api/autotrade/watchdog/status garantiert die Zähler-Defaults (adopt_deferred/deduped) auch ohne Lauf - stabiler API-Vertrag, gut für das Frontend."
+  ],
+  "updated_files": [
+    "/app/kitrader/backend/tests/test_iter38_watchdog_pnl_playbook_api.py",
+    "/app/kitrader/backend/tests/test_iter38_pnl_reconcile_live.py",
+    "/app/kitrader/backend/tests/_iter38_dump.py",
+    "/app/kitrader/backend/tests/_iter38_db_check.py"
+  ],
+  "success_rate": {"backend": "100% (16/16 neue API-Tests, 66/66 Modul-Unit-Tests der neuen Module)", "frontend": "nicht getestet (Auftrag: backend only)"},
+  "seed_data_creation": "Temporärer geschlossener Live-Trade 'TEST_iter38_pnl_reconcile' in crypto_scanner_dev.auto_trades mit realer Bitunix-Position-ID (nur DB-Write, im finally-Block wieder gelöscht). Watchdog-Config-Änderungen (120/5000/0/-5/'abc') wurden am Ende auf adopt_grace_sec=90 zurückgesetzt und per GET verifiziert.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin/Dean06Greif!/Admin via POST http://localhost:8055/api/auth/login (aus /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Dev-Server läuft auf http://localhost:8055 (NICHT 8001). Neue Suiten: tests/test_iter38_watchdog_pnl_playbook_api.py (BASE_URL über KITRADER_BASE_URL, Default 8055) und tests/test_iter38_pnl_reconcile_live.py (seedet einen TEST-Trade mit realer Position-ID aus get_history_positions und räumt selbst auf). pytest.ini nutzt xdist - Config-Tests unbedingt seriell laufen lassen: `python -m pytest <file> -o addopts=\"\"`. Aktuell 7 offene Live-Positionen an der Börse (3x BTCUSDT SHORT, 2x GOLD SHORT, 1x GOLD LONG, 1x DOTUSDT LONG), alle lokal als 'Manuell (Bitunix)' gebunden; 0 geschlossene Live-Trades <48h. Keine Trade-schreibenden Endpoints aufrufen.",
+  "rca_of_the_issue": "Keine Defekte gefunden. Alle vier gemeldeten Fixes sind über die API belegt: (1) Doppel-Trade-Schutz - status/run liefern adopt_deferred+deduped, inflight_entries als Array, keine doppelten bitunix_position_id unter den offenen Live-Trades; (2) echter Bitunix-PnL - Abgleich schreibt Netto-PnL inkl. Fees aus der Positions-Historie und ist idempotent; (3) Copilot interpretiert max_drawdown 1600 USDT / 16 % korrekt als 16 % des Startkapitals (kein Einheitenfehler); (4) /api/ai/playbook liefert hard_locks=false, disabled={} und alle 13 Setups mit phase/paper_since_demotion."
+}

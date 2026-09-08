@@ -1,0 +1,39 @@
+{
+  "summary": "Backend-only Verifikation des Rollen-Attributions-Fixes (News-Wächter zeigte OpenRouter-Fallback). 1) Regressionstests /app/backend/tests/test_role_fallback_attribution.py: 3/3 gruen (-n 0). 2) Eigene Zusatz-Regressionstests (neu: tests/test_role_attribution_stream_iter9.py, 2/2 gruen): stream_chain behaelt die beim Start fixierte Rolle, auch wenn waehrend des Calls set_current_role('news_watcher') gesetzt wird; health_status().active_fallbacks hat unveraenderte Struktur {role, provider, model, requested_model, key_index, ts, age_s} und ordnet den OpenRouter-Fallback korrekt deep_analyst (nicht news_watcher) zu. 3) Code-Review: ALLE 10 record_result()-Aufrufe in generate_chain/stream_chain reichen role=role explizit durch; alle externen Aufrufer uebergeben role (ai_engine.generate_for_role role=role, Chat-Stream role='chat', ai_model_advisor role='model_advisor'); kein weiterer record_result-Caller ausserhalb ai_providers. 4) Import-Smoke (from services import ai_engine, ai_model_advisor, ai_providers) ok. 5) Live-Smoke lokal: GET /api/ai/status -> HTTP 200, providers_health enthaelt models/rate_limited/recent_failures/active_fallbacks; Attributionen sind plausibel (news_watcher -> mistral/mistral-small-latest = user_configured Team, analyst -> openrouter-Fallback nach Cerebras-402; KEIN openrouter beim news_watcher). Keine Live-Trading-Endpoints angefasst, keine .env geaendert.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "https://tradelog-modal.preview.emergentagent.com/api/*", "issue": "Ueber die externe Preview-URL (REACT_APP_BACKEND_URL) liefern ALLE /api-Routen '404 page not found' (plaintext, Ingress-Default). Lokal auf 127.0.0.1:8001 antworten dieselben Routen mit 200. Verifikation musste daher lokal erfolgen. Vermutlich Ingress/Routing- bzw. Preview-Env-Problem, nicht Applikationscode.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "n/a (services/ai_model_advisor.py:153)", "issue": "set_current_role(None) am Ende des Advisor-Calls loescht die globale Rolle waehrend parallel laufender Calls. Durch den Fix (explizites role-Durchreichen) heute harmlos, aber der globale _current_role-Fallback bleibt eine latente Race-Quelle fuer kuenftige Aufrufer, die role nicht setzen."},
+      {"endpoint": "n/a (uvicorn reload)", "issue": "Backend-Reload triggert bei Datei-Aenderungen unter /app/backend/tests (WatchFiles) einen kompletten Restart -> kurzzeitig keine API. Nur Dev-Komfort."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_role_fallback_attribution.py",
+    "/app/backend/tests/test_role_attribution_stream_iter9.py",
+    "/app/test_reports/pytest/iter9_role_attribution.xml"
+  ],
+  "action_items": [
+    "Externe Preview-URL: /api/* liefert 404 (Ingress) – bitte pruefen/eskalieren, damit Frontend im Preview ueberhaupt Daten bekommt.",
+    "Supervisor 'frontend' ist FATAL: /var/log/supervisor/frontend.err.log zeigt 'craco: not found' bzw. ENOENT /app/frontend/node_modules/.cache/default-development/0.pack -> yarn install / Cache loeschen und Frontend neu starten (Frontend-Tests waren nicht angefragt, aber Service laeuft nicht).",
+    "Optional Cleanup: globalen _current_role-Fallback in record_result langfristig entfernen, sobald alle Aufrufer role explizit setzen."
+  ],
+  "critical_code_review_comments": [
+    "Fix ist konsistent: role wird in generate_chain/stream_chain einmal am Start fixiert (role = role or _current_role.get('role')) und an alle record_result-Pfade (ok/error/rate_limited/skipped_too_large/budget) durchgereicht – kein Pfad ohne role gefunden.",
+    "health_status() filtert _role_fallbacks per Alter und liefert die erwarteten Felder unveraendert – Frontend-Vertrag (KI Trading Panel > Warnungen) bleibt kompatibel."
+  ],
+  "updated_files": ["/app/backend/tests/test_role_attribution_stream_iter9.py"],
+  "success_rate": {"backend": "100% (5/5 Rollen-Attributions-Tests, /api/ai/status lokal 200)", "frontend": "not tested (backend only)"},
+  "seed_data_creation": "keine; Tests arbeiten in-memory mit gemockten Providern",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "/app/memory/test_credentials.md (Admin/Dean06Greif!/Admin) – fuer /api/ai/status nicht benoetigt",
+  "context_for_next_testing_agent": "Externe URL https://tradelog-modal.preview.emergentagent.com/api/* gibt derzeit 404 (Ingress); fuer Backend-Verifikation http://localhost:8001 nutzen. Frontend-Service ist FATAL (craco/node_modules cache). Rollen-Attribution: pytest tests/test_role_fallback_attribution.py tests/test_role_attribution_stream_iter9.py -n 0. pytest.ini erzwingt -n 2, daher -n 0 anhaengen. Keine Live-Trading-Endpoints aufrufen (echte Bitunix-Keys).",
+  "rca_of_the_issue": "record_result() attributierte Ergebnisse dem globalen _current_role zum Zeitpunkt des Call-ENDES; bei parallelen Rollen-Calls (News-Waechter startet Deep-Analyse via asyncio.create_task) wurde der langsame OpenRouter-Erfolg des deep_analyst dem news_watcher zugeschrieben. Fix (role-Parameter, einmal am Start fixiert, explizit an alle record_result-Aufrufe) ist per Unit-Regression fuer generate_chain UND stream_chain verifiziert; ein bewusst gesetztes set_current_role('news_watcher') mitten im Call verfaelscht die Zuordnung nicht mehr."
+}
