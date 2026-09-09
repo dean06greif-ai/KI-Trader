@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, X, Repeat, ArrowRight, ArrowCounterClockwise, Clock, Brain } from '@phosphor-icons/react';
+import { Play, X, Repeat, ArrowRight, ArrowCounterClockwise, Clock, Brain, Cloud, Desktop, Gear } from '@phosphor-icons/react';
+import LocalWorkerPanel from './LocalWorkerPanel';
 import { toast } from '../lib/toast';
 import { authHeaders, isAdmin } from '../auth';
 
@@ -33,6 +34,8 @@ export default function AITraderSeeding() {
   const [targetPassed, setTargetPassed] = useState(saved.targetPassed || 3);
   const [job, setJob] = useState(null);
   const [result, setResult] = useState(null);
+  const [lwOnline, setLwOnline] = useState(false);
+  const [showLW, setShowLW] = useState(false);
   const pollRef = useRef(null);
   const admin = isAdmin();
 
@@ -70,6 +73,14 @@ export default function AITraderSeeding() {
   useEffect(() => { load(); return () => { if (pollRef.current) clearInterval(pollRef.current); }; },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []);
+
+  useEffect(() => {
+    const check = () => fetch(`${API_URL}/api/localworker/status`).then(r => r.json())
+      .then(d => setLwOnline(!!d.online)).catch(() => setLwOnline(false));
+    check();
+    const iv = setInterval(check, 10000);
+    return () => clearInterval(iv);
+  }, []);
 
   const toggleClass = (c) => setClasses(prev => (prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]));
 
@@ -117,7 +128,8 @@ export default function AITraderSeeding() {
 
   return (
     <div data-testid="ai-seed-panel">
-      <div className="bt-hint" style={{ marginBottom: 12 }} data-testid="ai-seed-intro">
+      <details className="bt-hint ai-seed-intro" data-testid="ai-seed-intro">
+        <summary>So funktioniert der Setup-Backtest des KI Traders</summary>
         Der KI Trader testet seine Playbook-Setups (rückgestufte und Datensammel-Setups) regelbasiert auf Vergangenheitsdaten
         (5m · In-Sample {Math.round((rules.is_share || 0.7) * 100)}% wählt die Variante, Out-of-Sample bestätigt). Setups ohne Edge werden
         anschließend von der KI überarbeitet: im Einmal-Durchlauf / der Auto-Schleife wird der Vorschlag für den nächsten Lauf vorgemerkt,
@@ -125,7 +137,7 @@ export default function AITraderSeeding() {
         Bestandene Setups zählen ×{rules.weight ?? 0.5} gedeckelt ({rules.max_backtest_weighted ?? 3} gewichtete Trades) fürs Reife-Gate –
         <b> Live erst nach {rules.min_real_trades ?? 2}+ profitablen echten Paper-Trades</b>.
         Nicht testbar: {Object.keys(info?.not_backtestable || {}).join(', ') || '—'}.
-      </div>
+      </details>
 
       <div className="ai-seed-grid">
         <div className="bt-col">
@@ -161,45 +173,70 @@ export default function AITraderSeeding() {
               <Brain size={13} weight="bold" /> KI-Schleife
             </button>
           </div>
-          <div className="bt-params" style={{ marginTop: 10, marginBottom: 0 }}>
-            <label>Zeitraum
-              <select value={days} onChange={e => setDays(Number(e.target.value))} data-testid="ai-seed-days">
-                {DAY_OPTIONS.map(d => <option key={d} value={d}>{d} Tage</option>)}
-              </select>
-            </label>
-            <label className="bt-check" title="Nach jedem Setup ohne Edge schlägt die KI einen überarbeiteten Parameter-Satz vor (Rolle Forschungs-Analyst)">
-              <input type="checkbox" checked={aiRevise} onChange={e => setAiRevise(e.target.checked)} data-testid="ai-seed-ai-revise" />
-              KI überarbeitet Setups ohne Edge
-            </label>
-            {mode === 'ai_loop' && (
-              <>
-                <label title="Maximale KI-Revisions-Runden je Setup">Max. Runden
-                  <select value={aiRounds} onChange={e => setAiRounds(Number(e.target.value))} data-testid="ai-seed-ai-rounds">
-                    {[1, 2, 3, 5, 8, 10].map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </label>
-                <label title="Schleife endet je Anlageklasse, sobald so viele Setups bestanden haben">Ziel: Setups mit Edge
-                  <select value={targetPassed} onChange={e => setTargetPassed(Number(e.target.value))} data-testid="ai-seed-target">
-                    {[1, 2, 3, 4, 5, 6, 9].map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </label>
-              </>
-            )}
+          <div className="ai-seed-kv" data-testid="ai-seed-mode-hint">
+            {mode === 'single' && <span>Ein Durchlauf je Setup; ohne Edge wird die nächste Variante bzw. der KI-Vorschlag für den nächsten Lauf vorgemerkt.</span>}
+            {mode === 'loop' && <span>Alle Varianten nacheinander + Feintuning; ohne Edge KI-Vorschlag für den nächsten Lauf.</span>}
+            {mode === 'ai_loop' && <span>Wie Auto-Schleife, zusätzlich überarbeitet die KI jedes Setup ohne Edge sofort und testet erneut – bis Ziel erreicht oder Runden aufgebraucht.</span>}
           </div>
         </div>
       </div>
 
-      <div className="bt-params">
+      <div className="bt-params" data-testid="ai-seed-run-row">
+        <label>Zeitraum
+          <select value={days} onChange={e => setDays(Number(e.target.value))} data-testid="ai-seed-days">
+            {DAY_OPTIONS.map(d => <option key={d} value={d}>{d} Tage</option>)}
+          </select>
+        </label>
+        <label className="bt-check" title="Nach jedem Setup ohne Edge schlägt die KI einen überarbeiteten Parameter-Satz vor (Rolle Forschungs-Analyst)">
+          <input type="checkbox" checked={aiRevise} onChange={e => setAiRevise(e.target.checked)} data-testid="ai-seed-ai-revise" />
+          KI überarbeitet Setups ohne Edge
+        </label>
+        {mode === 'ai_loop' && (
+          <>
+            <label title="Maximale KI-Revisions-Runden je Setup">Max. Runden
+              <select value={aiRounds} onChange={e => setAiRounds(Number(e.target.value))} data-testid="ai-seed-ai-rounds">
+                {[1, 2, 3, 5, 8, 10].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+            <label title="Schleife endet je Anlageklasse, sobald so viele Setups bestanden haben">Ziel: Setups mit Edge
+              <select value={targetPassed} onChange={e => setTargetPassed(Number(e.target.value))} data-testid="ai-seed-target">
+                {[1, 2, 3, 4, 5, 6, 9].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </>
+        )}
+        <div className="bt-exec" data-testid="ai-seed-execution-toggle">
+          <span className="bt-exec-label">Ausführung</span>
+          <button className="bt-exec-btn on" data-testid="ai-seed-exec-cloud" title="Berechnung auf dem Server">
+            <Cloud size={13} weight="bold" /> Cloud
+          </button>
+          <button className="bt-exec-btn" disabled style={{ opacity: 0.55, cursor: 'not-allowed' }} data-testid="ai-seed-exec-local"
+            title="Lokal noch nicht verfügbar: Der Setup-Backtest schreibt Playbook-Daten (Reife-Gate, Setup-Stand) direkt in die Datenbank und läuft deshalb serverseitig. Lokaler Worker: Marktdaten & Strategie-Backtests.">
+            <Desktop size={13} weight="bold" /> Lokal
+            <span className={`bt-exec-dot ${lwOnline ? 'on' : ''}`} data-testid="ai-seed-exec-dot" />
+          </button>
+          <button className="bt-exec-manage" onClick={() => setShowLW(true)} title="Lokale Ausführung verwalten: Worker, Einstellungen & Marktdaten"
+            data-testid="ai-seed-exec-manage">
+            <Gear size={13} weight="bold" />
+          </button>
+        </div>
         {admin ? (
           <button className="bt-run" onClick={run} disabled={running} data-testid="ai-seed-run">
-            <Play size={15} weight="fill" /> {running ? 'Läuft...' : 'KI-Trader Setup-Backtest starten'}
+            <Play size={15} weight="fill" /> {running ? 'Läuft...' : 'KI-Trader Backtest starten'}
           </button>
-        ) : <span className="bt-ram">Admin-Login zum Starten erforderlich</span>}
+        ) : (
+          <button className="bt-run" disabled data-testid="ai-seed-run-locked" title="Bitte oben rechts als Admin anmelden">
+            <Play size={15} weight="fill" /> Admin-Login zum Starten erforderlich
+          </button>
+        )}
+      </div>
+      <div className="bt-tools" style={{ marginTop: -6, marginBottom: 10 }}>
         <span className="bt-ram" data-testid="ai-seed-summary-line">
           {classes.map(c => CLASS_LABELS[c]).join(', ') || 'keine Klasse'} · {days} Tage · {MODE_LABELS[mode]}
           {aiRevise ? (mode === 'ai_loop' ? ` · KI: max. ${aiRounds} Runden, Ziel ${targetPassed} Setups` : ' · KI-Vorschlag für nächsten Lauf') : ''}
         </span>
       </div>
+      {showLW && <LocalWorkerPanel onClose={() => setShowLW(false)} />}
 
       {running && (
         <div className="bt-progress" data-testid="ai-seed-progress">

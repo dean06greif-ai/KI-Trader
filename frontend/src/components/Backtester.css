@@ -23,6 +23,15 @@
 .ai-seed-kv { font-size: 11px; color: #A1A4B0; display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
 .ai-seed-kv b { color: #E6E8EF; }
 .ai-seed-proposal { font-size: 11px; color: #B8C4FF; margin-top: 3px; line-height: 1.35; }
+.ai-seed-intro { margin-bottom: 12px; }
+.ai-seed-intro summary { cursor: pointer; font-weight: 700; color: #A1A4B0; margin-bottom: 4px; }
+.ai-seed-run-row { margin-bottom: 12px; align-items: center; }
+@media (max-width: 640px) {
+  .bt-header { flex-wrap: wrap; row-gap: 8px; }
+  .bt-tabs { order: 3; width: 100%; margin: 0; }
+  .bt-tab { flex: 1; text-align: center; padding: 9px 6px; }
+  .bt-params .bt-run { width: 100%; justify-content: center; }
+}
 
 .bt-setup { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px; }
 .bt-col { border: 1px solid #2A2D3A; border-radius: 10px; padding: 12px; }
