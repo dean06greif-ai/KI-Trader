@@ -99,3 +99,32 @@ Repo-Stand: Branch `conflict_080926_2051` 1:1 nach /app übernommen (lokale .env
 ## Backlog / offen
 - P2: Sammel-Statistik ggf. zusätzlich in der globalen Equity-Kurve spiegeln.
 - P2: Frühere Fetch-Fehler beim Cold-Start durch Retry/ErrorBoundary glätten (Log-Noise).
+
+## Iteration 2026-09-09 – KI-Revision mit Tiefen-Diagnose, Lernschleife, mehr Stellschrauben (Phase 1b)
+Problem: „KI-Revisionen vorgemerkt (35)" brachten kaum Verbesserung – die KI sah nur Trades/WR/PnL, durfte nur
+3–5 Basis-Parameter drehen und startete jede Runde vom letzten (ggf. schlechteren) Vorschlag.
+Nutzer-Entscheidungen: alles (Analyse + Stellschrauben + Lernschleife); Ziel langfristig profitable Trades;
+Arbeit im 1:1-Repo unter /app (Nutzer pusht selbst); echte LLM-Keys lokal (Exchange/Telegram/IBKR lokal NICHT).
+- **`services/setup_backtest/analysis.py` (neu, rein)**: `diagnose()` (Exit-Verteilung, Long/Short, Symbole,
+  Uhrzeit Berlin, PF, Payoff, Erwartungswert, Gebühren, Equity-Kurve, max. DD, Verlustserie, MFE/MAE in R),
+  `compact()`, `describe()`, `score()` (PnL/Trade, OOS 60 %), `best_entry()`, `lessons()`, `param_diff()`.
+- **`detectors.py`**: optionale Schlüssel mit Default = Altverhalten: `tp1_r`, `max_bars`, `sides`, `vol_min`,
+  `vol_max`, `hour_from`, `hour_to`, `htf_trend` (1h EMA20/50) + `body_atr` (breakout), `sl_atr`
+  (trend_follow/divergence), `rsi_lo`/`rsi_hi` (divergence); `apply_filters()` nur im `run_detector_params`-Pfad;
+  `optional_params()/param_defaults()/param_help()`.
+- **`revise.py`**: Prompt = Historie mit Score + Diagnose der Basis + Lernschleife + Parameter-Hilfe (Bereich,
+  Default, Bedeutung); Antwort zusätzlich `expect`; `changes`/`base` gespeichert; Basis = bester Eintrag nach
+  Score; Overfitting-Bremse `MAX_CHANGES = 4`.
+- **`runner.py`**: `run_variant` → `diag` + `effective_params`, `max_bars` an Simulator; `_hist` mit
+  params/diag/reason/expect/base; Rows/State mit `diag`, `lessons`; `overview()` mit `param_help`.
+- **UI `AITraderSeeding.js`**: Änderung + Erwartung je vorgemerkter Revision, OOS-Diagnose in der Tabelle,
+  letzte Lektion je Setup. Doku: BACKTEST_SEEDING_PLAN.md (Phase 1b).
+- Tests: `backend/tests/test_setup_backtest_analysis.py` (18), `test_setup_backtest_ai_revision.py` angepasst,
+  `test_ai_playbook_backtest_api.py` (Testing-Agent, 3 API) – 57/57 grün; 2 echte ai_loop-Läufe (Krypto) ok:
+  trend_follow IS von −2.15 auf +6.94 nach KI-Rev.3, KI wählt Basis KI-Rev.3, kappt auf 3–4 Änderungen.
+- Pre-existing, nicht durch diese Iteration: test_fix_custom_ai_trades (1), test_strategy_insights (1),
+  test_iter38_* (brauchen Dev-Server :8055).
+
+### Backlog (neu)
+- P1: Score mit Drawdown-Strafe; P1: Lessons der Backtest-Revisionen in den Live-Prompt (ai_lessons).
+- P2: Walk-Forward mit mehreren OOS-Fenstern; P2: Phase-2-Detektoren (SMC, liquidity_sweep, funding_fade).

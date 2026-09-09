@@ -26,7 +26,7 @@ import aiohttp
 from services import candle_cache
 from services import setup_asset_class as ac
 from services import setup_lifecycle as lifecycle
-from services.setup_backtest import detectors, simulator, weights
+from services.setup_backtest import analysis, detectors, simulator, weights
 from services.setup_backtest.detectors import Features
 
 logger = logging.getLogger(__name__)
@@ -86,6 +86,7 @@ def run_variant(setup: str, feats: Dict[str, Features], variant_idx: int, asset_
     Symbole der Klasse (rein, CPU)."""
     fee = simulator.FEES_RT_PCT.get(asset_class, 0.06)
     variant = params or detectors.VARIANTS[setup][variant_idx]
+    max_bars = int(variant.get("max_bars") or simulator.MAX_BARS)
     is_trades: List[Dict] = []
     oos_trades: List[Dict] = []
     signals = 0
@@ -101,7 +102,7 @@ def run_variant(setup: str, feats: Dict[str, Features], variant_idx: int, asset_
             if sig is None:
                 continue
             signals += 1
-            res = simulator.simulate(c, sig, fee)
+            res = simulator.simulate(c, sig, fee, max_bars=max_bars)
             if res is None:
                 continue
             busy_until = res["exit_idx"]
@@ -123,7 +124,9 @@ def run_variant(setup: str, feats: Dict[str, Features], variant_idx: int, asset_
     return {"setup": setup, "variant": variant_idx, "variant_name": variant["name"],
             "variants_total": len(detectors.VARIANTS[setup]), "signals": signals,
             "is": is_st, "oos": oos_st, "passed": passed(is_st, oos_st),
-            "oos_trades": oos_trades, "params": dict(params) if params else None}
+            "oos_trades": oos_trades, "params": dict(params) if params else None,
+            "effective_params": {k: v for k, v in variant.items() if k != "name"},
+            "diag": {"is": analysis.diagnose(is_trades, fee), "oos": analysis.diagnose(oos_trades, fee)}}
 
 
 def best_base_variant(history: List[Dict]) -> Optional[int]:
@@ -277,8 +280,14 @@ def ai_options(opts: Optional[Dict]) -> Dict:
 
 
 def _hist(res: Dict, vi: int, **extra) -> Dict:
+    """Historien-Eintrag: neben IS/OOS-Summen auch die wirksamen Parameter und
+    eine kompakte Diagnose – Grundlage der Lernschleife (analysis.lessons)."""
     return {"variant": vi, "name": res["variant_name"], "is": res["is"], "oos": res["oos"],
-            "passed": res["passed"], "at": _now_iso(), **extra}
+            "passed": res["passed"], "at": _now_iso(),
+            "params": dict(res.get("effective_params") or {}),
+            "diag": {"is": analysis.compact((res.get("diag") or {}).get("is")),
+                     "oos": analysis.compact((res.get("diag") or {}).get("oos"))},
+            **extra}
 
 
 def rules_for_prompt() -> Dict:
@@ -307,7 +316,8 @@ async def _evaluate_setup(job: Dict, db, cls: str, sid: str, entry: Dict, feats:
         job["phase"] = f"{label}: {sid} · {'KI-Vorschlag' if flag == 'ai' else 'Feintuning'} prüfen"
         res = await asyncio.to_thread(run_variant, sid, feats, vi, cls, split_ts, job_id, params)
         tried += 1
-        history.append(_hist(res, vi, **{flag: True}))
+        meta = entry.get("ai_proposal_meta") if (flag == "ai" and isinstance(entry.get("ai_proposal_meta"), dict)) else {}
+        history.append(_hist(res, vi, **{flag: True}, **{k: meta[k] for k in ("reason", "expect", "base") if meta.get(k)}))
     # 2) Varianten-Schleife
     if res is None or not res["passed"]:
         while True:
@@ -350,7 +360,10 @@ async def _evaluate_setup(job: Dict, db, cls: str, sid: str, entry: Dict, feats:
             job["phase"] = f"{label}: {sid} · KI-Revision {version} testen"
             res = await asyncio.to_thread(run_variant, sid, feats, vi, cls, split_ts, job_id, prop["params"])
             tried += 1
-            history.append(_hist(res, vi, ai=True))
+            history.append(_hist(res, vi, ai=True, reason=prop.get("reason"), expect=prop.get("expect"),
+                                 base=prop.get("base")))
+            # Nächste Runde startet vom BESTEN bekannten Satz (analysis.best_entry),
+            # nicht blind vom letzten Vorschlag – der Fallback bleibt der letzte Vorschlag.
             cur_entry = {**cur_entry, "ai_proposal": prop["params"]}
             if res["passed"]:
                 tuned_now = True
@@ -373,7 +386,8 @@ async def _evaluate_setup(job: Dict, db, cls: str, sid: str, entry: Dict, feats:
         if new_proposal:
             entry["ai_proposal"] = new_proposal["params"]
             entry["ai_proposal_meta"] = {k: new_proposal.get(k) for k in
-                                         ("desc", "reason", "model", "version", "at", "live_revision")}
+                                         ("desc", "reason", "expect", "changes", "base", "model",
+                                          "version", "at", "live_revision")}
         else:
             entry.pop("ai_proposal", None)
             entry.pop("ai_proposal_meta", None)
@@ -381,7 +395,9 @@ async def _evaluate_setup(job: Dict, db, cls: str, sid: str, entry: Dict, feats:
     entry.update({"name": res["variant_name"], "is": res["is"], "oos": res["oos"],
                   "history": history[-10:], "updated_at": _now_iso(),
                   "symbols": sorted(feats), "signals": res["signals"],
-                  "split_at": _iso(split_ts)})
+                  "split_at": _iso(split_ts),
+                  "diag": {"is": analysis.compact(res["diag"]["is"]), "oos": analysis.compact(res["diag"]["oos"])},
+                  "lessons": analysis.lessons(history, detectors.param_defaults(sid))})
     return {"res": res, "entry": entry, "tried": tried, "ai_rounds": ai_rounds,
             "ai_proposal": new_proposal}
 
@@ -455,6 +471,7 @@ async def run_job(job_id: str, db, asset_classes: List[str], days: int = DEFAULT
                                  "is": res["is"], "oos": res["oos"], "signals": res["signals"],
                                  "stored": len(res["oos_trades"]) if res["passed"] else 0,
                                  "symbols": sorted(feats), "ai_rounds": ev["ai_rounds"],
+                                 "diag": entry.get("diag"), "lessons": entry.get("lessons") or [],
                                  "ai_proposal": ({k: v for k, v in ev["ai_proposal"].items() if k != "params"}
                                                  if ev["ai_proposal"] else None)})
                 classes_state[cls] = cls_state
@@ -504,6 +521,7 @@ async def overview(db) -> Dict:
             "eligible": {cls: eligible_setups(cls, library) for cls in ac.CLASSES},
             "not_backtestable": detectors.NOT_BACKTESTABLE,
             "variants": {sid: [v["name"] for v in vs] for sid, vs in detectors.VARIANTS.items()},
+            "param_help": {sid: detectors.param_help(sid) for sid in detectors.VARIANTS},
             "modes": list(MODES),
             "ai_defaults": ai_options(None),
             "rules": {"weight": weights.BACKTEST_WEIGHT, "ttl_days": weights.BACKTEST_TTL_DAYS,

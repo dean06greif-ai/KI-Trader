@@ -19,6 +19,32 @@
   * Kapital: `SETUP_FACTOR["backtest"] = 0.4` für per Backtest freigeschaltete Setups.
 - Offen (Phase 2): SMC-Setups (order_block/fvg_fill), liquidity_sweep, funding_fade.
 
+## Status Phase 1b – KI-Revision mit Tiefen-Diagnose, Lernschleife, mehr Stellschrauben (09.09.2026)
+Problem: Die KI-Revisionen (revise.py) brachten kaum Verbesserung – die KI sah nur Trades/WR/PnL,
+durfte nur die 3–5 Basis-Parameter drehen und startete jede Runde vom letzten (ggf. schlechteren)
+Vorschlag. Umsetzung (rückwärtskompatibel, Alt-Stände in `settings.setup_backtest_state` bleiben gültig):
+- **`analysis.py` (neu, rein)**: `diagnose()` je IS/OOS-Fenster – Exit-Verteilung (sl/tp/be/time),
+  Long/Short, Symbole, Uhrzeit-Fenster (Berlin), Profit-Faktor, Payoff, Erwartungswert, Gebühren,
+  Equity-Kurve, max. Drawdown, Verlustserie, MFE/MAE in R (Verlierer liefen x R ins Plus …).
+  `compact()` für die persistierte Historie, `describe()` für den Prompt, `score()` (PnL je Trade,
+  OOS 60 %/IS 40 %, wenige Trades abgewertet), `best_entry()`, `lessons()` (Lernschleife).
+- **Mehr Stellschrauben (`detectors.COMMON_PARAMS` / `SETUP_EXTRA_PARAMS`)**: `tp1_r` (Teilgewinn),
+  `max_bars` (Zeit-Exit), `sides`, `vol_min`/`vol_max` (ATR15/ATR96-Regime), `hour_from`/`hour_to`,
+  `htf_trend` (1h EMA20/50) sowie `body_atr` (breakout), `sl_atr` (trend_follow/divergence),
+  `rsi_lo`/`rsi_hi` (divergence). Alle mit Default = Altverhalten; generische Filter in
+  `apply_filters()` (nur in `run_detector_params`, Varianten-Pfad unverändert).
+- **Lernschleife (`revise.py`)**: Basis jeder Runde = bester Historien-Eintrag nach Score (nicht der
+  letzte Vorschlag); Prompt enthält Diagnose der Basis, Parameter-Hilfe mit Bereichen/Defaults und die
+  Lessons (Änderung, Hypothese, Erwartung, besser/schlechter). LLM liefert zusätzlich `expect`;
+  `changes`/`base` werden gespeichert (UI). Overfitting-Bremse: max. 4 geänderte Schlüssel je Revision.
+- **Runner**: `run_variant` liefert `diag` + `effective_params`; Historien-Einträge speichern
+  `params`, `diag`, `reason`, `expect`, `base`; Rows/State enthalten `diag` und `lessons`;
+  `overview()` liefert `param_help`. UI (AITraderSeeding.js) zeigt Änderung/Erwartung je vorgemerkter
+  Revision, OOS-Diagnose (PF/Payoff/DD/Exits) und die letzte Lektion je Setup.
+- Tests: `backend/tests/test_setup_backtest_analysis.py` (Diagnose, Score, Lessons, Filter,
+  Rückwärtskompatibilität aller Varianten, sanitize-Kappung), `test_setup_backtest_ai_revision.py`
+  angepasst, `test_ai_playbook_backtest_api.py` (API-Smoke).
+
 ---
 Ursprünglicher Plan (Stand 06.06.2026):
 

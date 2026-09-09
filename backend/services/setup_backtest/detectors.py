@@ -76,6 +76,13 @@ class Features:
         self.vol_avg = _roll(np.mean, c.vol, 20)
         self.atr60 = vec.atr(self.c60.hi, self.c60.lo, self.c60.cl, 14) if len(self.c60) > 15 \
             else np.full(len(self.c60), np.nan)
+        # 1h-Trend (EMA20 vs. EMA50 der GESCHLOSSENEN Stundenkerzen) für den optionalen
+        # Regime-Filter `htf_trend` (apply_filters)
+        if len(self.c60) > 50:
+            e20, e50 = vec.ema(self.c60.cl, 20), vec.ema(self.c60.cl, 50)
+            self.trend60 = np.where(np.isnan(e20) | np.isnan(e50), 0, np.sign(e20 - e50)).astype(int)
+        else:
+            self.trend60 = np.zeros(len(self.c60), dtype=int)
         close_ts = c.ts + M5
         # letzte 15m-/1h-Kerze, die zum Schluss der 5m-Kerze bereits GESCHLOSSEN ist
         self.i15 = np.searchsorted(self.c15.ts, close_ts - M15, side="right") - 1
@@ -131,14 +138,15 @@ def detect_breakout(f: Features, p: Dict) -> List[Signal]:
         if hi_prev[i] - lo_prev[i] > p["range_atr"] * f.atr[i]:
             continue
         strong_vol = f.vol_avg[i] <= 0 or c.vol[i] >= p["vol_mult"] * f.vol_avg[i]
-        if c.cl[i] > hi_prev[i] and body[i] > 0.5 * f.atr[i] and strong_vol:
+        body_min = p.get("body_atr", 0.5) * f.atr[i]
+        if c.cl[i] > hi_prev[i] and body[i] > body_min and strong_vol:
             side = "LONG"
-        elif c.cl[i] < lo_prev[i] and -body[i] > 0.5 * f.atr[i] and strong_vol:
+        elif c.cl[i] < lo_prev[i] and -body[i] > body_min and strong_vol:
             side = "SHORT"
         else:
             continue
         risk = p["sl_atr"] * f.atr[i]
-        sl, tp1, tpf = _levels(side, c.cl[i], risk, p["tp_r"])
+        sl, tp1, tpf = _levels(side, c.cl[i], risk, p["tp_r"], p.get("tp1_r", 1.0))
         out.append(Signal(i, side, float(c.cl[i]), sl, tp1, tpf, f"Range {n} Kerzen"))
     return out
 
@@ -164,7 +172,7 @@ def detect_squeeze_breakout(f: Features, p: Dict) -> List[Signal]:
         else:
             continue
         risk = p["sl_atr"] * f.atr[i]
-        sl, tp1, tpf = _levels(side, c.cl[i], risk, p["tp_r"])
+        sl, tp1, tpf = _levels(side, c.cl[i], risk, p["tp_r"], p.get("tp1_r", 1.0))
         out.append(Signal(i, side, float(c.cl[i]), sl, tp1, tpf, "BB-Squeeze"))
     return out
 
@@ -291,7 +299,8 @@ def detect_session_open(f: Features, p: Dict) -> List[Signal]:
                         if risk <= 0:
                             sig = None
                             continue
-                        sig.sl, sig.tp1, sig.tpf = _levels(sig.side, sig.entry, risk, p["tp_r"])
+                        sig.sl, sig.tp1, sig.tpf = _levels(sig.side, sig.entry, risk, p["tp_r"],
+                                                           p.get("tp1_r", 1.0))
                         break
                 else:
                     if c.hi[j] > or_hi and c.cl[j] < or_hi:
@@ -329,11 +338,11 @@ def detect_trend_follow(f: Features, p: Dict) -> List[Signal]:
             continue
         entry = float(c.cl[i])
         d = 1 if side == "LONG" else -1
-        sl = ext - d * 0.3 * f.atr[i]
+        sl = ext - d * p.get("sl_atr", 0.3) * f.atr[i]
         risk = abs(entry - sl)
         if risk < 0.2 * f.atr[i]:
             continue
-        _, tp1, tpf = _levels(side, entry, risk, p["tp_r"])
+        _, tp1, tpf = _levels(side, entry, risk, p["tp_r"], p.get("tp1_r", 1.0))
         out.append(Signal(i, side, entry, sl, tp1, tpf, "EMA20-Pullback im Trend"))
     return out
 
@@ -371,7 +380,7 @@ def detect_pullback(f: Features, p: Dict) -> List[Signal]:
             if near.size:
                 lvl = float(near.max())
                 sl = lvl - p["sl_atr"] * f.atr[i]
-                _, tp1, tpf = _levels("LONG", entry, entry - sl, p["tp_r"])
+                _, tp1, tpf = _levels("LONG", entry, entry - sl, p["tp_r"], p.get("tp1_r", 1.0))
                 out.append(Signal(i, "LONG", entry, sl, tp1, tpf, "Support-Pullback"))
                 continue
         if res.size and c.cl[i] < c.op[i]:
@@ -379,13 +388,14 @@ def detect_pullback(f: Features, p: Dict) -> List[Signal]:
             if near.size:
                 lvl = float(near.min())
                 sl = lvl + p["sl_atr"] * f.atr[i]
-                _, tp1, tpf = _levels("SHORT", entry, sl - entry, p["tp_r"])
+                _, tp1, tpf = _levels("SHORT", entry, sl - entry, p["tp_r"], p.get("tp1_r", 1.0))
                 out.append(Signal(i, "SHORT", entry, sl, tp1, tpf, "Resistance-Pullback"))
     return out
 
 
 def detect_divergence(f: Features, p: Dict) -> List[Signal]:
     c, n = f.c5, p["lookback"]
+    rsi_lo, rsi_hi, sl_atr, tp1_r = p.get("rsi_lo", 40), p.get("rsi_hi", 60), p.get("sl_atr", 0.3), p.get("tp1_r", 1.0)
     out = []
     for i in range(n + 6, f.n):
         if not f.ok(i) or np.isnan(f.rsi[i - 1]):
@@ -394,16 +404,16 @@ def detect_divergence(f: Features, p: Dict) -> List[Signal]:
         seg_lo, seg_hi = c.lo[a:b], c.hi[a:b]
         k_lo, k_hi = a + int(np.argmin(seg_lo)), a + int(np.argmax(seg_hi))
         if c.lo[i - 1] < c.lo[k_lo] and f.rsi[i - 1] > f.rsi[k_lo] + p["rsi_gap"] \
-                and f.rsi[i - 1] < 40 and c.cl[i] > c.op[i] and c.cl[i] > c.cl[i - 1]:
+                and f.rsi[i - 1] < rsi_lo and c.cl[i] > c.op[i] and c.cl[i] > c.cl[i - 1]:
             entry = float(c.cl[i])
-            sl = float(c.lo[i - 1]) - 0.3 * f.atr[i]
-            _, tp1, tpf = _levels("LONG", entry, entry - sl, p["tp_r"])
+            sl = float(c.lo[i - 1]) - sl_atr * f.atr[i]
+            _, tp1, tpf = _levels("LONG", entry, entry - sl, p["tp_r"], tp1_r)
             out.append(Signal(i, "LONG", entry, sl, tp1, tpf, "Bullische RSI-Divergenz"))
         elif c.hi[i - 1] > c.hi[k_hi] and f.rsi[i - 1] < f.rsi[k_hi] - p["rsi_gap"] \
-                and f.rsi[i - 1] > 60 and c.cl[i] < c.op[i] and c.cl[i] < c.cl[i - 1]:
+                and f.rsi[i - 1] > rsi_hi and c.cl[i] < c.op[i] and c.cl[i] < c.cl[i - 1]:
             entry = float(c.cl[i])
-            sl = float(c.hi[i - 1]) + 0.3 * f.atr[i]
-            _, tp1, tpf = _levels("SHORT", entry, sl - entry, p["tp_r"])
+            sl = float(c.hi[i - 1]) + sl_atr * f.atr[i]
+            _, tp1, tpf = _levels("SHORT", entry, sl - entry, p["tp_r"], tp1_r)
             out.append(Signal(i, "SHORT", entry, sl, tp1, tpf, "Bärische RSI-Divergenz"))
     return out
 
@@ -490,8 +500,100 @@ def run_detector(setup: str, f: Features, variant_idx: int) -> List[Signal]:
 
 
 def run_detector_params(setup: str, f: Features, params: Dict) -> List[Signal]:
-    """Detektor mit freiem Parameter-Satz (Feintuning, siehe tune_candidates)."""
-    return DETECTORS[setup](f, params)
+    """Detektor mit freiem Parameter-Satz (Feintuning/KI-Revision) inkl. der
+    optionalen Regime-/Zeit-/Seiten-Filter (apply_filters)."""
+    return apply_filters(f, DETECTORS[setup](f, params), params)
+
+
+# --------------------------------------------------------------------------
+# Optionale Stellschrauben der KI-Revision (Basis-Varianten bleiben unverändert:
+# jeder Schlüssel hat den Default, der dem bisherigen Verhalten entspricht).
+#   Schlüssel -> (Default, Minimum, Maximum, Kurzbeschreibung für den Prompt)
+# --------------------------------------------------------------------------
+COMMON_PARAMS: Dict[str, tuple] = {
+    "tp1_r": (1.0, 0.5, 2.5, "Teilgewinn (halbe Position) in R; danach SL auf Einstieg"),
+    "max_bars": (288, 24, 576, "Zeit-Exit nach n 5m-Kerzen (288 = 24 h)"),
+    "sides": (0, -1, 1, "0 = Long+Short, 1 = nur Long, -1 = nur Short"),
+    "vol_min": (0.0, 0.0, 2.0, "nur wenn ATR(15)/ATR(96) >= Wert (0 = aus; >1 = nur bei steigender Volatilität)"),
+    "vol_max": (0.0, 0.0, 3.0, "nur wenn ATR(15)/ATR(96) <= Wert (0 = aus; <1 = nur in ruhigen Phasen)"),
+    "hour_from": (0, 0, 23, "Signale erst ab dieser Stunde (Berlin)"),
+    "hour_to": (24, 1, 24, "Signale nur bis vor dieser Stunde (Berlin)"),
+    "htf_trend": (0, -1, 1, "1 = nur mit dem 1h-Trend (EMA20>EMA50), -1 = nur gegen ihn, 0 = aus"),
+}
+# tp1_r gilt nur, wo TP1 aus R abgeleitet wird (nicht bei Range-Mitte/EMA-Zielen)
+NO_TP1R = frozenset({"range_fade", "mean_reversion", "htf_range"})
+SETUP_EXTRA_PARAMS: Dict[str, Dict[str, tuple]] = {
+    "breakout": {"body_atr": (0.5, 0.2, 1.5, "Mindest-Kerzenkörper der Ausbruchskerze in ATR")},
+    "trend_follow": {"sl_atr": (0.3, 0.1, 1.0, "SL-Puffer hinter dem Pullback-Extrem in ATR")},
+    "divergence": {"sl_atr": (0.3, 0.1, 1.0, "SL-Puffer hinter dem Divergenz-Extrem in ATR"),
+                   "rsi_lo": (40, 25, 50, "bullische Divergenz nur bei RSI unter diesem Wert"),
+                   "rsi_hi": (60, 50, 75, "bärische Divergenz nur bei RSI über diesem Wert")},
+}
+BASE_PARAM_HELP: Dict[str, str] = {
+    "lookback": "Rückblick-Kerzen (5m) der Range/des Vergleichs", "lookback_h": "Rückblick in 1h-Kerzen",
+    "range_atr": "max. Breite der Vor-Range in ATR (kleiner = echte Range)",
+    "sl_atr": "Stop-Abstand in ATR", "tp_r": "Ziel in R (Vielfaches des Risikos)",
+    "vol_mult": "Volumen der Signalkerze mind. x-faches des 20er-Schnitts",
+    "squeeze": "Bollinger-Breite unter x-fachem des 96er-Schnitts", "min_bars": "Kompression muss n Kerzen bestehen",
+    "width_atr": "max. Range-Breite in ATR", "rsi_lo": "RSI-Schwelle Long", "rsi_hi": "RSI-Schwelle Short",
+    "dist_atr": "Mindestabstand zur EMA20 in ATR", "vol_high": "ATR-Verhältnis ab dem Breakout gehandelt wird",
+    "vol_low": "ATR-Verhältnis bis zu dem gefadet wird", "slope_bars": "EMA50 muss über n Kerzen steigen/fallen",
+    "touch_atr": "Toleranz der Level-Berührung in ATR", "pivot_k": "Pivot-Stärke (Kerzen je Seite, 15m)",
+    "rsi_gap": "Mindest-RSI-Differenz der Divergenz",
+}
+
+
+def optional_params(setup: str) -> Dict[str, tuple]:
+    """Optionale Schlüssel eines Setups (Default, Min, Max, Beschreibung)."""
+    out = {k: v for k, v in COMMON_PARAMS.items() if not (k == "tp1_r" and setup in NO_TP1R)}
+    out.update(SETUP_EXTRA_PARAMS.get(setup, {}))
+    return out
+
+
+def param_defaults(setup: str) -> Dict[str, float]:
+    return {k: v[0] for k, v in optional_params(setup).items()}
+
+
+def param_help(setup: str) -> Dict[str, str]:
+    base = {k: BASE_PARAM_HELP.get(k, "") for v in VARIANTS.get(setup, []) for k in v if k != "name"}
+    base.update({k: v[3] for k, v in optional_params(setup).items()})
+    return base
+
+
+def _filters_active(p: Dict) -> bool:
+    return any(p.get(k) not in (None, d[0]) for k, d in COMMON_PARAMS.items()
+               if k in ("sides", "vol_min", "vol_max", "hour_from", "hour_to", "htf_trend"))
+
+
+def apply_filters(f: Features, sigs: List[Signal], p: Dict) -> List[Signal]:
+    """Generische Signal-Filter (rein): Seite, Volatilitäts-Regime, Uhrzeit,
+    1h-Trend. Ohne gesetzte Filter wird die Liste unverändert zurückgegeben."""
+    if not sigs or not _filters_active(p):
+        return sigs
+    sides = int(p.get("sides") or 0)
+    vmin, vmax = float(p.get("vol_min") or 0), float(p.get("vol_max") or 0)
+    h_from, h_to = int(p.get("hour_from") or 0), int(p.get("hour_to") or 24)
+    trend = int(p.get("htf_trend") or 0)
+    bl = f.berlin() if (h_from, h_to) != (0, 24) else None
+    out = []
+    for s in sigs:
+        d = 1 if s.side == "LONG" else -1
+        if sides and d != sides:
+            continue
+        if vmin or vmax:
+            slow = f.atr_slow[s.idx]
+            ratio = f.atr_fast[s.idx] / slow if slow and not np.isnan(slow) and slow > 0 else None
+            if ratio is None or (vmin and ratio < vmin) or (vmax and ratio > vmax):
+                continue
+        if bl is not None and not (h_from <= bl[s.idx].hour < h_to):
+            continue
+        if trend:
+            j = int(f.i60[s.idx])
+            t60 = int(f.trend60[j]) if 0 <= j < len(f.trend60) else 0
+            if t60 == 0 or t60 * d != trend:
+                continue
+        out.append(s)
+    return out
 
 
 # Feintuning nach erfolglosen Varianten: nur die Risiko-/Ziel-Parameter werden

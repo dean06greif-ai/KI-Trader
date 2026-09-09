@@ -11,7 +11,7 @@ from services.setup_backtest import detectors, revise, runner  # noqa: E402
 
 def test_param_ranges_span_all_variants():
     r = revise.param_ranges("breakout")
-    assert set(r) == {"lookback", "range_atr", "sl_atr", "tp_r", "vol_mult"}
+    assert set(r) >= {"lookback", "range_atr", "sl_atr", "tp_r", "vol_mult"}
     lo, hi = r["lookback"]
     assert lo == 24 * revise.RANGE_LO and hi == 48 * revise.RANGE_HI
     assert "name" not in r
@@ -118,6 +118,8 @@ def test_propose_uses_llm_and_sanitizes(monkeypatch):
     assert "unknown" not in out["params"] and out["params"]["name"] == "KI-Rev.1"
     assert out["model"] == "test-model" and out["version"] == 1
     assert out["reason"].startswith("SL zu eng")
+    assert out["changes"] == ["sl_atr: 1.2→1.6", "vol_mult: 1.3→1.8"] and out["base"] == "standard"
+    assert "expect" in out
     # Live-Revision wurde versucht (Setup nicht rückgestuft -> abgelehnt, kein Fehler)
     assert out.get("live_revision") == "rejected"
 

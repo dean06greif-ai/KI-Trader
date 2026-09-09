@@ -20,6 +20,12 @@ const STATE_KEY = 'ai_seed_ui_v1';
 const fmtTs = (ts) => (ts ? String(ts).slice(0, 16).replace('T', ' ') : '—');
 const money = (v) => `${(v ?? 0) >= 0 ? '+' : ''}${Number(v ?? 0).toFixed(2)}`;
 const cell = (st) => (st && st.trades ? `${st.trades}T · ${st.winrate}% · ${money(st.pnl)}` : '—');
+const diagCell = (d) => {
+  if (!d || !d.n) return null;
+  const ex = Object.entries(d.exits || {}).map(([k, v]) => `${k} ${v}`).join(' · ');
+  return `PF ${d.pf ?? '—'} · Payoff ${d.payoff ?? '—'} · DD ${money(-(d.max_dd ?? 0))} · Serie ${d.loss_streak ?? 0}${ex ? ` · Exits: ${ex}` : ''}`;
+};
+const lastLesson = (r) => (r.lessons || []).slice(-1)[0];
 const loadSaved = () => { try { return JSON.parse(localStorage.getItem(STATE_KEY) || '{}'); } catch { return {}; } };
 const jsonHeaders = () => ({ 'Content-Type': 'application/json', ...authHeaders() });
 
@@ -132,7 +138,10 @@ export default function AITraderSeeding() {
         <summary>So funktioniert der Setup-Backtest des KI Traders</summary>
         Der KI Trader testet seine Playbook-Setups (rückgestufte und Datensammel-Setups) regelbasiert auf Vergangenheitsdaten
         (5m · In-Sample {Math.round((rules.is_share || 0.7) * 100)}% wählt die Variante, Out-of-Sample bestätigt). Setups ohne Edge werden
-        anschließend von der KI überarbeitet: im Einmal-Durchlauf / der Auto-Schleife wird der Vorschlag für den nächsten Lauf vorgemerkt,
+        anschließend von der KI überarbeitet: sie bekommt je Satz eine Tiefen-Diagnose (Exit-Verteilung, Long/Short, Uhrzeit, Profit-Faktor,
+        Drawdown, MFE/MAE, Equity-Kurve) und die Lernschleife ihrer bisherigen Revisionen (was geändert wurde, ob es besser/schlechter wurde) und darf
+        neben den Basis-Parametern auch Teilgewinn, Zeit-Exit, Seite, Volatilitäts-Regime, Uhrzeit und 1h-Trend-Filter anpassen.
+        Im Einmal-Durchlauf / der Auto-Schleife wird der Vorschlag für den nächsten Lauf vorgemerkt,
         die <b>KI-Schleife</b> testet ihn sofort weiter – bis das Ziel bestandener Setups erreicht ist oder die Runden aufgebraucht sind.
         Bestandene Setups zählen ×{rules.weight ?? 0.5} gedeckelt ({rules.max_backtest_weighted ?? 3} gewichtete Trades) fürs Reife-Gate –
         <b> Live erst nach {rules.min_real_trades ?? 2}+ profitablen echten Paper-Trades</b>.
@@ -255,8 +264,13 @@ export default function AITraderSeeding() {
             {pendingProposals.map(p => (
               <li key={`${p.cls}-${p.sid}`} data-testid={`ai-seed-pending-${p.cls}-${p.sid}`}>
                 <span className="mono">{CLASS_LABELS[p.cls] || p.cls} · {p.sid}</span>
-                {p.meta.version ? ` (KI-Rev.${p.meta.version}${p.meta.model ? `, ${p.meta.model}` : ''})` : ''}
+                {p.meta.version ? ` (KI-Rev.${p.meta.version}${p.meta.model ? `, ${p.meta.model}` : ''}${p.meta.base ? `, Basis ${p.meta.base}` : ''})` : ''}
                 {p.meta.reason ? `: ${p.meta.reason}` : ''}
+                {(p.meta.changes || []).length > 0 && (
+                  <div className="mono" style={{ opacity: 0.8, fontSize: 11 }} data-testid={`ai-seed-pending-changes-${p.cls}-${p.sid}`}>
+                    Änderung: {p.meta.changes.join(' · ')}{p.meta.expect ? ` — erwartet: ${p.meta.expect}` : ''}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -355,13 +369,26 @@ export default function AITraderSeeding() {
                   <td className="bt-name">{r.setup}</td>
                   <td className="mono">{r.variant ? `${r.variant} (${(r.variant_idx ?? 0) + 1}/${r.variants_total})${r.tried > 1 ? ` · ${r.tried} getestet` : ''}${r.ai_rounds ? ` · ${r.ai_rounds}× KI` : ''}` : '—'}</td>
                   <td className="mono">{cell(r.is)}</td>
-                  <td className={`mono ${(r.oos?.pnl || 0) > 0 ? 'pos' : (r.oos?.pnl || 0) < 0 ? 'neg' : ''}`}>{cell(r.oos)}</td>
+                  <td className={`mono ${(r.oos?.pnl || 0) > 0 ? 'pos' : (r.oos?.pnl || 0) < 0 ? 'neg' : ''}`} title={diagCell(r.diag?.oos) || ''}>
+                    {cell(r.oos)}
+                    {diagCell(r.diag?.oos) && (
+                      <div style={{ opacity: 0.7, fontSize: 10 }} data-testid={`ai-seed-diag-${r.asset_class}-${r.setup}`}>{diagCell(r.diag.oos)}</div>
+                    )}
+                  </td>
                   <td className="mono">{r.stored ?? 0}</td>
                   <td style={{ color: STATUS[r.status]?.c }} title={r.note || ''} data-testid={`ai-seed-status-${r.asset_class}-${r.setup}`}>
                     {STATUS[r.status]?.l || r.status}
                     {r.ai_proposal && (
                       <div className="ai-seed-proposal" data-testid={`ai-seed-proposal-${r.asset_class}-${r.setup}`}>
                         <Brain size={11} weight="bold" /> KI-Rev.{r.ai_proposal.version} vorgemerkt{r.ai_proposal.reason ? `: ${r.ai_proposal.reason}` : ''}
+                        {(r.ai_proposal.changes || []).length > 0 && (
+                          <div className="mono" style={{ opacity: 0.8 }}>Änderung: {r.ai_proposal.changes.join(' · ')}{r.ai_proposal.expect ? ` — erwartet: ${r.ai_proposal.expect}` : ''}</div>
+                        )}
+                      </div>
+                    )}
+                    {lastLesson(r) && (
+                      <div style={{ opacity: 0.75, fontSize: 10, marginTop: 2 }} title={(r.lessons || []).join('\n')} data-testid={`ai-seed-lesson-${r.asset_class}-${r.setup}`}>
+                        Lernschleife: {lastLesson(r)}
                       </div>
                     )}
                   </td>
