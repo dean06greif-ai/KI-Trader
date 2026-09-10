@@ -37,6 +37,10 @@ IS_SHARE = 0.7
 MIN_OOS_TRADES = 10          # x 0.5 Gewicht = MIN_TRADES_PROMOTE
 MIN_IS_TRADES = 10
 MAX_DAYS = 365
+# Walk-Forward: das Out-of-Sample-Fenster wird in WF_WINDOWS gleich lange Zeit-
+# Fenster geteilt; mind. WF_MIN_POS davon müssen positiv sein (robust über Marktphasen)
+WF_WINDOWS = 3
+WF_MIN_POS = 2
 
 JOBS: Dict[str, Dict] = {}
 PASSED_STATES = ("passed", "tuned")
@@ -57,18 +61,36 @@ def stats_of(trades: List[Dict]) -> Dict:
     n = len(trades)
     wins = sum(1 for t in trades if float(t.get("realized_pnl") or 0) > 0)
     pnl = sum(float(t.get("realized_pnl") or 0) for t in trades)
-    return {"trades": n, "wins": wins, "pnl": round(pnl, 2),
-            "winrate": round(wins / n * 100) if n else 0,
-            "margin": round(n * simulator.MARGIN, 2)}
+    out = {"trades": n, "wins": wins, "pnl": round(pnl, 2),
+           "winrate": round(wins / n * 100) if n else 0,
+           "margin": round(n * simulator.MARGIN, 2)}
+    if any("oos_window" in t for t in trades):
+        wins_ = [{"trades": 0, "pnl": 0.0} for _ in range(WF_WINDOWS)]
+        for t in trades:
+            w = wins_[min(WF_WINDOWS - 1, max(0, int(t.get("oos_window") or 0)))]
+            w["trades"] += 1
+            w["pnl"] = round(w["pnl"] + float(t.get("realized_pnl") or 0), 2)
+        out["windows"] = wins_
+        out["windows_pos"] = sum(1 for w in wins_ if w["trades"] and w["pnl"] > 0)
+    return out
+
+
+def oos_window(opened_ms: int, split_ts: int, end_ts: int) -> int:
+    """Index des Walk-Forward-Fensters (0..WF_WINDOWS-1) eines OOS-Trades (rein)."""
+    span = max(1, int(end_ts) - int(split_ts))
+    return min(WF_WINDOWS - 1, max(0, int((int(opened_ms) - int(split_ts)) * WF_WINDOWS // span)))
 
 
 def passed(is_stats: Dict, oos_stats: Dict) -> bool:
     """Edge in BEIDEN Fenstern: genug Trades, PnL > 0 nach Gebühren und das
-    Reife-Kriterium (PnL > 0 oder WR >= 55 %) auch Out-of-Sample."""
+    Reife-Kriterium (PnL > 0 oder WR >= 55 %) auch Out-of-Sample. Liegen Walk-
+    Forward-Fenster vor, müssen zusätzlich >= WF_MIN_POS davon positiv sein."""
     if int(is_stats.get("trades") or 0) < MIN_IS_TRADES \
             or int(oos_stats.get("trades") or 0) < MIN_OOS_TRADES:
         return False
     if float(is_stats.get("pnl") or 0) <= 0 or float(oos_stats.get("pnl") or 0) <= 0:
+        return False
+    if oos_stats.get("windows") and int(oos_stats.get("windows_pos") or 0) < WF_MIN_POS:
         return False
     return lifecycle.promotion_ok(oos_stats)[0]
 
@@ -87,6 +109,7 @@ def run_variant(setup: str, feats: Dict[str, Features], variant_idx: int, asset_
     fee = simulator.FEES_RT_PCT.get(asset_class, 0.06)
     variant = params or detectors.VARIANTS[setup][variant_idx]
     max_bars = int(variant.get("max_bars") or simulator.MAX_BARS)
+    end_ts = max(int(f.c5.ts[-1]) for f in feats.values()) if feats else split_ts
     is_trades: List[Dict] = []
     oos_trades: List[Dict] = []
     signals = 0
@@ -119,6 +142,8 @@ def run_variant(setup: str, feats: Dict[str, Features], variant_idx: int, asset_
                      "realized_pnl": res["pnl"], "margin_used": simulator.MARGIN,
                      "result": res["result"], "exit_reason": res["reason"],
                      "note": sig.note, "oos": opened_ms >= split_ts}
+            if trade["oos"]:
+                trade["oos_window"] = oos_window(opened_ms, split_ts, end_ts)
             (oos_trades if trade["oos"] else is_trades).append(trade)
     is_st, oos_st = stats_of(is_trades), stats_of(oos_trades)
     return {"setup": setup, "variant": variant_idx, "variant_name": variant["name"],
@@ -291,7 +316,21 @@ def _hist(res: Dict, vi: int, **extra) -> Dict:
 
 
 def rules_for_prompt() -> Dict:
-    return {"min_is_trades": MIN_IS_TRADES, "min_oos_trades": MIN_OOS_TRADES}
+    return {"min_is_trades": MIN_IS_TRADES, "min_oos_trades": MIN_OOS_TRADES,
+            "wf_windows": WF_WINDOWS, "wf_min_pos": WF_MIN_POS}
+
+
+def effective_params_of(setup: str, entry: Optional[Dict]) -> Optional[Dict]:
+    """Wirksamer Parameter-Satz eines Setups mit Edge (getunt/KI-Satz, sonst die
+    bestandene Basis-Variante); None ohne Edge (rein)."""
+    if not isinstance(entry, dict) or entry.get("status") not in PASSED_STATES:
+        return None
+    if isinstance(entry.get("tuned"), dict):
+        return dict(entry["tuned"])
+    variants = detectors.VARIANTS.get(setup) or []
+    if not variants:
+        return None
+    return dict(variants[int(entry.get("variant") or 0) % len(variants)])
 
 
 async def _evaluate_setup(job: Dict, db, cls: str, sid: str, entry: Dict, feats: Dict,

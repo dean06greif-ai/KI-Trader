@@ -193,15 +193,51 @@ def describe(diag: Optional[Dict], label: str) -> List[str]:
 # --------------------------------------------------------------------------
 # Vergleichsmaß + Lernschleife
 # --------------------------------------------------------------------------
-def score(is_stats: Optional[Dict], oos_stats: Optional[Dict], min_trades: int = 10) -> float:
-    """PnL je Trade (nach Gebühren), OOS stärker gewichtet, wenige Trades abgewertet.
-    Ein Satz ohne Trades in einem Fenster wird stark bestraft."""
-    def part(st: Optional[Dict]) -> float:
+def score(is_stats: Optional[Dict], oos_stats: Optional[Dict], diag: Optional[Dict] = None,
+          min_trades: int = 10) -> float:
+    """PnL je Trade (nach Gebühren), OOS stärker gewichtet, wenige Trades abgewertet,
+    tiefe Drawdowns bestraft (dd_factor, max. Halbierung – glatte Equity-Kurven
+    schlagen Glückssträhnen). Ein Satz ohne Trades in einem Fenster wird stark bestraft.
+    `diag` = {'is': compact, 'oos': compact} (optional, Alt-Historie ohne diag bleibt gültig)."""
+    def part(st: Optional[Dict], d: Optional[Dict]) -> float:
         n = int((st or {}).get("trades") or 0)
         if n == 0:
             return -1.0
-        return float((st or {}).get("pnl") or 0) / n * min(1.0, n / max(1, min_trades))
-    return round(0.4 * part(is_stats) + 0.6 * part(oos_stats), 4)
+        pnl = float((st or {}).get("pnl") or 0)
+        base = pnl / n * min(1.0, n / max(1, min_trades))
+        f = dd_factor(pnl, (d or {}).get("max_dd"))
+        return base * f if base >= 0 else base / f
+    diag = diag or {}
+    return round(0.4 * part(is_stats, diag.get("is")) + 0.6 * part(oos_stats, diag.get("oos")), 4)
+
+
+def dd_factor(pnl: float, max_dd: Optional[float]) -> float:
+    """Drawdown-Strafe (rein): 1 − DD/(|PnL|+DD), gedeckelt bei 0.5.
+    PnL +10 / DD 2 -> 0.83, PnL +10 / DD 10 -> 0.5, kein DD -> 1.0."""
+    try:
+        dd = float(max_dd or 0)
+    except (TypeError, ValueError):
+        dd = 0.0
+    if dd <= 0:
+        return 1.0
+    return round(1.0 - min(0.5, dd / (abs(float(pnl or 0)) + dd)), 4)
+
+
+def entry_score(h: Dict) -> float:
+    return score(h.get("is"), h.get("oos"), h.get("diag"))
+
+
+def windows_text(windows: Sequence[Dict]) -> str:
+    """Walk-Forward-Fenster als '+/−/+' (0 Trades = '0')."""
+    return "/".join("0" if not int(w.get("trades") or 0) else ("+" if float(w.get("pnl") or 0) > 0 else "−")
+                    for w in windows or [])
+
+
+def timeline(history: List[Dict]) -> List[Dict]:
+    """Lernkurve fürs UI (rein): je Historien-Eintrag Name, Score, KI-Flag, bestanden."""
+    return [{"name": h.get("name"), "score": entry_score(h), "ai": bool(h.get("ai")),
+             "passed": bool(h.get("passed")), "at": h.get("at"),
+             "oos_pnl": float(((h.get("oos") or {}).get("pnl")) or 0)} for h in (history or [])]
 
 
 def param_diff(old: Optional[Dict], new: Optional[Dict]) -> List[str]:
@@ -222,7 +258,7 @@ def best_entry(history: List[Dict]) -> Optional[Dict]:
     cands = [h for h in (history or []) if isinstance(h.get("params"), dict)]
     if not cands:
         return None
-    return max(cands, key=lambda h: score(h.get("is"), h.get("oos")))
+    return max(cands, key=entry_score)
 
 
 def lessons(history: List[Dict], defaults: Optional[Dict] = None) -> List[str]:
@@ -236,7 +272,7 @@ def lessons(history: List[Dict], defaults: Optional[Dict] = None) -> List[str]:
     seen: List[Dict] = []
     defaults = defaults or {}
     for h in history or []:
-        sc = score(h.get("is"), h.get("oos"))
+        sc = entry_score(h)
         if h.get("ai") and isinstance(h.get("params"), dict):
             # Referenz = der Satz, von dem die Revision ausging (base), sonst der Vorgänger
             ref = next((e for e in reversed(seen) if h.get("base") and e.get("name") == h["base"]), None) or prev
@@ -253,6 +289,8 @@ def lessons(history: List[Dict], defaults: Optional[Dict] = None) -> List[str]:
                 line += f" Erwartet: {h['expect']}"
             o = h.get("oos") or {}
             line += f" · OOS {o.get('trades', 0)}T/WR {o.get('winrate', 0)}%/{float(o.get('pnl') or 0):+.2f}"
+            if o.get("windows"):
+                line += f" · Fenster {windows_text(o['windows'])}"
             out.append(line)
         best_so_far = sc if best_so_far is None else max(best_so_far, sc)
         prev = h
