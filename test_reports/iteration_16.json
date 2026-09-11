@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 16 review: verified new park/reactivate lesson endpoints (API + UI), 'N× validiert' badge, dormant dimming/badge, header count excluding dormant lessons, lessons CRUD regression, and full pytest suite. All targeted features work; no functional defects found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "KI-Trader Panel (console)", "issues": ["React hydration/DOM-nesting warning in console: '<span> cannot be a child of <option>' – a <span> is rendered inside an <option> somewhere in the app (pre-existing, cosmetic but should be cleaned up)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter16_park_reactivate_api.py",
+    "/app/backend/tests/_iter16_seed_ui_lessons.py"
+  ],
+  "action_items": [
+    "Optional: fix React DOM-nesting console warning (span inside option)"
+  ],
+  "critical_code_review_comments": [
+    "park/reactivate endpoints correctly return 404 for unknown ids and 401/403 without Bearer token; lesson_store.set_dormant persists status and invalidates the learning cache – no issues found.",
+    "Frontend header count filter `!l.superseded && l.status !== 'dormant'` verified correct in live UI (1 -> 2 -> 1 after reactivate/park)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter16_park_reactivate_api.py (new, live-marked)",
+    "/app/backend/tests/_iter16_seed_ui_lessons.py (new helper; test lessons removed again from Mongo)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Temporarily inserted les_UITESTdorm (dormant) and les_UITESTact (confirmations=3) into settings/ai_lessons via helper script; both removed after testing (GET /api/ai/lessons now returns []).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "UI path to AI panel: strategy-tab-ai_trader -> edit-strategy-params-btn (AdminLogin modal: admin-username/admin-password/admin-login-submit) -> click edit-strategy-params-btn AGAIN (panel only opens after admin session exists) -> ai-learn-toggle -> ai-learn-panel with ai-lesson-list. Lesson testids: ai-lesson-dormant-{id}, ai-lesson-reactivate-{id}, ai-lesson-park-{id}, ai-lesson-confirms-{id}. Backend live tests: /app/backend/tests/test_iter16_park_reactivate_api.py (run with -m live). Full suite: 888 passed, 1 skipped (-m 'not live').",
+  "rca_of_the_issue": "N/A – no defects reproduced. Verified flows: dormant lesson dimmed (opacity 0.45) with badge 'zurückgestellt – reaktivierbar'; reactivate click -> badge gone, park button appears, header count 1->2; park click on active lesson -> dimmed + dormant badge + reactivate button, header count 2->1; '3× validiert' badge rendered for confirmations=3."
+}
