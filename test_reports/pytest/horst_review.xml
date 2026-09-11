@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="3" time="22.437" timestamp="2026-09-07T15:59:25.551854+00:00" hostname="agent-env-a80e623a-3b2e-432e-9a0b-df64c4190a80"><testcase classname="tests.test_horst_review_api" name="test_strategies_list_contains_horst_with_metadata" time="21.034" /><testcase classname="tests.test_horst_review_api" name="test_backtest_horst_e2e" time="0.460"><failure message="AttributeError: 'list' object has no attribute 'values'">tests/test_horst_review_api.py:85: in test_backtest_horst_e2e
+    first = next(iter(per_pair.values()))
+                      ^^^^^^^^^^^^^^^
+E   AttributeError: 'list' object has no attribute 'values'</failure></testcase><testcase classname="tests.test_horst_review_api" name="test_backtest_vwap_reversion_regression" time="0.270" /></testsuite></testsuites>

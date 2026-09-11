@@ -1,0 +1,32 @@
+{
+  "summary": "Iter 51: Verifiziert die 06/2026-Verbesserungen (KI-Hebel aus Preset, Datensammel-Marge 100 USDT, TP1-extern-Erkennung, Aktivitaets-Waechter). Bestehende 16 Unit-Tests + 4 neue API-/DB-Level-Tests laufen alle gruen (20/20). Frontend-Smoke ok: Dashboard mit Chart + Scanner rendert ohne JS-Fehler (nur eine bekannte WS-URL-Warnung im reinen localhost-Modus).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Realtime-Updates (localhost:3000 direkt)", "issue": "WebSocket-URL wird als ws://localhost:443/ws konstruiert (falscher Port) - Verbindung wird abgelehnt. Unter der Preview/Prod-URL vermutlich ok (window.location.host liefert dort korrekten Host+Port), lokal aber sichtbar. Restlicher UI-Zustand ('Verbunden mit Scanner' Toast) bleibt trotzdem gruen, weil Reconnect-Schleife weiter versucht. Nice-to-have: WS-URL auf REACT_APP_BACKEND_URL basieren.", "affected_selectors": []}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fixes_lev_collection_tp1_activity.py",
+    "/app/backend/tests/test_fixes_api_db_iter51.py",
+    "/app/test_reports/pytest/iter51_api.xml"
+  ],
+  "action_items": [
+    "Optional: WebSocket-URL im Frontend aus REACT_APP_BACKEND_URL ableiten statt window.location (verhindert die ws://localhost:443/ws-Fehler beim direkten Aufruf via localhost:3000)."
+  ],
+  "critical_code_review_comments": [
+    "bitunix_trade.py ist mit 4290 Zeilen deutlich ueber der Empfehlung (>700). Modul in Sub-Services aufteilen (execute_signal / sync_position_state / free_capital / _live_* / _current_mark) - Wartbarkeit und Test-Isolation waeren stark verbessert. Diese Iteration nicht Blocker, aber sichtbar problematisch.",
+    "ai_playbook.py (1318 Zeilen) und setup_lifecycle.py (381) sind ok, aber ai_playbook.revise_setup / _refresh_scope teilen State via zwei parallele Caches (_class_cache, _custom_cache) - Race bei gleichzeitigen Aufrufen theoretisch moeglich. Kein Fix noetig, nur beobachten.",
+    "sync_position_state: TP1-Erkennung nutzt near_tp1 ODER (tp1_exchange_placed + qty_match). Bei manueller Teilschliessung ohne Preis-Naehe zu TP1 wird sie auch als TP1 verbucht sobald tp1_exchange_placed=True - beabsichtigt laut Kommentar, aber Betreiber sollten das kennen (kein Bug)."
+  ],
+  "updated_files": ["/app/backend/tests/test_fixes_api_db_iter51.py"],
+  "success_rate": {"backend": "100% (20/20 relevante Tests)", "frontend": "100% Smoke (Dashboard laedt ohne JS-Fehler)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (nicht benoetigt, keine Login-Wall auf Dashboard)",
+  "seed_data_creation": "Ephemer: TESTUSDT auto_trades Docs (mit _test_tag Prefix TEST_) und ai_playbook_state.classes.crypto - alle Tests raeumen im finally-Block wieder auf. Nach Testlauf verifiziert keine Rueckstaende im DB.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Neue Tests in /app/backend/tests/test_fixes_api_db_iter51.py sind xdist-safe (loadscope pinnt Klassen auf einen Worker) und muessen Motor-Clients per-test in einer neuen Loop erzeugen (siehe _run(factory) helper) - Motor koppelt sonst an falsche Loop. BASE_URL zeigt auf localhost:8001 (der externe Preview-Proxy timet in dieser Umgebung haeufig aus).",
+  "rca of the issue": "N/A - alle geforderten Verbesserungen bestaetigt gruen."
+}

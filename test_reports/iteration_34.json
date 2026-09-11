@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 34 - minimaler, credit-sparsamer Test der RAM-Bremse (OOM-Fix). 1) tests/test_ram_queue_and_worker_datadir.py: 11/11 gruen (-n 0, 2.0s), inkl. der 3 neuen wait_for_ram-Tests (immediate True, waits-then-continues, timeout->False). 2) Regression tests/test_worker_token_fix.py: 11/11 gruen (1.5s). 3) Code-Review aller 4 Einbaustellen (ram_queue.wait_for_ram, boot_backfill Symbol-Loop Z.186 mit 120MB/900s, ai_engine Z.2426 mit 110MB/600s vor run_analysis, ram_guard.trim_loop Telemetrie). 4) Telemetrie-Log real verifiziert: neue Zeile 'RAM-Guard: Prozess 196 MB belegt, Container 6353 MB frei' erscheint im live backend.err.log nach ~3 min; zusaetzlich isoliert mit TRIM_INTERVAL_S=0.2 in /tmp reproduziert (2 Zeilen, kein Crash). 5) Nach der Telemetrie-Zeile KEINE neuen Tracebacks/ERRORs im Log. 6) API stabil: GET /api/localworker/status 200, GET /api/health 200. Keine LLM-Calls, keine Backtests, kein Frontend (wie angefordert).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ram_queue_and_worker_datadir.py",
+    "/app/backend/tests/test_worker_token_fix.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Kein Deadlock-Risiko: wait_for_ram bricht per max_wait_s ab (boot_backfill 900s, ai_engine 600s) und liefert False -> Aufrufer fahren fort; per Unit-Test bestaetigt.",
+    "Fail-safe bei fehlendem psutil/cgroup: ram_queue.free_mb() liefert dann MIN_FREE_MB (150) >= 120/110 -> wait_for_ram blockiert nie faelschlich. Gut geloest.",
+    "Telemetrie-Block in trim_loop ist in try/except (psutil/Import-Fehler crasht den Loop nicht). Hinweis (kein Bug): wird nur geloggt, wenn RAM_GUARD_ENABLED!=0 und libc.so.6 verfuegbar - auf Render (glibc) gegeben.",
+    "Hinweis (kein Blocker): wait_for_ram ruft bei jedem Check ram_guard.trim_now() inkl. gc.collect() auf - alle 15s waehrend Wartephasen; CPU-Kosten vernachlaessigbar, aber bei sehr langem Warten (900s = bis zu 60 gc.collect()) im Auge behalten.",
+    "Hinweis: ai_engine wartet bis 600s VOR run_analysis, waehrend _next_due bereits gesetzt ist - dadurch kann ein Zyklus effektiv uebersprungen/verschoben werden. Das ist gewollt (RAM > Punktlichkeit), aber im Log/Status fuer den Nutzer nicht sichtbar (nur logger.info)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "nicht getestet (per Auftrag)"},
+  "seed_data_creation": "keine",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "RAM-Bremse (wait_for_ram) ist verifiziert; Warte-Pfad nur per monkeypatch testbar, da Dev-Pod ~6.3 GB frei hat (free_mb() ~6350 MB) - reale Bremse greift hier nie. Telemetrie-Log bestaetigt (alle 180s). Beim erneuten Log-Check beachten: backend.err.log hat viele Hot-Reload-Neustarts, nach jedem Reload dauert es bis zu 180s bis die Telemetrie-Zeile erscheint.",
+  "rca_of_the_issue": "Ursprungsproblem (OOM alle ~30 min ohne Nutzeraktivitaet): boot_backfill lud direkt nach jedem Boot 23 Symbole x 14 Tage (~407k Kerzen) parallel zu KI-Analyse-Zyklen -> RSS > 512 MB -> Render-OOM-Kill -> Crash-Schleife. Fix drosselt beide Hintergrund-Tasks ueber wait_for_ram (Container-RAM via cgroup, malloc_trim vor jeder Messung) mit Timeout-Fallback. Implementierung und Tests entsprechen dem Ziel; keine Regressionen gefunden."
+}

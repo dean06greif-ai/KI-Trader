@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 49 – Postmortem (Nachanalyse) feature: full backend + frontend testing performed against the preview URL. All 8 pytest cases for the new /api/ai/postmortem/* endpoints pass (summary structure/values, mode split live/paper=6+6=12, per-trade detail, pending fallback for unknown id, empty context under n<8 overfitting guard, admin-only run with idempotence, regression on /api/health & /api/ai/status). The AIPostmortemPanel renders in the KI-Trader modal under the reward panel, shows correct summary '12 Trades ausgewertet', both setup rows 'breakout' and 'pullback' with 'sammelt (6/8)' badge, variant chips (pm-variants) open on click, pm-recent-table lists 12 rows, mode select 'nur Live' correctly filters to 6, pm-run-btn triggers the run and toast confirms '0 Trades, 0 Limit-Orders ausgewertet' (idempotent second run). No regression in KI-Trader learn area (AIRewardPanel renders fine).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AIRewardPanel select (day range)", "issues": ["React hydration warning: <span> cannot be child of <option>. This originates from the Emergent visual-edit-overlay injecting a <span> inside the <option> element for the day-select in AIRewardPanel.js line 84. Not caused by app logic and does not affect functionality, but pollutes console. Consider not rendering the visual-edit source spans inside <option> tags."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_postmortem_api_iter49.py",
+    "/app/test_reports/pytest/iter49_pm.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Postmortem router + service look clean; robustness gates (n>=8, consistency>=0.6, gain>=0.15R, split-half) are correctly enforced and context_text() returns empty as designed for the seeded n=6 case (verified via /api/ai/postmortem/context).",
+    "Idempotency of POST /api/ai/postmortem/run verified – second run returns trades=0 as expected."
+  ],
+  "updated_files": ["/app/backend/tests/test_postmortem_api_iter49.py"],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% of listed pm-* selectors verified"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Used pre-existing seed data (seed-pm-0..11 + seed-pm-limit) from backend/tests/_seed_postmortem.py – no new seeding required.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Postmortem endpoints under /api/ai/postmortem/{summary,trade/{id},context,run} and UI component AIPostmortemPanel are fully working. Seed data (12 trades, 1 limit) already reviewed. If trade_reviews collection is empty, re-run: python /app/backend/tests/_seed_postmortem.py && POST /api/ai/postmortem/run with admin token. The only observed console warning is a benign hydration warning from the visual-edit overlay on <option><span> in AIRewardPanel – not a real app bug.",
+  "rca of the issue": "N/A – no failing behaviors observed."
+}

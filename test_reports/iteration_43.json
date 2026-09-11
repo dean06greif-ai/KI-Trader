@@ -1,0 +1,26 @@
+{
+  "summary": "Iter43 review of new setups (funding_fade, session_open, divergence) + partial-fill booking. (1) GET /api/health -> 200 {status: alive}. (2) GET /api/ai/playbook -> 200; setups dict contains funding_fade / session_open / divergence with German descriptions (Funding-Fade, Session-Open, Divergenz); maturity list has 16 entries; the 3 new setups all show phase='sammelt' and live_ready=false. (3) Pure-function pytest regression (KITRADER_BASE_URL=http://localhost:8001 pytest tests/test_funding_session_partialfill.py tests/test_limit_live_sync.py tests/test_playbook_tf.py -q -n 0) => 44 passed in 0.27s. Covers funding_fade.classify/context_lines, session_open.active_session/opening_range/vol_regime, limit_live_sync.should_book_partial. (4) Frontend loads at production URL: Chart (BTCUSDT 1m LIVE, EMA9/50/200), Scanner (Top-11 Coins mit ETH/BTC/BNB...), strategy tabs Scalping/Smart Money RSI Reversal/KI Trader/TEST Custom sind sichtbar und klickbar. KI-Trader Tab zeigt Live-Signal-Analyse (32 Signale, 26 Long, 6 Short, 64% Win-Rate). Frontend requires no login to view dashboard (admin credentials nur für Settings/mutierende Endpoints). (5) Regression: /api/ai/playbook 200, /api/autotrade/config 200, /api/autotrade/balance 200. Kein regressiver Fehler beobachtet.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "/api/autotrade/status", "issue": "Endpoint existiert nicht (404). Im review request erwaehnt, ist aber im Router nicht implementiert - vermutlich Tippfehler im Request; /api/autotrade/config und /api/autotrade/balance funktionieren."}
+  ]},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": [
+    {"screen": "KI-Trader-Tab", "issues": ["Keine sichtbare Playbook-/Reife-Uebersicht im UI - die neuen Setups (funding_fade/session_open/divergence) sind zwar API-seitig vorhanden, aber im UI (weder KI-Trader-Tab noch Header-Icons) nicht aufgelistet. Das ist gemaess Anforderung 'Falls es eine KI-Trader-/Playbook-Ansicht gibt' optional und daher kein Bug, aber ein potenzielles Feature-Enhancement fuer die Sichtbarkeit der neuen Setups."]}
+  ]},
+  "test_report_links": [
+    "/app/backend/tests/test_funding_session_partialfill.py",
+    "/app/backend/tests/test_limit_live_sync.py",
+    "/app/backend/tests/test_playbook_tf.py"
+  ],
+  "action_items": [
+    "Optional: /api/autotrade/status-Endpoint pruefen (im review request erwaehnt, existiert nicht). Falls nie geplant, aus Testrequest streichen.",
+    "Optional (Enhancement): Playbook-/Reife-Uebersicht im Frontend verfuegbar machen, damit User die neuen Setups (funding_fade/session_open/divergence) und ihre Reife-Phase im UI sehen koennen."
+  ],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin/Dean06Greif!/Admin (Basic Auth) - fuer /api/ai/playbook nicht erforderlich",
+  "seed_data_creation": "none - nur lesende GET-Aufrufe und Pure-Function-Tests (kein DB-Schreiben, keine Trades, keine POST/DELETE auf Trading-Endpoints, wie in Constraints gefordert)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Playbook-API liefert 16 Setups: 13 alte + funding_fade/session_open/divergence. Die 3 neuen stehen initial in Phase 'sammelt' (live_ready=false). Pytest fuer neue Setups liegt in test_funding_session_partialfill.py (Pure-Functions, keine DB). Frontend zeigt aktuell keine Playbook-UI - Anfrage ist konditional formuliert."
+}
