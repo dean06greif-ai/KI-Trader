@@ -1,0 +1,20 @@
+{
+  "summary": "Iter42 review: (1) Header Live-Badge click-counting double-click (2 single clicks 100-150ms apart) toggles to IBKR stack (broker-mini='IBKR', balance='nicht eingeloggt') without opening Capital-Modal. dblclick reverses to Bitunix stack; single-click opens Capital modal. localStorage 'kit_live_badge_source' persists across reload. (2) Strategy-Vergleich modal renders without include-collection/include-stale checkboxes; filters ALLE/LIVE/PAPER + Gesamt/30/7 present; empty-state shown. (3) Backend /api/analytics/strategy-comparison forces include_collection=false / include_stale=false; stale_strategies still returned. (4) /api/telegram/notify-config includes 'ibkr_gateway' (bool, default true), POST toggle to false and back to true works with admin auth. (5) Backend unit regression (test_forex_ibkr_live.py, test_iter39_paper_stats_api.py, test_forex_ibkr.py) 39/39 green. (6) /api/ibkr/status 200 with hint/probe; /api/autotrade/balance contains 'ibkr'. (7) SettingsPanel Telegram tab shows label 'IBKR-Gateway: ausgeloggt / readyz länger als 5 Min rot (Forex-Live)' with toggle. All acceptance criteria met.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter42_gateway_alert_and_comparison.py",
+    "/app/backend/tests/test_forex_ibkr_live.py",
+    "/app/backend/tests/test_iter39_paper_stats_api.py",
+    "/app/backend/tests/test_forex_ibkr.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": ["/app/backend/tests/test_iter42_gateway_alert_and_comparison.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin/Dean06Greif!/Admin",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Header badge uses click-count double-click (350ms). Compare-strategies-button testid, settings-panel needs admin login first (settings-button opens login modal, second click opens panel). Telegram tab testid='tab-telegram'. Backend endpoint POST /api/telegram/notify-config requires admin auth (Bearer token from /api/auth/login)."
+}

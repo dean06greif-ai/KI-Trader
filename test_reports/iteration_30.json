@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 30: Vollständiger Test des KI-Trader Diagnose-Features, Copilot-Weekly-Report, Optimizer-Copilot-Repositionierung und Sidebar-Zählung. Alle 5 neuen Features funktionieren wie spezifiziert. Backend: 8/9 pytest bestanden (1 transienter 502-Gateway-Timeout beim wiederholten Weekly-Send; per curl direkt bestätigt: sent=true, echter deutscher Report, Telegram-Versand erfolgreich um 18:04:15). Frontend: alle data-testids vorhanden, AI-Diagnosis-Panel rendert diag-stats, diag-setup-table (10 Setups), diag-data-table (Symbole mit last_candle_age_min & Orderflow-Quelle), Zeitraum-Buttons 7/14/30 wechseln Daten korrekt. Copilot im Optimizer sitzt jetzt direkt unter 'Optimierung starten' und vor dem Ergebnis-Bereich (Code-Review: Zeile 1118 vor Zeile 1154 opt-result; DOM-Test bestätigt cp=True). Copilot-Weekly-Sektion vollständig sichtbar mit Toggle/Wochentag/Stunde/Jetzt-senden, Toggle-Persistenz funktioniert. Sidebar zeigt korrekt 'TOP 11 COINS'. Backtester- und Regime-Lab-Overlay öffnen fehlerfrei und enthalten strategy-copilot am Ende.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/copilot/weekly/send", "issue": "Intermittenter 502 Bad Gateway beim wiederholten pytest-Aufruf (Ingress-Timeout). Direkter curl-Aufruf (10s) liefert 200 mit vollständigem deutschen Report und sent=true (Telegram bestätigt). Endpoint funktional korrekt."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Copilot Weekly Select (Wochentag/Stunde)", "issues": ["React-Hydration-Warnung im Console-Log: '<span> cannot be a child of <option>'. Zeigt an, dass ein <span> innerhalb eines <option>-Elements im copilot-weekly-weekday oder copilot-weekly-hour Select verwendet wird. Kein Funktionsverlust, aber sollte bereinigt werden."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_diag_weekly.py",
+    "/app/test_reports/pytest/iter30.xml"
+  ],
+  "action_items": [
+    "Nur wenn Zeit: <span> aus <option> im StrategyCopilot Wochentag/Stunden-Select entfernen (React-Hydration-Warnung im Browser-Console). Kein Blocker."
+  ],
+  "critical_code_review_comments": [
+    "CoinSidebar.js verwendet noch immer den festen String 'TOP 10 COINS' als data-testid ('group-TOP 10 COINS') für die Gruppe, obwohl das sichtbare Label bereits dynamisch als 'TOP 11 COINS' angezeigt wird. Falls Tests künftig auf 'group-TOP 11 COINS' zugreifen, würde das brechen – ggf. data-testid auch dynamisch machen oder auf einen stabilen Key ('group-top') umstellen.",
+    "backend/routers/copilot.py Weekly-Send-Endpoint hat 300-char detail-Kürzung im Fehlerfall; ok. LLM-Call synchron innerhalb Request-Handler → bei >60s Ingress-Timeout 502. Für zukünftige Robustheit ggf. Background-Task + Poll-Endpoint erwägen (nicht dringend)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter30_diag_weekly.py (neu erstellt)"
+  ],
+  "success_rate": {"backend": "100% (funktional; 8/9 pytest bestanden, 1 transienter Ingress-502 wurde per curl als Endpoint-OK verifiziert)", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "Keine",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 30 (Diagnose-Panel + Copilot Weekly + Optimizer-Copilot-Reposition + Sidebar-Count) vollständig getestet. Weekly/send bereits 2x aufgerufen (1x pytest 502, 1x curl 200 OK mit echtem Telegram-Versand) – nicht weiter aufrufen, um LLM-Credits zu sparen. Alle 5 Feature-Punkte grün.",
+  "rca of the issue": "Der einzelne pytest-Fehler (weekly/send 502) ist NICHT reproduzierbar: der direkte curl-Aufruf mit gleichem Token liefert innerhalb von 10 Sekunden HTTP 200 mit vollständigem deutschen Report und erfolgreich versandter Telegram-Nachricht. Ursache ist mit hoher Wahrscheinlichkeit ein transienter Cloud-Ingress-Read-Timeout oder Backend-Reload (Watchfiles hat während des Tests die Testdatei neu geladen). Backend-Funktionalität ist gesichert; keine Aktion nötig."
+}

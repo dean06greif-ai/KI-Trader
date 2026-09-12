@@ -1,0 +1,29 @@
+{
+  "summary": "Iter 56 – tested Backtester + Optimizer Pause/Resume (backend & UI), ATR-Trailing config panel, AI-Playbook cache, localworker version. Backend: 6/6 pytest passed incl. real backtest & optimizer runs with pause -> paused=true (status stays 'running', phase begins with '⏸ Pausiert'), progress freeze during pause, resume -> paused=false. AI-Playbook 2nd call cached (<2s). localworker required_version = '1.10.0'. Unknown-job pause/resume returns 404, without token returns 401. Frontend: Backtester config panel exposes bt-cfg-trail-<id> (Aus/An) and bt-cfg-trailmult-<id> which hides when 'Aus' selected. bt-pause -> click -> bt-resume + bt-pausing-hint (during data-load phase, paused_total_s=0 so bt-paused-tag only appears once sim loop reaches checkpoint); bt-resume click -> bt-pause returns; toast 'Lauf wird fortgesetzt' shown. Optimizer panel renders full opt-* testid tree; opt-pause -> opt-resume + opt-pausing-hint; resume returns opt-pause.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter56_pause_resume.py",
+    "/app/test_reports/pytest/iter56.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "auth.js getToken() requires BOTH 'admin_token' AND 'admin_token_ts' (1-day TTL); tests that seed only 'admin_token' silently lose auth and hit 401 on /api/backtest/pause. Consider tolerating missing ts or logging a console.warn to speed diagnosis.",
+    "Backtester.js togglePause() shows toast on error but does not surface the specific 'Admin-Login erforderlich' 401 to the user; a toast.error(d.detail) is already there — but the pause button in the UI still visually says 'Pausieren'. Consider disabling pause when isAdmin()===false to avoid confusing 401 noise for non-admins.",
+    "AI Panel Verlauf (AIEquityPanel) is only reachable via strategy selection ai_trader + Edit-Params. Not directly openable from header — hard to deep-link/test. Consider a testid on a direct opener (e.g. header shortcut) if this is a common flow."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter56_pause_resume.py"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (BT + Optimizer pause/resume + ATR-Trailing panel verified)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Ephemeral backtest job (scalping_4_rules, 4-6 crypto, 60-730d, 1m) and optimizer job (params, scalping_4_rules, BTC/ETH, 30d, 5m, 20 iters) started & reset during tests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Frontend token needs BOTH localStorage keys admin_token + admin_token_ts (Date.now() ms) — otherwise auth.js getToken() returns null and Pause/Resume POST hits 401. To exercise UI pause on Cloud backtests, start a large job (many coins + 730d + timeframe 1m) — sim is instant with cache so pause is only observable during data-load phase, where paused=false but pause=true (bt-pausing-hint visible, bt-paused-tag not yet). AI panel Verlauf tab reached only via ai_trader strategy + edit-params — skipped in this iteration; the underlying /api/ai/playbook maturity payload is covered by backend test.",
+  "rca of the issue": "Initial frontend test showed bt-pause click did not flip to bt-resume. Network capture revealed POST /api/backtest/pause/{id} -> 401 'Admin-Login erforderlich'. RCA: auth.js getToken() invalidates the token when admin_token_ts is missing/older than 24h. My initial seeding wrote only admin_token. Fix in test: also localStorage.setItem('admin_token_ts', Date.now()). After that, UI pause/resume works end-to-end for both Backtester and Optimizer."
+}
