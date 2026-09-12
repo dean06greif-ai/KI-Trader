@@ -238,7 +238,7 @@ async def reaggregate_daily_stats() -> Dict[str, int]:
 
 
 @router.post("/api/analytics/clear/preview")
-async def clear_analytics_preview(body: Dict):
+async def clear_analytics_preview(body: Dict, _: bool = Depends(require_admin)):
     """Wie viele Einträge würde `POST /api/analytics/clear` löschen?
 
     Basis für den Bestätigungsdialog („X Analysen betroffen") – rein lesend,
@@ -492,7 +492,7 @@ async def _aggregate_ai_stats(strategy_id: str = None) -> Dict:
 
 
 @router.post("/api/analytics/ai-review")
-async def ai_review(body: Dict = None):
+async def ai_review(body: Dict = None, _: bool = Depends(require_admin)):
     """Aggregierte Trading-Statistiken an ein KI-Modell senden und deutsche
     Coach-Auswertung zurückgeben. Provider frei konfigurierbar via .env
     (OpenAI-kompatibel). Standard: Groq (kostenlos, keine Kreditkarte)."""

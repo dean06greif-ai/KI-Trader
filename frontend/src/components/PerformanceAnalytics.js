@@ -128,7 +128,7 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
 
   const loadTrades = useCallback(() => {
     fetch(`${API_URL}/api/autotrade/trades?limit=200`).then(r => r.json()).then(d => setTrades(filterExternalTrades(d.trades || []))).catch(() => {});
-    fetch(`${API_URL}/api/autotrade/balance`).then(r => r.json()).then(setBalance).catch(() => {});
+    fetch(`${API_URL}/api/autotrade/balance`, { headers: authHeaders() }).then(r => (r.ok ? r.json() : null)).then(d => { if (d) setBalance(d); }).catch(() => {});
   }, []);
 
   useEffect(() => {

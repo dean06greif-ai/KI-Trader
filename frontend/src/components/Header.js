@@ -175,8 +175,9 @@ const BalanceWidget = () => {
 
   const load = useCallback(async () => {
     try {
-      const d = await fetch(`${API_URL}/api/autotrade/balance`).then(r => r.json());
-      setBal(d);
+      const r = await fetch(`${API_URL}/api/autotrade/balance`, { headers: authHeaders() });
+      if (!r.ok) { setBal(null); return; }
+      setBal(await r.json());
     } catch (_) { /* ignore */ }
   }, []);
 

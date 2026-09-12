@@ -318,7 +318,11 @@ async def _book_close(db, t: Dict, exit_price: float, manager=None) -> None:
                "closed_at": closed_at, "ibkr_legs": legs,
                "events": (t.get("events", []) + [
                    f"IBKR-Abgleich: Position geschlossen @ {exit_price} (Fee {exit_fee})"])[-20:]}
-    await db.auto_trades.update_one({"id": t["id"]}, {"$set": updates})
+    if manager is not None and hasattr(manager, "_finalize_close"):
+        if not await manager._finalize_close(t["id"], updates):
+            return None
+    else:
+        await db.auto_trades.update_one({"id": t["id"]}, {"$set": updates})
     logger.info(f"IBKR-Sync: {t['symbol']} {t['side']} geschlossen -> "
                 f"PnL {realized} USD @ {exit_price}")
     if manager is not None:

@@ -29,8 +29,8 @@ export default function NewTradeModal({ defaultSymbol, onClose, onOpened }) {
     fetch(`${API_URL}/api/coins`).then(r => r.json())
       .then(d => setCoins(d.coins || d.symbols || []))
       .catch(() => {});
-    fetch(`${API_URL}/api/autotrade/capital`).then(r => r.json())
-      .then(d => setCapital(d))
+    fetch(`${API_URL}/api/autotrade/capital`, { headers: authHeaders() }).then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setCapital(d); })
       .catch(() => {});
   }, []);
 

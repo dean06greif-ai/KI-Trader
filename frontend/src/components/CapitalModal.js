@@ -37,7 +37,7 @@ export default function CapitalModal({ initialScope = 'live', lockedScope, onClo
   }, [lockedScope]);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/autotrade/capital`).then(r => r.json()).then(setData).catch(() => {});
+    fetch(`${API_URL}/api/autotrade/capital`, { headers: authHeaders() }).then(r => (r.ok ? r.json() : null)).then(d => { if (d) setData(d); }).catch(() => {});
   }, []);
 
   useEffect(() => {

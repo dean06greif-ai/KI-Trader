@@ -659,7 +659,7 @@ async def run_pnl_reconcile(_: bool = Depends(require_admin)):
 
 
 @router.get("/api/autotrade/capital")
-async def get_capital_allocation():
+async def get_capital_allocation(_: bool = Depends(require_admin)):
     """Kapital-Zuweisung für Live & Paper inkl. aktuell zugewiesenem/freiem Kapital."""
     total = await autotrader._live_total_balance()
     out = {}
@@ -723,7 +723,7 @@ async def set_capital_allocation(body: Dict, _: bool = Depends(require_admin)):
 
 
 @router.get("/api/autotrade/balance")
-async def get_balance():
+async def get_balance(_: bool = Depends(require_admin)):
     # Current mode (live or paper)
     mode = autotrader.config.get("mode", "paper")
 

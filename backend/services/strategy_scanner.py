@@ -164,16 +164,28 @@ class StrategyScanner:
                 return [s for s in per if s.get("enabled", True)]
         return [s for s in self.settings.get("custom_sessions", []) if s.get("enabled", True)]
 
+    @staticmethod
+    def session_contains(start: tuple, end: tuple, cur: tuple) -> bool:
+        """Liegt `cur` (h, m) im Fenster [start, end)? Fenster über Mitternacht
+        (start > end, z.B. 22:00–06:00) werden korrekt behandelt (Audit F09).
+        start == end gilt als 'ganztägig'."""
+        if start == end:
+            return True
+        if start < end:
+            return start <= cur < end
+        return cur >= start or cur < end
+
+    def _session_active(self, s: Dict, cur: tuple) -> bool:
+        return self.session_contains(self._parse_time(s.get("start", "00:00")),
+                                     self._parse_time(s.get("end", "23:59")), cur)
+
     def is_trading_session(self, strategy_id: str = None) -> bool:
         sessions = self.sessions_for(strategy_id)
         if not sessions:
             return True
         now = self.berlin_now()
         cur = (now.hour, now.minute)
-        for s in sessions:
-            if self._parse_time(s.get("start", "00:00")) <= cur < self._parse_time(s.get("end", "23:59")):
-                return True
-        return False
+        return any(self._session_active(s, cur) for s in sessions)
 
     def get_current_session(self) -> str:
         sessions = [s for s in self.settings.get("custom_sessions", []) if s.get("enabled", True)]
@@ -182,7 +194,7 @@ class StrategyScanner:
         now = self.berlin_now()
         cur = (now.hour, now.minute)
         for s in sessions:
-            if self._parse_time(s.get("start", "00:00")) <= cur < self._parse_time(s.get("end", "23:59")):
+            if self._session_active(s, cur):
                 return s.get("name", "Custom")
         return "Closed"
 

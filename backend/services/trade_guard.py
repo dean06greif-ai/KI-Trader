@@ -8,6 +8,15 @@
    -> für `cooldown_min` blockiert. Anderer Timeframe oder Gegenrichtung
    (Hedge) bleibt IMMER erlaubt (bewusste Design-Entscheidung: Multi-Timeframe-
    Einstiege und übergeordnete Hedges sollen möglich bleiben).
+
+3. Modus-Trennung (Audit F2, 09/2026): Kill-Switch-Zähler, Tagesverlust und
+   Anti-Stacking werden je Handelsmodus (live / paper) GETRENNT geführt.
+   Datensammel-Trades (data_collection) zählen nie. Simulierte Gewinne dürfen
+   die Sicherheitsentscheidung für echtes Geld nicht beschönigen.
+
+4. Lernpflicht (Audit F5): Ist nach einem Kill-Switch `learning_required`
+   gesetzt, bleibt der Einstieg gesperrt, bis der Lernlauf abgeschlossen ist
+   oder der Nutzer manuell freigibt (resume).
 """
 import asyncio
 import logging
@@ -17,21 +26,64 @@ from typing import Dict, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 CONFIG_ID = "trade_guard_config"
-STATE_ID = "trade_guard_state"
+STATE_ID = "trade_guard_state"            # Live-State (historischer Key, bleibt)
+STATE_ID_PAPER = "trade_guard_state_paper"
 
 DEFAULT_CONFIG = {
     "kill_switch_enabled": True,
     "max_daily_loss_pct": 5.0,       # % Tagesverlust (bezogen auf ref_capital)
     "max_consecutive_losses": 3,     # Verlust-Trades in Folge
-    "ref_capital": 0.0,              # 0 = automatisch (Summe max_capital der Tages-Trades)
+    "ref_capital": 0.0,              # 0 = automatisch (Equity des Modus, Fallback Summe max_capital)
     "anti_stacking_enabled": True,
     "stacking_cooldown_min": 30,
     # Zwangs-Lernphase: nach Kill-Switch bleibt Auto-Trading gesperrt, bis die
     # KI die Verlust-Serie analysiert und einen Lernlauf abgeschlossen hat.
     "forced_learning_enabled": True,
+    # Mindest-Pause nach Kill-Switch in Stunden (Audit E3): Pause endet frühestens
+    # nach min_pause_hours, spätestens-Regel „bis Mitternacht UTC“ bleibt als Untergrenze.
+    "min_pause_hours": 6.0,
 }
 
 _cfg_cache: Optional[Dict] = None
+
+
+def normalize_mode(mode) -> str:
+    return "live" if str(mode or "").lower() == "live" else "paper"
+
+
+def state_id_for(mode) -> str:
+    return STATE_ID if normalize_mode(mode) == "live" else STATE_ID_PAPER
+
+
+def _current_mode() -> str:
+    """Aktueller Handelsmodus des AutoTraders (Fallback paper) – für Guard-
+    Prüfungen ohne expliziten Modus."""
+    try:
+        from core import state
+        return normalize_mode((state.autotrader.config or {}).get("mode"))
+    except Exception:
+        return "paper"
+
+
+def _default_state_mode(mode) -> str:
+    """Ohne Modus-Angabe gilt der LIVE-State (historischer Key `trade_guard_state`,
+    rückwärtskompatibel für bestehende Aufrufer/Tests)."""
+    return normalize_mode(mode or "live")
+
+
+def is_risk_trade(trade: Dict) -> bool:
+    """Zählt der Trade für den Geldschutz? Sammel-Trades nie."""
+    return not bool((trade or {}).get("data_collection"))
+
+
+def pause_until(now: datetime, min_pause_hours: float) -> str:
+    """Pause-Ende (rein): spätestens Mitternacht UTC, mindestens min_pause_hours."""
+    nm = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        hrs = max(0.0, float(min_pause_hours or 0))
+    except (TypeError, ValueError):
+        hrs = 0.0
+    return max(nm, now + timedelta(hours=hrs)).isoformat()
 
 
 async def get_config(db) -> Dict:
@@ -68,8 +120,10 @@ async def update_config(db, updates: Dict) -> Dict:
     return await get_config(db)
 
 
-async def get_state(db) -> Dict:
-    doc = await db.settings.find_one({"_id": STATE_ID}) or {}
+async def get_state(db, mode: Optional[str] = None) -> Dict:
+    """Guard-Zustand des Modus (None = live, historischer Single-State)."""
+    mode = _default_state_mode(mode)
+    doc = await db.settings.find_one({"_id": state_id_for(mode)}) or {}
     doc.pop("_id", None)
     paused_until = doc.get("paused_until")
     active = False
@@ -78,20 +132,22 @@ async def get_state(db) -> Dict:
             active = datetime.fromisoformat(paused_until) > datetime.now(timezone.utc)
         except ValueError:
             active = False
-    return {"paused": active, "paused_until": paused_until if active else None,
+    return {"mode": mode,
+            "paused": active, "paused_until": paused_until if active else None,
             "reason": doc.get("reason") if active else None,
             "triggered_at": doc.get("triggered_at") if active else None,
             "learning_required": bool(doc.get("learning_required")),
             "forced_learning_at": doc.get("forced_learning_at")}
 
 
-async def resume(db) -> Dict:
+async def resume(db, mode: Optional[str] = None) -> Dict:
     """Kill-Switch manuell aufheben (hebt auch die Zwangs-Lernphase auf)."""
-    await db.settings.update_one({"_id": STATE_ID},
+    mode = _default_state_mode(mode)
+    await db.settings.update_one({"_id": state_id_for(mode)},
                                  {"$set": {"paused_until": None, "reason": None,
                                            "learning_required": False}},
                                  upsert=True)
-    return await get_state(db)
+    return await get_state(db, mode)
 
 
 def _next_midnight_utc() -> str:
@@ -104,43 +160,46 @@ def _today_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-async def _trigger(db, telegram, reason: str):
-    until = _next_midnight_utc()
+async def _trigger(db, telegram, reason: str, mode: str = "live"):
+    mode = normalize_mode(mode)
     cfg = await get_config(db)
+    until = pause_until(datetime.now(timezone.utc), cfg.get("min_pause_hours", 6.0))
     forced = bool(cfg.get("forced_learning_enabled", True))
     await db.settings.update_one(
-        {"_id": STATE_ID},
+        {"_id": state_id_for(mode)},
         {"$set": {"paused_until": until, "reason": reason,
                   "learning_required": forced,
                   "triggered_at": datetime.now(timezone.utc).isoformat()}},
         upsert=True)
-    logger.warning(f"KILL-SWITCH ausgelöst: {reason} – Auto-Trading pausiert bis {until}")
+    tag = mode.upper()
+    logger.warning(f"KILL-SWITCH [{tag}] ausgelöst: {reason} – Auto-Trading pausiert bis {until}")
     extra = (" Zusätzlich läuft jetzt eine Zwangs-Lernphase: die KI analysiert die "
              "Verlust-Serie und muss den Lernlauf abschließen, bevor das Auto-Trading "
              "wieder startet." if forced else "")
     from services import notifications
     await notifications.website_notify(
-        db, "kill_switch", "Kill-Switch ausgelöst",
-        f"{reason}. Auto-Trading pausiert bis Mitternacht (UTC), danach automatisch "
-        f"wieder aktiv.{extra}",
+        db, "kill_switch", f"Kill-Switch ausgelöst ({tag})",
+        f"{reason}. Auto-Trading ({tag}) pausiert bis {until[:16].replace('T', ' ')} UTC, "
+        f"danach automatisch wieder aktiv.{extra}",
         cooldown_min=5)
     await notifications.telegram_notify(
         db, telegram, "kill_switch",
-        f"🛑 *KILL-SWITCH AUSGELÖST*\n{reason}\n"
-        f"Auto-Trading pausiert bis Mitternacht (UTC), danach automatisch wieder aktiv."
+        f"🛑 *KILL-SWITCH AUSGELÖST* ({tag})\n{reason}\n"
+        f"Auto-Trading pausiert bis {until[:16].replace('T', ' ')} UTC, danach automatisch wieder aktiv."
         + (f"\n🎓 Zwangs-Lernphase gestartet – Freigabe erst nach abgeschlossenem "
            f"Lernlauf." if forced else ""))
     if forced:
-        asyncio.create_task(run_forced_learning(db))
+        asyncio.create_task(run_forced_learning(db, mode))
 
 
-async def run_forced_learning(db):
+async def run_forced_learning(db, mode: str = "live"):
     """Zwangs-Lernphase: Verlust-Serie analysieren + Lektion erstellen, dann freigeben."""
     from services.ai_engine import ai_engine
     if not getattr(ai_engine, "learning", None):
         return
+    sid = state_id_for(mode)
     await db.settings.update_one(
-        {"_id": STATE_ID},
+        {"_id": sid},
         {"$set": {"forced_learning_last_try": datetime.now(timezone.utc).isoformat()}},
         upsert=True)
     try:
@@ -150,7 +209,7 @@ async def run_forced_learning(db):
         return
     if res.get("status") == "ok":
         await db.settings.update_one(
-            {"_id": STATE_ID},
+            {"_id": sid},
             {"$set": {"learning_required": False,
                       "forced_learning_at": datetime.now(timezone.utc).isoformat()}},
             upsert=True)
@@ -165,9 +224,9 @@ async def run_forced_learning(db):
         logger.warning(f"Zwangs-Lernphase nicht abgeschlossen: {res.get('detail')}")
 
 
-async def _kick_forced_learning(db):
+async def _kick_forced_learning(db, mode: str = "live"):
     """Erneuter Lern-Versuch (max. alle 15 min), falls der erste Lauf scheiterte."""
-    doc = await db.settings.find_one({"_id": STATE_ID}) or {}
+    doc = await db.settings.find_one({"_id": state_id_for(mode)}) or {}
     last = doc.get("forced_learning_last_try")
     if last:
         try:
@@ -176,17 +235,24 @@ async def _kick_forced_learning(db):
                 return
         except ValueError:
             pass
-    asyncio.create_task(run_forced_learning(db))
+    asyncio.create_task(run_forced_learning(db, mode))
 
 
-async def check_open_allowed(db, signal: Dict, timeframe: str) -> Tuple[bool, str]:
-    """Vor jedem Auto-Trade: Kill-Switch aktiv? Anti-Stacking-Cooldown?"""
+async def check_open_allowed(db, signal: Dict, timeframe: str,
+                             mode: Optional[str] = None) -> Tuple[bool, str]:
+    """Vor jedem Auto-Trade: Kill-Switch aktiv? Lernpflicht? Anti-Stacking-Cooldown?
+    `mode` = Handelsmodus des geplanten Trades (None = aktueller AutoTrader-Modus)."""
     cfg = await get_config(db)
+    mode = normalize_mode(mode or _current_mode())
 
     if cfg.get("kill_switch_enabled"):
-        st = await get_state(db)
+        st = await get_state(db, mode)
         if st["paused"]:
-            return False, f"Kill-Switch aktiv bis {st['paused_until']} ({st['reason']})"
+            return False, f"Kill-Switch ({mode}) aktiv bis {st['paused_until']} ({st['reason']})"
+        if st.get("learning_required") and cfg.get("forced_learning_enabled", True):
+            await _kick_forced_learning(db, mode)
+            return False, (f"Zwangs-Lernphase ({mode}) noch nicht abgeschlossen – Auto-Trading "
+                           "gesperrt bis Lernlauf fertig oder manuelle Freigabe (Resume)")
 
     # Übergangsschutz dynamischer Strategien: nach einem Regime-Wechsel sind
     # neue Trades auf dem betroffenen Symbol für die Sperrzeit blockiert
@@ -204,24 +270,48 @@ async def check_open_allowed(db, signal: Dict, timeframe: str) -> Tuple[bool, st
         since = (datetime.now(timezone.utc) - timedelta(minutes=cooldown)).isoformat()
         recent = await db.auto_trades.find_one({
             "symbol": signal["symbol"], "side": signal["type"],
-            "timeframe": timeframe,
+            "timeframe": timeframe, "mode": mode,
+            "data_collection": {"$ne": True},
             "opened_at": {"$gte": since},
         })
         if recent:
             return False, (f"Anti-Stacking: {signal['type']} {signal['symbol']} "
-                           f"({timeframe}) bereits vor <{int(cooldown)} Min eröffnet – "
+                           f"({timeframe}, {mode}) bereits vor <{int(cooldown)} Min eröffnet – "
                            "anderer Timeframe oder Gegenrichtung bleibt erlaubt")
     return True, ""
 
 
+async def _reference_capital(db, mode: str, rows) -> float:
+    """Bezugsgröße für den Tagesverlust: Equity des Modus (live = Börsen-Guthaben,
+    paper = zugewiesenes Paper-Kapital); Fallback: Summe max_capital der Tages-Trades."""
+    try:
+        from core import state
+        at = state.autotrader
+        if mode == "live":
+            eq = await at._live_total_balance()
+            if eq and eq > 0:
+                return float(eq)
+        alloc = await at.allocated_capital(mode)
+        if alloc and alloc > 0:
+            return float(alloc)
+    except Exception as e:
+        logger.debug(f"Referenzkapital ({mode}) nicht ermittelbar: {e}")
+    return sum(float(r.get("max_capital") or 0) for r in rows) or 100.0
+
+
 async def on_trade_closed(db, telegram, trade: Dict):
-    """Nach jedem geschlossenen Auto-Trade: Zähler aktualisieren, Limits prüfen."""
+    """Nach jedem geschlossenen Auto-Trade: Zähler des MODUS aktualisieren, Limits prüfen.
+    Sammel-Trades zählen nicht; Paper-Ergebnisse berühren den Live-Schutz nie."""
     cfg = await get_config(db)
     if not cfg.get("kill_switch_enabled"):
         return
+    if not is_risk_trade(trade):
+        return
+    mode = normalize_mode(trade.get("mode"))
     today = _today_utc()
     rows = await db.auto_trades.find(
-        {"status": "closed", "closed_at": {"$gte": f"{today}T00:00:00"}},
+        {"status": "closed", "closed_at": {"$gte": f"{today}T00:00:00"},
+         "mode": mode, "data_collection": {"$ne": True}},
         {"realized_pnl": 1, "result": 1, "closed_at": 1, "max_capital": 1}
     ).sort("closed_at", 1).to_list(1000)
 
@@ -236,16 +326,15 @@ async def on_trade_closed(db, telegram, trade: Dict):
     max_losses = int(cfg.get("max_consecutive_losses", 3) or 0)
     if max_losses and consecutive >= max_losses:
         await _trigger(db, telegram,
-                       f"{consecutive} Verlust-Trades in Folge (Limit {max_losses})")
+                       f"{consecutive} Verlust-Trades in Folge (Limit {max_losses})", mode)
         return
 
     daily_pnl = sum(float(r.get("realized_pnl") or 0) for r in rows)
     ref = float(cfg.get("ref_capital") or 0)
     if ref <= 0:
-        ref = sum(float(r.get("max_capital") or 0) for r in rows) or 100.0
+        ref = await _reference_capital(db, mode, rows)
     loss_limit = float(cfg.get("max_daily_loss_pct", 5.0) or 0)
     if loss_limit and daily_pnl < 0 and abs(daily_pnl) / ref * 100 >= loss_limit:
         await _trigger(db, telegram,
                        f"Tagesverlust {round(abs(daily_pnl) / ref * 100, 2)}% "
-                       f"(Limit {loss_limit}%, PnL {round(daily_pnl, 2)} USDT)")
-
+                       f"(Limit {loss_limit}%, PnL {round(daily_pnl, 2)} USDT)", mode)

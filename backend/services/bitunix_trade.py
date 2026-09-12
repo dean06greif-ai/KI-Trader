@@ -880,6 +880,28 @@ def ai_capital_base(cfg_capital: float, ai_max_cap: float) -> float:
 # used_margin). PnL wird normal getrackt.
 COLLECTION_MARGIN_USDT = 100.0
 
+# Audit F1 (Close-Fehlpfad): ab so vielen fehlgeschlagenen Live-Closes wird
+# eskaliert (KRITISCH-Meldung) und nur noch gedrosselt erneut versucht. Der
+# Trade wird NIE mehr lokal als 'closed' verbucht, solange die Börse den
+# Close nicht bestätigt hat.
+CLOSE_FAIL_ESCALATE_AT = 5
+CLOSE_FAIL_RETRY_SEC = 60
+
+
+def close_retry_due(last_try_iso, retry_sec: int = CLOSE_FAIL_RETRY_SEC,
+                    now: Optional[datetime] = None) -> bool:
+    """Darf nach der Eskalation erneut ein Close versucht werden? (rein)"""
+    if not last_try_iso:
+        return True
+    try:
+        last = datetime.fromisoformat(str(last_try_iso))
+    except ValueError:
+        return True
+    now = now or datetime.now(timezone.utc)
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (now - last).total_seconds() >= retry_sec
+
 
 def parse_ticker_prices(payload) -> Dict[str, float]:
     """Bitunix /market/tickers Antwort -> {SYMBOL: Mark-/Last-Preis} (rein &
@@ -1858,7 +1880,9 @@ class AutoTradeManager:
                 tf = getattr(st, "STRATEGY_TIMEFRAME", "1m") if st else "1m"
             except Exception:
                 tf = "1m"
-        guard_ok, guard_reason = await trade_guard.check_open_allowed(self.db, signal, tf)
+        guard_mode = "paper" if collection else (
+            str(signal.get("force_mode") or "").lower() if str(signal.get("force_mode") or "").lower() in ("live", "paper") else eff_mode)
+        guard_ok, guard_reason = await trade_guard.check_open_allowed(self.db, signal, tf, mode=guard_mode)
         if not guard_ok:
             logger.info(f"AutoTrade blockiert {symbol} {side}: {guard_reason}")
             signal["_reject_reason"] = guard_reason
@@ -2116,6 +2140,23 @@ class AutoTradeManager:
                               f"(Limit {cap_str}, belegt {used:.2f})")
                 capital = free_alloc
         qty = round((capital * lev_used) / entry, 6)
+
+        # ---- Gesamt-Risikobudget (services/risk_budget.py, Audit E1): offenes
+        # Verlustrisiko aller Positionen des Modus + dieser Trade <= X % Equity.
+        if not collection:
+            try:
+                from services import risk_budget
+                rb_equity = alloc_cap
+                if rb_equity is None and mode == "live":
+                    rb_equity = await self._live_total_balance()
+                rb_ok, rb_why = await risk_budget.check_new_trade(
+                    self.db, mode, symbol, abs(float(entry) - float(sl)) * qty, rb_equity)
+                if not rb_ok:
+                    logger.info(f"AutoTrade blockiert {symbol} {side}: {rb_why}")
+                    signal["_reject_reason"] = rb_why
+                    return None
+            except Exception as e:
+                logger.warning(f"{symbol}: Risikobudget-Prüfung fehlgeschlagen (fail-open): {e}")
 
         # ---- Fill-Qualitäts-Messung (Baustein B): Referenzpreis festhalten,
         # BEVOR Maker-/Paper-Fills den Entry verändern.
@@ -2444,6 +2485,25 @@ class AutoTradeManager:
             # nachgesetzt; scheitert auch das endgültig, wird die Position
             # sofort wieder geschlossen (Nutzer-Vorgabe: Retry -> Close).
             sl_missing = False
+            # Audit F03: ohne positionId kann der SL NICHT verifiziert werden ->
+            # einmal nachfassen; bleibt sie unbekannt, gilt der SL als
+            # UNBESTÄTIGT (sl_exchange_missing=True + Alarm), damit Watchdog/
+            # Sicherheitsstatus die Position sichtbar weiter absichern.
+            if not position_id:
+                try:
+                    await asyncio.sleep(1.5)
+                    position_id = await self._resolve_new_position_id(symbol, side, qty)
+                except Exception as e:
+                    logger.debug(f"{symbol}: positionId-Nachfassen fehlgeschlagen: {e}")
+                if not position_id:
+                    sl_missing = True
+                    logger.error(f"{symbol}: positionId unbekannt – Börsen-SL NICHT "
+                                 f"verifizierbar (sl_exchange_missing=True)")
+                    await self._notify_reject(
+                        symbol, side,
+                        "Position eröffnet, aber positionId unbekannt – Stop-Loss an der "
+                        "Börse NICHT verifizierbar. Watchdog sichert nach; bitte in "
+                        "Bitunix prüfen.")
             if position_id:
                 sl_ok = await self._ensure_live_sl(symbol, side, position_id, sl)
                 if sl_ok is False:
@@ -2462,6 +2522,15 @@ class AutoTradeManager:
                            "in Bitunix prüfen!"))
                     if closed_ok:
                         logger.error(f"{symbol}: Notfall-Close wegen fehlendem SL")
+                        # Audit F11: Registry-Eintrag auflösen, sonst adoptiert der
+                        # Watchdog später eine FREMDE Position über Symbol/Seite.
+                        if order_id:
+                            try:
+                                from services import entry_order_registry
+                                await entry_order_registry.resolve(self.db, order_id)
+                            except Exception as e:
+                                logger.debug(f"{symbol}: Registry-Auflösung nach "
+                                             f"Notfall-Close fehlgeschlagen: {e}")
                         return None
                     # Close fehlgeschlagen: Trade trotzdem lokal führen, damit
                     # Monitor + Watchdog die Position weiter absichern.
@@ -2857,14 +2926,15 @@ class AutoTradeManager:
             event = f"EXTERN GESCHLOSSEN (Bitunix-Sync) @ {price}"
         result = "win" if realized > 0 else ("breakeven" if realized == 0 else "loss")
         closed_at = datetime.now(timezone.utc).isoformat()
-        await self.db.auto_trades.update_one({"id": t["id"]}, {"$set": {
+        if not await self._finalize_close(t["id"], {
             "status": "closed", "exit_price": price, "result": result,
             "realized_pnl": realized, "qty_remaining": 0,
             "fees_paid": fees_total,
             "pnl_exchange_exact": bool(exact),
             "closed_by": "bitunix_sync", "live_close_failed": False,
             "closed_at": closed_at,
-            "events": (t.get("events", []) + [event])[-20:]}})
+            "events": (t.get("events", []) + [event])[-20:]}):
+            return None
         await self._after_close({**t, "status": "closed", "result": result,
                                  "realized_pnl": realized, "exit_price": price,
                                  "pnl_exchange_exact": bool(exact),
@@ -3155,8 +3225,8 @@ class AutoTradeManager:
                 if t["mode"] == "live" and self.client.configured():
                     await self._live_flash_close(t, 0)
                 logger.info(f"AutoTrade LIQUIDATION {t['symbol']} pnl={updates['realized_pnl']}")
-                await self.db.auto_trades.update_one({"id": t["id"]}, {"$set": updates})
-                await self._after_close({**t, **updates})
+                if await self._finalize_close(t["id"], updates):
+                    await self._after_close({**t, **updates})
                 return
 
         # Break-Even Modus auflösen (Legacy: breakeven_enabled)
@@ -3376,6 +3446,18 @@ class AutoTradeManager:
         if closed:
             live_close_ok = True
             if t["mode"] == "live" and self.client.configured():
+                # Audit F1: nach CLOSE_FAIL_ESCALATE_AT Fehlversuchen wird der Trade
+                # NICHT mehr lokal geschlossen (Phantom-PnL). Er bleibt offen und
+                # sichtbar als 'unklar'; weitere Versuche nur noch gedrosselt.
+                attempts_prev = int(t.get("live_close_attempts", 0) or 0)
+                if attempts_prev >= CLOSE_FAIL_ESCALATE_AT and not close_retry_due(
+                        t.get("live_close_last_try"), CLOSE_FAIL_RETRY_SEC):
+                    updates["qty_remaining"] = pre_exit["qty_rem"]
+                    updates["realized_pnl"] = round(pre_exit["realized"], 6)
+                    updates["fees_paid"] = round(pre_exit["fees"], 6)
+                    updates["events"] = t.get("events", [])[-20:]
+                    await self.db.auto_trades.update_one({"id": t["id"]}, {"$set": updates})
+                    return
                 res = await self._live_flash_close(t, qty_rem)
                 if not res.get("ok"):
                     # Position evtl. extern bereits geschlossen (TP/SL/Bitunix-
@@ -3386,12 +3468,13 @@ class AutoTradeManager:
                         return
                     # Position an der Börse ist NICHT zu -> Trade lokal offen
                     # lassen und beim nächsten Monitor-Tick erneut versuchen.
-                    attempts = int(t.get("live_close_attempts", 0) or 0) + 1
+                    attempts = attempts_prev + 1
                     events.append(f"CLOSE-VERSUCH {attempts} fehlgeschlagen (Börse): "
                                   f"{res.get('detail')}")
                     updates.update({"live_close_attempts": attempts,
                                     "live_close_failed": True,
                                     "live_close_error": res.get("detail"),
+                                    "live_close_last_try": datetime.now(timezone.utc).isoformat(),
                                     "events": events[-20:]})
                     if attempts == 1:
                         await self._notify_reject(
@@ -3402,13 +3485,27 @@ class AutoTradeManager:
                     updates["qty_remaining"] = pre_exit["qty_rem"]
                     updates["realized_pnl"] = round(pre_exit["realized"], 6)
                     updates["fees_paid"] = round(pre_exit["fees"], 6)
-                    live_close_ok = attempts >= 5
-                    if live_close_ok:
-                        logger.error(f"AutoTrade {t['id']}: Live-Close nach {attempts} "
-                                     f"Versuchen aufgegeben – Trade wird lokal geschlossen")
-                        updates["qty_remaining"] = qty_rem
-                        updates["realized_pnl"] = round(realized, 6)
-                        updates["fees_paid"] = round(fees_paid, 6)
+                    live_close_ok = False
+                    if attempts == CLOSE_FAIL_ESCALATE_AT:
+                        updates["close_escalated_at"] = datetime.now(timezone.utc).isoformat()
+                        logger.error(f"AutoTrade {t['id']}: Live-Close nach {attempts} Versuchen "
+                                     f"weiter fehlgeschlagen – Trade bleibt OFFEN/UNKLAR, "
+                                     f"Retry alle {CLOSE_FAIL_RETRY_SEC}s, bitte Börse prüfen")
+                        await self._notify_reject(
+                            t["symbol"], t["side"],
+                            f"KRITISCH: Exit nach {attempts} Versuchen NICHT ausgeführt "
+                            f"({res.get('detail')}). Trade bleibt als UNKLAR offen – bitte "
+                            f"Position SOFORT in Bitunix prüfen!")
+                        try:
+                            from services import notifications
+                            await notifications.website_notify(
+                                self.db, "close_failed",
+                                f"Close fehlgeschlagen: {t['symbol']} {t['side']}",
+                                f"{attempts} Fehlversuche – Position ggf. noch offen an der "
+                                f"Börse. Trade bleibt als UNKLAR offen (kein PnL gebucht).",
+                                cooldown_min=30)
+                        except Exception as ne:
+                            logger.debug(f"close_failed notify: {ne}")
                 else:
                     updates["live_close_failed"] = False
                     events.append(str(res.get("detail")))
@@ -3421,9 +3518,26 @@ class AutoTradeManager:
                 logger.info(f"AutoTrade CLOSE {t['symbol']} {result} "
                             f"pnl={updates['realized_pnl']}")
 
-        await self.db.auto_trades.update_one({"id": t["id"]}, {"$set": updates})
         if updates.get("status") == "closed":
-            await self._after_close({**t, **updates})
+            if await self._finalize_close(t["id"], updates):
+                await self._after_close({**t, **updates})
+            return
+        await self.db.auto_trades.update_one({"id": t["id"]}, {"$set": updates})
+
+    async def _finalize_close(self, trade_id: str, updates: Dict) -> bool:
+        """Atomarer Abschluss (Audit F5/F12): setzt `closed` NUR, wenn der Trade
+        noch `open` ist (Compare-and-Set). Liefert True genau für den einen
+        Aufrufer, der den Close gewonnen hat – nur der darf `_after_close`
+        (Kill-Switch-Zähler, Telegram, Reward, Signal-Sync) auslösen."""
+        res = await self.db.auto_trades.update_one(
+            {"id": trade_id, "status": "open"}, {"$set": updates})
+        matched = getattr(res, "matched_count", None)
+        if matched is None:
+            return True  # Test-Doubles ohne UpdateResult
+        if matched == 0:
+            logger.info(f"AutoTrade {trade_id}: Close bereits von anderem Pfad "
+                        f"verbucht – Hooks werden nicht doppelt ausgeführt")
+        return matched > 0
 
     async def _after_close(self, t: Dict):
         """Nach jedem Close: PnL-Abgleich mit der Börse, Kill-Switch-Zähler +
@@ -3983,19 +4097,23 @@ class AutoTradeManager:
         result = "win" if realized > 0 else ("breakeven" if realized == 0 else "loss")
         peak_mc = update_peak(side, t.get("peak_price"), t.get("entry"), price)
         trough_mc = update_trough(side, t.get("trough_price"), t.get("entry"), price)
-        await self.db.auto_trades.update_one({"id": trade_id}, {"$set": {
+        closed_at = datetime.now(timezone.utc).isoformat()
+        won = await self._finalize_close(trade_id, {
             "status": "closed", "exit_price": price, "result": result,
             **({"peak_price": round(peak_mc, 8)} if peak_mc is not None else {}),
             **({"trough_price": round(trough_mc, 8)} if trough_mc is not None else {}),
             "realized_pnl": realized, "qty_remaining": 0,
             "fees_paid": round(float(t.get("fees_paid", 0.0)) + fee, 6),
             "live_close_failed": False,
-            "closed_at": datetime.now(timezone.utc).isoformat(),
+            "closed_at": closed_at,
             "events": (t.get("events", []) +
-                       [f"MANUAL CLOSE @ {price} (Fee {round(fee, 6)}){live_note}"])[-20:]}})
+                       [f"MANUAL CLOSE @ {price} (Fee {round(fee, 6)}){live_note}"])[-20:]})
+        if not won:
+            return {"result": result, "realized_pnl": realized, "already_closed": True,
+                    "live_verified": bool(live_note) or t["mode"] != "live"}
         await self._after_close({**t, "status": "closed", "result": result,
                                  "realized_pnl": realized, "exit_price": price,
-                                 "closed_at": datetime.now(timezone.utc).isoformat()})
+                                 "closed_at": closed_at})
         return {"result": result, "realized_pnl": realized,
                 "live_verified": bool(live_note) or t["mode"] != "live"}
 
@@ -4096,9 +4214,11 @@ class AutoTradeManager:
                         "result": "win" if realized > 0 else
                                   ("loss" if realized < 0 else "breakeven"),
                         "closed_at": datetime.now(timezone.utc).isoformat()})
-        await self.db.auto_trades.update_one({"id": trade_id}, {"$set": upd})
         if left <= 0:
-            await self._after_close({**t, **upd})
+            if await self._finalize_close(trade_id, upd):
+                await self._after_close({**t, **upd})
+        else:
+            await self.db.auto_trades.update_one({"id": trade_id}, {"$set": upd})
         return {"closed_qty": qty, "qty_remaining": left, "price": price,
                 "realized_pnl": realized,
                 **({"note": dust_note} if dust_note else {})}

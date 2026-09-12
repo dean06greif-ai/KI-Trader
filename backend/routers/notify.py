@@ -1,7 +1,7 @@
 """API: Website-Benachrichtigungen, Telegram-Meldungs-Toggles, Kill-Switch/Anti-Stacking."""
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends
 
@@ -61,7 +61,7 @@ async def mark_notifications_popped(body: Dict = None):
 
 
 @router.post("/api/notifications")
-async def add_notification(body: Dict = None):
+async def add_notification(body: Dict = None, _: bool = Depends(require_admin)):
     """Von der UI genutzt: unterdrückte doppelte Fehler-Popups landen hier,
     damit sie in der Glocke nachlesbar bleiben (Toast-Dedupe)."""
     body = body or {}
@@ -95,9 +95,13 @@ async def set_telegram_notify_config(body: Dict, _: bool = Depends(require_admin
 
 
 @router.get("/api/trade-guard")
-async def get_trade_guard():
+async def get_trade_guard(mode: Optional[str] = None):
+    """Guard-Config + Zustand (State je Modus: ?mode=live|paper, Default aktueller Modus)."""
+    st = await trade_guard.get_state(state.db, mode or trade_guard._current_mode())
+    other = "paper" if st["mode"] == "live" else "live"
     return {"config": await trade_guard.get_config(state.db),
-            "state": await trade_guard.get_state(state.db)}
+            "state": st,
+            "states": {st["mode"]: st, other: await trade_guard.get_state(state.db, other)}}
 
 
 @router.post("/api/trade-guard/config")
@@ -107,5 +111,20 @@ async def set_trade_guard_config(body: Dict, _: bool = Depends(require_admin)):
 
 
 @router.post("/api/trade-guard/resume")
-async def resume_trade_guard(_: bool = Depends(require_admin)):
-    return {"state": await trade_guard.resume(state.db)}
+async def resume_trade_guard(body: Optional[Dict] = None, _: bool = Depends(require_admin)):
+    return {"state": await trade_guard.resume(state.db, (body or {}).get("mode"))}
+
+
+@router.get("/api/risk-budget")
+async def get_risk_budget(mode: Optional[str] = None, _: bool = Depends(require_admin)):
+    """Gesamt-Risikobudget: Config + aktuelle Auslastung je Modus (Phase 1.6)."""
+    from services import risk_budget
+    m = trade_guard.normalize_mode(mode or trade_guard._current_mode())
+    return {"config": await risk_budget.get_config(state.db),
+            "usage": await risk_budget.usage(state.db, m)}
+
+
+@router.post("/api/risk-budget/config")
+async def set_risk_budget(body: Dict, _: bool = Depends(require_admin)):
+    from services import risk_budget
+    return {"config": await risk_budget.update_config(state.db, body)}

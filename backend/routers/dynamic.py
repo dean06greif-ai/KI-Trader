@@ -107,7 +107,7 @@ async def _get_doc(did: str) -> Dict:
 
 
 @router.post("/api/dynamic/{did}/refresh")
-async def dynamic_refresh(did: str, body: Dict = None):
+async def dynamic_refresh(did: str, body: Dict = None, _: bool = Depends(require_admin)):
     doc = await _get_doc(did)
     days = int(min(max(int((body or {}).get("days") or 30), 7), 90))
     try:

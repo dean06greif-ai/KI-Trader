@@ -91,7 +91,26 @@ Legende: ✅ bestätigt · ⚠️ teilweise / präzisiert · ❌ nicht bestätig
 
 ---
 
-## 2. Testbasis (Regressions-Grundlage, lokal ohne Netz/Keys)
+## 1b. Nachtrag 12.09. – zweiter externer Bericht (`/app/audit/KI_TRADER_AUDIT.md` der Prüf-KI)
+
+Zusätzliche Befunde, im Code **gegengeprüft und bestätigt** – in den Plan aufgenommen:
+
+| ID (extern) | Befund | Evidenz | In Plan |
+|---|---|---|---|
+| F03 (P1) | Ohne `position_id` nach dem Entry wird die SL-Verifikation übersprungen, `sl_exchange_missing` bleibt `False` | `bitunix_trade.py` Z. 2448–2470: `if position_id:` umschließt `_ensure_live_sl`; Else-Zweig fehlt | **1.8** |
+| F09 (P1) | Handelssessions über Mitternacht (`custom_sessions` 22:00–06:00) im **Strategie-Scanner** falsch (`start <= cur < end`) – zusätzlich zu den Detektoren (2.9) | `strategy_scanner.py` Z. 167–187 `is_trading_session`, `get_current_session` | **1.9** (Live-relevant → Phase 1) |
+| F10 (P1) | Konkrete Parität-Abweichung: EMA-Pullback liefert im `fast_sim`-Provider PRE_SIGNAL, in `check_signal` SHORT (gleicher Präfix) | extern reproduziert; eigener Paritätstest steht aus | **T4** (konkretisiert) |
+| F11 (P1) | Notfall-Close nach fehlgeschlagenem SL kehrt mit `return None` zurück, ohne den `entry_order_registry`-Eintrag aufzulösen → Watchdog kann später eine fremde Position über Symbol/Seite/Alter „adoptieren“ | `bitunix_trade.py` Z. 2465–2467, `entry_order_registry.resolve` nur Z. 1612/2642 | **1.8** |
+| F13 (P1) | Bestätigungszähler zählt den **aktuellen** Vorschlag und `superseded`-Vorgänger mit (kein ID-Ausschluss, kein Statusfilter) → 25 unveränderte Trades + 2 Vorschläge = 3 Bestätigungen → Auto-Freigabe | `ai_engine_governance.py` Z. 129–135 | **2.8** (präzisiert) |
+| F14 (P2) | Gültige Nullwerte werden durch Defaults ersetzt (`volume_ratio or 1.0`, `range_pos or 50.0`) | `ai_ml_lab.feature_row` Z. 128–129, analog `ml_gate.gate_feature_row` | **2.2** |
+| F15 (P2) | `toggleNotification` prüft `response.ok` nicht → Erfolgs-Toast trotz 401/500 | `frontend/src/App.js` Z. 232–237 | **1.5** (Frontend-Teil) |
+| Hinweis | `risk` NICHT umbenennen (andere Module erwarten Preisabstand), sondern **additiv `initial_risk_usdt`** | – | **2.3** (Feldname übernommen) |
+| Hinweis | Prozesslokale Locks/Zähler (Monitor-Lock, Watchdog-Fehlerzähler) setzen Einzelinstanz voraus | – | 2.4 (Sicherheitsstatus dokumentiert Annahme) |
+
+Bewertung des zweiten Berichts: deckungsgleich mit meinem Gegencheck; die neuen Punkte F03/F11 sind
+**echte Geldschutz-Lücken** (Position ohne verifizierten SL bzw. Registry-Leiche) und wandern deshalb in
+Phase 1 (neuer Schritt 1.8). F09 betrifft den Live-Scanner und ist ein Ein-Zeilen-Fix mit Test (1.9).
+
 
 - `backend/tests` (`-m unit`): **1261 passed, 7 skipped, 12 failed, 3 errors**.
   - 11 Failures `test_iter38_*` brauchen einen laufenden Dev-Server (bekannt, PRD), 1× `test_fix_custom_ai_trades`,

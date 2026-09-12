@@ -430,7 +430,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Crypto Scalping Scanner", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
+# CORS (Audit E5): explizite Origins via Env CORS_ORIGINS (Komma-Liste). Ohne
+# Env bleibt '*' (Bearer-Token braucht keine Cookies) – dann ohne credentials,
+# da Browser '*' + allow_credentials ablehnen.
+_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip() and o.strip() != "*"]
+app.add_middleware(CORSMiddleware,
+                   allow_origins=_cors_origins or ["*"],
+                   allow_credentials=bool(_cors_origins),
                    allow_methods=["*"], allow_headers=["*"])
 
 for r in ALL_ROUTERS:

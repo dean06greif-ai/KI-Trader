@@ -2,6 +2,7 @@
 // sie landen ausschließlich in der Benachrichtigungsglocke (app_notifications).
 // Erfolgs-/Info-Toasts (direktes Aktions-Feedback) bleiben unverändert.
 import { toast as base } from 'sonner';
+import { authHeaders } from '../auth';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const DEDUPE_MS = 5 * 60 * 1000;
@@ -19,7 +20,7 @@ const pushToBell = (title, message, kind) => {
   try {
     fetch(`${API_URL}/api/notifications`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ title, message: String(message), kind }),
     }).catch(() => {});
   } catch (e) { /* still */ }

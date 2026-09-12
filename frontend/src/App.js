@@ -233,8 +233,18 @@ function App() {
     const current = notifications[symbol] !== false;
     const updated = { ...notifications, [symbol]: !current };
     setNotifications(updated);
-    await fetch(`${API_URL}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ notifications: updated }) });
-    toast.success(`${symbol.replace('USDT','')}: Alerts ${!current ? 'AN' : 'AUS'}`);
+    try {
+      const res = await fetch(`${API_URL}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ notifications: updated }) });
+      if (!res.ok) {
+        setNotifications(notifications);
+        toast.error(res.status === 401 ? 'Admin-Login erforderlich' : `Alerts nicht gespeichert (HTTP ${res.status})`);
+        return;
+      }
+      toast.success(`${symbol.replace('USDT','')}: Alerts ${!current ? 'AN' : 'AUS'}`);
+    } catch (e) {
+      setNotifications(notifications);
+      toast.error('Alerts nicht gespeichert (Netzwerk)');
+    }
   };
 
   const toggleCoinAutoTrade = async (symbol, next) => {
