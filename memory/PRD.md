@@ -11,7 +11,28 @@ MUSS für den Render-Deploy erhalten bleiben (nur bestehende Dateien editiert).
 Sauber, modular, rückwärtskompatibel. Keine Schnelllösungen. Stabilität vor
 aggressiven Änderungen.
 
-## Umgesetzt (2026-06 / diese Iteration)
+## Iteration 12.09.2026 – Audit & Umsetzungsplan (NUR Analyse, keine Codeänderungen)
+Branch `conflict_120926_1840` 1:1 nach /app (lokale .env: lokale Mongo, keine Exchange-/LLM-Keys,
+`AI_TRADER_LOCAL_DISABLE=1` empfohlen). Nutzer-Entscheidungen: erst Analyse+Plan; JWT_SECRET
+künftig fail-fast (Nutzer ergänzt Env auf Render); IBKR-Gateway vorerst außen vor.
+- **Ergebnis:** `KI_TRADER_AUDIT.md` (Repo-Root) – Gegencheck aller externen Befunde mit
+  Datei/Zeile + isolierten Reproduktionen, 9 eigene Zusatzbefunde, 4-Phasen-Plan
+  (0 Sofort/Env → 1 Geldschutz 🔴 → 2 ehrliche Messung 🟠 → 3 Champion-vs-Kandidat → T Test-Hygiene).
+- **Bestätigt (reproduziert):** Close nach 5 Fehlversuchen lokal `closed` (`bitunix_trade.py` ~3405);
+  Kill-Switch mischt Live/Paper/Sammel (`trade_guard.on_trade_closed`); JWT-Default `change-me`,
+  öffentliche Finanz-GETs + ungeschützter `POST /analytics/ai-review`; ML-Snapshot-Lookahead
+  (`nearest_snapshot` abs-Gap); Kalibrierung in-sample; R = pnl/Preisabstand statt pnl/(risk×qty);
+  Setup-Gewicht 90 % WR & −500 USDT → 1.25; Reward belohnt Konfidenz; Governance zählt eigene
+  Vorschläge als Bestätigung; kein Compare-and-Set beim Close; Lernpflicht nicht erzwungen.
+- **Präzisiert:** Mitternachts-Bug nur in `setup_backtest/detectors.apply_filters`; ML-„Shadow“
+  wirkt als globaler AUC-Faktor auf die Positionsgröße (nicht je Trade).
+- **Testbasis:** `backend/tests -m unit` 1261 passed / 12 failed (11 brauchen Live-Server, 2 vorbestehend);
+  `/app/tests` 121 passed / 18 failed / 14 errors (Skript-Asserts, zeit-/serverabhängig).
+  Ordner getrennt ausführen (beide heißen `tests`). `memory/test_credentials.md` lokal angelegt (gitignored).
+- **Nächste Schritte:** Phase 0 durch Nutzer (JWT_SECRET setzen, ALLE geteilten Keys rotieren),
+  dann Phase 1 (1.1–1.7) mit Regressionstests.
+
+## Umgesetzt (2026-06 / frühere Iteration)
 1. **Lokaler-Worker-Token kopierbar** (`frontend/src/components/LocalWorkerPanel.js`):
    - `loadToken()` mit Retry (Cold-Start/Admin-Session), robustes `copy()` mit
      `execCommand`-Fallback, eigenes MARKIERBARES Token-Feld (`lw-token-field`)
