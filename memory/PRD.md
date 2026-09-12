@@ -1,0 +1,231 @@
+# KI-Trader (Crypto Scanner) – Iteration Log
+
+## Ursprung
+Bestehende, produktive Daytrading-Website (extern auf Render deployt). Repo:
+https://github.com/dean06greif-ai/KI-Trader (branch conflict_080926_1721).
+Stack: FastAPI (backend/) + React (frontend/) + MongoDB Atlas. Zusatzmodule:
+local_worker/ (Rechen-Worker), ibeam_gateway/ (IBKR). Original-Ordnerstruktur
+MUSS für den Render-Deploy erhalten bleiben (nur bestehende Dateien editiert).
+
+## Grundsatz
+Sauber, modular, rückwärtskompatibel. Keine Schnelllösungen. Stabilität vor
+aggressiven Änderungen.
+
+## Umgesetzt (2026-06 / diese Iteration)
+1. **Lokaler-Worker-Token kopierbar** (`frontend/src/components/LocalWorkerPanel.js`):
+   - `loadToken()` mit Retry (Cold-Start/Admin-Session), robustes `copy()` mit
+     `execCommand`-Fallback, eigenes MARKIERBARES Token-Feld (`lw-token-field`)
+     + Button `lw-token-copy`, `lw-cmd-copy` nicht mehr dauerhaft disabled.
+   - Worker-Code (`local_worker/worker.py`) bewusst UNVERÄNDERT gelassen.
+2. **Setup-Reife lädt automatisch** beim Öffnen des Verlauf-Panels
+   (`AIEquityPanel.js`): `loadMaturity()` mit Retry-wenn-leer, Reload-Button
+   aktualisiert auch die Reife-Tabelle.
+3. **Live-Logik ↔ Datensammel-Modus-Umschalter** für die Setup-Reife
+   (`AIEquityPanel.js` + `SetupMaturityTable.js`), analog zum Equity-Umschalter.
+   Backend liefert neue Felder `collect_trades/collect_winrate/collect_pnl`
+   (`ai_playbook.py`: `setup_stats(paper_only=True)` je Klasse + global,
+   `maturity_overview` erweitert).
+4. **Reset bei starker Setup-Änderung** (`setup_lifecycle.py` + `ai_playbook.py`):
+   Neue reine Funktion `is_strong_change` (>=30 % SL/TP/Hebel ODER TF-Wechsel).
+   `evolve_versions` markiert starke Versionen mit `strong`. `_refresh_scope`
+   setzt bei starker Änderung `eval_since[setup]` der Anlageklasse zurück →
+   Validierung startet neu. Kleine Tunings (<30 %, gedeckeltes ±20 %) lösen
+   das NICHT aus.
+
+## Verifikation
+- Backend: `/api/ai/playbook` liefert collect_*-Felder (curl bestätigt);
+  Reset end-to-end bestätigt (`eval_since` wird gesetzt); 3 Unit-Tests grün
+  (`backend/tests/test_strong_change_reset.py`).
+- Frontend: Testing-Agent 3/3 PASS (Token kopierbar, Reife auto-load, Umschalter).
+
+## Umgesetzt (2026-06-12 / Iteration "Ultimativer Trader – Multi-Asset & dynamische Setups")
+Branch-Basis: conflict_120926_1200. Originalstruktur unverändert (Render-Deploy kompatibel).
+
+1. **Dynamische Setup-Gewichtung** (`backend/services/setup_weighting.py`, NEU, rein & testbar):
+   Setups wirken als GELERNTER, gewichteter Faktor neben der Eigenanalyse – keine Fessel.
+   Bayes-Shrinkage (Prior 8 Trades @50% WR), Gewicht 0.75–1.25, Konfidenz-Anpassung max. ±10 Punkte.
+   - Hook in `ai_engine.run_analysis` (Decision-Loop): `combined_weight(class_stats, asset_stats)`
+     justiert `confidence` (Felder `confidence_raw`, `setup_weight`, `setup_weight_note` in ai_decisions).
+   - Prompt: `ai_playbook.context_text` bekommt GEWICHTUNG-Regel + kompakte Zeile
+     "GELERNTE SETUP-GEWICHTE <Klasse>" (nur Setups mit ≥5 Trades & Abweichung ≥0.03).
+   - `ANALYSIS_SYSTEM(_LEAN)`: "SETUP-PFLICHT" → "SETUP-WAHL" (Setup = Label der Eigenanalyse;
+     passt keines → `new_setups` statt erzwingen). JSON-Schema UNVERÄNDERT (rückwärtskompatibel).
+2. **Multi-Asset-Tiefenanalyse, token-schonend**:
+   - `backend/services/deep_scope.py` (NEU, rein): Volatilitäts-Radar – 15m-ATR relativ zur
+     EIGENEN Median-Baseline je Nicht-Krypto-Asset (0 LLM-Kosten, ~1 Prompt-Zeile/Asset,
+     ERHÖHT ab Ratio ≥1.35). In `run_deep_analysis` (nur volle Läufe, nicht lean_news) als
+     Block "VOLATILITÄTS-RADAR NICHT-KRYPTO" injiziert.
+   - `DEEP_ANALYSIS_SYSTEM`/`DEEP_UPDATE_SYSTEM`/`ANALYSIS_SYSTEM(_LEAN)`: Multi-Asset-Framing
+     (Krypto/Indizes/Rohstoffe/Forex), Handelbarkeit an EIGENER Baseline + Klassen-Grenzen
+     bewerten, NICHT am ATR-Vergleich mit BTC.
+   - `ai_news_watcher.WATCHER_SYSTEM`: bewertet jetzt ALLE Anlageklassen (vorher NUR Krypto –
+     Grund, warum Gold/Öl/Forex-Events nie Tiefenanalysen auslösten); `affects`-Beispiele
+     klassenübergreifend; `_AFFECT_ALIASES` + EURO/POUND/JPY/YEN/CHF/CAD.
+   - News-getriggerte Deep-Runs nutzen `news_symbols()` (Alias-/Präfix-Auflösung) statt
+     exaktem Symbol-Match → Gold/Öl/Indizes/Forex-Events treffen die richtigen Assets.
+3. **Preview-/Dev-Guard** (`core/config.local_engine_disabled`, Env `AI_TRADER_LOCAL_DISABLE=1`):
+   Verhindert, dass eine zweite Instanz (Emergent-Preview) parallel zur Render-Prod LLM-Analysen
+   fährt oder Trades auslöst (geteilte Atlas-DB!). Guards in `ai_engine.run_loop`/`run_analysis`/
+   `run_deep_analysis` (nur nicht-manuell), `ai_news_watcher.run_loop`, `ai_supervisor.run_loop`;
+   `/api/ai/status` meldet lokal `enabled=false, local_disabled=true`.
+   WICHTIG: Env-Var NUR lokal in backend/.env – auf Render NIEMALS setzen (dort keine Wirkung/Änderung).
+
+## Verifikation (2026-06-12)
+- 45 neue Unit-/Regressionstests grün: `test_setup_weighting.py` (13), `test_deep_scope.py` (7),
+  `test_multiasset_deep_analysis.py` (8), `test_local_engine_guard.py` (9) + bestehende Suiten
+  (playbook/setup/token/news) grün. Testing-Agent: Backend 113/114 (1 xdist-Test-Pattern gefixt),
+  Frontend Smoke PASS, `/api/ai/playbook` 200, Guard live bestätigt.
+- Live gegen Prod-Daten verifiziert: context_text liefert "GELERNTE SETUP-GEWICHTE Krypto:
+  liquidity_sweep ×0.85, range_fade ×0.871".
+- Hinweis: Erste Anfrage nach Cold-Boot kann 502 liefern (Kerzen-Backfill, bestehendes Verhalten).
+
+## Backlog / Ideen
+- P1: Playbook-Cache-Prewarm beim Boot (Cold-Start-502 auf /api/ai/playbook vermeiden).
+- P2: Setup-Gewichte im Frontend sichtbar machen (z.B. Playbook-Panel Spalte "Gewicht").
+- P2: Volatilitäts-Radar auch als UI-Widget (Nicht-Krypto-Chancen auf einen Blick).
+
+## Deploy-Hinweise
+- `.env` ist gitignored → lokale Test-`.env` (Paper-Modus, lokale Mongo) gelangt
+  NICHT ins Repo; Render-Env-Variablen des Nutzers bleiben unberührt.
+- Lokale Testumgebung nutzt bewusst KEINE echten Bitunix/LLM-Keys (kein Live-Trade-Risiko).
+
+## Umgesetzt (09/2026 – Iteration 53: Fallback-Spam & Ursachen)
+Auslöser: Glocke voll mit "KI-Warnung … Fallback-Kette übernimmt" (Nemotron leere
+Antwort, Mistral 429 Code 1300). Diagnose: KEIN Key-Problem.
+- **A) Nemotron/OpenRouter Leerantwort** (`ai_providers.py`): Reasoning-Modelle
+  legen Antwort in `message.reasoning` ab / Denken frisst Ausgabe-Budget.
+  Fix: `max_tokens=8192` für OpenRouter, JSON aus Reasoning-Feld übernehmen
+  (`_reasoning_text`, `_json_from_reasoning`), Retry nach Leerantwort mit
+  `reasoning: {enabled: false}` (nur Retry-Pfad → keine Qualitätseinbuße im
+  Normalfall). Analyst-Preset bewusst bei nemotron-3-super belassen.
+- **B) Mistral 1-RPS-Limit** (Code 1300 = pro Workspace, Backup-Keys nutzlos):
+  Retry nach 1,5 s auf demselben Key (`is_mistral_rps_limit`), Cooldown 65 s
+  statt 10 min (`_quota_cooldown_s` erkennt `'code': '1300'`).
+- **C) Glocke nur noch bei KOMPLETT-Ausfall einer Rolle** (Trader-Entscheid):
+  `record_result` löst keine `notify_model_failure` mehr aus; erfolgreicher
+  Fallback (auch Notfall außerhalb Team) meldet nicht mehr – bleibt im
+  KI-Status (`health_status.active_fallbacks`, `_recent_failures`) sichtbar.
+  `notify_model_failure`/`summarize_model_failures` bleiben als Funktionen erhalten.
+- Tests: `backend/tests/test_iter53_nemotron_reasoning_mistral_rps.py` (9 grün),
+  Regression 69/69 in den betroffenen Provider-/Notify-Tests.
+
+## Umgesetzt (09/2026 – Iteration 54: Strategien umbenennen/duplizieren, KI-Trader-Reiter im Backtester, KI-Revision, Lektionen)
+Repo-Stand: Branch `conflict_080926_2051` 1:1 nach /app übernommen (lokale .env, lokale Mongo).
+- **Rename/Duplicate für ALLE Strategien** (`routers/strategies.py`, `strategies/registry.py`, `base_strategy.py`, `server.py`):
+  - `POST /api/strategies/{id}/rename {name}`: Custom (Definition), Variante (strategy_variants) und
+    Built-in (Override `scanner.settings.strategy_names`, beim Boot via `apply_name_overrides`).
+  - `POST /api/strategies/{id}/duplicate`: Custom -> Kopie der Regel-Definition; Built-in -> **Variante**
+    (`variant_<id>`, Collection `strategy_variants`, `registry.upsert_variant`: gleiche Klasse, eigene ID/Name/
+    Timeframe/Parameter/Trade-/Backtest-Einstellungen). `ai_trader` nicht duplizierbar (400).
+    Metadaten: `is_variant`, `base_id`. Export/Import/Delete unterstützen Varianten.
+  - Worker-Kompatibilität ohne Worker-Änderung: `list_custom_definitions()` liefert Varianten mit
+    `kind='variant'`, `load_custom()` baut sie wieder auf.
+  - UI (`StrategyBuilder.js`): Umbenennen-Button (`rename-strategy-<id>`, window.prompt) und Duplizieren
+    (`duplicate-strategy-<id>`) für alle Zeilen, Badge VARIANTE.
+- **Backtester-Reiter** (`Backtester.js`, `Backtester.css`, `AITraderSeeding.js`): Reiter „Strategien" |
+  „KI Trader · Setups" (`bt-tab-strategies`/`bt-tab-ai`, in localStorage gemerkt). KI-Reiter hat eigene
+  Anlageklassen-Chips, Zeitraum, Modi Einmal/Auto-Schleife/**KI-Schleife**, KI-Optionen, eigenen Start-Button;
+  alter Doppel-Chip `bt-strat-ai_trader` entfernt (ai_trader wird aus der Strategie-Liste gefiltert).
+- **KI-Revision im Setup-Backtest** (`services/setup_backtest/revise.py` NEU, `runner.py`, `auto.py`,
+  `routers/setup_backtest.py`): nach Setup ohne Edge schlägt die KI (Rolle research_analyst) einen neuen
+  Detektor-Parameter-Satz vor (`sanitize` klemmt in [0.5×min, 2×max] der Varianten, Ganzzahlen erhalten,
+  mind. eine Änderung). Modus `ai_loop`: sofort testen, bis `target_passed` Setups je Klasse bestehen oder
+  `ai_rounds` (max 10) aufgebraucht. Modi single/loop: Vorschlag als `ai_proposal` vormerken, beim nächsten Lauf
+  zuerst getestet. Textrevision geht zusätzlich an `ai_playbook.revise_setup` (nur wenn dort erlaubt).
+  API: `/api/ai/playbook/backtest` liefert `modes`, `ai_defaults`; run/auto akzeptieren `mode`, `ai_revise`,
+  `ai_rounds`, `target_passed`. Ohne LLM-Key wird die Revision übersprungen (Log).
+- **Lektionen** (`services/ai_learning.py`): Trade-Zeilen im Lernprompt enthalten jetzt Setup, TF und Exit-Art
+  (`closed_by`); neuer Block „SETUP-REIFE & BACKTEST-BEFUNDE" (`ai_playbook.context_text`) mit Hinweis,
+  Lektionen setup-bezogen zu formulieren. Bestehende Schutzmechanismen (Validation-Gate, MasterPrompt-Audit,
+  Dedupe, dormant, Absolut-/Sizing-Filter) unverändert.
+- Tests: `tests/test_strategy_variants_rename.py` (6), `tests/test_setup_backtest_ai_revision.py` (8, inkl.
+  gemockter LLM-Antwort), Testing-Agent `tests/test_iter53_variants_setup_backtest.py` (9 API) – alle grün;
+  Frontend-Flows per Playwright bestätigt.
+
+## Backlog / offen
+- P2: Sammel-Statistik ggf. zusätzlich in der globalen Equity-Kurve spiegeln.
+- P2: Frühere Fetch-Fehler beim Cold-Start durch Retry/ErrorBoundary glätten (Log-Noise).
+
+## Iteration 2026-09-09 – KI-Revision mit Tiefen-Diagnose, Lernschleife, mehr Stellschrauben (Phase 1b)
+Problem: „KI-Revisionen vorgemerkt (35)" brachten kaum Verbesserung – die KI sah nur Trades/WR/PnL, durfte nur
+3–5 Basis-Parameter drehen und startete jede Runde vom letzten (ggf. schlechteren) Vorschlag.
+Nutzer-Entscheidungen: alles (Analyse + Stellschrauben + Lernschleife); Ziel langfristig profitable Trades;
+Arbeit im 1:1-Repo unter /app (Nutzer pusht selbst); echte LLM-Keys lokal (Exchange/Telegram/IBKR lokal NICHT).
+- **`services/setup_backtest/analysis.py` (neu, rein)**: `diagnose()` (Exit-Verteilung, Long/Short, Symbole,
+  Uhrzeit Berlin, PF, Payoff, Erwartungswert, Gebühren, Equity-Kurve, max. DD, Verlustserie, MFE/MAE in R),
+  `compact()`, `describe()`, `score()` (PnL/Trade, OOS 60 %), `best_entry()`, `lessons()`, `param_diff()`.
+- **`detectors.py`**: optionale Schlüssel mit Default = Altverhalten: `tp1_r`, `max_bars`, `sides`, `vol_min`,
+  `vol_max`, `hour_from`, `hour_to`, `htf_trend` (1h EMA20/50) + `body_atr` (breakout), `sl_atr`
+  (trend_follow/divergence), `rsi_lo`/`rsi_hi` (divergence); `apply_filters()` nur im `run_detector_params`-Pfad;
+  `optional_params()/param_defaults()/param_help()`.
+- **`revise.py`**: Prompt = Historie mit Score + Diagnose der Basis + Lernschleife + Parameter-Hilfe (Bereich,
+  Default, Bedeutung); Antwort zusätzlich `expect`; `changes`/`base` gespeichert; Basis = bester Eintrag nach
+  Score; Overfitting-Bremse `MAX_CHANGES = 4`.
+- **`runner.py`**: `run_variant` → `diag` + `effective_params`, `max_bars` an Simulator; `_hist` mit
+  params/diag/reason/expect/base; Rows/State mit `diag`, `lessons`; `overview()` mit `param_help`.
+- **UI `AITraderSeeding.js`**: Änderung + Erwartung je vorgemerkter Revision, OOS-Diagnose in der Tabelle,
+  letzte Lektion je Setup. Doku: BACKTEST_SEEDING_PLAN.md (Phase 1b).
+- Tests: `backend/tests/test_setup_backtest_analysis.py` (18), `test_setup_backtest_ai_revision.py` angepasst,
+  `test_ai_playbook_backtest_api.py` (Testing-Agent, 3 API) – 57/57 grün; 2 echte ai_loop-Läufe (Krypto) ok:
+  trend_follow IS von −2.15 auf +6.94 nach KI-Rev.3, KI wählt Basis KI-Rev.3, kappt auf 3–4 Änderungen.
+- Pre-existing, nicht durch diese Iteration: test_fix_custom_ai_trades (1), test_strategy_insights (1),
+  test_iter38_* (brauchen Dev-Server :8055).
+
+### Backlog (neu)
+- P1: Score mit Drawdown-Strafe; P1: Lessons der Backtest-Revisionen in den Live-Prompt (ai_lessons).
+- P2: Walk-Forward mit mehreren OOS-Fenstern; P2: Phase-2-Detektoren (SMC, liquidity_sweep, funding_fade).
+
+
+## Iteration 09/2026-12 (Branch conflict_110926_2146)
+Grundsatz unverändert: Original-Ordnerstruktur für Render, nur bestehende Dateien
+editiert + ein neues Service-Modul. Lokal läuft das Backend gegen eine LOKALE Mongo
+(read-only-Kopie geschlossener KI-Trades + Playbook-State); Bitunix/IBKR/Telegram-
+Keys lokal absichtlich nicht gesetzt (keine Live-Trades). Prod-Env liegt gitignored
+in `backend/.env.prod` (nur für read-only Probe-Skripte in `scripts/prod_*`).
+
+### Umgesetzt
+1. **Keine Backup-Key-Warnungen mehr** (`services/ai_providers.py`, `AITradingPanel.js`):
+   - `record_result`: `fallback` nur noch bei ANDEREM Modell als gewünscht
+     (Backup-Key = normale Key-Rotation, kein Fallback, kein `active_fallbacks`-Eintrag).
+   - `generate_chain`/`stream_chain`: ein 429 auf einem Key wird erst dann als
+     Ausfall im KI-Status/Verlauf gemeldet, wenn das Modell für den Aufruf aufgegeben
+     wird (letzter Key oder Same-Org-Streak-Abbruch). Per-Key-Logs auf INFO/DEBUG.
+   - UI: Key-Status-Zeile nur noch, wenn ALLE Keys eines Providers im Limit sind
+     („Backups reichen nicht“); „· Backup-Key“-Zusätze entfernt.
+2. **Stale-Price-Diagnose marktzeit-bewusst** (`core/market_hours.py::is_market_closed`
+   neu = Wochenende + tägliche Handelspause 21:00–22:05 UTC; `services/ai_diagnosis.py`):
+   - Veraltete Kerzen nur bei OFFENEM Markt „kritisch“ (Krypto >5 min, Yahoo-Märkte
+     >10 min); bei geschlossenem Markt INFO „Markt geschlossen … normal“.
+   - `data_quality`-Zeilen: `has_pauses`, `market_closed`, `market_closed_reason`.
+   - Feed-Wächter `core/scheduler.py::feed_lag_warning`: Warn-Log, wenn Forex/Rohstoff-
+     Feed bei offenem Markt >15 min hängt (SL/TP-Frische-Logik `_is_stale` unverändert).
+   - `services/market_data.py::fetch_yahoo`: Host-Fallback query1 → query2 (429/Timeout).
+3. **PnL der aktiven Setup-Variante** (neu `services/setup_variant.py`, `ai_playbook.py`,
+   `SetupMaturityTable.js`, `AIDiagnosisPanel.js`):
+   - Variante = jüngster Zeitpunkt aus Rückstufung (`live_blocked.at`), Neubewertung
+     (`eval_since`), KI-Revision (`revisions.since`), Profil-Version (`lifecycle.versions[-1].since`).
+   - `setup_stats_since_map` (EINE Aggregation mit $or je Setup), `_refresh_scope` liefert
+     `variant_since/labels/stats/collect_stats`; `maturity_overview` zeigt Trades/WR/PnL/
+     Urteil/Sammel der Variante, Gesamt in `variant.total`; global über Klassen summiert
+     (`global_variant_view`, `variant_setup_stats` für Diagnose). Reife-Gate/Rückstufung
+     nutzen weiterhin `judge_stats` – unverändert.
+   - UI: Hinweiszeile, „seit dd.mm.“-Zusatz, Tooltip mit Gesamtzahlen; kein Toggle
+     (Nutzerwunsch). Diagnose-Katalog „PnL (akt. Variante)“; Datenqualitäts-Tabelle ohne
+     12-Zeilen-Kappung.
+
+### Verifikation
+- `backend/tests/test_variant_stats_market_hours_backupkeys.py` (12 Tests) + bestehende
+  Suiten grün; `test_iter8_token_crv_lev.py::test_backup_key_counts_as_fallback` bewusst
+  auf neues Verhalten umgeschrieben. Vorbestehende, unabhängige Fehler:
+  `test_playbook_backups_notify::test_single_backup_still_works` (Env-Pollution),
+  `test_strategy_insights::test_daily_quota_cooldown_until_utc_midnight`,
+  `test_fix_custom_ai_trades`, `test_iter38_*` (brauchen Live-URL).
+- Testing-Agent Iteration 57: Backend grün, Frontend grün nach Fix der Tabellen-Kappung.
+- Real-Daten-Probe (read-only, Prod): z.B. crypto range_fade Gesamt −251.69 (29 T) →
+  Variante Profil v6 seit 11.09: −5.27 (3 T); liquidity_sweep −304 → −42 seit Rev.1.
+
+### Backlog / Ideen
+- P1: KI-Kontext (`context_text`/`_perf_lines`) ebenfalls auf Varianten-Statistik umstellen.
+- P2: Forex-Kerzen-Fallback über IBKR-Gateway (`/iserver/marketdata/history`), falls Yahoo
+  bei offenem Markt hängt.
+- P2: `scripts/prod_*`-Probe-Skripte in ein `scripts/README` dokumentieren.

@@ -1,0 +1,47 @@
+{
+  "summary": "E2E review of new features complete. All 5 backend endpoints and 5 frontend data-testids verified end-to-end with real LLM output. develop endpoint returned a real Ghost candidate (cand_6049b867 'VWAP-HTF-EMA-MeanReversion') from Groq/openai-gpt-oss-20b in ~11s.",
+  "feature_verdicts": [
+    "POST /api/auth/login (Admin) - pass - evidence: 200, token 190 chars (curl -X POST /api/auth/login {Admin/Dean06Greif!/Admin})",
+    "POST /api/ai/strategies/develop - pass - evidence: status=ok, candidate.id=cand_6049b867, name='VWAP-HTF-EMA-MeanReversion', learned_from references Smart Money RSI Reversal + Bollinger Mean Reversion + EMA-200-VWAP-RSI-Scalper. Real LLM chain hit. - skill: ai-testing-llm",
+    "POST /api/ai/strategies/settings clamp - pass - evidence: {auto_develop_enabled:false, interval:99} -> settings returns enabled=false, interval_days=60 (clamp OK); restore to {true, 7} returns interval_days=7",
+    "POST /api/ai/config runner_secure clamps - pass - evidence: sent max_leverage=500, trigger_pct=400; GET /api/ai/status shows max_leverage=200, trigger_pct=300.0 (both clamped)",
+    "GET /api/autotrade/watchdog/status defaults - pass - evidence: keys={configured, settings, positions, adopted, sl_fixed, sl_missing, emergency_closed, dust_closed, state_synced, errors, last_run_at}; all three required fields (dust_closed, positions, sl_missing) present with 0 defaults even without Bitunix",
+    "Frontend: ai-runner-secure-toggle - pass - evidence: found in AI Panel > Setup, visible+checked; label 'Runner risikofrei stellen'",
+    "Frontend: ai-runner-secure-maxlev-select - pass - evidence: appears when toggle is on, visible showing '200x' (label 'Runner Ziel-Hebel')",
+    "Frontend: strategy-develop-btn - pass - evidence: found in AI Panel > Strategien (Strategie-Labor der KI), visible, text='KI: Neues Setup aus Trainingslager entwickeln'; VWAP-HTF-EMA-MeanReversion candidate (from earlier develop call) listed on the page",
+    "Frontend: sat-ps-release-margin - pass - evidence: appears in StrategyAutoTradeModal (opened via strategy-trade-toggle-scalping_4_rules) when Gewinnsicherung enabled and mode=PAPER; label 'Marge freisetzen - Hebel steigt automatisch'",
+    "Frontend: sat-ps-max-lev - pass - evidence: appears when sat-ps-release-margin is checked; NumInput visible with default 100, max 200"
+  ],
+  "skills_loaded": ["ai-testing-core", "ai-testing-llm"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "StrategyAutoTradeModal", "issues": ["Gewinnsicherung block (and all detail fields) only render when mode != AUS. That is by design but a fresh user who clicks the lightning icon on a new strategy sees only LIVE/PAPER/AUS + Speichern - the release-margin/max-lev testids are not accessible until PAPER or LIVE is picked. Consider a hint or already showing detail block."]
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter_new_features_review.py",
+    "/app/test_reports/pytest/iter_new_features_review.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/services/ai_engine.py clamps (lines 738-745) are correct: trigger_pct max=300, max_leverage max=200, both persist in config and are visible via /api/ai/status.",
+    "backend/services/ai_strategy_lab.py update_settings clamps auto_develop_interval_days between 1 and 60 (line 280) - works.",
+    "Frontend testids for the new features are consistently named (sat-*/at-*/ai-*) and follow the same testability patterns as the rest of the app."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter_new_features_review.py"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (5/5)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "One Ghost strategy candidate (cand_6049b867 VWAP-HTF-EMA-MeanReversion) was created by the real LLM develop call and is now visible in the Strategie-Labor. Not destructive: sits in ghost stage.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 5 backend features and all 5 frontend data-testids from the review request are green. Login via title=Login trigger icon opens ADMIN-LOGIN modal. AI Panel opens via strategy-tab-ai_trader + edit-strategy-params-btn. Setup section is toggled via data-testid=ai-setup-toggle, Strategien section via ai-strategy-toggle. StrategyAutoTradeModal opens via strategy-trade-toggle-<id> (lightning icon) - detail fields (Gewinnsicherung block) only render when mode is PAPER or LIVE, not AUS.",
+  "rca of the issue": "N/A - no issues."
+}
