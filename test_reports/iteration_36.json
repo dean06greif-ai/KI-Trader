@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 36 unabhängig verifiziert: Notify-BUG-FIX (KI-Warnung nur für Team-Modelle), Sweep-Trigger (Endpoint, Config-Clamps, Detektor/Budget-Units), Lektions-Qualitätsguards, Sizing-Preview im Trade-Detail (UI) und Sweep-Toggle im KI-Setup (UI, persistiert). 13/13 neue Backend-Tests grün, alle Frontend-Checks bestanden. KI blieb aus (enabled=false), keine LLM-Calls, keine Live-Trades.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Konsole (global)", "issues": ["React-Warnung: '<span> cannot be a child of <option>' (Hydration-Warnung) erscheint beim Öffnen des KI-Panels – kosmetisch, blockiert nichts; ein <select>-Option enthält verschachteltes Markup (vermutlich via Template/Icon-Renderer)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter36_sweep_notify_lessons.py",
+    "/app/tests/seed_iter36_sizing_trade.py",
+    "/app/test_reports/pytest/iter36_results.xml"
+  ],
+  "action_items": ["Optional: React-Warnung '<span> child of <option>' beheben (kosmetisch)"],
+  "critical_code_review_comments": [
+    "notifications._is_team_model fällt bei Exception bewusst auf 'melden wie bisher' (return True) zurück – ok, aber bei fehlender Rollen-Config (team leer) wird ebenfalls gemeldet; verifiziert und akzeptabel.",
+    "sweep_trigger.SweepBudget ist In-Memory: nach Deploy/Restart ist used_today=0 (bewusst dokumentiert) – Tagesbudget kann am Deploy-Tag überschritten werden.",
+    "detect_sweep verlangt len(candles) >= lookback+16; Symbole mit <80 Kerzen werden in scan() still übersprungen (korrekt, aber ohne Log/Metrik)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter36_sweep_notify_lessons.py", "/app/tests/seed_iter36_sizing_trade.py"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100%"},
+  "seed_data_creation": "auto_trades TEST-SIZING-1 (mit sizing-Feld) angelegt und nach dem UI-Test wieder gelöscht; temporäre Mongo-DB crypto_scanner_iter36_notify im Test angelegt und gedroppt.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Neue Regressionsdatei: /app/backend/tests/test_iter36_sweep_notify_lessons.py (13 Tests, ca. 25s). Abgedeckt: /api/health, /api/ai/playbook (13 Setups, dict!), /api/ai/sweep-trigger, /api/ai/status.config sweep-Keys, Admin-Clamps (999->200, 0->1) mit Wiederherstellung auf 20/30/true, 401/403 ohne Admin-JWT, detect_sweep/SweepBudget-Units, run_analysis-Signatur, is_sizing_rule/small_sample_n/lessons_text, notify_model_failure inkl. echtem app_notifications-Flush in Temp-DB. UI-Pfad Sizing-Karte: Admin-Login (admin-lock-button) -> view-trades -> trade-card-toggle-<id> -> trade-sizing-<id>. UI-Pfad Sweep-Toggle: strategy-tab-ai_trader -> edit-strategy-params-btn -> ai-setup-toggle -> ai-sweep-trigger-toggle/-cap-input.",
+  "rca_of_the_issue": "BUG-FIX bestätigt: notify_model_failure ruft _is_team_model(role, provider, model) über role_manager.configured_models; Ausfall von 'openrouter/nvidia/nemotron-3.5-lightning:free' (nur FALLBACK_ORDER, nicht im Team) erzeugt keinen _pending_fail-Eintrag und keine app_notifications-Zeile, während das Team-Modell 'nvidia/nemotron-3-super-120b-a12b:free' weiterhin genau eine ai_failure-Meldung erzeugt (nach Flush geprüft). Auch die Live-Glocke (GET /api/notifications) enthält keinen Eintrag zum Ersatzmodell."
+}

@@ -1,0 +1,47 @@
+{
+  "summary": "Iter 54 (frontend-only, mobile focus): Verified the AI-Trader Setup-Backtester Start button layout fix on mobile (390x800), mobile without login, and desktop (1920x800). All spec-required data-testids and behaviors are correct. Only a minor observation: after clicking ai-seed-run on mobile, neither ai-seed-progress nor a 409 toast appeared within ~3.5s (job may take longer to start / already-running state was cancelled beforehand). Not blocking the requested layout fix.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Mobile: click ai-seed-run", "issue": "Nach Klick auf ai-seed-run erschien innerhalb von ~3.5s weder ai-seed-progress noch ein 409-Toast. Button ist enabled und klickbar, aber Job-Status-Update war im Test-Fenster nicht sichtbar. Kein Blocker für den Layout-Fix; könnte an Polling-Intervall oder daran liegen, dass der Job serverseitig noch nicht in /status auftauchte. Empfehlung: kurz erhöhen (5-8s Wartezeit) oder /api/ai/playbook/backtest/status polling triggern.", "affected_selectors": ["[data-testid=\"ai-seed-run\"]", "[data-testid=\"ai-seed-progress\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_results": {
+    "mobile_no_login_390x800": {
+      "ai-seed-run-locked": "PRESENT, disabled, text='Admin-Login zum Starten erforderlich'",
+      "ai-seed-run": "ABSENT (correct)"
+    },
+    "mobile_with_login_390x800": {
+      "ai-seed-run-row": "PRESENT and contains: ai-seed-days, ai-seed-ai-revise, ai-seed-execution-toggle (with ai-seed-exec-cloud [class 'bt-exec-btn on'], ai-seed-exec-local [disabled=true], ai-seed-exec-manage), ai-seed-run",
+      "ai-seed-run visible/enabled": "true / true",
+      "ai-seed-run inside ai-seed-run-row": "true",
+      "position": "run btn y=610 vs mode-hint y=444 -> Start-Button liegt UNTER den Auswahl-Boxen (korrekt)",
+      "full width mobile": "run btn width=364px == row width=364px -> volle Panelbreite (korrekt, .bt-params .bt-run width:100% via Backtester.css mobile media query)",
+      "gear opens LocalWorkerPanel": "true"
+    },
+    "desktop_1920x800": {
+      "bt-tab-ai -> ai-seed-run-row + ai-seed-run": "PRESENT",
+      "bt-tab-strategies -> bt-run + bt-execution-toggle": "PRESENT, bt-run text='Backtest starten' unverändert"
+    }
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional (nicht Teil dieses Bugs): Progress-Polling nach ai-seed-run starten scheint mobile leicht verzögert - Layout ist aber korrekt.",
+    "Hydration-Warnung im Console: '<span> cannot be a child of <option>' in AITraderSeeding Zeile 187 (DAY_OPTIONS options). Vermutlich vom emergent-Dev-Overlay injizierte spans - in Prod ohne x-source-Attribute unkritisch, aber sollte geprüft werden. Betrifft alle <option>-Kinder."
+  ],
+  "critical_code_review_comments": [
+    "AITraderSeeding.js Zeile 184-232: Layout-Fix ist sauber umgesetzt - Start-Button befindet sich innerhalb der .bt-params-Row, die Mobile per CSS .bt-params .bt-run { width:100% } auf volle Breite gesetzt wird (Backtester.css Zeile 33). Konsistent mit Backtester.js Strategien-Tab (bt-run).",
+    "Backtester.css Zeile 31: .bt-tabs { order:3; width:100%; margin:0 } sorgt für sauberes Umbrechen der Tabs auf Mobile. Passt.",
+    "Der bt-strat-ai_trader Chip aus Iter53 wurde augenscheinlich weiterhin nicht gefiltert (Strategien-Tab zeigt viele Chips) - diese Iteration hat die Chip-Liste jedoch nicht neu gezählt; siehe iter53 action_item."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend-only)", "frontend": "100% for mobile layout + desktop parity; 95% overall (1 minor progress-polling observation)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (POST /api/auth/login -> 200, token in localStorage)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Der Mobile-Fix (Start-Button in .bt-params Zeile, volle Breite) ist verifiziert. Wenn erneut getestet werden muss: Viewport 390x800, localStorage clear -> ai-seed-run-locked; dann POST /api/auth/login mit Admin creds, admin_token+admin_token_ts in localStorage, reload -> ai-seed-run mit position innerhalb ai-seed-run-row, width==row.width. Preview-URL https://backtest-hub-63.preview.emergentagent.com.",
+  "rca of the issue": "Kein Bug reproduzierbar - der Fix ist korrekt implementiert."
+}
