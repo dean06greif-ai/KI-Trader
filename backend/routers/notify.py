@@ -128,3 +128,16 @@ async def get_risk_budget(mode: Optional[str] = None, _: bool = Depends(require_
 async def set_risk_budget(body: Dict, _: bool = Depends(require_admin)):
     from services import risk_budget
     return {"config": await risk_budget.update_config(state.db, body)}
+
+
+@router.get("/api/safety/status")
+async def get_safety_status(_: bool = Depends(require_admin)):
+    """Sicherheitsstatus-Ampel (Audit 2.4): ok | warn | critical + Einzel-Checks."""
+    from services import safety_status
+    return await safety_status.status(state.db, force=True)
+
+
+@router.post("/api/safety/config")
+async def set_safety_config(body: Dict, _: bool = Depends(require_admin)):
+    from services import safety_status
+    return {"config": await safety_status.update_config(state.db, body)}

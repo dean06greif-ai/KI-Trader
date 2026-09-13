@@ -38,7 +38,21 @@ def compute_reward(trade: Dict, decision: Optional[Dict] = None) -> Dict:
     pnl_pct = (pnl / cap * 100) if cap > 0 else 0.0
     comps: List[Dict] = []
 
-    comps.append({"label": "PnL-Basis", "value": round(_clamp(pnl_pct / 2.5, -4.0, 4.0), 3)})
+    # R in Geld (Audit 2.3): Basis = pnl / risk_usdt (riskiertes Kapital).
+    # 1R Verlust = -1, 2R Gewinn = +2 (gedeckelt ±4). Alte Trades ohne
+    # risk_usdt fallen auf die bisherige PnL-%-Basis zurück.
+    r_multiple = None
+    try:
+        risk_usdt = float(trade.get("risk_usdt") or 0)
+        if risk_usdt > 0:
+            r_multiple = pnl / risk_usdt
+    except (TypeError, ValueError):
+        pass
+    if r_multiple is not None:
+        comps.append({"label": "R-Basis (PnL/Risiko)",
+                      "value": round(_clamp(r_multiple, -4.0, 4.0), 3)})
+    else:
+        comps.append({"label": "PnL-Basis", "value": round(_clamp(pnl_pct / 2.5, -4.0, 4.0), 3)})
 
     result = trade.get("result")
     if result == "win":
@@ -84,6 +98,7 @@ def compute_reward(trade: Dict, decision: Optional[Dict] = None) -> Dict:
     return {"score": round(sum(c["value"] for c in comps), 3),
             "components": comps,
             "pnl_pct": round(pnl_pct, 3),
+            "r_multiple": round(r_multiple, 3) if r_multiple is not None else None,
             "fees": round(fees, 6),
             "fee_share_pct": fee_share,
             "duration_min": round(dur_min, 1) if dur_min is not None else None}

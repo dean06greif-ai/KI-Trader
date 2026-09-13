@@ -94,12 +94,19 @@ def label_of(row: Dict) -> Optional[int]:
 
 
 def nearest_snapshot(snaps: List[Dict], target: datetime,
-                     max_gap_min: int = 45) -> Optional[Dict]:
-    """Zeitlich nächster Snapshot eines Coins (max. `max_gap_min` Abstand)."""
+                     max_gap_min: int = 45, allow_future: bool = False) -> Optional[Dict]:
+    """Zeitlich nächster Snapshot eines Coins (max. `max_gap_min` Abstand).
+
+    Leckage-Schutz (Audit 2.2): Standardmäßig zählen nur Snapshots mit
+    ts <= target – ein Snapshot aus der ZUKUNFT der Entscheidung würde dem
+    Modell Informationen geben, die es im Live-Betrieb nie hat.
+    `allow_future=True` stellt das alte Verhalten her (bewusst nirgends genutzt)."""
     best, best_gap = None, None
     for s in snaps:
         ts = _ts(s.get("ts"))
         if not ts:
+            continue
+        if not allow_future and ts > target:
             continue
         gap = abs((ts - target).total_seconds())
         if best_gap is None or gap < best_gap:
@@ -107,6 +114,26 @@ def nearest_snapshot(snaps: List[Dict], target: datetime,
     if best is None or best_gap is None or best_gap > max_gap_min * 60:
         return None
     return best
+
+
+def temporal_folds(n: int, n_folds: int = 5, min_train: int = 20,
+                   min_test: int = 8) -> List[Tuple[List[int], List[int]]]:
+    """Expanding-Window-Folds über zeitlich SORTIERTE Indizes (Audit 2.2):
+    Fold k testet Block k, trainiert nur auf allen Blöcken davor (rein)."""
+    if n < min_train + min_test:
+        return []
+    block = n // (n_folds + 1)
+    if block < 1:
+        return []
+    splits = []
+    for k in range(1, n_folds + 1):
+        start = k * block
+        end = n if k == n_folds else (k + 1) * block
+        train_idx = list(range(start))
+        test_idx = list(range(start, end))
+        if len(train_idx) >= min_train and len(test_idx) >= min_test:
+            splits.append((train_idx, test_idx))
+    return splits
 
 
 def feature_row(decision: Dict, snapshot: Optional[Dict]) -> Dict:
@@ -137,13 +164,17 @@ def feature_row(decision: Dict, snapshot: Optional[Dict]) -> Dict:
     }
 
 
-def build_dataset(decisions: List[Dict], snapshots: List[Dict]) -> Tuple[List[Dict], List[int], Dict]:
-    """Entscheidungen + Snapshots -> (X, y, meta). Rein und damit direkt testbar."""
+def build_dataset(decisions: List[Dict],
+                  snapshots: List[Dict]) -> Tuple[List[Dict], List[int],
+                                                  List[Optional[datetime]], Dict]:
+    """Entscheidungen + Snapshots -> (X, y, timestamps, meta). Rein und testbar.
+    timestamps = Entscheidungszeitpunkt je Zeile (für zeitliche CV-Folds, 2.2)."""
     by_symbol: Dict[str, List[Dict]] = {}
     for s in snapshots or []:
         by_symbol.setdefault(s.get("symbol"), []).append(s)
     X: List[Dict] = []
     y: List[int] = []
+    tss: List[Optional[datetime]] = []
     matched = 0
     for d in decisions or []:
         lbl = label_of(d)
@@ -158,9 +189,10 @@ def build_dataset(decisions: List[Dict], snapshots: List[Dict]) -> Tuple[List[Di
             matched += 1
         X.append(feature_row(d, snap))
         y.append(lbl)
+        tss.append(ts)
     meta = {"samples": len(y), "wins": sum(y), "losses": len(y) - sum(y),
             "with_market_state": matched}
-    return X, y, meta
+    return X, y, tss, meta
 
 
 def to_matrix(rows: List[Dict]):
@@ -180,18 +212,39 @@ def libs_available() -> Tuple[bool, str]:
 
 
 def train_sync(X: List[Dict], y: List[int], n_trials: int = DEFAULT_TRIALS,
-               timeout_sec: int = 120) -> Dict:
-    """Optuna-Suche + finales XGBoost-Modell. Blockierend -> via to_thread nutzen."""
+               timeout_sec: int = 120,
+               timestamps: Optional[List[Optional[datetime]]] = None) -> Dict:
+    """Optuna-Suche + finales XGBoost-Modell. Blockierend -> via to_thread nutzen.
+
+    Leckage-Schutz (Audit 2.2): Mit `timestamps` wird zeitlich sortiert und per
+    Expanding-Window validiert (Training nur auf Daten VOR dem Test-Block) statt
+    mit gemischtem StratifiedKFold. Ohne verwertbare Zeitstempel/Folds greift der
+    alte Stratified-Modus als Fallback (kleine Datensätze bleiben trainierbar)."""
     import numpy as np
     import optuna
     import xgboost as xgb
     from sklearn.model_selection import StratifiedKFold, cross_val_score
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
+    cv_mode = "stratified"
+    if timestamps is not None and len(timestamps) == len(y) \
+            and all(t is not None for t in timestamps):
+        order = sorted(range(len(y)), key=lambda i: timestamps[i])
+        X = [X[i] for i in order]
+        y = [y[i] for i in order]
     Xm, ym = to_matrix(X), np.array(y, dtype="int32")
     folds = 3 if len(ym) < 150 else 5
     folds = max(2, min(folds, int(min(np.bincount(ym)))))
     cv = StratifiedKFold(n_splits=folds, shuffle=True, random_state=42)
+    if timestamps is not None and len(timestamps) == len(y) \
+            and all(t is not None for t in timestamps):
+        t_splits = [(tr, te) for tr, te in temporal_folds(len(ym), n_folds=folds + 1)
+                    if len(set(int(ym[i]) for i in te)) > 1
+                    and len(set(int(ym[i]) for i in tr)) > 1]
+        if t_splits:
+            cv = t_splits
+            folds = len(t_splits)
+            cv_mode = "temporal"
     pos_weight = float(max(1, (ym == 0).sum()) / max(1, (ym == 1).sum()))
 
     def objective(trial):
@@ -236,6 +289,7 @@ def train_sync(X: List[Dict], y: List[int], n_trials: int = DEFAULT_TRIALS,
         "cv_auc": round(float(study.best_value), 4),
         "cv_accuracy": round(float(np.mean(acc_scores)), 4),
         "folds": folds,
+        "cv_mode": cv_mode,
         "trials": len(study.trials),
         "samples": int(len(ym)),
         "win_rate_data": round(float(ym.mean()) * 100, 1),
@@ -368,7 +422,8 @@ class MLLab:
                        "ai_confidence": 1, "news_impact": 1, "sl_pct": 1,
                        "tp1_pct": 1, "rsi": 1, "symbol": 1}
 
-    async def load_training_data(self) -> Tuple[List[Dict], List[int], Dict]:
+    async def load_training_data(self) -> Tuple[List[Dict], List[int],
+                                                List[Optional[datetime]], Dict]:
         days = int(self.settings.get("lookback_days", 120))
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         decisions = await self.db.ai_decisions.find(
@@ -387,10 +442,10 @@ class MLLab:
             {"ts": {"$gte": cutoff}},
             projection={"_id": 0, "symbol": 1, "ts": 1, "features": 1}) \
             .sort("ts", -1).limit(30000).to_list(30000)
-        X, y, meta = build_dataset(list(decisions) + list(signals), snapshots)
+        X, y, tss, meta = build_dataset(list(decisions) + list(signals), snapshots)
         meta["source"] = {"ai_decisions": len(decisions), "signals": len(signals),
                           "snapshots": len(snapshots)}
-        return X, y, meta
+        return X, y, tss, meta
 
     # ---------------- training ----------------
     async def train(self, manual: bool = False, n_trials: Optional[int] = None,
@@ -403,7 +458,7 @@ class MLLab:
                     "detail": f"ML-Bibliotheken fehlen (optuna/xgboost/scikit-learn): {err}"}
         self.training_now = True
         try:
-            X, y, meta = await self.load_training_data()
+            X, y, tss, meta = await self.load_training_data()
             wins, losses = meta.get("wins", 0), meta.get("losses", 0)
             if meta["samples"] < MIN_SAMPLES or min(wins, losses) < MIN_PER_CLASS:
                 self.last_error = None
@@ -414,7 +469,7 @@ class MLLab:
                         "dataset": meta}
             import asyncio
             trials = int(n_trials or self.settings.get("n_trials", DEFAULT_TRIALS))
-            res = await asyncio.to_thread(train_sync, X, y, trials)
+            res = await asyncio.to_thread(train_sync, X, y, trials, 120, tss)
             doc = {
                 "trained_at": _now_iso(),
                 "trigger": trigger,

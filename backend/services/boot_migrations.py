@@ -342,6 +342,19 @@ async def migrate_fee_guard_relax(db, engine):
     await _mark(db, "fee_guard_relax_v1")
 
 
+async def migrate_risk_usdt_backfill(db):
+    """R in Geld (Audit 2.3): `risk_usdt = risk × qty` für alle bestehenden
+    auto_trades nachtragen. `risk` ist die Preisdistanz Entry->initialer SL pro
+    Einheit – erst ×qty wird daraus riskiertes Kapital in USDT. Einmalig."""
+    if await _done(db, "risk_usdt_backfill_v1"):
+        return
+    res = await db.auto_trades.update_many(
+        {"risk_usdt": {"$exists": False}, "risk": {"$gt": 0}, "qty": {"$gt": 0}},
+        [{"$set": {"risk_usdt": {"$round": [{"$multiply": ["$risk", "$qty"]}, 6]}}}])
+    logger.info(f"Boot-Migration: risk_usdt für {res.modified_count} Trades nachgetragen")
+    await _mark(db, "risk_usdt_backfill_v1")
+
+
 async def run_boot_migrations(db, engine):
     for fn, args in ((migrate_cerebras_shutdown, (db,)),
                      (migrate_heatmap_off, (db, engine)),
@@ -355,7 +368,8 @@ async def run_boot_migrations(db, engine):
                      (migrate_observer_llm_off, (db,)),
                      (migrate_ml_findings_decouple, (db,)),
                      (migrate_test_artifacts, (db,)),
-                     (migrate_fee_guard_relax, (db, engine))):
+                     (migrate_fee_guard_relax, (db, engine)),
+                     (migrate_risk_usdt_backfill, (db,))):
         try:
             await fn(*args)
         except Exception as e:

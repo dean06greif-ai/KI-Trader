@@ -8,6 +8,47 @@ import './Header.css';
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const LIVE_BADGE_KEY = 'kit_live_badge_source'; // 'bitunix' | 'ibkr'
 
+// Sicherheitsstatus-Ampel (Audit 2.4): pollt GET /api/safety/status (admin) und
+// zeigt ok/warn/critical als farbigen Punkt. Details im Tooltip; bei critical
+// blockt das Backend neue Live-Trades bereits selbst (entry_guard).
+const SafetyLight = () => {
+  const [safety, setSafety] = useState(null);
+
+  useEffect(() => {
+    let stopped = false;
+    const load = async () => {
+      try {
+        const r = await fetch(`${API_URL}/api/safety/status`, { headers: authHeaders() });
+        if (!r.ok) { if (!stopped) setSafety(null); return; }
+        const d = await r.json();
+        if (!stopped) setSafety(d);
+      } catch (_) { if (!stopped) setSafety(null); }
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => { stopped = true; clearInterval(t); };
+  }, []);
+
+  if (!safety) return null; // nicht eingeloggt / Status nicht abrufbar
+  const level = safety.level || 'ok';
+  const issues = (safety.checks || []).filter(c => c.level !== 'ok');
+  const title = level === 'ok'
+    ? 'Sicherheitsstatus: OK'
+    : `Sicherheitsstatus: ${level.toUpperCase()} – ${issues.map(c => c.detail).join(' | ')}`;
+  return (
+    <div className={`safety-light safety-${level}`} title={title}
+         data-testid="safety-status-light" data-level={level}>
+      <span className="safety-dot" />
+      {level !== 'ok' && (
+        <span className="safety-label" data-testid="safety-status-label">
+          {level === 'critical' ? 'KRITISCH' : 'WARNUNG'}
+        </span>
+      )}
+    </div>
+  );
+};
+
+
 // Einfach-Klick (verzögert) vs. Doppelklick sauber trennen – über die Klick-
 // Zählung selbst (nicht über das native dblclick-Event, das in Overlays/Touch-
 // Browsern nicht zuverlässig feuert): zwei Klicks binnen 350 ms = Doppelklick,
@@ -592,6 +633,7 @@ const Header = ({ sessionActive, onSettingsClick, currentSession, customSessions
       </div>
 
       <div className="header-right">
+        <SafetyLight />
         <NotificationBell />
         {/* Uhrzeit + Session-Badge als eigener Block NEBEN den Labels (keine Überlagerung mehr) */}
         <div className="header-session" data-testid="header-session">

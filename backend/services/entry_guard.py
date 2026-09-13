@@ -50,6 +50,15 @@ async def check_entry(db, signal: Dict, cfg: Dict, mode: str, timeframe: str,
     checks.record("trade_guard", ok, reason, mode=mode)
     if not ok:
         return False, reason
+    # Sicherheitsstatus (Audit 2.4): kritischer Betriebszustand (SL fehlt an
+    # der Börse, Close fehlgeschlagen, Abgleich veraltet) blockt neue
+    # LIVE-Risiken. Fail-open, abschaltbar über safety_status_config.
+    if mode == "live":
+        from services import safety_status
+        ok, reason = await safety_status.entry_allowed(db)
+        checks.record("safety_status", ok, reason)
+        if not ok:
+            return False, reason
     if cfg.get("regime_filter_enabled") and not collection:
         from services import regime_gate
         ok, reason = await regime_gate.check_signal_allowed(cfg, signal.get("symbol"))

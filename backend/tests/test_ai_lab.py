@@ -172,14 +172,15 @@ def test_build_dataset_filters_and_counts():
         {"symbol": "ETHUSDT", "action": "LONG", "confidence": 65, "ts": ts},  # offen
     ]
     snaps = [{"symbol": "BTCUSDT", "ts": ts, "features": {"rsi": 55, "trend_pct": 0.1}}]
-    X, y, meta = mlab.build_dataset(decisions, snaps)
+    X, y, tss, meta = mlab.build_dataset(decisions, snaps)
     assert meta["samples"] == 2 and y == [1, 0]
     assert meta["with_market_state"] == 2
     assert len(X) == 2 and X[0]["rsi"] == 55
+    assert len(tss) == 2 and all(t is not None for t in tss)
 
 
 def test_to_matrix_shape():
-    X, _y, _m = mlab.build_dataset(
+    X, _y, _tss, _m = mlab.build_dataset(
         [{"symbol": "BTCUSDT", "action": "LONG", "ts": "2026-06-01T12:00:00+00:00",
           "outcome": "win"}], [])
     m = mlab.to_matrix(X)

@@ -41,6 +41,9 @@ MIN_SAMPLES = 120
 MIN_PER_CLASS = 25
 EMBARGO_HOURS = 24
 WF_FOLDS = 5
+# Mindestzahl an OOS-Punkten aus früheren Folds, bevor die verschachtelte
+# Kalibrierungs-Bewertung (Audit 2.2) einen Kalibrator fitten darf.
+CALIB_MIN_SAMPLES = 30
 MODELS_COLL = "ml_gate_models"
 SETTINGS_ID = "ml_gate_settings"
 DEFAULT_SETTINGS = {"threshold": 0.45, "shadow_enabled": True,
@@ -110,8 +113,11 @@ def _pct_dist(entry, level) -> float:
         return 0.0
 
 
-def row_from_decision(dec: Dict, snaps: Optional[List[Dict]] = None) -> Optional[Tuple[Dict, int, float, datetime]]:
-    """ai_decision -> (row, label, weight, ts). None wenn unbrauchbar."""
+def row_from_decision(dec: Dict, snaps: Optional[List[Dict]] = None) \
+        -> Optional[Tuple[Dict, int, float, datetime, datetime]]:
+    """ai_decision -> (row, label, weight, ts, label_ts). None wenn unbrauchbar.
+    label_ts = Zeitpunkt, an dem das Label ENTSTAND (Trade-Close), für den
+    Leckage-Schutz im Walk-Forward (Audit 2.2)."""
     outcome = dec.get("outcome")
     if outcome not in ("win", "loss"):
         return None
@@ -128,10 +134,12 @@ def row_from_decision(dec: Dict, snaps: Optional[List[Dict]] = None) -> Optional
     weight = 1.0 if dec.get("outcome_source") == "trade_pnl" else 0.8
     if dec.get("data_collection"):
         weight *= 0.85
-    return row, (1 if outcome == "win" else 0), weight, ts
+    label_ts = _ts(dec.get("trade_closed_at")) or _ts(dec.get("outcome_ts")) or ts
+    return row, (1 if outcome == "win" else 0), weight, ts, label_ts
 
 
-def row_from_signal(sig: Dict, snaps: Optional[List[Dict]] = None) -> Optional[Tuple[Dict, int, float, datetime]]:
+def row_from_signal(sig: Dict, snaps: Optional[List[Dict]] = None) \
+        -> Optional[Tuple[Dict, int, float, datetime, datetime]]:
     result = sig.get("result")
     if result not in ("win", "loss") or sig.get("result_ambiguous"):
         return None
@@ -147,10 +155,12 @@ def row_from_signal(sig: Dict, snaps: Optional[List[Dict]] = None) -> Optional[T
     tp1_pct = _pct_dist(entry, sig.get("take_profit_1"))
     row = gate_feature_row(sig.get("type"), 0.0, sl_pct, tp1_pct, ts, feats, "signal")
     weight = 0.7 if sig.get("result_source") == "trade_pnl" else 0.6
-    return row, (1 if result == "win" else 0), weight, ts
+    label_ts = _ts(sig.get("result_ts")) or ts
+    return row, (1 if result == "win" else 0), weight, ts, label_ts
 
 
-def row_from_ghost(g: Dict, snaps: Optional[List[Dict]] = None) -> Optional[Tuple[Dict, int, float, datetime]]:
+def row_from_ghost(g: Dict, snaps: Optional[List[Dict]] = None) \
+        -> Optional[Tuple[Dict, int, float, datetime, datetime]]:
     result = g.get("result")
     if result not in ("win", "loss"):
         return None
@@ -163,22 +173,29 @@ def row_from_ghost(g: Dict, snaps: Optional[List[Dict]] = None) -> Optional[Tupl
     sl_pct = _pct_dist(entry, g.get("sl"))
     tp1_pct = _pct_dist(entry, g.get("tp"))
     row = gate_feature_row(g.get("side"), 0.0, sl_pct, tp1_pct, ts, feats, "ghost")
-    return row, (1 if result == "win" else 0), 0.5, ts
+    label_ts = _ts(g.get("closed_at")) or ts
+    return row, (1 if result == "win" else 0), 0.5, ts, label_ts
 
 
 def purged_walk_forward(timestamps: List[datetime], n_folds: int = WF_FOLDS,
                         embargo_hours: int = EMBARGO_HOURS,
-                        min_train: int = 50, min_test: int = 10) -> List[Tuple[List[int], List[int]]]:
+                        min_train: int = 50, min_test: int = 10,
+                        label_timestamps: Optional[List[datetime]] = None
+                        ) -> List[Tuple[List[int], List[int]]]:
     """Zeitliche Blöcke, Train nur STRIKT vor Test-Start minus Embargo.
 
     Erwartet aufsteigend sortierte timestamps. Block 0 ist reines Anfangs-Training.
-    """
+    Leckage-Schutz (Audit 2.2): mit `label_timestamps` (= Zeitpunkt des
+    Trade-CLOSE je Sample) kommen nur Samples ins Training, deren LABEL vor
+    Test-Start entstand – ein Trade, der beim Test-Start noch offen war, kennt
+    sein Ergebnis nur durch Blick in die Zukunft."""
     n = len(timestamps)
     if n < min_train + min_test:
         return []
     block = n // (n_folds + 1)
     splits = []
     embargo = timedelta(hours=embargo_hours)
+    use_labels = bool(label_timestamps) and len(label_timestamps) == n
     for k in range(1, n_folds + 1):
         start = k * block
         end = n if k == n_folds else (k + 1) * block
@@ -186,7 +203,11 @@ def purged_walk_forward(timestamps: List[datetime], n_folds: int = WF_FOLDS,
         if len(test_idx) < min_test:
             continue
         cutoff = timestamps[start] - embargo
-        train_idx = [i for i in range(start) if timestamps[i] < cutoff]
+        if use_labels:
+            train_idx = [i for i in range(start)
+                         if (label_timestamps[i] or timestamps[i]) < cutoff]
+        else:
+            train_idx = [i for i in range(start) if timestamps[i] < cutoff]
         if len(train_idx) < min_train:
             continue
         splits.append((train_idx, test_idx))
@@ -216,31 +237,47 @@ def _fit_xgb(Xm, ym, wm):
 
 
 def train_sync(rows: List[Dict], y: List[int], w: List[float],
-               timestamps: List[datetime]) -> Dict:
-    """Purged-WF-Training + Platt-Kalibrierung. Blockierend -> via to_thread."""
+               timestamps: List[datetime],
+               label_timestamps: Optional[List[datetime]] = None) -> Dict:
+    """Purged-WF-Training + Platt-Kalibrierung. Blockierend -> via to_thread.
+
+    Audit 2.2: Splits purgen zusätzlich nach `label_timestamps` (Trade-Close),
+    und die BERICHTETE Kalibrierungs-Güte ist verschachtelt: der Kalibrator für
+    Fold k wird nur auf den OOS-Vorhersagen der Folds 1..k-1 gefittet (vorher
+    wurde auf denselben Daten gefittet UND gemessen -> zu optimistisch). Der
+    produktive Kalibrator wird weiterhin auf allen OOS-Punkten gefittet."""
     import numpy as np
     order = sorted(range(len(rows)), key=lambda i: timestamps[i])
     rows = [rows[i] for i in order]
     y = [y[i] for i in order]
     w = [w[i] for i in order]
+    if label_timestamps and len(label_timestamps) == len(order):
+        label_timestamps = [label_timestamps[i] for i in order]
+    else:
+        label_timestamps = None
     timestamps = [timestamps[i] for i in order]
     Xm = _to_matrix(rows)
     ym = np.array(y, dtype="int32")
     wm = np.array(w, dtype="float32")
 
-    splits = purged_walk_forward(timestamps)
+    splits = purged_walk_forward(timestamps, label_timestamps=label_timestamps)
     oos_pred: List[float] = []
     oos_true: List[int] = []
     base_pred: List[float] = []
+    fold_results: List[Tuple[List[float], List[int]]] = []
     for train_idx, test_idx in splits:
         model = _fit_xgb(Xm[train_idx], ym[train_idx], wm[train_idx])
         p = model.predict_proba(Xm[test_idx])[:, 1]
-        oos_pred += [float(x) for x in p]
-        oos_true += [int(ym[i]) for i in test_idx]
+        fold_p = [float(x) for x in p]
+        fold_t = [int(ym[i]) for i in test_idx]
+        fold_results.append((fold_p, fold_t))
+        oos_pred += fold_p
+        oos_true += fold_t
         base_pred += [float(ym[train_idx].mean())] * len(test_idx)
 
     metrics: Dict = {"folds_used": len(splits), "oos_samples": len(oos_true),
-                     "embargo_hours": EMBARGO_HOURS}
+                     "embargo_hours": EMBARGO_HOURS,
+                     "label_purged": bool(label_timestamps)}
     calib = None
     if oos_true:
         try:
@@ -253,11 +290,28 @@ def train_sync(rows: List[Dict], y: List[int], w: List[float],
         metrics["baseline_brier"] = round(_brier(base_pred, oos_true), 4)
         try:
             from sklearn.linear_model import LogisticRegression
+            # Verschachtelte Bewertung: Kalibrator je Fold nur aus VORHERIGEN Folds
+            nested_p: List[float] = []
+            nested_true: List[int] = []
+            prev_p: List[float] = []
+            prev_t: List[int] = []
+            for fold_p, fold_t in fold_results:
+                if len(prev_t) >= CALIB_MIN_SAMPLES and len(set(prev_t)) > 1:
+                    lr_k = LogisticRegression(C=1.0, max_iter=1000)
+                    lr_k.fit(np.asarray(prev_p).reshape(-1, 1), np.asarray(prev_t))
+                    ck = {"coef": float(lr_k.coef_[0][0]),
+                          "intercept": float(lr_k.intercept_[0])}
+                    nested_p += [_apply_calib(p, ck) for p in fold_p]
+                    nested_true += fold_t
+                prev_p += fold_p
+                prev_t += fold_t
+            # Produktiver Kalibrator: auf allen OOS-Punkten (unverändert)
             lr = LogisticRegression(C=1.0, max_iter=1000)
             lr.fit(np.asarray(oos_pred).reshape(-1, 1), np.asarray(oos_true))
             calib = {"coef": float(lr.coef_[0][0]), "intercept": float(lr.intercept_[0])}
-            cal_p = [_apply_calib(p, calib) for p in oos_pred]
-            metrics["oos_brier_calibrated"] = round(_brier(cal_p, oos_true), 4)
+            if nested_true:
+                metrics["oos_brier_calibrated"] = round(_brier(nested_p, nested_true), 4)
+                metrics["calibration_nested_samples"] = len(nested_true)
         except Exception as e:
             logger.warning(f"Gate-Kalibrierung fehlgeschlagen: {e}")
         best = min(metrics.get("oos_brier_calibrated", 9), metrics.get("oos_brier_raw", 9))
@@ -298,6 +352,19 @@ def _apply_calib(p: float, calib: Optional[Dict]) -> float:
         return float(p)
     z = calib["coef"] * float(p) + calib["intercept"]
     return 1.0 / (1.0 + math.exp(-z))
+
+
+def money_r(trade: Dict) -> Optional[float]:
+    """R in Geld (Audit 2.3): realized_pnl / risk_usdt. Fallback für alte
+    Trades ohne risk_usdt: risk × qty. None, wenn keine Risiko-Basis da ist."""
+    try:
+        pnl = float(trade.get("realized_pnl") or 0)
+        risk_usdt = float(trade.get("risk_usdt") or 0)
+        if risk_usdt <= 0:
+            risk_usdt = float(trade.get("risk") or 0) * float(trade.get("qty") or 0)
+        return (pnl / risk_usdt) if risk_usdt > 0 else None
+    except (TypeError, ValueError):
+        return None
 
 
 def evaluate_shadow(items: List[Dict], threshold: float) -> Dict:
@@ -419,7 +486,8 @@ class MLGate:
         return dict(self.settings)
 
     # ---------------- Dataset ----------------
-    async def build_dataset(self) -> Tuple[List[Dict], List[int], List[float], List[datetime], Dict]:
+    async def build_dataset(self) -> Tuple[List[Dict], List[int], List[float],
+                                           List[datetime], List[datetime], Dict]:
         db, source = self._source_db()
         if db is None:
             raise RuntimeError("Keine Datenbank verfügbar")
@@ -431,44 +499,50 @@ class MLGate:
         async for s in cursor:
             snaps_by_sym.setdefault(s.get("symbol"), []).append(s)
 
-        rows, y, w, tss = [], [], [], []
+        rows, y, w, tss, ltss = [], [], [], [], []
         counts = {"decision": 0, "signal": 0, "ghost": 0}
         decs = await db.ai_decisions.find(
             {"action": {"$in": ["LONG", "SHORT"]}, "outcome": {"$in": ["win", "loss"]},
              "symbol": {"$in": crypto}},
             projection={"_id": 0, "action": 1, "confidence": 1, "sl_pct": 1, "tp1_pct": 1,
                         "ts": 1, "outcome": 1, "outcome_source": 1, "symbol": 1,
-                        "entry_market_snapshot": 1, "data_collection": 1}).to_list(20000)
+                        "entry_market_snapshot": 1, "data_collection": 1,
+                        "outcome_ts": 1, "trade_closed_at": 1}).to_list(20000)
         for d in decs:
             item = row_from_decision(d, snaps_by_sym.get(d.get("symbol")))
             if item:
-                rows.append(item[0]); y.append(item[1]); w.append(item[2]); tss.append(item[3])
+                rows.append(item[0]); y.append(item[1]); w.append(item[2])
+                tss.append(item[3]); ltss.append(item[4])
                 counts["decision"] += 1
         sigs = await db.signals.find(
             {"result": {"$in": ["win", "loss"]}, "symbol": {"$in": crypto},
              "strategy_id": {"$ne": "ai_trader"}},
             projection={"_id": 0, "type": 1, "timestamp": 1, "result": 1, "result_source": 1,
                         "result_ambiguous": 1, "entry_price": 1, "stop_loss": 1,
-                        "take_profit_1": 1, "rsi": 1, "symbol": 1}).to_list(50000)
+                        "take_profit_1": 1, "rsi": 1, "symbol": 1,
+                        "result_ts": 1}).to_list(50000)
         for s in sigs:
             item = row_from_signal(s, snaps_by_sym.get(s.get("symbol")))
             if item:
-                rows.append(item[0]); y.append(item[1]); w.append(item[2]); tss.append(item[3])
+                rows.append(item[0]); y.append(item[1]); w.append(item[2])
+                tss.append(item[3]); ltss.append(item[4])
                 counts["signal"] += 1
         ghosts = await db.ai_ghost_trades.find(
             {"result": {"$in": ["win", "loss"]}, "symbol": {"$in": crypto}},
             projection={"_id": 0, "side": 1, "opened_at": 1, "result": 1,
-                        "entry": 1, "sl": 1, "tp": 1, "symbol": 1}).to_list(20000)
+                        "entry": 1, "sl": 1, "tp": 1, "symbol": 1,
+                        "closed_at": 1}).to_list(20000)
         for g in ghosts:
             item = row_from_ghost(g, snaps_by_sym.get(g.get("symbol")))
             if item:
-                rows.append(item[0]); y.append(item[1]); w.append(item[2]); tss.append(item[3])
+                rows.append(item[0]); y.append(item[1]); w.append(item[2])
+                tss.append(item[3]); ltss.append(item[4])
                 counts["ghost"] += 1
         meta = {"source": source, "samples": len(y), "wins": sum(y),
                 "losses": len(y) - sum(y), "by_source": counts,
                 "with_market_state": sum(1 for r in rows if r["has_market_state"]),
                 "crypto_symbols": crypto}
-        return rows, y, w, tss, meta
+        return rows, y, w, tss, ltss, meta
 
     # ---------------- Training ----------------
     async def train(self, trigger: str = "manuell") -> Dict:
@@ -477,7 +551,7 @@ class MLGate:
         self.training_now = True
         self.last_error = None
         try:
-            rows, y, w, tss, meta = await self.build_dataset()
+            rows, y, w, tss, ltss, meta = await self.build_dataset()
             wins, losses = sum(y), len(y) - sum(y)
             if len(y) < MIN_SAMPLES or min(wins, losses) < MIN_PER_CLASS:
                 self.last_error = (f"Zu wenig Daten: {len(y)} Samples "
@@ -485,7 +559,7 @@ class MLGate:
                                    f"Minimum {MIN_SAMPLES}/{MIN_PER_CLASS} je Klasse")
                 return {"status": "error", "detail": self.last_error, "dataset": meta}
             import asyncio
-            res = await asyncio.to_thread(train_sync, rows, y, w, tss)
+            res = await asyncio.to_thread(train_sync, rows, y, w, tss, ltss)
             latest = await self.db[MODELS_COLL].find_one({}, sort=[("version", -1)],
                                                          projection={"version": 1})
             version = int((latest or {}).get("version", 0)) + 1
@@ -601,15 +675,12 @@ class MLGate:
             projection={"_id": 0, "id": 1, "gate_shadow": 1, "outcome": 1}).to_list(20000)
         trades = await self.db.auto_trades.find(
             {"decision_id": {"$in": [d.get("id") for d in decs]}, "status": "closed"},
-            projection={"_id": 0, "decision_id": 1, "realized_pnl": 1, "risk": 1}).to_list(20000)
+            projection={"_id": 0, "decision_id": 1, "realized_pnl": 1, "risk": 1,
+                        "qty": 1, "risk_usdt": 1}).to_list(20000)
         r_by_dec = {}
         for t in trades:
-            try:
-                risk = float(t.get("risk") or 0)
-                pnl = float(t.get("realized_pnl") or 0)
-                r_by_dec[t.get("decision_id")] = (pnl / risk) if risk > 0 else None
-            except (TypeError, ValueError):
-                pass
+            # R in Geld (Audit 2.3): pnl / risk_usdt statt pnl / Preisdistanz
+            r_by_dec[t.get("decision_id")] = money_r(t)
         items = [{"p_win": float(d["gate_shadow"]["p_win"]),
                   "label": 1 if d["outcome"] == "win" else 0,
                   "r": r_by_dec.get(d.get("id"))} for d in decs]

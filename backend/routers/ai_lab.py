@@ -194,7 +194,7 @@ async def lab_trash_discard(body: Dict, _: bool = Depends(require_admin)):
 async def ml_dataset():
     """Datenlage für das Training (ohne Training zu starten)."""
     try:
-        _X, y, meta = await ml_lab.load_training_data()
+        _X, y, _tss, meta = await ml_lab.load_training_data()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)[:200])
     return {"dataset": meta, "labels": len(y), "features": ml_lab.model_meta

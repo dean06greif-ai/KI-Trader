@@ -22,7 +22,7 @@ async def gate_status():
 async def gate_dataset():
     """Datenlage (krypto-only, Prod nur lesend in Dev) – ohne Training."""
     try:
-        _rows, y, _w, _tss, meta = await ml_gate.build_dataset()
+        _rows, y, _w, _tss, _ltss, meta = await ml_gate.build_dataset()
     except Exception as e:
         return {"status": "error", "detail": str(e)[:200]}
     return {"status": "ok", "dataset": meta, "labels": len(y)}

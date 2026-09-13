@@ -35,9 +35,9 @@
 | # | Schritt | Status |
 |---|---|---|
 | 2.1 | Zentraler Entry-Guard `services/entry_guard.py` | ✅ |
-| 2.2 | ML-Leckage schließen (Snapshot ≤ ts, Split nach closed_at, Kalibrierung nested) | ⬜ |
-| 2.3 | R in Geld (`risk_usdt`), Backfill, Shadow-Report/Reward darauf | ⬜ |
-| 2.4 | Sicherheitsstatus + Ampel | ⬜ |
+| 2.2 | ML-Leckage schließen (Snapshot ≤ ts, Split nach closed_at, Kalibrierung nested) | ✅ |
+| 2.3 | R in Geld (`risk_usdt`), Backfill, Shadow-Report/Reward darauf | ✅ |
+| 2.4 | Sicherheitsstatus + Ampel | 🔄 |
 | 2.5 | Getrennte Ergebnisdaten je Setup + Wilson-Intervall | ⬜ |
 | 2.6 | Setup-Gewichtung nach Erwartungswert | ⬜ |
 | 2.7 | Reward ohne Konfidenz-Anreiz | ⬜ |
@@ -117,5 +117,29 @@
   siehe Docstring `_quota_cooldown_s`); `test_fix_custom_ai_trades.py` ScannerStub um `save_settings`
   ergänzt (Produktionscode nutzt `await scanner.save_settings`). Unit-Suite: 1300 passed; einzige Rest-Fails
   = `test_iter38_…` (braucht Dev-Server auf :8055 MIT konfigurierten Bitunix-Live-Keys – rein umgebungsbedingt).
-- NÄCHSTER SCHRITT: 2.2 ML-Leckage schließen (`nearest_snapshot(..., allow_future=False)`,
-  `purged_walk_forward` mit `label_ts = closed_at`, Kalibrierung nested) in `ai_ml_lab.py`/`ml_gate.py`.
+- 26.06.2026 – **2.2 fertig (ML-Leckage geschlossen)**:
+  1. `ai_ml_lab.nearest_snapshot(..., allow_future=False)` Default: nur Snapshots `ts <= target`
+     (vorher konnte ein ZUKUNFTS-Snapshot als "nächster" gewählt werden). Gilt automatisch für
+     ml_gate-Row-Builder (importieren dieselbe Funktion).
+  2. `ai_ml_lab.train_sync(..., timestamps=)`: zeitliche Expanding-Window-Folds (`temporal_folds`)
+     statt gemischtem StratifiedKFold; Fallback stratified ohne Zeitstempel/valide Folds.
+     `build_dataset`/`load_training_data` liefern jetzt 4-Tupel (X, y, timestamps, meta) –
+     Aufrufer angepasst (`routers/ai_lab.py`, Tests). Ergebnis-Feld `cv_mode` (temporal|stratified).
+  3. `ml_gate.purged_walk_forward(..., label_timestamps=)`: Training nur Samples, deren LABEL
+     (Trade-Close) vor Test-Start − Embargo entstand. Row-Builder liefern 5-Tupel mit `label_ts`
+     (decision: trade_closed_at→outcome_ts→ts; signal: result_ts→ts; ghost: closed_at→ts);
+     `build_dataset` → 6-Tupel, Projektionen erweitert, `routers/ml_gate.py` angepasst.
+  4. Kalibrierung verschachtelt: berichteter `oos_brier_calibrated` nutzt je Fold nur einen auf
+     FRÜHEREN Folds gefitteten Kalibrator (`CALIB_MIN_SAMPLES=30`); produktiver Kalibrator
+     weiterhin auf allen OOS-Punkten. Neue Metrik-Felder: `label_purged`, `calibration_nested_samples`.
+  Tests: `tests/test_ml_leakage_fixes.py` (6 neu, grün); Unit-Suite 1306 passed (Rest nur iter38-Umgebung).
+- 26.06.2026 – **2.3 fertig (R in Geld)**: Neue Trades speichern `risk_usdt = risk × qty`
+  (bitunix_trade, Trade-Dict); Boot-Migration `migrate_risk_usdt_backfill` (boot_migrations.py,
+  Pipeline-Update, idempotent über Marker `risk_usdt_backfill_v1`) trägt es für Alt-Trades nach.
+  `ml_gate.money_r(trade)` (neu, rein): R = pnl / risk_usdt, Fallback risk×qty, None ohne Basis –
+  `shadow_report` nutzt sie (vorher pnl / Preisdistanz = dimensional falsch, R war um Faktor qty
+  daneben). `ai_rewards.compute_reward`: Basis-Komponente jetzt "R-Basis (PnL/Risiko)" = clamp(R, ±4)
+  wenn risk_usdt vorhanden, sonst alter PnL-%-Fallback (Alt-Trades); neues Feld `r_multiple` im
+  Reward. Tests: `tests/test_risk_usdt_r_metric.py` (6 neu, grün); Unit-Suite 1312 passed.
+- NÄCHSTER SCHRITT: 2.4 Sicherheitsstatus (`services/safety_status.py` + GET /api/safety/status +
+  Ampel im Frontend, critical blockt via entry_guard).

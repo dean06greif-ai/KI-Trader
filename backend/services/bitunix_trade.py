@@ -2599,6 +2599,9 @@ class AutoTradeManager:
             "liq_price": liq_price, "liquidated": False,
             "atr": atr,
             "qty": qty, "qty_remaining": qty, "risk": round(risk, 6),
+            # R in Geld (Audit 2.3): riskiertes Kapital bis zum initialen SL.
+            # Basis für ehrliche R-Kennzahlen (pnl / risk_usdt) statt pnl / Preisdistanz.
+            "risk_usdt": round(risk * qty, 6),
             "tp1_crv": cfg["tp1_crv"], "tp_full_crv": cfg["tp_full_crv"],
             "tp1_close_percent": cfg["tp1_close_percent"],
             "breakeven_enabled": cfg["breakeven_enabled"], "fee_percent": fee_pct_used,
