@@ -1,0 +1,38 @@
+{
+  "summary": "Backend regression + frontend smoke for Audit Phase 2 (Schritte 2.4, 2.7, 2.10, Playbook maturity). 10/10 pytest cases in test_iter60_audit_phase2.py grün gegen Preview-URL. Admin-Login (Admin/LocalTest06!) OK, geschützte Endpoints geben ohne Token 401. 2.4 GET /api/safety/status liefert level=ok + checks-Liste inkl. sl_missing, close_failed, sync_stale, watchdog_stale (+ zusätzlich kill_switch); POST /api/safety/config {sync_stale_warn_min:20} → 200, kein 500. 2.7 GET /api/ai/rewards?days=30 enthält calibration{bins,rated,calibration_error}. 2.10 ML-Gate Status unter /api/ml/gate/status (NICHT /api/ml-gate/status wie im Review genannt) enthält risk_scaling_active=false. Playbook-Endpoint /api/ai/playbook liefert 200; maturity-Rows leer (frische DB, wie im agent_to_agent_context_note angekündigt), damit Strukturprüfung wr_ci/uncertain/live_wr_ci nicht auf konkrete Rows möglich – Endpoint-Verhalten selbst ist grün. Frontend: Hauptseite lädt (Header, Markets, Chart, Analyse), KI-Trader-Tab öffnet fehlerfrei, keine Error-Screens. Admin-Login über Schloss (data-testid=admin-lock-button) → adminAuthed=true (Icon grün). safety-status-light erscheint korrekt mit data-level='ok' NACH Page-Reload; unmittelbar nach Login-Submit ist der Punkt jedoch NICHT sichtbar, da SafetyLight useEffect([]) nur einmal beim Mount fetched und nicht auf Auth-State-Änderung reagiert (Poll erst nach 60s).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ml/gate/status", "issue": "Review-Request nennt Endpoint als /api/ml-gate/status – tatsächlicher Pfad in routers/ml_gate.py ist /api/ml/gate/status. Doku/Plan präzisieren."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Header.SafetyLight", "issue": "Sicherheitsstatus-Punkt erscheint nach Admin-Login erst nach Page-Reload oder nach 60s Poll. useEffect-Deps sind [] und reagieren nicht auf Wechsel von adminAuthed. Empfehlung: adminAuthed als Prop rein-reichen und in Dep-Array aufnehmen (oder Storage-Event auf token hören) damit Nutzer sofort Feedback bekommt.", "selector": "[data-testid='safety-status-light']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter60_audit_phase2.py",
+    "/app/test_reports/pytest/iter60_results.xml"
+  ],
+  "action_items": [
+    "Optional (LOW): SafetyLight useEffect Dep-Array um Auth-State erweitern, damit die Ampel sofort nach Admin-Login ohne Reload erscheint.",
+    "Doku: Review-Request-Pfad /api/ml-gate/status auf tatsächlichen /api/ml/gate/status korrigieren."
+  ],
+  "critical_code_review_comments": [
+    "services/safety_status.py Status ist konsistent: level+enabled+block_on_critical+ts, checks als Array mit einheitlichem Schema {name,level,detail,...} – sauber konsumierbar von SafetyLight (filter c.level!=='ok').",
+    "services/ai_rewards.py calibration liefert erwartete Struktur (bins/rated/calibration_error); Endpoint additiv, keine Regression an history/by_regime/summary.",
+    "services/ml_gate.py status() exposed risk_scaling_active als Boolean; Default false wie spezifiziert – gute Feature-Flag-Hygiene."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter60_audit_phase2.py"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (Smoke bestanden, 1 minor UX)"},
+  "test_credentials": "Admin / LocalTest06! (aus /app/memory/test_credentials.md, review_request)",
+  "seed_data_creation": "keine – nur READ-Endpoints + harmloser POST /api/safety/config",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "SafetyLight-UX-Miss: useEffect polls nur alle 60s und feuert einmal bei Mount – nach frischem Admin-Login ist der Punkt für bis zu 60s unsichtbar. E2E-Tests, die sofort nach Login prüfen, müssen entweder reloaden oder auf den 60s-Poll warten. Backend-DB ist frisch: playbook maturity-Rows leer, daher wr_ci/uncertain/live_wr_ci-Struktur wurde nicht auf konkreter Row verifiziert – Endpoint selbst liefert 200. POST /api/safety/config {sync_stale_warn_min:20} wurde gesetzt und NICHT zurückgesetzt (wenn Standardwert davon abweicht, ggf. restaurieren)."
+}

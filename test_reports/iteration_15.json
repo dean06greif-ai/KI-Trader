@@ -1,0 +1,37 @@
+{
+  "summary": "Regression testing of the 3 bugfixes (correlation_guard trader authority, 402 key cooldown, lesson dormant lifecycle). Ran the full existing pytest suite (885 passed, 1 skipped) plus a new live API regression suite (14/14 passed) against the public preview URL, and did an end-to-end Playwright run: admin login -> KI TRADER panel -> Setup -> correlation_guard select set to 'aus' -> survives full page reload; lessons CRUD + dormant lifecycle verified via API and Mongo. No backend errors, no 5xx. One UI/UX gap found: dormant (zurueckgestellte) lessons are rendered exactly like active lessons in the Lernen view and are counted in 'KI-Lernen · N Lektionen'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AITradingPanel (Lernen-Ansicht, ai-lesson-row ~line 1341)", "issue": "Lektionen mit status='dormant' werden identisch zu aktiven Lektionen dargestellt (keine Dimmung/Badge wie bei 'superseded') und zaehlen in der Kopfzeile 'KI-Lernen · N Lektionen' mit. Der Trader kann nicht erkennen, dass eine Lektion zurueckgestellt und nicht mehr im Prompt aktiv ist. Vorschlag: Badge 'zurueckgestellt' + opacity + eigener data-testid ai-lesson-dormant-{id}, dormant aus dem aktiven Zaehler nehmen.", "selector": ".ai-lesson-row", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_regression_iter15_guard_lessons_api.py",
+    "/app/test_reports/pytest/iter15_api.xml",
+    "/app/test_reports/pytest/full_suite.xml",
+    "/app/test_reports/pytest/full_suite.log"
+  ],
+  "action_items": [
+    "Frontend: dormant-Lektionen im Lernen-Tab sichtbar kennzeichnen (Badge/Dimmung) und aus dem aktiven Lektionen-Zaehler ausnehmen."
+  ],
+  "critical_code_review_comments": [
+    "backend/services/ai_engine.py::_tuning_guard blockt jetzt korrekt jede KI-Aenderung an correlation_guard (beide Richtungen, Unit-verifiziert); update_config (User-Pfad) schreibt sofort nach settings/ai_trader_config - verifiziert per API + Reload.",
+    "services/ai_lessons.LessonStore.all() ruft apply_lifecycle und persistiert Aenderungen bei jedem GET /api/ai/lessons bzw. /api/ai/insights - Write-on-Read. Bei haeufigem Polling des Panels sind das unnoetige Mongo-Writes (changed=True nur beim ersten Mal, danach nicht - akzeptabel, aber im Blick behalten).",
+    "GET /api/ai/lessons und /api/ai/insights sind unauthentifiziert (nur Writes sind admin-geschuetzt) - bewusstes Design laut core/auth.py Kommentar, aber Lektionen/MasterPrompt sind damit oeffentlich lesbar.",
+    "/api/ai/status liefert has_key/provider_keys/providers_health/backup_keys - die im Request genannten Feldnamen 'key_status'/'providers' existieren so nicht (nur Namensabweichung, kein Bug)."
+  ],
+  "updated_files": ["/app/backend/tests/test_regression_iter15_guard_lessons_api.py"],
+  "success_rate": {"backend": "100% (885 unit/integration passed, 1 skipped; 14/14 neue Live-API-Tests)", "frontend": "100% der getesteten Flows (Login, AI-Panel, Guard-Toggle + Persistenz, Lektionen-Ansicht)"},
+  "seed_data_creation": "Temporaer: Trader-Lektion 'TEST_Lektion Regression' (per API angelegt+geloescht) und abgelaufene KI-Lektionen les_TESTdormant1 / les_UIdorm1 direkt in settings/ai_lessons - alle wieder entfernt; correlation_guard auf true zurueckgesetzt.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin / Dean06Greif!/Admin (POST /api/auth/login -> Bearer-Token; Frontend: AdminLogin-Modal via edit-strategy-params-btn)",
+  "context_for_next_testing_agent": "UI-Pfad zum Guard: strategy-tab-ai_trader -> edit-strategy-params-btn (loest AdminLogin aus) -> nach Login erneut edit-strategy-params-btn -> ai-setup-toggle -> ai-correlation-guard-select ('on'/'off'). Neue Live-API-Tests liegen in tests/test_regression_iter15_guard_lessons_api.py und sind mit @pytest.mark.live markiert (laufen NICHT in 'pytest -m \"not live\"'), Start mit 'pytest tests/test_regression_iter15_guard_lessons_api.py -m live'. Konsolen-Fehler 'span cannot be a child of option' stammen vom Emergent-Visual-Editor-Instrumenting, kein App-Bug. Backend-Log enthaelt einen alten uvicorn-Reload FileNotFoundError (cwd) aus einem Pod-Restart - Umgebungsartefakt.",
+  "rca_of_the_issue": "Alle 3 Fixes verifiziert: (1) manuelles Umschalten von correlation_guard via POST /api/ai/config wirkt sofort, persistiert in Mongo, ueberlebt Reload und weitere Config-Updates; _tuning_guard gibt fuer KI-Aenderungen in BEIDE Richtungen eine Bestaetigungs-Meldung zurueck. (2) 402-Cooldown ist rein intern (usable_key_indices) und durch die bestehende Unit-Suite abgedeckt - keine externen Keys gesetzt, wie erwartet. (3) Eine abgelaufene, nicht gesperrte Lektion wird bei GET auf status='dormant' + dormant_since gesetzt und in Mongo persistiert, NICHT geloescht; locked-Lektionen bleiben aktiv. Einzige offene Luecke ist die fehlende Kennzeichnung dormanter Lektionen im Frontend."
+}
