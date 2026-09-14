@@ -10,6 +10,7 @@ import LocalWorkerPanel from './LocalWorkerPanel';
 import BenchmarkBar from './BenchmarkBar';
 import EquityChart from './EquityChart';
 import StrategyCopilot from './StrategyCopilot';
+import PortfolioBacktestCard from './PortfolioBacktestCard';
 import AITraderSeeding from './AITraderSeeding';
 import TIMEFRAMES from '../constants/timeframes';
 import './Backtester.css';
@@ -1050,6 +1051,9 @@ export default function Backtester({ onClose }) {
             die Vergangenheit zeigt dir in Minuten, was Paper-Trading Wochen kosten würde.
           </div>
         )}
+
+        <PortfolioBacktestCard selStrats={selStrats} selCoins={selCoins}
+          days={dateMode === 'days' ? days : 30} capital={capital} fee={fee} />
         </>}
 
         <StrategyCopilot panel="backtester"

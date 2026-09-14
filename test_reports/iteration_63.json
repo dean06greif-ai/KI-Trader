@@ -1,0 +1,23 @@
+{
+  "summary": "Iter63 fokussiertes Testing des NEUEN Portfolio-Backtest Features (Audit 3.5) - Backend + Frontend/E2E. Alle 6 geforderten Testfaelle bestanden. Backend: 5/5 pytest cases green (Auth-Block ohne Token = 401, Status-Idle-Safe 200, empty strategy_ids -> 400, voller Lauf 7 Tage/2 Strategien/2 Coins -> done mit vollstaendigem Result inkl. portfolio.{candidates,trades,pnl,final_equity,max_drawdown,skipped.{max_positions,kapital,risikobudget,cluster},max_concurrent,equity_curve}, correlation.{pairs,avg_corr}, scenarios.{slippage_stress,outage}; Regression /api/backtest/run+status+cancel weiterhin 200). Frontend: Admin-Login via Schloss-Icon (admin-username/admin-password/admin-login-submit) OK, tools-menu-button -> tools-menu-backtester oeffnet Overlay, portfolio-backtest-card unten mit pbt-toggle klappbar. 7 pbt-input-* Felder vorhanden (Startkapital, Max Positionen, Risiko %, Cluster %, Slippage %, Ausfaelle, Ausfall Std). pbt-run nur fuer Admin sichtbar, nach Klick pbt-progress und in ~30s pbt-result mit pbt-kpi-equity und pbt-scenario-table (3 Zeilen: base, slippage_stress, outage). Keine kritischen Bugs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/portfolio_backtest_api_test.py",
+    "/app/test_reports/pytest/iter63_pbt.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "portfolio_backtest.py::portfolio_replay Zeile 103: scale = margin / float(sim_margin or margin). Falls sim_margin=0 UND per_trade_margin=0, dann margin=100.0 (default) und sim_margin=100 -> scale=1. OK, aber wenn per_trade_margin>0 uebergeben wird und sim_margin=0 (weil Nutzer max_capital=0 setzt), scale=1 - konsistent. Kein Bug, aber ein Kommentar zur Semantik waere hilfreich.",
+    "routers/backtest.py Zeile 119-122: 409 bei laufendem Portfolio-Job UND bei laufendem normalem Backtest - gut. Die 409-Timing-Variante (paralleler run waehrend Job laeuft) wurde aufgrund unschaerfer Timing nicht separat isoliert getestet; die Logik ist aber deutlich vorhanden.",
+    "portfolio_backtest.py Zeile 44: PJOBS ist ein Modul-Level Dict ohne Lock. Bei einem Multi-Worker-Setup (uvicorn workers>1) potenzieller Race - fuer dieses Single-Worker-Deployment aber ok, gleiches Muster wie bt.JOBS."
+  ],
+  "updated_files": ["/app/backend/tests/portfolio_backtest_api_test.py"],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (Overlay + Card + Run + Result)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "keine",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Portfolio-Backtest API-Regression: cd /app && REACT_APP_BACKEND_URL=<url> python -m pytest backend/tests/portfolio_backtest_api_test.py -o addopts='' -v. Frontend-Testids: admin-lock-button -> admin-username/admin-password/admin-login-submit; tools-menu-button -> tools-menu-backtester; im Overlay: bt-strat-<id> und bt-coin-<SYMBOL> als Pill-Buttons oben, unten portfolio-backtest-card mit pbt-toggle + 7x pbt-input-* + pbt-run (nur Admin) -> pbt-progress -> pbt-result mit pbt-kpi-equity + pbt-scenario-table (Rows pbt-scenario-base|slippage_stress|outage) + optional pbt-correlation (nur wenn >=2 Coins mit gemeinsamen Handelstagen). Die Selektion Scalping+BTC oben wurde per get_by_role('button', name='Scalping'|'BTC').first getriggert - Alternative: [data-testid=bt-strat-scalping_4_rules] bzw. [data-testid=bt-coin-BTCUSDT]. Der Endpunkt lief in ~25s durch fuer 7 Tage/2 Coins/2 Strategien; fuer laengere Zeitraeume Timeout entsprechend erhoehen.",
+  "rca of the issue": "n/a - keine Bugs im neuen Portfolio-Backtest-Feature gefunden. Alle Response-Felder wie spezifiziert vorhanden, Frontend-Rendering vollstaendig, Auth-Guard korrekt."
+}

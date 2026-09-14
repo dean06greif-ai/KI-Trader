@@ -52,6 +52,7 @@
 | 3.2 | Kandidaten-Modus `services/policy_lab.py` | ✅ |
 | 3.3 | Promotion-Regel | ✅ |
 | 3.4 | Netto-Erfolgsbericht je Version | ✅ |
+| 3.5 | Portfolio-Backtest (gemeinsames Kapital, Korrelation, Szenarien) | ✅ |
 
 ## Phase T – Test-Hygiene
 | # | Schritt | Status |
@@ -348,6 +349,33 @@
   `tests/test_prod_safety_probe.py` (6 neu, grün – Root-Suite jetzt 169 passed);
   README_TESTING um T2/T3-Abschnitt ergänzt. Lokaler Probelauf: keine Findings, exit=0.
   **Audit-Backlog T2/T3 damit erledigt; Phase T komplett (T1–T4).**
+- 26.06.2026 – **3.5 fertig (Portfolio-Backtest)** – letzter offener Code-Punkt des Audits.
+  Eigener Modus, bestehende Backtest-Läufe UNVERÄNDERT: `services/portfolio_backtest.py` (neu):
+  reine Kernfunktionen `normalize_trades` (Einzel-Sim-Trades → Replay-Zeilen inkl. risk_usdt/
+  notional/Cluster via risk_budget.cluster_of), `portfolio_replay` (chronologisches Replay gegen
+  EIN gemeinsames Kapital: Margin-Reservierung je Trade, max_open_trades, Risikobudget
+  max_portfolio_risk_pct + Cluster-Limit analog Live-Guard, Skip-Zähler je Grund, Equity-Kurve
+  ≤400 Punkte, Max-DD, max/Ø gleichzeitige Positionen), `daily_pnl_by_symbol`+`correlation_pairs`
+  (Pearson der Tages-PnL je Symbol-Paar, min. 5 gemeinsame Tage), Szenarien `apply_slippage`
+  (Aufschlag je Fill-Seite aufs Notional) und `apply_outage` (deterministische, gleichverteilte
+  Offline-Fenster: Entries entfallen, Exits im Fenster schlechtestenfalls am initialen SL, nie
+  besser als real), `run_portfolio_analysis` (Gesamtauswertung), `sanitize_portfolio_cfg`.
+  Runner mit eigenem Job-Store PJOBS (Muster bt.JOBS, via ram_queue), nutzt UNVERÄNDERTE
+  `backtester.simulate_pair` (collect_trades=True) + fast_sim-Provider je (Strategie, Symbol).
+  API (routers/backtest.py): POST `/api/portfolio-backtest/run` (admin, 409 wenn Backtest/
+  Portfolio-Job läuft), GET `/api/portfolio-backtest/status[?job_id]`, POST `/cancel/{id}`.
+  UI: `frontend/src/components/PortfolioBacktestCard.js` (neu, einklappbare Karte unten im
+  Backtester-Strategien-Tab, nutzt die oben gewählten Strategien/Coins/Zeitraum; Eingaben
+  Startkapital/Max Positionen/Risiko %/Cluster %/Slippage %/Ausfälle; Ergebnis: KPIs,
+  Übersprungen-Zeile, Szenario-Tabelle Basis vs. Slippage vs. Ausfall, Korrelations-Pills
+  >0.5 gelb; data-testids `pbt-*`/`portfolio-backtest-card`; Run-Button nur Admin).
+  Tests: `backend/tests/test_portfolio_backtest.py` (10 neu, grün) – Unit-Suite **1403 passed**.
+  Testing-Agent iteration_63: Backend 5/5 + Frontend-E2E (Login→Backtester→Karte→Lauf→Ergebnis)
+  100% grün, Regression /api/backtest/run unberührt. **Audit-Plan damit VOLLSTÄNDIG umgesetzt
+  (Phasen 1, 2, 3 inkl. 3.5, T inkl. T2/T3).**
 - NÄCHSTER SCHRITT: Push via Emergent "Save to GitHub". Danach lt. Plan: 2–4 Wochen MESSPHASE
-  laufen lassen (nichts ändern!), dann Auswertung `GET /api/autotrade/slippage-stats` +
-  Policy-Report und Entscheid über Option 3 (1m-Hybrid) bzw. 3.5 Portfolio-Backtest ("später").
+  der LIVE-Ausführungsparameter (Bausteine A+B: Schwellen/Guards nicht anfassen!) – Strategie-
+  Suche, Backtests/Portfolio-Backtests, Policy-Lab-Kandidaten (Shadow) und Website-
+  Verbesserungen sind davon NICHT betroffen und weiterhin erlaubt. Nach der Messphase:
+  Auswertung `GET /api/autotrade/slippage-stats` (UI-Karte) + Policy-Report → Entscheid
+  Option 3 (1m-Hybrid-Trigger) bzw. Feintuning der Schwellen.

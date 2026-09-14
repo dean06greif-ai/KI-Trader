@@ -77,3 +77,31 @@
 .bt-rule-warnings b { color: #ffbe4d; }
 .bt-rule-warnings ul { margin: 5px 0 0; padding-left: 18px; }
 .bt-rule-warnings li { margin: 2px 0; }
+
+/* ---------------- Portfolio-Backtest (Audit 3.5) ---------------- */
+.pbt-card { margin-top: 18px; border: 1px solid #22282f; border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02); }
+.pbt-head { display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 10px 14px; background: none; border: none; cursor: pointer; }
+.pbt-head .bt-section-title { margin: 0; }
+.pbt-chevron { color: #7d8794; font-size: 13px; }
+.pbt-body { padding: 4px 14px 14px; }
+.pbt-grid { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 10px 0; }
+.pbt-field { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px;
+  color: #7d8794; text-transform: uppercase; letter-spacing: 0.04em; }
+.pbt-field input { width: 92px; padding: 6px 8px; background: #12161b;
+  border: 1px solid #2a323c; border-radius: 6px; color: #e6ebf0;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.pbt-field input:focus { outline: none; border-color: #3d7eff; }
+.pbt-run { margin-left: auto; }
+.pbt-progress { margin: 10px 0; }
+.pbt-result { margin-top: 12px; }
+.pbt-kpis { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 10px; }
+.pbt-kpis > div { display: flex; flex-direction: column; gap: 2px; }
+.pbt-kpis span { font-size: 10px; color: #7d8794; text-transform: uppercase; letter-spacing: 0.05em; }
+.pbt-kpis b { font-size: 14px; }
+.pbt-corr { margin-top: 12px; }
+.pbt-corr-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.pbt-corr-pill { padding: 3px 9px; border-radius: 999px; border: 1px solid #2a323c;
+  background: #12161b; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #aeb7c2; }
+.pbt-corr-pill.warn { border-color: #6b4c10; color: #ffbe4d; background: rgba(255, 176, 32, 0.08); }

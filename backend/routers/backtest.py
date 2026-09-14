@@ -102,6 +102,64 @@ async def start_backtest(body: Dict, _: bool = Depends(require_admin)):
     return {"status": "started", "job_id": job_id, "ram_queued": queued}
 
 
+# ---------------------- Portfolio-Backtest (Audit 3.5) ----------------------
+@router.post("/api/portfolio-backtest/run")
+async def start_portfolio_backtest(body: Dict, _: bool = Depends(require_admin)):
+    """Eigener Modus: gemeinsames Kapital, gleichzeitige Signale, Korrelation,
+    Slippage-/Ausfall-Szenarien. Bestehende Backtest-Läufe bleiben unverändert."""
+    from services import portfolio_backtest as pbt
+    strategy_ids = body.get("strategy_ids") or []
+    symbols = body.get("symbols") or []
+    days = min(max(int(body.get("days") or 30), 1), 1825)
+    valid_ids = {m["id"] for m in strategy_registry.list_all()}
+    strategy_ids = [s for s in strategy_ids if s in valid_ids]
+    symbols = [s for s in symbols if s in BACKTEST_SYMBOLS]
+    if not strategy_ids or not symbols:
+        raise HTTPException(status_code=400, detail="strategy_ids und symbols erforderlich")
+    if [j for j in pbt.PJOBS.values() if j["status"] == "running"]:
+        raise HTTPException(status_code=409, detail="Es läuft bereits ein Portfolio-Backtest")
+    if [j for j in bt.JOBS.values() if j["status"] == "running"]:
+        raise HTTPException(status_code=409, detail="Es läuft bereits ein Backtest – erst abschließen")
+    cfg = dict(DEFAULT_COIN_CFG)
+    for k in ("max_capital", "leverage", "fee_percent", "require_all_rules",
+              "trade_pre_signals", "auto_leverage_enabled"):
+        if body.get(k) is not None:
+            cfg[k] = body[k]
+    pcfg = pbt.sanitize_portfolio_cfg(body.get("portfolio"))
+    strategy_configs = body.get("strategy_configs") or {}
+    if not isinstance(strategy_configs, dict):
+        strategy_configs = {}
+    params = {"strategy_ids": strategy_ids, "symbols": symbols, "days": days,
+              "max_capital": cfg["max_capital"], "portfolio": pcfg}
+    job_id = pbt.create_job(params)
+    queued = ram_queue.submit(pbt.PJOBS, job_id, lambda: pbt.run_portfolio_backtest(
+        job_id, strategy_ids, symbols, days, cfg, pcfg, strategy_registry,
+        scanner.settings, strategy_configs, body.get("timeframe")),
+        kind="portfolio-backtest")
+    return {"status": "started", "job_id": job_id, "ram_queued": queued}
+
+
+@router.get("/api/portfolio-backtest/status")
+async def portfolio_backtest_status(job_id: str = None):
+    from services import portfolio_backtest as pbt
+    job = pbt.PJOBS.get(job_id) if job_id else pbt.latest_job()
+    if not job:
+        return {"status": "idle", "result": None}
+    return _job_public(job)
+
+
+@router.post("/api/portfolio-backtest/cancel/{job_id}")
+async def portfolio_backtest_cancel(job_id: str, _: bool = Depends(require_admin)):
+    from services import portfolio_backtest as pbt
+    job = pbt.PJOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job nicht gefunden")
+    job["cancel"] = True
+    if job.get("status") == "running":
+        job["phase"] = "Wird abgebrochen..."
+    return {"status": "cancelling", "job_id": job_id}
+
+
 @router.get("/api/backtest/status/{job_id}")
 async def backtest_status(job_id: str):
     job = bt.JOBS.get(job_id)
