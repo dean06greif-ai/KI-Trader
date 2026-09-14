@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 45 – SL/TP-Klassen-Grenzen (clamp_levels), Fehlerdiagnose je Setup×Klasse, Playbook-Prompt KLASSE/DIAGNOSE Zeilen. Backend: /api/ai/playbook 200 OK, class_order=['crypto','indices','resources','forex'], asset_reduce_factor=0.5, maturity crypto 16 / andere 15, classes.<cls>.diagnosis Dict, jeweils Teilmenge von live_blocked. crypto.diagnosis.squeeze_breakout enthält 4 Strings mit SL/Session/TF/SHORT. clamp_levels verhält sich exakt wie spezifiziert (forex→SL 0.5, TPs skaliert 'Forex'-Grenze; crypto None; indices tpf 4.0). diagnose([])==[]. Playbook context_text: KLASSE-Krypto-Zeile mit 'sl_pct 0.2-3.0', DIAGNOSE squeeze_breakout@crypto-Zeile vorhanden; forex hat 'sl_pct 0.05-0.5' und KEIN funding_fade. Pytest-Suite (9 Dateien) 102/102 passed. Keine relevanten Tracebacks im backend.err.log. Frontend: Admin-Login, ai-trading-panel, Klassen-Tabs, Diagnose-Badge auf crypto/squeeze_breakout (Text 'Diagnose', title 251 Zeichen mit Zeilenumbrüchen). Tab 'all' zeigt KEIN Diagnose-Badge. Tab forex: 15 Zeilen, kein funding_fade, excluded Hinweis sichtbar. Panel-close und Regression (Strategie-/Coin-Wechsel, Chart lädt) OK. Keine JS-Konsolen-Fehler.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/tests/test_class_limits_and_diagnosis.py",
+    "/app/tests/test_asset_class_setups.py",
+    "/app/tests/test_setup_lifecycle.py",
+    "/app/tests/test_risk_sizing_and_playbook_v2.py",
+    "/app/backend/tests/test_playbook_demotion.py",
+    "/app/backend/tests/test_setup_live_gate.py",
+    "/app/backend/tests/test_playbook_tf.py",
+    "/app/backend/tests/test_limit_live_sync.py",
+    "/app/backend/tests/test_funding_session_partialfill.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "keine (Produktions-DB nur gelesen)",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 45: Alle spezifizierten Backend- und Frontend-Prüfungen bestanden. Diagnose-Badge (data-testid=ai-maturity-diagnosis-<setup>) erscheint nur bei Klassen-Tabs, nicht im 'all'-Tab (per Design in AIEquityPanel). Playbook-context_text liefert KLASSE + DIAGNOSE Zeilen korrekt gefiltert. Keine Regressionen gegenüber Iteration 44."
+}
