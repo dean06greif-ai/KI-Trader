@@ -25,6 +25,7 @@ async def fomc_status():
     # Geschwindigkeits-Check: reicht das aktuelle Modell im Event-Fenster?
     try:
         from services.ai_engine import ai_engine
+        from services.ai_news_watcher import FOMC_INTERVAL_MIN, news_watcher
         interval_min = ai_engine.current_interval()[0]
         snap["engine"] = {
             "provider": ai_engine.config.get("provider"),
@@ -32,6 +33,8 @@ async def fomc_status():
             "interval_min": interval_min,
             "fomc_interval_min": min(interval_min, fomc_event.FAST_INTERVAL_MIN),
             "fast_provider": ai_engine.config.get("provider") in ("groq", "gemini"),
+            "news_fomc_interval_min": FOMC_INTERVAL_MIN,
+            "news_boost_active": bool((news_watcher.status().get("fomc_boost") or {}).get("active")),
         }
     except Exception:
         snap["engine"] = None

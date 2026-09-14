@@ -1448,6 +1448,7 @@ def maturity_overview(stats: Dict[str, Dict], disabled: Dict[str, Dict],
 
 _status_cache: Dict = {"ts": 0.0, "db": None, "data": None}
 _status_lock: Optional[asyncio.Lock] = None
+_status_refresh_task: Optional[asyncio.Task] = None
 
 
 async def status(db) -> Dict:
@@ -1456,22 +1457,38 @@ async def status(db) -> Dict:
 
     Gecacht (REFRESH_CACHE_SEC) + Stampede-Schutz: die Berechnung braucht auf
     Atlas dutzende Queries (4 Klassen × Stats + Diagnosen + TF-Stats) und
-    blockierte das Verlauf-Panel minutenlang ("Lade…", Bug-Report 09/2026)."""
-    global _status_lock
-    if _status_cache["data"] is not None and _status_cache["db"] == id(db) \
-            and _time.time() - _status_cache["ts"] < REFRESH_CACHE_SEC \
-            and _refresh_cache["ts"] <= _status_cache["ts"]:
+    blockierte das Verlauf-Panel minutenlang ("Lade…", Bug-Report 09/2026).
+
+    Stale-while-revalidate (09/2026): ist der Cache abgelaufen, wird der ALTE
+    Stand sofort geliefert und die Neuberechnung läuft im Hintergrund – der
+    Endpoint antwortet damit nie mehr ~30s+ (Ingress-502). Nur der allererste
+    Aufruf ohne Cache rechnet synchron (dafür wärmt server.py beim Boot vor)."""
+    global _status_lock, _status_refresh_task
+    fresh = (_status_cache["data"] is not None and _status_cache["db"] == id(db)
+             and _time.time() - _status_cache["ts"] < REFRESH_CACHE_SEC
+             and _refresh_cache["ts"] <= _status_cache["ts"])
+    if fresh:
+        return _status_cache["data"]
+    if _status_cache["data"] is not None and _status_cache["db"] == id(db):
+        if _status_refresh_task is None or _status_refresh_task.done():
+            _status_refresh_task = asyncio.create_task(_status_recompute(db))
         return _status_cache["data"]
     if _status_lock is None:
         _status_lock = asyncio.Lock()
     async with _status_lock:
-        if _status_cache["data"] is not None and _status_cache["db"] == id(db) \
-                and _time.time() - _status_cache["ts"] < REFRESH_CACHE_SEC \
-                and _refresh_cache["ts"] <= _status_cache["ts"]:
+        if _status_cache["data"] is not None and _status_cache["db"] == id(db):
             return _status_cache["data"]
+        return await _status_recompute(db)
+
+
+async def _status_recompute(db) -> Dict:
+    try:
         out = await _status_uncached(db)
         _status_cache.update({"data": out, "ts": _time.time(), "db": id(db)})
         return out
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Playbook-Status-Neuberechnung fehlgeschlagen: {e}")
+        return _status_cache["data"] or {}
 
 
 async def _status_uncached(db) -> Dict:

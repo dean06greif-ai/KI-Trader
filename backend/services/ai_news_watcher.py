@@ -48,6 +48,31 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ---- FOMC-Turbo: im Event-Fenster prüft der News-Wächter deutlich dichter ----
+FOMC_INTERVAL_MIN = 3
+
+
+def effective_interval_sec(interval_min, fomc_active: bool) -> int:
+    """Prüf-Intervall in Sekunden (rein & testbar): normal min. 5 min laut
+    Rollen-Config; im FOMC-Event-Fenster auf FOMC_INTERVAL_MIN verdichtet,
+    damit keine Schlagzeile den Event-Trade verpasst."""
+    try:
+        base = max(5, int(interval_min or 15))
+    except (TypeError, ValueError):
+        base = 15
+    if fomc_active:
+        base = min(base, FOMC_INTERVAL_MIN)
+    return base * 60
+
+
+def _fomc_active_safe() -> bool:
+    try:
+        from services import fomc_event
+        return fomc_event.window_active()
+    except Exception:
+        return False
+
+
 # Event-getriggerte Tiefenanalyse: Mindestabstand zwischen zwei News-Triggern,
 # damit ein News-Schwall nicht mehrere teure Deep-Runs hintereinander auslöst.
 DEEP_TRIGGER_COOLDOWN_S = 45 * 60
@@ -323,6 +348,8 @@ class NewsWatcher:
             "last_error": self.last_error,
             "last_alert": self.last_alert,
             "news_trigger": {"used_today": self._trigger_count, "daily_cap": NEWS_TRIGGER_DAILY_CAP},
+            "fomc_boost": {"active": _fomc_active_safe(),
+                           "interval_min": FOMC_INTERVAL_MIN},
         }
 
     async def run_loop(self):
@@ -339,7 +366,8 @@ class NewsWatcher:
                     continue
                 now = time.time()
                 if now >= self._next_due:
-                    interval = max(5, int(cfg.get("interval_min", 15))) * 60
+                    interval = effective_interval_sec(cfg.get("interval_min", 15),
+                                                      _fomc_active_safe())
                     self._next_due = now + interval
                     await self.run_check()
             except Exception as e:

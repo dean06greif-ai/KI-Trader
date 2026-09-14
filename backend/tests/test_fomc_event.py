@@ -170,6 +170,22 @@ class TestKeyCredits:
         assert key_credits.level_for(remaining, has_credits) == expected
 
 
+class TestNewsWatcherFomcBoost:
+    def test_normal_interval_unchanged(self):
+        from services.ai_news_watcher import effective_interval_sec
+        assert effective_interval_sec(15, False) == 15 * 60
+        assert effective_interval_sec(2, False) == 5 * 60   # Untergrenze 5 min
+
+    def test_fomc_window_boost(self):
+        from services.ai_news_watcher import FOMC_INTERVAL_MIN, effective_interval_sec
+        assert effective_interval_sec(15, True) == FOMC_INTERVAL_MIN * 60
+        assert effective_interval_sec(2, True) == FOMC_INTERVAL_MIN * 60
+
+    def test_invalid_config_falls_back(self):
+        from services.ai_news_watcher import effective_interval_sec
+        assert effective_interval_sec("kaputt", False) == 15 * 60
+
+
 class TestPlaybookIntegration:
     def test_setup_registered(self):
         from services import ai_playbook

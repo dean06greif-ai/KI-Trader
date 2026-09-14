@@ -339,6 +339,19 @@ async def lifespan(app: FastAPI):
     from services import key_credits
     asyncio.create_task(key_credits.run_loop())
 
+    # Playbook-Status vorwärmen (dutzende Atlas-Queries, ~30s): damit der erste
+    # UI-Aufruf von /api/ai/playbook sofort aus dem Cache antwortet (danach
+    # hält stale-while-revalidate in ai_playbook.status den Cache warm).
+    async def _warm_playbook_status():
+        await asyncio.sleep(20)
+        try:
+            from services import ai_playbook
+            await ai_playbook.status(state.db)
+            logger.info("Playbook-Status vorgewärmt (Cache gefüllt)")
+        except Exception as we:  # noqa: BLE001
+            logger.warning(f"Playbook-Status-Vorwärmung fehlgeschlagen: {we}")
+    asyncio.create_task(_warm_playbook_status())
+
     # BUGFIX (win-rate): re-hydrate the in-memory open_signal_evals from
     # still-open signals so evaluate_open_signals() can mark them as win/loss
     # after a restart. ML-Fix 0.3: nicht mehr nur der heutige Tag, sondern das

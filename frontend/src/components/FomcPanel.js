@@ -179,8 +179,9 @@ const FomcPanel = () => {
         <div className="fomc-note">
           Bonus-Regel: Für dieses Setup reicht die Backtest-Validierung als Reife-Nachweis (keine
           Pflicht-Paper-Trades). Indizes sammeln mangels Bitunix-Historie normal Paper-Daten.
-          Im Event-Fenster analysiert die KI alle {status?.fast_interval_min ?? 5} min; Tiefenanalysen
-          werden währenddessen aufgeschoben (zu langsam für Event-Trading).
+          Im Event-Fenster analysiert die KI alle {status?.fast_interval_min ?? 5} min, der
+          News-Wächter prüft alle {status?.engine?.news_fomc_interval_min ?? 3} min auf neue
+          Schlagzeilen; Tiefenanalysen werden währenddessen aufgeschoben (zu langsam für Event-Trading).
         </div>
       </div>
     </div>
