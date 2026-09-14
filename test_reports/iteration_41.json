@@ -1,0 +1,31 @@
+{
+  "summary": "Verified iter41 IBKR-integration work: backend /api/ibkr/status and /api/autotrade/balance return the expected shape (configured=true, authenticated=false, error+hint mention Health-Server, probe={livez:200,readyz:503}, ibkr sub-object present in balance with account U27467136 and null net_liquidation/available_funds). 57 unit-regression tests across test_forex_ibkr_live.py + test_forex_ibkr.py + test_funding_fee_guard.py + test_live_close_fix.py + test_fee_breakdown.py all pass. Frontend header LiveBadgeStack behavior fully matches spec: default Bitunix mini badge with USDT balance, dblclick toggles to IBKR stack showing 'nicht eingeloggt', second dblclick returns, localStorage 'kit_live_badge_source' persists across reload, single click still opens CapitalModal. SettingsPanel.js contains ibkr-status / ibkr-status-hint / ibkr-status-probe testids (lines 1115/1123/1128).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "confirmed_verifications": [
+    "GET /api/ibkr/status -> configured=true, gateway_url_set=true, token_set=false, authenticated=false, error='HTTP 501: IBeam-Health-Server statt Gateway', hint contains 'HEALTH-Server', probe={livez:200,readyz:503}",
+    "GET /api/autotrade/balance -> ibkr={configured:true, authenticated:false, net_liquidation:null, available_funds:null, currency:'USD', account_id:'U27467136', error contains Health-Server}, all pre-existing fields (mode, margin_balance, allocation.live/paper, bitunix_configured) preserved",
+    "Backend pytest: 57 passed in 85s (test_forex_ibkr_live, test_forex_ibkr, test_funding_fee_guard, test_live_close_fix, test_fee_breakdown). Note: test_fee_model.py was mentioned in request but does not exist in repo — substituted test_fee_breakdown.py which covers fee model logic",
+    "Frontend header: default mini='Bitunix' with balance 1466.94; after dblclick mini='IBKR', ibkr-stack visible, ibkr-balance='nicht eingeloggt'; modal NOT opened by dblclick; second dblclick returns to Bitunix stack; localStorage kit_live_badge_source persists (='ibkr' after switch, IBKR still active after reload); single click opens Kapital-Zuweisung modal (live scope)",
+    "SettingsPanel.js contains data-testid ibkr-status, ibkr-status-hint, ibkr-status-probe and renders 'Gateway erreichbar, aber NICHT eingeloggt' + hint + 'livez 200 · readyz 503 · kein IBKR_GATEWAY_TOKEN gesetzt' when backend returns current state"
+  ],
+  "test_report_links": [
+    "/app/test_reports/pytest/iter41.xml",
+    "/app/backend/tests/test_forex_ibkr_live.py"
+  ],
+  "action_items": [
+    "Note: request referenced tests/test_fee_model.py which does not exist. Either add it or update the request template to reference test_fee_breakdown.py."
+  ],
+  "critical_code_review_comments": [
+    "IBKR Health-Server detection and probe reporting in services/ibkr_client.py works correctly against the live Render URL; error/hint strings are user-friendly German with actionable pointer to IBKR_SETUP_ANLEITUNG.md.",
+    "SettingsPanel.js renders ibkr-status-probe only when ibkr.configured is true — consistent with backend contract.",
+    "Header LiveBadgeStack cleanly separates click vs dblclick via 260ms debounce; state persisted in localStorage as spec'd."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (57/57)", "frontend": "100% (header spec fully verified)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (not needed for this test scope)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "IBKR Gateway pointing at Health-Server is EXPECTED. /api/autotrade/status is 404 (never existed); use /api/autotrade/trades (200) for trade listing. Backend pytest requires tests/test_fee_breakdown.py (not test_fee_model.py). Header behavior tested via dblclick on [data-testid=live-overlay] and single click for capital modal. To reset LiveBadge selection use localStorage.removeItem('kit_live_badge_source')."
+}

@@ -1,0 +1,33 @@
+{
+  "summary": "Phase T regression smoke test (backend + frontend) via public preview URL. All 8 backend endpoints pass; frontend loads with correct title, admin login via UI works and safety-status-light (level=ok) appears after login. No critical JS console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "external ingress https://daytrading-core.preview.emergentagent.com", "issue": "Occasional cold-start 502/timeout on first hit; retry helper in test smooths this over (no code fix required)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/smoke_regression_test.py",
+    "/app/test_reports/pytest/smoke_iter61.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/tests/smoke_regression_test.py hits public URL; retries mask flaky ingress cold starts – acceptable for regression smoke.",
+    "SafetyLight (Header.js:14) intentionally renders only when /api/safety/status returns 200 (requires admin auth); pre-login the light is hidden. This is by design but may confuse users expecting an always-visible indicator."
+  ],
+  "updated_files": [
+    "/app/backend/tests/smoke_regression_test.py"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Smoke suite lives at backend/tests/smoke_regression_test.py. Run: cd /app && REACT_APP_BACKEND_URL=<url> python -m pytest backend/tests/smoke_regression_test.py -o addopts='' -v. Only read-only endpoints + login are exercised – safe to re-run. Frontend flow: click [data-testid=admin-lock-button] -> fill admin-username + admin-password -> submit; then safety-status-light appears with data-level. External preview URL occasionally cold-starts with 502; helper retries 3x with 2s backoff.",
+  "rca of the issue": "n/a – no production bug found. Initial two false-positives (health 502, safety_status 401) were caused by (a) cold-start ingress and (b) missing auth header in test; both resolved with retry helper + admin token."
+}

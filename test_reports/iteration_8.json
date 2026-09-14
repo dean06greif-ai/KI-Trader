@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 8 (Key-Level-Limit-Orders + Ehrliches Paper-Trading) – ALLE 7 REVIEW-PUNKTE GRÜN. (1) GET /api/ai/limit-orders 200 mit {orders,history}-Struktur (Smoke-Order aus iter-Vorlauf war noch pending, wurde im Test storniert und wanderte korrekt in history mit status=cancelled + cancel_reason='Manuell storniert (Website)'). (2) DELETE /api/ai/limit-orders/{id} ohne Auth → 401; mit Admin-Token → 200 {ok:true}, Status in DB=cancelled. (3) Unit-Tests test_key_level_limits.py + test_paper_execution.py → 2 passed (0.60s). (4) E2E Paper-Entry via POST /api/ai/trade/open (ETHUSDT LONG paper margin=20 sl_pct=2.0 tp1_pct=3.0 tpf_pct=5.0 – Hinweis: BTCUSDT LONG anti-stacking-blockiert (letzter Trade <30min), ETHUSDT ohne sl_pct-Override durch Fee-Wächter blockiert – daher legitimer Override auf 2%): status=ok, in DB paper_exec={ref_price:2448.29, fill_price:2448.5398, spread_pct:0.0004, slippage_pct:0.01, cost_pct, source:'orderbook'}, fill_price (2448.5398) > ref_price (2448.29) → LONG-Entry adversarial ✓, Event 'PAPER-FILL: Entry 2448.5398 statt 2448.29 (Spread 0.0004% + Slippage 0.01%, Quelle orderbook)' vorhanden. (5) Paper-Exit via POST /api/autotrade/close/{tid}: exit_price=2451.7298 < ref-Preis 2451.98 → LONG-Verkauf adversarial ✓, letztes Event 'MANUAL CLOSE @ 2451.7298 (Fee 0.120156) [Paper-Fill 2451.7298 statt 2451.98]'. (6) Regression pytest -m unit → 826 passed, 1 skipped, 3 warnings in 16.87s (Erwartung ~828; identisch zu iter7-Baseline 824-826, keine Regression). (7) GET /api/ai/status 200 + GET /api/autotrade/pending-entry-orders 200. (8) Frontend E2E: Admin-Login via Schloss-Icon (button[aria-label*=Login]) → 'Admin angemeldet'; view-trades Klick → data-testid=key-level-limit-orders-card sichtbar mit Row 'BTCUSDT LONG LIMIT @ 75868.9 · 2% vom Preis · pullback · Konfidenz 78 · ⏳ 59m 0s · Stornieren' → Klick auf limit-order-cancel-{id} entfernt Row + Card verschwindet komplett nach Reload (pending count=0).",
+  "feature_verdicts": [
+    "GET /api/ai/limit-orders - pass - HTTP 200, {orders:[...], history:[...]} Struktur korrekt, expires_in_s>0",
+    "DELETE /api/ai/limit-orders/{id} auth-guard - pass - ohne Auth 401, mit Admin-Bearer 200 {ok:true}, DB-Status pending→cancelled + cancel_reason gesetzt",
+    "Unit-Suite test_key_level_limits + test_paper_execution - pass - 2 passed in 0.60s (Validierung/place/replace/fill/expire/reevaluate/cancel/Spread+Slippage-Richtung)",
+    "Paper-Entry E2E - pass - paper_exec.source=orderbook, fill_price (2448.5398) > ref_price (2448.29) für LONG, Event 'PAPER-FILL: Entry ... statt ... (Spread 0.0004% + Slippage 0.01%, Quelle orderbook)'",
+    "Paper-Exit E2E - pass - exit_price (2451.7298) UNTER ref 2451.98 für LONG-Verkauf, Event 'MANUAL CLOSE ... [Paper-Fill 2451.7298 statt 2451.98]'",
+    "Regression Unit-Suite - pass - 826 passed, 1 skipped in 16.87s (JUnit: /app/test_reports/pytest/iter8_unit.xml)",
+    "GET /api/ai/status - pass - 200",
+    "GET /api/autotrade/pending-entry-orders - pass - 200",
+    "Frontend Key-Level-Limit-Orders Card - pass - Login OK, Card+Row+Countdown+Cancel-Button rendert bei pending; Cancel-Klick entfernt Row; Card verschwindet ohne pending Orders (data-testid=None)"
+  ],
+  "skills_loaded": ["ai-testing-core"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Cold-Start Fetches", "issue": "Bekannte transient 'TypeError: Failed to fetch' im Cold-Start-Bundle (fetchSession/fetchNotif etc.) – identisch zu iter4/6/7, nicht regressionsrelevant.", "affected_selectors": []}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_key_level_limits.py",
+    "/app/backend/tests/test_paper_execution.py",
+    "/app/test_reports/pytest/iter8_unit.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "services/key_level_limits.py – place/cancel-Flow schreibt sauber die einheitliche Struktur (id, status pending→cancelled/filled, cancel_reason, closed_at). GET-Endpoint fügt expires_in_s serverseitig auf Basis expires_at berechnet – kein Client-Uhrenrisiko.",
+    "routers/ai.py DELETE-Route ist require_admin-gated: ohne Bearer → 401 (verifiziert), mit Admin-Bearer → 200 + Body {ok:true}. Response-Payload minimal, kein _id leakt (Projection sauber).",
+    "services/paper_execution.py – entry_fill spreizt gegen den Handel (LONG→fill>ref, SHORT→fill<ref) mit source='orderbook' bei erfolgreichem OKX/Bybit-Bid/Ask, Fallback-Schätzwerte bei Netzwerkfehler. exit_fill spiegelt korrekt (LONG-Verkauf adversarial, exit<ref) – im Live-Test verifiziert (fill vs ref Differenzen 0.010–0.014%).",
+    "services/bitunix_trade.py on_signal Paper-Entry-Fill setzt trade.paper_exec + fügt 'PAPER-FILL: ...' Event – Format konsistent mit dem manuellen Close-Event '[Paper-Fill ... statt ...]'.",
+    "components/KeyLevelLimitOrders.js – rendert null wenn Orderliste leer (verifiziert: nach Cancel/Reload ist data-testid nicht mehr im DOM), 15s Poll, cancel per DELETE mit Bearer-Header. Countdown 'Xm Ys'/'Xh Ym' Format korrekt (59m 0s im Test angezeigt).",
+    "Anmerkung ai/trade/open: BTCUSDT LONG ohne sl_pct-Override lief in Anti-Stacking (letzter closed BTCUSDT LONG 1m paper <30min), ETHUSDT LONG in den Fee-Wächter (SL-Distanz 0.800% < Minimum 1.48%). Beides erwartet & korrekt guarded – mit sl_pct=2.0 im Body ist der Fee-Wächter erfüllt (0,8%-Default nur ohne Override). Kein Bug, aber im echten UI-Kontext ist die Default-SL-Distanz möglicherweise für einige Volatilitätsregimes zu eng, wenn die KI wenige Info-Overrides mitgibt – Hinweis an E1."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (9/9 review-Items inkl. 826 unit + 2 neue unit)", "frontend": "100% (Card+Row+Cancel+Countdown, Toggle sichtbar/versteckt)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "1 Test-Limit-Order angelegt (BTCUSDT LONG @ 75868.9, decision_id iter8-t1) via services.key_level_limits.place – im Frontend-Test danach per UI storniert und in history verschoben. 1 ETHUSDT LONG paper Trade (BTCUSDT-1787503972771 bzw. ETHUSDT-*) über /api/ai/trade/open eröffnet & wieder geschlossen (paper_exec Entry+Exit sichtbar). Beim Ende: keine offenen Testartefakte in pending-Liste; history enthält 2 cancelled Entries (Smoke aus vorherigem Run + iter8-t1). Keine neuen open trades verbleiben.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Neue Features iter8: (a) backend/services/key_level_limits.py + backend/services/paper_execution.py + Integration in bitunix_trade.on_signal (paper entry fill) & _manage_trade/manual_close (paper exit fill) & scheduler.check_fills. (b) Routes: GET /api/ai/limit-orders (public), DELETE /api/ai/limit-orders/{id} (require_admin). (c) Frontend: components/KeyLevelLimitOrders.js eingebunden in PerformanceAnalytics.js – rendert null wenn leer, Poll 15s, DELETE mit Bearer-Auth. Tests test_key_level_limits.py + test_paper_execution.py sind grün. Bei erneutem Testen: (i) BTCUSDT hat aufgrund kürzlicher closed trades Anti-Stacking im 30-Min-Fenster – ETHUSDT oder anderes Symbol nutzen; (ii) sl_pct >= ~1.5 setzen sonst Fee-Wächter blockt. Für limit-order Frontend-Test unbedingt eine frische pending-order via kll.place(...) mit limit_price 2% unter Marktpreis anlegen (0.1% würde binnen 1-2min gefüllt, dann keine Row mehr im UI).",
+  "rca of the issue": "N/A - keine Regression, keine Bugs. Beide neuen Features (KI-Limit-Orders Karte + ehrliches Paper-Trading mit Orderbook-Fill) funktionieren vollständig E2E, inkl. Frontend-Cancel-Flow."
+}

@@ -1,0 +1,34 @@
+{
+  "summary": "Verified requested backend regression tests + read-only API smoke on preview + frontend smoke. Backend suite: 113/114 pass. Only failure is a pytest-xdist thread/event-loop compatibility issue in test_local_engine_guard.py::test_scheduled_runs_skipped_when_guard_active (uses deprecated asyncio.get_event_loop().run_until_complete() which fails in xdist worker threads). When run without xdist all 9 tests in that file pass. No production code defect. Preview endpoints healthy: /api/health=200, /api/auth/login returns token, /api/ai/status shows config.enabled=false AND config.local_disabled=true (Preview-Guard aktiv, wie gewünscht), /api/ai/playbook returns 200 with valid JSON (first cold call 502 via ingress, second call within seconds succeeded with ~100KB payload incl. setups/stats/tf_stats/classes/rules keys). Frontend loads correctly: Titel 'Crypto Scanner - Trading Signals', Chart + Sidebar sichtbar (BTCUSDT candlesticks, 11 coins, Analyse-Stats 30 Signale/6 Long/24 Short/13% WR, Top Coins EURUSD/ETH/DOT/OIL). Keine roten Error-Overlays. Initiale 'Failed to fetch' Konsolenfehler entsprechen dem transienten 502-Cold-Start (haben sich beim Rendering aufgelöst, alle Daten sichtbar). KEINE LLM-/POST-Endpunkte getriggert, keine DB-Änderungen. Wochenend-Kontext beachtet.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests/test_local_engine_guard.py::test_scheduled_runs_skipped_when_guard_active", "issue": "Verwendet asyncio.get_event_loop().run_until_complete(...) – schlägt in pytest-xdist Worker-Thread mit 'There is no current event loop in thread MainThread' fehl. Fix: asyncio.run(...) verwenden oder @pytest.mark.asyncio. Bei serieller Ausfuehrung (-o addopts='') alle 9 Tests grün."},
+      {"endpoint": "/api/ai/playbook", "issue": "Erste (kalte) Anfrage antwortet über Ingress mit 502 Bad Gateway (HTML), zweite Anfrage 200 mit validem JSON. Vermutlich Cold-Cache/Ingress-Timeout beim Warmup – Frontend zeigt kurz 'Failed to fetch' im Console-Log, erholt sich aber. Empfehlung: Server-seitigen Cache-Prewarm beim Startup oder längeres Ingress-Timeout."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Initial page load", "issue": "Mehrere 'TypeError: Failed to fetch' Konsolenfehler direkt nach Mount (Session/Notifications/andere GETs) durch 502 während Backend-Cold-Start. UI rendert nach Retry korrekt.", "affected_selectors": ["fetchSession", "fetchNotif"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/pytest/iter58_results.xml"],
+  "action_items": [
+    "test_local_engine_guard.py: asyncio.get_event_loop().run_until_complete(...) durch asyncio.run(...) ersetzen, um pytest-xdist-Kompatibilität sicherzustellen (Testfehler, kein Produktcode-Bug).",
+    "Optional: /api/ai/playbook Warmup beim Boot triggern oder Ingress-Timeout erhöhen, um initialen 502/Failed-to-fetch im Frontend zu vermeiden."
+  ],
+  "critical_code_review_comments": [
+    "core/config.local_engine_disabled() Guard funktioniert live (config.local_disabled=true, config.enabled=false) – Preview kann nicht parallel zu Render Trades/LLM fahren. Wichtig: sicherstellen, dass AI_TRADER_LOCAL_DISABLE NICHT in Render-Env gesetzt ist (in Repo-.env nur lokal).",
+    "setup_weighting/deep_scope-Tests grün; multi-asset radar & news_symbols Pfade regressionsgetestet."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "99%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "keine",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Preview-Instanz hat AI_TRADER_LOCAL_DISABLE=1 (Guard aktiv). NIE POST /api/ai/analyze oder /api/ai/deep-analyze auf Preview triggern – Prod-Mongo Atlas, Tokenkosten. Playbook-Endpoint kann beim Cold-Start 502 liefern – auf 200 retryen (bis 90-120s). Nur 1 pytest-xdist Race in test_local_engine_guard.py (deprecated get_event_loop-Pattern); serielle Ausführung grün.",
+  "rca of the issue": "test_scheduled_runs_skipped_when_guard_active: pytest-xdist startet Worker in eigenem Thread ohne default-event-loop; asyncio.get_event_loop() (Python 3.10+ deprecated in Non-Main-Threads) wirft RuntimeError. Fix in Test: mit asyncio.run(...) neuen Loop erzeugen. Kein Produktionsdefekt in ai_engine.run_analysis/run_deep_analysis (Guard-Logik selbst wird durch anderen Test 'test_status_reports_engine_locally_off' bereits abgedeckt und ist grün)."
+}

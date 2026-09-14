@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend-only verification of 3 UI improvements (Local Worker token copy, auto-load of Setup-Reife table, Live/Sammel mode switch). All three tasks pass end-to-end via Playwright against the preview URL.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "task1_local_worker_token": {
+      "status": "PASS",
+      "details": "Tools-Menu -> Backtester -> bt-exec-manage opens localworker-panel with lw-setup section open. lw-token-field present with 48-char token value auto-loaded. lw-token-copy NOT disabled, lw-cmd-copy NOT disabled. lw-token-show toggles input type from password to text. Clicking lw-token-copy triggers success toast (Text 'kopiert' found on page)."
+    },
+    "task2_setup_maturity_auto_load": {
+      "status": "PASS",
+      "details": "After clicking edit-strategy-params-btn (AI Trader) and ai-equity-toggle, ai-equity-panel opens and ai-setup-maturity-table appears automatically within ~2s without pressing Aktualisieren. 16 ai-maturity-row-* rows rendered."
+    },
+    "task3_live_collection_mode_toggle": {
+      "status": "PASS",
+      "details": "ai-maturity-mode-tabs present with default 'live'. ai-maturity-mode-col-header initially reads 'Live n / WR / PnL'. Clicking ai-maturity-mode-collection switches header to 'Sammel n / WR / PnL'. Clicking ai-maturity-mode-live restores 'Live n / WR / PnL'. ai-setup-class-tabs (Gesamt/Krypto/Indizes/Rohstoffe/Forex) remains visible and functional."
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Multiple 'TypeError: Failed to fetch' console errors during initial load (fetchSession/fetchNotif and 5 other useEffect fetches). Likely transient network/proxy issue rather than a code bug – app recovers and functions normally – but worth an early error boundary or retry to reduce log noise."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "100%"},
+  "test_credentials": "Admin / Test123!",
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All three UI improvements verified against preview URL. LocalWorkerPanel token is loaded via /api/localworker/token, panel opened via Tools menu -> Backtester -> bt-exec-manage. Admin login triggered by clicking any admin-protected button (edit-strategy-params-btn or tools-menu-backtester).",
+  "rca of the issue": "N/A - no bugs"
+}

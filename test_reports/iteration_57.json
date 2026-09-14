@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 57 – Backend + Frontend regression for the three product changes (no 'Backup-Key' noise, market-closed instead of 'stale prices' on Fri/Sat, active-variant stats in maturity/diagnosis catalogues). Backend fully green (public API + pytest). Frontend mostly green – single truncation bug found in the diagnosis data-quality table that hides 6 of 7 Forex closed-market rows.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AIDiagnosisPanel.js", "issue": "Data-quality table is hard-truncated with .slice(0,12) (line 137). Backend returns 23 rows (11 crypto + 7 Forex + 3 commodities + 2 indices). Only USDJPY renders with data-testid=diag-data-closed-USDJPY; EURUSD/GBPUSD/AUDUSD/NZDUSD/USDCAD/USDCHF (and GOLD/SILVER/OIL/QQQUSDT/SPYUSDT) are dropped, so the required '⏸ Markt geschlossen' cells for the other Forex symbols never appear even though backend market_closed=true.", "selector": "[data-testid^=\"diag-data-closed-\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_variant_stats_market_hours_backupkeys.py",
+    "/app/backend/tests/test_ai_diagnosis.py",
+    "/app/backend/tests/test_iter8_token_crv_lev.py",
+    "/app/backend/tests/test_ai_iter2_governance.py",
+    "/app/backend/tests/test_playbook_demotion.py"
+  ],
+  "action_items": [
+    "Fix frontend AIDiagnosisPanel.js line 137: remove .slice(0,12) or raise the cap (e.g. .slice(0, 40)) so all data_quality rows – especially closed Forex markets – are visible. Otherwise 6 of 7 Forex symbols never show the '⏸ Markt geschlossen' cell required by the spec."
+  ],
+  "critical_code_review_comments": [
+    "AIDiagnosisPanel.js truncates the data_quality table with a hard-coded .slice(0,12); with 23 possible rows this silently hides Forex+commodity+index rows that the diagnosis feature was rewritten to highlight.",
+    "Backend contract is clean and consistent: /api/ai/diagnosis returns has_pauses/market_closed/market_closed_reason on every data_quality row and variant_since on every setup row; /api/ai/playbook returns variant={since,label,total{trades,winrate,pnl}} on maturity rows and keeps trades/winrate/pnl scoped to active variant (crypto range_fade: trades=3 vs variant.total.trades=29 – exactly as specified).",
+    "/api/ai/status.providers_health: fallback_active is proper bool, active_fallbacks is list, key_status per provider carries {total, limited, limited_keys} – no crash, no 'Backup-Key' hint in UI."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "90%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (used successfully via admin-login-submit modal)",
+  "seed_data_creation": "None (read-only checks only, per instructions – KI not enabled, no trades triggered).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite (5 files, 70 tests) passes with `cd /app/backend && python -m pytest -q -n 0 tests/test_variant_stats_market_hours_backupkeys.py tests/test_ai_diagnosis.py tests/test_iter8_token_crv_lev.py tests/test_ai_iter2_governance.py tests/test_playbook_demotion.py`. Public endpoints /api/ai/diagnosis, /api/ai/playbook, /api/ai/status verified via REACT_APP_BACKEND_URL. Frontend flow: strategy-tab-ai_trader → edit-strategy-params-btn → admin-login (Admin/Dean06Greif!/Admin) → strategy-tab-ai_trader → edit-strategy-params-btn opens ai-trading-panel. All required data-testids exist: ai-equity-toggle, ai-setup-class-tab-crypto, ai-setup-maturity-table, ai-maturity-variant-hint, ai-maturity-variant-range_fade ('seit 11.09'), ai-maturity-pnl-range_fade tooltip contains 'Gesamt (alle Varianten): 29 Trades · WR 41% · -251.69 $', ai-diagnosis-toggle, diag-block-daten (contains 'Markt geschlossen', no 'Veraltete Kursdaten'), diag-setup-table with header 'PnL (akt. Variante)', diag-setup-variant-range_fade. Mode-toggle keys are 'live' and 'collection' (NOT 'collect' as the review text suggested). NO 'Backup-Key' text anywhere in the panel body. Only regression: frontend AIDiagnosisPanel.js .slice(0,12) hides most Forex closed rows.",
+  "rca of the issue": "Root cause – frontend/src/components/AIDiagnosisPanel.js line 137 renders `data.data_quality.slice(0, 12).map(...)`. Because /api/ai/diagnosis returns rows in the order crypto→forex→commodities→indices, only the first 11 crypto rows plus USDJPY (position 12) fit into the visible table. All remaining Forex symbols (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDCAD, USDCHF) and the commodities/indices rows are dropped, so the new '⏸ Markt geschlossen · <age> min' cells (and their diag-data-closed-<SYMBOL> testids) never render for them – contradicting the spec bullet 'Datenqualitaets-Tabelle diag-data-table zeigt fuer Forex-Zeilen \"⏸ Markt geschlossen\"'. Reproduction: on a Saturday, open KI-Trader → Diagnose, scroll to 'DATENQUALITÄT · Kerzen-Frische & Orderflow-Quelle', only 12 rows visible; API-side `curl $REACT_APP_BACKEND_URL/api/ai/diagnosis` returns 23 rows with the missing symbols carrying market_closed=true. Mitigation: raise the slice cap (or drop it) in AIDiagnosisPanel.js, or sort so all closed rows come first before truncation."
+}

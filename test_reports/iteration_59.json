@@ -1,0 +1,30 @@
+{
+  "summary": "Backend regression for Audit-Step 2.1 (services/entry_guard.py refactor). All 7 requested unit test files run green (69/69 passed). API smoke on preview URL passes 11/11 after retry: /api/health=200, login OK with Admin/Dean06Greif!/Admin, bad password=401, unauth /api/autotrade/balance=401, authed /api/autotrade/{balance,capital,trades,sync-status,slippage-stats}=200. Risk-budget & trade-guard endpoints live under /api/risk-budget[/config] and /api/trade-guard (NOT /api/notify/...  as stated in review — actual paths confirmed in routers/notify.py). GET /api/risk-budget returns {config: {enabled, max_portfolio_risk_pct, max_cluster_risk_pct}, usage: {mode, open_risk_usdt, by_cluster, open_trades}} as required. Round-trip POST /api/risk-budget/config {max_portfolio_risk_pct:5} then restored to 6 verified via GET. GET /api/trade-guard returns config+state+states as expected. entry_guard hooks visible in services/bitunix_trade.py: EntryChecks() @1779, check_entry @1891, check_risk_budget @2155, 'entry_checks': checks.to_list() persisted at 2606. No trades opened. Single transient 502 on first /api/health call was ingress cold-start (same pattern as iter58), stable 200 on retry — no code defect.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/health", "issue": "Occasional ingress cold-start 502 on first hit after idle; recovers within 1-2s. Same as documented in iter58. Consider startup warmup or higher ingress timeout."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter59_api_smoke.py",
+    "/app/test_reports/pytest/iter59_results.xml",
+    "/app/test_reports/pytest/iter59_api_smoke.xml"
+  ],
+  "action_items": [
+    "Doc-Fix: review_request nennt Risk-Budget/Trade-Guard unter /api/notify/... — die tatsächlichen Pfade in routers/notify.py sind /api/risk-budget, /api/risk-budget/config und /api/trade-guard. Umsetzungsplan/README entsprechend präzisieren."
+  ],
+  "critical_code_review_comments": [
+    "services/entry_guard.py sauber zentralisiert: EntryChecks Sammler + check_entry() (kill/lock/anti-stack via trade_guard.check_open_allowed + regime-gate) + check_risk_budget(). Reihenfolge & Reject-Gründe entsprechen dem alten Inline-Pfad in _on_signal_impl — kein Behavior-Break sichtbar.",
+    "checks.to_list() wird am Trade-Dokument persistiert (Zeile 2606) — gute Audit-Spur pro Einstieg.",
+    "test_entry_guard.py 6/6 grün: deckt happy-path, kill-switch, learning-lock, anti-stacking, regime-block und risk-budget-cap ab."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter59_api_smoke.py"],
+  "success_rate": {"backend": "100%", "frontend": "n/a (skipped per request)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "keine",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Risk-Budget-Config wurde am Ende auf max_portfolio_risk_pct=6 zurückgesetzt (wie im Review verlangt). Entry-Guard-Refactor ist rein strukturell; für tiefe Verhaltensvalidierung wäre ein zusätzlicher Contract-Test sinnvoll, der ein reales _on_signal_impl-Reject in DB inspiziert und entry_checks[]-Reihenfolge/Reasons prüft (aktuell durch Unit-Tests auf entry_guard-Modul-Ebene abgedeckt). test_iter38_watchdog_pnl_playbook_api.py wurde bewusst NICHT ausgeführt (braucht Dev-Server:8055 + Live-Keys). Endpoint-Aliasse: /api/risk-budget (GET), /api/risk-budget/config (POST), /api/trade-guard (GET) — nicht /api/notify/*."
+}

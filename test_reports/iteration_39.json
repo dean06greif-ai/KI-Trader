@@ -1,0 +1,59 @@
+{
+  "summary": "Iteration 39 (KI-Trader /app/kitrader): Vollständiges Backend- + Frontend-Testing der neuen Nacht-Serie/Job-Warteschlange (/api/series) und des Bugfixes 'Datensammel-Trades zählen nicht in die Paper-Statistik / keine Karteileichen im Strategie-Vergleich'. 23 pytest-Tests (2 neue Dateien) alle grün; 4 Playwright-Läufe (Serie-Panel/Detail/Steuerung, +Serie-Buttons in Backtester/Optimizer/Regime-Lab, PnL-Filter, Strategie-Vergleich-Modal) alle grün. Keine Orders/Closes/Live-Modus-Wechsel ausgeführt, Apply-Buttons NICHT geklickt. Serien-Durchlauf wurde 3x live verifiziert (queued -> running -> done + Ergebnis-Endpoint), inkl. eines aus der UI (bt-add-series) eingeplanten Jobs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/series, GET /api/series/{id}/result", "issue": "Lesend ohne Auth erreichbar (Job-Bodies/Ergebnisse einer Single-Admin-App öffentlich). Bewusst? Nur Info, kein Fehler im Testumfang."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Analyse-Panel · PERFORMANCE JE STRATEGIE (Filter Paper)", "issues": ["Gelöschte Strategie ('Gelöscht', Karteileiche) erscheint weiterhin in der Strategie-Performance-Liste des Analyse-Panels, während sie im Strategie-Vergleich korrekt ausgeblendet wird -> inkonsistent (Fix war nur im Vergleich)"]},
+      {"screen": "Nacht-Serie-Panel", "issues": ["Startzeit nutzt den nativen Browser-Picker (input type=datetime-local, zeigt 'mm/dd/yyyy' statt DE-Format) – Stil weicht vom restlichen UI ab (niedrige Prio)"]},
+      {"screen": "Overlays (SafeOverlay: Optimizer/Regime-Lab/Backtester)", "issues": ["Kein ESC-to-Close – Overlay bleibt offen und blockiert den Header (nur X-Button schließt). Niedrige Prio/UX."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/kitrader/backend/tests/test_iter39_series_api.py",
+    "/app/kitrader/backend/tests/test_iter39_paper_stats_api.py",
+    "/app/kitrader/backend/tests/_iter39_seed.py",
+    "/app/test_reports/pytest/iter39_results.xml"
+  ],
+  "action_items": [
+    "Optional: Karteileichen-Ausblendung (is_stale_strategy) auch in der Strategie-Performance-Liste des Analyse-Panels anwenden bzw. mit Badge 'gelöscht' markieren.",
+    "Optional: ESC-to-Close in SafeOverlay, damit offene Tool-Overlays den Header nicht dauerhaft blockieren.",
+    "Optional prüfen: /api/series + /api/series/{id}/result ohne Admin-Token lesbar."
+  ],
+  "critical_code_review_comments": [
+    "Routen-Reihenfolge in routers/job_series.py korrekt (DELETE /api/series/finished vor /api/series/{item_id}) – kein Shadowing.",
+    "_clean() entfernt MongoDB _id in allen Serien-Antworten (verifiziert: kein _id in /api/series und /api/series/{id}/result).",
+    "GET /api/performance und /api/analytics/strategy-comparison filtern data_collection serverseitig ({'$ne': True}) – korrekt und indexfreundlich.",
+    "job_series.py (476 Zeilen) / JobSeriesPanel.js (203) unter der 700-Zeilen-Grenze; PerformanceAnalytics.js (721 Zeilen) ist grenzwertig und könnte aufgeteilt werden."
+  ],
+  "updated_files": [
+    "/app/kitrader/backend/tests/test_iter39_series_api.py",
+    "/app/kitrader/backend/tests/test_iter39_paper_stats_api.py",
+    "/app/kitrader/backend/tests/_iter39_seed.py"
+  ],
+  "success_rate": {"backend": "100% (23/23 pytest)", "frontend": "100% (alle geprüften Flows)"},
+  "seed_data_creation": "3 geschlossene Paper-Trades in crypto_scanner_dev.auto_trades (ai_trader 10 USDT, ai_trader 77 USDT data_collection=true, custom_deleted_* 5 USDT) – nach Backend- und UI-Tests vollständig gelöscht (verifiziert). Serien-Einträge: 3 QA-Backtests eingeplant/durchgelaufen; DELETE /api/series/finished am Ende ausgeführt -> Warteschlange ist jetzt leer (auch die 2 alten fertigen Einträge des Main-Agents wurden dadurch entfernt, wie beauftragt).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin/Dean06Greif!/Admin (aus /app/memory/test_credentials.md); UI-Login im Test via localStorage 'admin_token' + 'admin_token_ts'",
+  "context_for_next_testing_agent": "Serie-Liste ist nach diesem Lauf LEER (clear finished ausgeführt) – neue fertige Einträge zum Testen der Detail-Ansicht ggf. erst per bt-add-series/POST /api/series/add erzeugen (Backtest 1 Strategie/1 Coin/2d Cloud dauert nur ~5-10s). Wiederverwendbar: tests/test_iter39_series_api.py (E2E-Serie, deselect test_zz_clear_finished_last wenn fertige Einträge erhalten bleiben sollen) und tests/_iter39_seed.py seed|clean für die Datensammel-/Karteileichen-Testdaten. Keine Order-/Close-/Live-Endpoints angefasst.",
+  "verified_features": [
+    "GET /api/series: items/state{paused,start_at,notify_each,notify_done}/may_start/wait_reason/queued korrekt; fertige Einträge mit job_id + summary(pnl/win_rate/max_drawdown)",
+    "POST /api/series/add: 400 'Unbekannte Strategien', 400 bei kind=foo, 401/403 ohne Token, 200 mit status 'queued' + label",
+    "Serien-Ablauf: eingeplanter Backtest lief automatisch bis 'done' (progress 100, summary.pnl/trades) – 3x reproduziert; GET /api/series/{id}/result liefert result.per_strategy",
+    "Steuerung: paused=true hält Eintrag >45s in 'queued'; start_at 2099 -> may_start=false, wait_reason 'geplant ab ...'; reorder vertauscht Positionen; notify-Flags persistieren; DELETE {id} 200 / unknown 404 / ohne Token 401; DELETE /finished entfernt fertige Einträge",
+    "UI Serie: tools-menu-series öffnet series-panel (status/table/rows), Pause/Resume, Startzeit setzen+löschen, notify-Checkboxen, series-view -> series-detail mit Metrik-Karten (Trades/Winrate/PnL/Max. Drawdown/Gebühren) für Backtest UND Optimizer (Apply-Buttons vorhanden, nicht geklickt)",
+    "UI +Serie: bt-add-series (Toast 'Zur Nacht-Serie hinzugefügt' + neuer Eintrag in /api/series, Job lief anschließend automatisch durch), opt-add-series und regime-add-series vorhanden",
+    "Bugfix Paper-Statistik: strategy-comparison ai_trader ohne 77er data_collection-Trade (mit include_collection=true: trades +1, pnl +77.00); Karteileiche fehlt und steht in stale_strategies, mit include_stale=true sichtbar (is_stale true); Flags include_collection/include_stale + total_trades vorhanden",
+    "GET /api/autotrade/trades?status=closed liefert data_collection-Flag; GET /api/performance zählt data_collection-Trades nicht",
+    "UI Bugfix: pnl-filter-all/live/paper/collection vorhanden; 'Paper' zeigt 10-USDT-Trade und NICHT den 77er, 'Sammlung' nur den 77er (mit Badge 'D'), 'Live' keinen von beiden; Vergleichs-Modal: Karteileichen-Zeile erst nach Anhaken, Badge 'gelöscht', KI-Trader-Zeile 1/10.00 -> 2/87.00 mit Datensammlung",
+    "Regression: /api/autotrade/watchdog/status, /api/ai/playbook, /api/backtest/active, /api/optimizer/active alle 200"
+  ],
+  "rca_of_the_issue": "Keine Defekte gefunden. Zwei zunächst als FAIL geloggte Prüfungen waren Test-Artefakte: (1) Serien-Detail zeigte beim ersten Check noch 'Ergebnis lädt...' (Wartebedingung im Skript ergänzt -> alle Metrik-Karten vorhanden), (2) ESC schließt die Tool-Overlays nicht (SafeOverlay hat keinen Keydown-Handler) – Test nutzt jetzt die X-Buttons; als UX-Hinweis niedriger Priorität dokumentiert."
+}
