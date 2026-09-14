@@ -45,3 +45,13 @@ Konventionen in diesem Ordner (T1: Skript-Asserts gekapselt):
   sich selbst per `pytest.mark.skipif`, wenn es nicht erreichbar ist.
 - `seed_iter36_sizing_trade.py` ist ein Seed-Skript, kein Test.
 
+## CI (T2) & Prod-Probe (T3)
+- GitHub-Action `.github/workflows/tests.yml`: bei jedem Push/PR laufen beide Suiten
+  (backend `-m unit` ohne `test_iter38_*` [braucht Dev-Server :8055 mit Live-Keys] +
+  Root-`/tests`) gegen einen Mongo-7-Service-Container. Kein Deploy-Eingriff.
+- Read-only Prod-Probe: `python scripts/prod_safety_probe.py [--json]` –
+  Kill-Switch-Zustand (live/paper), offene `live_close_failed`- und
+  `sl_exchange_missing`-Trades, Positions-Abgleich Börse↔`auto_trades`
+  (nur mit Bitunix-Keys; Quelle: `PROD_MONGO_URL` → `backend/.env.prod` → `backend/.env`).
+  Exit-Code 1 bei Findings (Cron-tauglich). Kernlogik-Tests: `tests/test_prod_safety_probe.py`.
+

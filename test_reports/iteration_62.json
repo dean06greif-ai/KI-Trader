@@ -1,0 +1,32 @@
+{
+  "summary": "Iter62 Smoke-Regression nach Repo-Import (Phasen 1-3 + T). 15/15 Backend-Endpunkte via public preview URL grün, Frontend lädt, Admin-Login via Schloss-Icon funktioniert, Safety-Ampel (data-level=ok) sichtbar. Analyse-Panel: unter Tab 'Trades' rendert PolicyReportCard (data-testid policy-report-card) mit Empty-State ('0 Versionen', ops-Block vorhanden). SlippageStatsCard ist per Design hinter showSlippage-Toggle (default aus) und wird nicht gerendert, bis der Nutzer den Toggle aktiviert - kein Bug. Keine kritischen Console-Errors (401er sind erwartete pre-login /api/safety/status Requests).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/smoke_regression_test.py",
+    "/app/test_reports/pytest/smoke_iter62.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PerformanceAnalytics.js line 490: SlippageStatsCard nur bei showSlippage=true gerendert. UX: Für Regressions-/Smoke-Tests wäre es hilfreich, wenn der Toggle-Button (der showSlippage steuert) ein data-testid hat und aus dem Review-Text klar ist, dass die Karte nur auf Toggle-Aktivierung erscheint.",
+    "Header.js: SafetyLight rendert erst nach Login (401 auf /api/safety/status pre-login). Konsistent zur bisherigen Doku - kein Fix nötig.",
+    "PolicyReportCard/SlippageStatsCard sind nur unter view='trades' im rechten Analyse-Panel sichtbar. Review-Text sagt 'Analyse-Panel öffnen' - Tab-Wechsel auf 'Trades' war nötig. Kein Bug, aber ggf. in Doku ergänzen."
+  ],
+  "updated_files": [
+    "/app/backend/tests/smoke_regression_test.py"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "keine",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Smoke-Suite in /app/backend/tests/smoke_regression_test.py wurde um 7 Tests aus iter62-Request erweitert (autotrade/balance 401+200, risk-budget, ai/rewards.calibration, ml/gate/status.risk_scaling_active=false, policy-lab/trials, analytics/policy-report rows+ops). Run: cd /app && REACT_APP_BACKEND_URL=<url> python -m pytest backend/tests/smoke_regression_test.py -o addopts='' -v. Frontend: policy-report-card/slippage-stats-card sind nur unter Tab 'Trades' (data-testid view-trades) sichtbar; SlippageStatsCard zusätzlich hinter showSlippage-Toggle (default off).",
+  "rca of the issue": "n/a - keine Produktions-Bugs gefunden. Alle geforderten Endpunkte + UI-Flows liefern korrekte Payloads/Rendering."
+}

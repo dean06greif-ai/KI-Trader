@@ -58,6 +58,8 @@
 |---|---|---|
 | T1 | `/app/tests` Skript-Asserts kapseln | ✅ |
 | T4 | Paritätstest check_signal vs. fast_sim | ✅ |
+| T2 | GitHub-Action: beide Test-Suiten bei jedem Push | ✅ |
+| T3 | Read-only Prod-Probe `scripts/prod_safety_probe.py` | ✅ |
 
 ---
 ## Protokoll (chronologisch, neueste unten)
@@ -316,6 +318,36 @@
   weiterhin NUR `test_iter38_*` (braucht Dev-Server :8055 mit Bitunix-Live-Keys – Umgebung).
   **Phase T (T1+T4) damit KOMPLETT.** T2 (GitHub-Action) und T3 (Prod-Probe-Skript) bleiben
   als optionale Punkte aus dem Audit-Backlog offen.
-- NÄCHSTER SCHRITT: Testing-Agent-Lauf (Smoke Backend+Frontend), Protokoll-Nachtrag, Push via
-  Emergent "Save to GitHub". Danach lt. Audit-Backlog: T2/T3 (optional) oder 3.5
-  Portfolio-Backtest ("später") bzw. Auswertung der Messphase (Slippage-Stats) nach 2–4 Wochen.
+- 26.06.2026 (neue Session) – Repo-Import Branch `conflict_140926_1702`, Nutzer-Entscheid: Plan
+  fortsetzen. Baseline nach Import identisch zum Protokoll: backend-Unit **1393 passed**
+  (rot nur `test_iter38_*`, umgebungsbedingt), Root-`/tests` **163 passed**.
+- 26.06.2026 – **Testing-Agent (iteration_62, Smoke nach Repo-Import)**: Backend **15/15 grün**
+  (Login+401, Auth-Schutz autotrade/balance, safety/status, risk-budget, ai/rewards.calibration,
+  ml/gate/status risk_scaling_active=false, policy-lab status+trials, analytics/policy-report
+  rows+ops, slippage-stats); Frontend grün (Login via Schloss-Icon, Safety-Ampel data-level=ok,
+  PolicyReportCard rendert unter Tab "Trades" mit Empty-State). KEINE Produktions-Bugs; einzige
+  Änderung: `backend/tests/smoke_regression_test.py` um 7 Read-only-Smoke-Tests erweitert
+  (auto-markiert `live`, Unit-Suite unberührt). Hinweis aus dem Lauf: SlippageStatsCard sitzt
+  per Design hinter dem showSlippage-Toggle (Default aus) – kein Bug.
+- 26.06.2026 – **T2 fertig (GitHub-Action)**: `.github/workflows/tests.yml` (NEU): bei jedem
+  Push/PR ein Job (ubuntu, Python 3.11 = Render-Version, Mongo-7-Service-Container,
+  `AI_TRADER_LOCAL_DISABLE=1`, CI-Dummy-Admin-Creds): 1) `cd backend && pytest tests -m unit`
+  mit `--ignore=tests/test_iter38_watchdog_pnl_playbook_api.py` (braucht Dev-Server :8055 mit
+  Bitunix-Live-Keys – in CI nicht erfüllbar, lokal wie dokumentiert), 2) Root
+  `python -m pytest tests -q` (E2E-Dateien skippen sich ohne Backend selbst, T1).
+  Beide Kommandos lokal verifiziert: 1393 passed / 169 passed. Kein Deploy-Eingriff.
+- 26.06.2026 – **T3 fertig (Read-only Prod-Probe)**: `scripts/prod_safety_probe.py` (NEU,
+  nur find/aggregate, keine Writes): 1) Kill-Switch-Zustand live+paper (settings
+  `trade_guard_state[_paper]`, Auswertung als reine Funktion `guard_state_view`),
+  2) offene Trades mit `live_close_failed=True` (Close-Fehlpfad 1.1), 3) offene Trades mit
+  `sl_exchange_missing=True` (SL-Verifikation 1.8), 4) Positions-Abgleich Börse↔`auto_trades`
+  via `BitunixTradeClient.get_positions()` (reine Funktion `diff_positions`, orphan/ghost je
+  Symbol inkl. Symbol-Mapping GOLD→XAUUSDT; ohne Keys sauber übersprungen). Env-Auflösung:
+  `PROD_MONGO_URL` → `backend/.env.prod` → `backend/.env` (Muster prod_readonly_probe).
+  `--json`-Flag; Exit-Code 1 bei Findings (Cron-/CI-tauglich). Tests:
+  `tests/test_prod_safety_probe.py` (6 neu, grün – Root-Suite jetzt 169 passed);
+  README_TESTING um T2/T3-Abschnitt ergänzt. Lokaler Probelauf: keine Findings, exit=0.
+  **Audit-Backlog T2/T3 damit erledigt; Phase T komplett (T1–T4).**
+- NÄCHSTER SCHRITT: Push via Emergent "Save to GitHub". Danach lt. Plan: 2–4 Wochen MESSPHASE
+  laufen lassen (nichts ändern!), dann Auswertung `GET /api/autotrade/slippage-stats` +
+  Policy-Report und Entscheid über Option 3 (1m-Hybrid) bzw. 3.5 Portfolio-Backtest ("später").

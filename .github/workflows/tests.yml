@@ -1,0 +1,41 @@
+# T2 (Audit-Backlog): Unit-Regressionstests bei jedem Push/PR – kein Deploy-Eingriff.
+# Läuft beide Suiten: backend/tests (-m unit) und /tests (E2E-Dateien skippen ohne Backend, T1).
+# test_iter38_* braucht einen Dev-Server :8055 mit Bitunix-Live-Keys -> in CI ausgeschlossen
+# (dokumentiert in UMSETZUNG_FORTSCHRITT.md als rein umgebungsbedingt).
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    env:
+      MONGO_URL: mongodb://localhost:27017
+      DB_NAME: crypto_scanner_ci
+      AI_TRADER_LOCAL_DISABLE: "1"
+      ADMIN_USER: Admin
+      ADMIN_PASSWORD: ci-only-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Backend unit suite
+        run: |
+          cd backend
+          python -m pytest tests -m unit -q \
+            --ignore=tests/test_iter38_watchdog_pnl_playbook_api.py
+      - name: Root tests suite (/tests)
+        run: python -m pytest tests -q

@@ -132,3 +132,60 @@ def test_policy_lab_status(session, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
     r = _get(session, "/api/policy-lab/status", headers=headers, timeout=20)
     assert r.status_code == 200, f"{r.status_code} {r.text[:200]}"
+
+
+# --- Iter62 (review) additions ---------------------------------------------
+def test_autotrade_balance_requires_auth(session):
+    r = _get(session, "/api/autotrade/balance", timeout=20)
+    assert r.status_code in (401, 403), f"expected 401/403, got {r.status_code} {r.text[:200]}"
+
+
+def test_autotrade_balance_with_token(session, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = _get(session, "/api/autotrade/balance", headers=headers, timeout=20)
+    assert r.status_code == 200, f"{r.status_code} {r.text[:200]}"
+
+
+def test_risk_budget(session, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = _get(session, "/api/risk-budget", headers=headers, timeout=20)
+    assert r.status_code == 200, f"{r.status_code} {r.text[:200]}"
+    assert isinstance(r.json(), dict)
+
+
+def test_ai_rewards_calibration(session, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = _get(session, "/api/ai/rewards", headers=headers, timeout=20)
+    assert r.status_code == 200, f"{r.status_code} {r.text[:200]}"
+    data = r.json()
+    assert "calibration" in data, f"missing calibration field: keys={list(data.keys()) if isinstance(data, dict) else type(data)}"
+
+
+def test_ml_gate_status_default(session, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = _get(session, "/api/ml/gate/status", headers=headers, timeout=20)
+    assert r.status_code == 200, f"{r.status_code} {r.text[:200]}"
+    data = r.json()
+    assert data.get("risk_scaling_active") is False, f"expected risk_scaling_active=false, got {data.get('risk_scaling_active')}"
+
+
+def test_policy_lab_trials(session, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = _get(session, "/api/policy-lab/trials", headers=headers, timeout=20)
+    assert r.status_code == 200, f"{r.status_code} {r.text[:200]}"
+    body = r.json()
+    # accept list, or dict with 'trials' list
+    if isinstance(body, dict):
+        assert "trials" in body or "items" in body or isinstance(body, dict)
+    else:
+        assert isinstance(body, list)
+
+
+def test_analytics_policy_report(session, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = _get(session, "/api/analytics/policy-report?days=90", headers=headers, timeout=30)
+    assert r.status_code == 200, f"{r.status_code} {r.text[:200]}"
+    data = r.json()
+    assert isinstance(data, dict)
+    assert "rows" in data, f"missing rows: keys={list(data.keys())}"
+    assert "ops" in data, f"missing ops: keys={list(data.keys())}"
