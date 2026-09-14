@@ -1,0 +1,34 @@
+{
+  "summary": "Backend + Frontend Review der neuen CPI/NFP-Event-Setups und der Trail-SL-Optimizer-Gruppe erfolgreich. 13/13 Pytest-Tests grün (test_iter_econ_and_trail_review.py). Alle Review-Punkte bestätigt: /api/econ/status liefert cpi+nfp mit phase/next_release_utc/windows/backtest_running; /api/econ/{cpi,nfp}/status enthält engine-Info; /api/econ/xyz/status -> 404; CPI-Backtest DB-Ergebnis: validated=true, aggregate.total.trades=66, per_event vorhanden; NFP-Backtest validated=false (Gesamt-PnL negativ); Admin-Guard auf POST /api/econ/cpi/backtest und /config funktioniert (401/403); live_enabled Toggle Ein/Aus persistiert korrekt; FOMC-Regression OK. Optimizer: POST /api/optimizer/run mit optimize.trail=true liefert best.trade_params inkl. trail_after_tp1 + trail_atr_mult; POST /api/optimizer/apply mit type=params/global schreibt trail_after_tp1=true, trail_atr_mult=2.5 in Response; Regression mit tp1_crv=1.2 funktioniert weiter. Frontend: KI-Trader Panel -> Events-Toggle zeigt fomc-panel + econ-cpi-panel + econ-nfp-panel; econ-cpi-panel enthält VALIDIERT-Badge (66T, WR 67%, +56.08$) sowie alle drei Buckets (Gesamt/In-Sample/Out-of-Sample). Strategie-Optimizer-Modal (Header-Labor-Icon -> 'Strategie-Optimizer') zeigt 'Trail-SL optimieren' Checkbox in der 'WAS SOLL MIT OPTIMIERT WERDEN?' Gruppe.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/econ/status, /api/econ/cpi/status", "issue": "Sporadische Preview-Ingress 20s Read-Timeouts / Cloudflare 502 unter Last (bekannter Preview-Effekt, lokal 200 OK). Testrunner puffert das mit 3x-Retry im Session-Wrapper ab."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter_econ_and_trail_review.py",
+    "/app/test_reports/pytest/econ_trail_review.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/econ.py::econ_run_backtest: bei 'busy' wird HTTP 200 mit {status:'busy'} zurückgegeben – Semantik wäre als 409 klarer, konsistent mit anderen Optimizer-Jobs, aber nicht dringlich.",
+    "Optimizer /api/optimizer/status/{job_id}: 'best' kann in seltenen Fällen None sein wenn kein Kandidat >= min_trades bleibt; Test daher mit reset+sleep(3) abgesichert. Ggf. Baseline immer als 'best' publizieren.",
+    "Frontend Header-Labor-Menü: kein dedizierter data-testid am Menü-Trigger ('button[title*=Optim]' funktioniert, wäre aber mit z.B. data-testid='header-labor-btn' + 'labor-item-optimizer' stabiler."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter_econ_and_trail_review.py"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (Login via POST /api/auth/login, Header Authorization: Bearer <token>)",
+  "seed_data_creation": "Keine – CPI live_enabled wurde kurzfristig auf true getoggled und im gleichen Testcase wieder auf false zurückgesetzt (verifiziert per GET /api/econ/cpi/status). Keine Live-Trades ausgelöst. Ein Optimizer-Job (5 Iterationen, BTCUSDT, 3 Tage, 5m) lief kurz durch – Ergebnis liegt in DB (optimizer_runs).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iter_econ_and_trail_review.py verwendet _get/_post-Wrapper mit 3x Retry gegen die Preview-Ingress 502/Read-Timeouts. STRAT_ID='scalping_4_rules' (nicht 'scalping'). Optimizer-Job-Test ruft vorher /api/optimizer/reset + sleep(3) auf, damit der neue Job nicht mit stalen In-Memory-Jobs kollidiert. CPI-Backtest-Result (66 Trades, validated=true) ist bereits in DB, kein Neu-Backtest nötig; NFP validated=false.",
+  "rca of the issue": "N/A – alle Reviewpunkte funktionieren wie spezifiziert."
+}
