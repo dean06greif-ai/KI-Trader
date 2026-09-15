@@ -1,0 +1,28 @@
+{
+  "summary": "AP10/AP11 review: 5 backend tests + 4 frontend E2E flows executed. ALL PASS. Backend: /api/regime-lab/list schema (walkforward_passed/stale/dataset_status), /api/localworker/package/manifest (16-hex hashes, services/setup_backtest keys, required_version=1.11.0, no .env/worker_config), /api/localworker/package ZIP (>100kB, worker.py+PACKAGE_INFO.json+services/setup_backtest/*, no .env), /api/localworker/status (required_version 1.11.0), auth protection (401 without token). Frontend: Login via lock icon works, Regime-Lab modal opens (data-testid=regime-lab-modal), section 1 & regime-execution-toggle visible, Dyn-Panel opens without JS errors, full mini analysis (BTC/15m/30d/75%) completed in ~10s (cloud + public Bitunix candles), saved row shows data-testid=wf-status-ra_* with text 'WF nicht geprüft', detail header shows regime-detail-dataset with '· Daten gepinnt'. Zero red console errors after login.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Regime-Lab · Dyn-Panel", "issues": ["Der DynamicPanel-Body zeigt statt des in der Spec erwähnten Empty-State-Texts 'Noch keine dynamischen Strategien' direkt die Coin/TF-Auswahl ('Aktuelle Marktphase'). Kein Fehler, aber Discrepancy zur Spec-Beschreibung – ggf. Empty-State ergänzen wenn noch keine dyn. Strategien konfiguriert sind."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ap10_ap11_regime_and_worker.py",
+    "/app/test_reports/pytest/ap10_ap11.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Pre-Login-Konsolenerror-Storm: Mehrere React-effects feuern /api/notifications, /api/session usw. bevor ein Token vorhanden ist und erzeugen dadurch 401 + 'TypeError: Failed to fetch' in der Konsole. Funktional harmlos, aber laut in DevTools und macht echtes Error-Monitoring schwerer. Empfehlung: fetch-Aufrufe in useEffect gaten (if (!token) return) oder 401 still swallow.",
+    "DynamicPanel Empty-State fehlt sichtbar: Body zeigt sofort die Coin/TF-Buttons anstatt einer klaren 'Noch keine dynamischen Strategien'-Zeile, wenn keine Karten existieren – siehe design_issues."
+  ],
+  "updated_files": ["/app/backend/tests/test_ap10_ap11_regime_and_worker.py"],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (4/4 flows)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "Eine echte Regime-Analyse ra_525a56b1 (BTC 15m 30d, Cloud, Bitunix-Kerzen) wurde in der Dev-DB erzeugt.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "AP10/AP11 vollständig grün. Backend-Testdatei ist wiederverwendbar (pytest /app/backend/tests/test_ap10_ap11_regime_and_worker.py). Regime-Lab lässt sich über header data-testid='tools-menu-button' → Menüeintrag 'Regime-Lab' öffnen (kein direktes Lock-Symbol für Regime, sondern das Tools/Beaker-Icon). Login-Modal öffnet via header button[aria-label*='ogin' i] (Schloss-Icon), Felder data-testid=admin-username / admin-password, Button 'Anmelden'. Die Coin-Buttons regime-coin-* haben kein aria-pressed, daher ist der Zustand nur über Klassen erkennbar; für kleine Analyse hat 'ETH/BNB/SOL klicken zum Deselektieren + BTC selektiert lassen' funktioniert. Analyse mit 15m/30d dauerte ca. 10s.",
+  "rca of the issue": "Keine Bugs gefunden."
+}

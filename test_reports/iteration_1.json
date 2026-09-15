@@ -1,0 +1,36 @@
+{
+  "summary": "Backend- und Frontend-Review der drei neuen Features (Tab-Umbau 'Analyse', OpenRouter-Guthaben-Warnung, FOMC-Setup) erfolgreich durchgeführt. Alle FOMC-Endpoints funktionieren (status/backtest/config/key-credits), AI-status enthält fomc + key_credits, Auth-Guards greifen (401 ohne Admin). Frontend: 'Diagnose'-Toggle korrekt in 'Analyse' umbenannt und enthält Diagnose+Reward+Postmortem-Panels, FOMC-Reiter mit allen erforderlichen data-testid-Elementen sichtbar, Live-Toggle klickbar (Live bleibt gesperrt, weil Backtest nicht validiert – korrektes Verhalten). Bekannte Preview-Ingress-Timeouts (502) bei /api/ai/playbook (34s) und /api/ai/postmortem/summary (15s) sind KEIN Bug – lokal via 127.0.0.1:8001 liefern beide 200 mit 'fomc_event' im Playbook.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ai/playbook", "issue": "34s Antwortzeit via Preview-Ingress -> gelegentlich 502 (Ingress-Timeout). Lokal 200 OK, 'fomc_event' vorhanden. Bekannter Preview-Effekt lt. Agent-Kontext."},
+      {"endpoint": "/api/ai/postmortem/summary", "issue": "15s Antwortzeit -> vereinzelt 502 via Preview-Ingress. Lokal 200 OK."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "FOMC-Panel", "issues": ["fomc-live-state Badge zeigt nur Validierungsgrund ('noch nicht validiert – erst Backtest bestehen') und ändert sich beim Toggle-Klick nicht sichtbar. Der Toggle selbst funktioniert (Checkbox toggelt), aber optisch bekommt der Nutzer kein direktes Feedback auf 'live_enabled'. Kein Bug, aber UX-Hinweis: separater State-Indikator für live_enabled wäre klarer."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fomc_review_iter.py",
+    "/app/test_reports/pytest/fomc_review.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend /api/ai/playbook mit ~34s Antwortzeit sollte Caching/Vorberechnung erhalten, damit Preview-Ingress (~30s Timeout) es nicht per 502 killt.",
+    "FOMC-Panel: 'fomc-live-state' Badge könnte zusätzlich den echten live_enabled-Wert (An/Aus) reflektieren, nicht nur Validierungs-Gate."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fomc_review_iter.py"
+  ],
+  "success_rate": {"backend": "100% (FOMC + AI-Status), Regressions 3/6 (3 timeouts via Preview-Ingress; lokal 100%)", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (verwendet)",
+  "seed_data_creation": "Keine – live_enabled wurde toggelt und am Ende zurück auf false gesetzt (bestätigt via GET /api/fomc/status).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "FOMC-Setup ist vollständig integriert. Backtest wurde in dieser Iteration erfolgreich gestartet und beendet (Ergebnis: 37T, WR27%, -89.87$, NICHT validiert, In-Sample 27T WR33%, Out-of-Sample 10T WR10% – Backtest-Persistenz in settings/fomc_backtest_result ok). live_enabled steht wieder auf false. Bei Regressionstests über Preview-Ingress: für langsame Endpoints (>25s) besser lokal via http://127.0.0.1:8001 testen oder Timeout hochsetzen; per öffentlicher URL kommt 502.",
+  "rca of the issue": "Preview-Ingress hat ein Read-Timeout um ~25-30s. /api/ai/playbook (~34s) und /api/ai/postmortem/summary (~15s, sporadisch) überschreiten das gelegentlich -> 502 vom Ingress-Proxy, obwohl der Backend-Handler korrekt 200 liefert (lokal verifiziert). Mitigation: Backend-seitig Caching für Playbook einführen; testseitig direkt localhost:8001 verwenden."
+}
