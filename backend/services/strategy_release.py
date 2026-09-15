@@ -98,3 +98,95 @@ def approve(doc: Dict, actor: str, note: str = "") -> Dict:
                 "approved_by": actor, "approved_note": note or None,
                 "revision": int(rel.get("revision") or 1)})
     return rel
+
+
+# ---------------- AP12: Beweispaket für die gestufte Abnahme ----------------
+def _wf_for_doc(doc: Dict, analysis: Optional[Dict]):
+    """Passendes Walk-Forward-Ergebnis der Quell-Analyse zum Scope der
+    dynamischen Strategie (per_coin vor combined)."""
+    wfs = {k: w for k, w in ((analysis or {}).get("walkforward") or {}).items()
+           if isinstance(w, dict)}
+    if not wfs:
+        return None, None
+    syms = doc.get("symbols") or []
+    if len(syms) == 1 and f"coin:{syms[0]}" in wfs:
+        key = f"coin:{syms[0]}"
+    elif "combined" in wfs:
+        key = "combined"
+    else:
+        key = sorted(wfs)[0]
+    return key, wfs.get(key)
+
+
+def evidence_bundle(doc: Dict, analysis: Optional[Dict] = None,
+                    safety: Optional[Dict] = None) -> Dict:
+    """AP12: Beweispaket einer dynamischen Strategie – rein, read-only.
+
+    Bündelt Datensatz-/Release-/Validierungs-/Anwendungs-/Runtime-Belege und
+    benennt Blocker in Klartext. `ready_for_live` ist eine EMPFEHLUNG für die
+    menschliche Freigabe, kein automatischer Schalter; ein guter Profitfaktor
+    allein genügt bewusst nicht (Blocker-Liste muss leer sein)."""
+    from services import research_dataset, research_validation
+    status = effective_status(doc)
+    blockers = []
+    if status == "draft":
+        blockers.append("Release ist Entwurf – Walkforward bestehen oder ausdrücklich freigeben")
+    elif status == "stale":
+        blockers.append("Definition nach Validierung/Freigabe geändert – erneut validieren/freigeben")
+    elif status == "legacy":
+        blockers.append("Bestandsdokument ohne Release-Validierungsnachweis (legacy)")
+
+    aid = ((doc.get("settings") or {}).get("analysis_id"))
+    if analysis is None:
+        ds_status = "missing_analysis"
+        if aid:
+            blockers.append("Quell-Analyse nicht (mehr) vorhanden – Datenherkunft unbelegt")
+        else:
+            blockers.append("Keine Quell-Analyse verknüpft – Datenherkunft unbelegt")
+    else:
+        ds_status = research_dataset.dataset_status(analysis)
+        if ds_status != "pinned":
+            blockers.append("Datensatz nicht gepinnt – Analyse nicht exakt reproduzierbar")
+
+    wf_key, wf = _wf_for_doc(doc, analysis)
+    wf_state = (research_validation.walkforward_status(analysis)
+                if analysis else {"passed": None, "stale": False})
+    if wf is None:
+        blockers.append("Kein finaler Walk-Forward auf dem Holdout")
+    else:
+        if not (wf.get("verdict") or {}).get("dynamic_better"):
+            blockers.append("Walk-Forward nicht bestanden (Benchmark war besser)")
+        if wf_state.get("stale"):
+            blockers.append("Walk-Forward veraltet – Zuordnungen wurden danach geändert")
+
+    app = doc.get("application_status") or {}
+    if app.get("status") == "failed":
+        blockers.append("Letzte Übernahme fehlgeschlagen – Retry ausstehend")
+    elif app.get("status") == "blocked":
+        blockers.append(f"Übernahme blockiert: {app.get('error') or 'Release-Gate'}")
+
+    level = (safety or {}).get("level")
+    if level == "critical":
+        blockers.append("Sicherheitsstatus CRITICAL – Runtime-Health nicht abnahmefähig")
+
+    return {"schema": 1,
+            "strategy": {"id": doc.get("id"), "name": doc.get("name"),
+                         "timeframe": doc.get("timeframe"),
+                         "symbols": doc.get("symbols") or [],
+                         "created_at": doc.get("created_at")},
+            "release": {**(doc.get("release") or {}), "status": status,
+                        "fingerprint_current": definition_fingerprint(doc)},
+            "dataset": {"status": ds_status, "analysis_id": aid,
+                        "manifest": (analysis or {}).get("dataset")},
+            "validation": {"walkforward_key": wf_key,
+                           "passed": wf_state.get("passed"),
+                           "stale": wf_state.get("stale"),
+                           "label_basis": (wf or {}).get("label_basis"),
+                           "attempt_no": (wf or {}).get("attempt_no"),
+                           "tested_at": (wf or {}).get("created_at"),
+                           "dynamic_test": (wf or {}).get("dynamic_test"),
+                           "best_single": ((wf or {}).get("best_single") or {}).get("label")},
+            "application": app or None,
+            "runtime_health": {"level": level} if safety else None,
+            "ready_for_live": not blockers,
+            "blockers": blockers}

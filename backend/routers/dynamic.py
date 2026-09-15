@@ -266,6 +266,28 @@ async def dynamic_dismiss(did: str, _: bool = Depends(require_admin)):
     return {"status": "dismissed"}
 
 
+@router.get("/api/dynamic/{did}/evidence")
+async def dynamic_evidence(did: str):
+    """AP12: Beweispaket (read-only) – Datensatz/Release/Validierung/
+    Anwendung/Runtime-Health mit Klartext-Blockern für die gestufte Abnahme."""
+    r = await state.db.dynamic_strategies.find_one({"id": did})
+    if not r:
+        raise HTTPException(status_code=404, detail="Dynamische Strategie nicht gefunden")
+    analysis = None
+    aid = ((r.get("settings") or {}).get("analysis_id"))
+    if aid:
+        analysis = await state.db.regime_analyses.find_one(
+            {"id": aid}, {"chart": 0, "combined": 0, "per_coin": 0, "chart_emas": 0})
+    safety = None
+    try:
+        from services import safety_status
+        safety = await safety_status.status(state.db)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"evidence safety lookup failed: {e}")
+    return {"evidence": strategy_release.evidence_bundle(
+        _clean(r), _clean(analysis) if analysis else None, safety)}
+
+
 @router.get("/api/dynamic/{did}/log")
 async def dynamic_log(did: str, limit: int = 100):
     """Wechsel-Protokoll: alle Regime-Wechsel mit Datum, Sicherheit & Begründung."""

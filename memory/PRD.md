@@ -77,7 +77,30 @@ Basis: Commit 792ff0ac (Branch conflict_150926_0200), Plan aus Branch conflict_1
   Econ-Session-Fails gefixt inkl. hartkodiertem Prod-Passwort in test_iter44!),
   Testing-Agent iteration_5: Backend 17/17 + Frontend-E2E 100% (test_ap04_api_flows.py neu).
 
+## Umgesetzt 26.06.2026 – Analyseplan AP10/AP11/AP12-Kern (Session conflict_150926_2313)
+- Repo-Import (AP05–AP09 lagen bereits umgesetzt+dokumentiert vor); Baseline bestätigt.
+- AP10 (R17, UI-Zustände): `research_validation.walkforward_status` (passed/stale, rein) +
+  `walkforward_stale` in /api/regime-lab/list; RegimeLab.js: 4-stufiger WF-Status inkl.
+  „WF veraltet", WF-Provenienz-Zeile (label_basis kausal, attempt_no, Trades-Warnung),
+  Datenversion „Daten (nicht) gepinnt" im Detail, keine positive Färbung ohne Evidenz;
+  DynamicPanel.js: tatsächlicher applied_state (Badges „Übernahme fehlgeschlagen – Retry"/
+  „blockiert", „Stand angewendet ✓").
+- AP11 (W01, Worker-Vertrag): `payload_input_hash`/`canonical_hash`; Input-Hash am Auftrag,
+  Worker (v1.11.0) echot ihn, Mismatch = verständliche Ablehnung; Evidenz
+  {input_hash, result_hash, worker} additiv am Ergebnis; **idempotenter Jobabschluss**
+  (Doppel-/Spät-Upload verworfen – vorher Doppel-Persistenz möglich); Paketmanifest mit
+  Dateihashes/code_fingerprint/commit; rekursive Unterpaket-Allowlist
+  (services/setup_backtest jetzt wirklich im ZIP, .env/Configs hart ausgeschlossen).
+- AP12 (kodierbarer Kern): `strategy_release.evidence_bundle` (rein) +
+  `GET /api/dynamic/{id}/evidence` (read-only) + „Beweispaket"-Panel im DynamicPanel:
+  Klartext-Blocker, ready_for_live nur bei leerer Liste (PnL allein genügt nicht);
+  menschliche Live-Freigabe bleibt Nutzer-Aktion.
+- Tests: analysis_regression **163 grün** (12 AP10 + 15 AP11 + 12 AP12 neu), Unit-Suite
+  **1629 passed** (keine Regression), Testing-Agent iteration_6: Backend 5/5 + Frontend-E2E
+  4/4 (echte Mini-Analyse BTC/15m/30d, „Daten gepinnt", WF-Status). Screenshot-Verify des
+  Beweispakets. `/app/memory/test_credentials.md` neu angelegt (Dev-Login).
+
 ## Backlog (aus Plan, priorisiert)
-- P1: AP05 (Datenmanifeste/Candlegrenzen/R16), AP06 (Referenzsimulation Same-Bar/offene Positionen), AP07–AP09 (Holdout-Trennung, MarketContext, Policy-Provenienz)
-- P1/P2: AP10 (UI-Zustände), AP11 (Worker-Vertrag), AP12 (Shadow/Paper-Abnahme)
-- P2: AP13 (Bereinigung/Erweiterung)
+- P1 (operativ, Nutzer): AP12-Rest – Shadow-/Paper-Beobachtungszeit auf Render, danach
+  menschliche Live-Freigabe (Beweispaket-Panel als Grundlage); Push via „Save to GitHub".
+- P2: AP13 (gezielte Bereinigung/Erweiterung – laut Plan erst nach Pilotnachweis).

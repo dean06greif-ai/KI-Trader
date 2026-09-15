@@ -121,6 +121,17 @@ export default function DynamicPanel() {
   const [busy, setBusy] = useState({});
   const [refreshDays, setRefreshDays] = useState(30);
   const [logs, setLogs] = useState({});
+  const [evidence, setEvidence] = useState({});
+
+  const loadEvidence = async (id) => {
+    if (evidence[id]) { setEvidence(ev => ({ ...ev, [id]: null })); return; }
+    try {
+      const r = await fetch(`${API_URL}/api/dynamic/${id}/evidence`);
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.detail || 'Beweispaket konnte nicht geladen werden'); return; }
+      setEvidence(ev => ({ ...ev, [id]: d.evidence }));
+    } catch { toast.error('Verbindungsfehler'); }
+  };
 
   const loadLog = async (id) => {
     if (logs[id]) { setLogs(l => ({ ...l, [id]: null })); return; }
@@ -305,6 +316,10 @@ export default function DynamicPanel() {
                     title="Wechsel-Protokoll: alle Regime-Wechsel mit Datum, Sicherheit und Begründung">
                     Protokoll
                   </button>
+                  <button className="opt-chip" onClick={() => loadEvidence(s.id)} data-testid={`dyn-evidence-${s.id}`}
+                    title="Beweispaket für die gestufte Abnahme: Datensatz, Release, Walk-Forward, Anwendung und Runtime-Health mit Klartext-Blockern – Empfehlung, kein automatischer Live-Schalter">
+                    Beweispaket
+                  </button>
                   <button className="opt-chip" onClick={() => remove(s.id)} data-testid={`dyn-delete-${s.id}`}>
                     <Trash size={12} />
                   </button>
@@ -388,6 +403,27 @@ export default function DynamicPanel() {
                       disabled={!!busy[s.id]} data-testid={`dyn-dismiss-${s.id}`}>
                       Verwerfen
                     </button>
+                  </div>
+                )}
+                {evidence[s.id] && (
+                  <div className="dyn-regime-state" data-testid={`dyn-evidence-body-${s.id}`}>
+                    <b>Beweispaket (Abnahme-Empfehlung)</b>
+                    <div className="opt-small" style={{ margin: '3px 0' }}>
+                      {evidence[s.id].ready_for_live
+                        ? <span className="pos" data-testid={`dyn-evidence-ready-${s.id}`}>✓ Keine Blocker – bereit für die menschliche Live-Freigabe</span>
+                        : <span style={{ color: '#FFB74D' }} data-testid={`dyn-evidence-ready-${s.id}`}>Noch nicht abnahmefähig – {evidence[s.id].blockers.length} Blocker</span>}
+                    </div>
+                    {(evidence[s.id].blockers || []).map((b, i) => (
+                      <div key={i} className="opt-small neg" style={{ margin: '2px 0' }}>• {b}</div>
+                    ))}
+                    <div className="opt-small" style={{ color: '#8A8FA3', marginTop: 3 }}>
+                      Release: <b>{evidence[s.id].release?.status}</b> (Rev. {evidence[s.id].release?.revision ?? '–'})
+                      {' '}· Datensatz: <b>{evidence[s.id].dataset?.status === 'pinned' ? 'gepinnt' : evidence[s.id].dataset?.status === 'legacy_unpinned' ? 'nicht gepinnt' : 'keine Quell-Analyse'}</b>
+                      {' '}· Walk-Forward: <b>{evidence[s.id].validation?.passed === true ? 'bestanden' : evidence[s.id].validation?.passed === false ? 'nicht bestanden' : 'nicht geprüft'}</b>
+                      {evidence[s.id].validation?.stale ? ' (veraltet)' : ''}
+                      {evidence[s.id].validation?.attempt_no ? ` · Versuch #${evidence[s.id].validation.attempt_no}` : ''}
+                      {evidence[s.id].runtime_health?.level ? ` · Safety: ${evidence[s.id].runtime_health.level}` : ''}
+                    </div>
                   </div>
                 )}
                 {logs[s.id] && (

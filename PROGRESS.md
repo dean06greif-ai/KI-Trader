@@ -481,12 +481,61 @@
   (124 + 12 AP10 + 15 AP11).
 - Backend-Unit-Suite (`pytest tests -m unit`, ohne iter38-Umgebungstests):
   **1617 passed**, 2 skipped – keine Regression.
+- Testing-Agent (iteration_6, 26.06.2026): Backend **5/5 grün** (regime-lab/list
+  Schema, Manifest-Hashes+Fingerprint+Commit+required_version 1.11.0, ZIP-Inhalt
+  inkl. services/setup_backtest + kein .env, localworker/status, Auth 401),
+  Frontend-E2E **4/4 grün** (Login, Regime-Lab-Overlay, ECHTE Mini-Analyse
+  BTC/15m/30d in ~10 s → Zeile mit `wf-status-*` = „WF nicht geprüft“ und
+  Detail-Kopf `regime-detail-dataset` = „Daten gepinnt“, DynamicPanel ohne
+  JS-Fehler). Keine Bugs; neue E2E-Datei
+  `backend/tests/test_ap10_ap11_regime_and_worker.py` (Env-Creds + Skip ohne
+  Backend, auto-markiert live – CI-sicher).
 - Hinweis: `/app/memory/test_credentials.md` (gitignored) nach Repo-Import
   neu angelegt – wird von test_regime_lab/test_regime_worker_regression gelesen.
 
+## Paket AP12 – Gestufte Abnahme: Beweispaket ✅ (kodierbarer Kern, 26.06.2026)
+- Bezug: AP12-Abnahme „Beweispaket aus Dataset/Release/Reports/Tests/Approval/
+  Runtimehealth. Kein beliebiger Profitfaktor als alleinige Freigabe.“
+- Geänderte/neue Dateien & Verhalten:
+  - `backend/services/strategy_release.py`: NEU `evidence_bundle(doc,
+    analysis, safety)` (rein, read-only) + `_wf_for_doc` (Scope-Wahl
+    per_coin vor combined): bündelt Release-Status/Fingerprint, Datensatz-
+    Manifest (`pinned`/`legacy_unpinned`/`missing_analysis`), Walk-Forward
+    (passed/stale/label_basis/attempt_no/Metriken), `application_status` und
+    Safety-Level; benennt **Blocker in Klartext**; `ready_for_live` NUR bei
+    leerer Blocker-Liste (hoher Backtest-PnL allein genügt bewusst nicht,
+    eigener Solltest). Legacy-Bestand = ehrlicher Blocker „ohne
+    Validierungsnachweis“, operativ aber weiterhin erlaubt (AP04-Verhalten
+    unverändert).
+  - `backend/routers/dynamic.py`: NEU `GET /api/dynamic/{id}/evidence`
+    (read-only, kein Write-Pfad – per AST-Test abgesichert).
+  - `frontend/src/components/DynamicPanel.js`: Button „Beweispaket“
+    (testid `dyn-evidence-{id}`) + Panel (testid `dyn-evidence-body-{id}`,
+    `dyn-evidence-ready-{id}`): ✓ bereit für menschliche Freigabe ODER
+    Blocker-Liste + Kurzfakten (Release/Datensatz/WF/Safety).
+- WICHTIG: `ready_for_live` ist eine EMPFEHLUNG – die menschliche
+  Live-Freigabe (AP12 Punkt 4) bleibt ausdrücklich Nutzer-Aktion.
+- Solltests: `tests/analysis_regression/test_ap12_evidence.py` (12 neu: alle
+  Blocker-Pfade einzeln, Scope-Wahl, „guter PnL ersetzt keine Validierung“,
+  Read-only-AST, UI-Marker).
+- E2E verifiziert: Endpoint mit echter gepinnter Analyse (ra_525a56b1) +
+  Test-Strategie → korrekte Blocker (legacy, kein WF), Manifest mit
+  bars/hash im Payload; UI-Screenshot: Panel zeigt „Noch nicht abnahmefähig –
+  2 Blocker“ mit Klartext. 404 bei unbekannter ID.
+- NICHT kodierbar in dieser Umgebung (offene AP12-Restpunkte, Betrieb):
+  Shadow-Beobachtungszeit auf aktuellen Daten, Paper-Abdeckung über
+  ausreichende Zeit/Regime und die menschliche Live-Freigabe selbst.
+
+## Testnachweise (Stand 26.06.2026, nach AP12-Kern)
+- Offline-Solltests: **163 passed** (151 + 12 AP12).
+- Backend-Unit-Suite (ohne iter38-Umgebungstests): **1629 passed**, 2 skipped
+  – keine Regression.
+
 ## Nächste zulässige Schritte (laut Plan, noch NICHT umgesetzt)
-1. **AP12** Gestufte Abnahme und Freigabe (Offline-Replay/Fault-Injection,
-   Shadow-Beobachtung, Paper-Abdeckung; menschliche Live-Freigabe = Nutzer).
+1. **AP12 (operativ, Nutzer/Betrieb):** Shadow-/Paper-Beobachtungszeit auf
+   Render laufen lassen; danach menschliche Freigabe für engen Live-Scope –
+   Beweispaket-Panel als Grundlage nutzen.
 2. **AP13** Gezielte Bereinigung / weiterführende Forschung (P2, erst nach
-   Pilotnachweis).
+   Pilotnachweis): Archiv-Katalog alter Experimental-Dateien,
+   Indikator-Ablationen, Assetpooling, Unsicherheitskalibrierung.
 
