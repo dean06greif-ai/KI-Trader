@@ -21,6 +21,7 @@ DEFAULTS = {
     "champ_min_trades": 10,    # Champion-Basis im selben Zeitraum
     "bootstrap_n": 500,
     "bootstrap_alpha": 0.05,   # Untergrenze = 5%-Quantil der Mittelwert-Differenz
+    "bootstrap_block": 5,      # AP09/W02: Block-Bootstrap (korrelierte Trades)
     "dd_tolerance": 0.0,       # erlaubter Mehr-Drawdown des Kandidaten (in R)
     "rollback_window_trades": 20,  # so viele Trades nach Promotion werden überwacht
     "rollback_min_trades": 8,      # frühestens ab so vielen Trades wird zurückgerollt
@@ -57,16 +58,31 @@ def _mean(xs: List[float]) -> float:
 
 
 def bootstrap_diff_lower(cand: List[float], champ: List[float], n_boot: int = 500,
-                         alpha: float = 0.05, seed: int = 42) -> float:
-    """Untergrenze (alpha-Quantil) der Bootstrap-Verteilung von mean(cand)-mean(champ)."""
+                         alpha: float = 0.05, seed: int = 42,
+                         block: int = 1) -> float:
+    """Untergrenze (alpha-Quantil) der Bootstrap-Verteilung von mean(cand)-mean(champ).
+
+    AP09/W02: block>1 = BLOCK-Bootstrap über zusammenhängende Trade-Blöcke
+    (chronologische Reihenfolge) – Trades sind zeitlich/assetübergreifend
+    korreliert, unabhängiges Einzeltrade-Resampling unterschätzt die
+    Unsicherheit. block=1 = altes Verhalten."""
     if not cand or not champ:
         return float("-inf")
     rng = random.Random(seed)
+    b = max(1, int(block))
+
+    def _resample(xs: List[float]) -> List[float]:
+        if b <= 1 or len(xs) <= b:
+            return [xs[rng.randrange(len(xs))] for _ in range(len(xs))]
+        out = []
+        while len(out) < len(xs):
+            s = rng.randrange(len(xs) - b + 1)
+            out.extend(xs[s:s + b])
+        return out[:len(xs)]
+
     diffs = []
     for _ in range(max(50, int(n_boot))):
-        c = [cand[rng.randrange(len(cand))] for _ in range(len(cand))]
-        h = [champ[rng.randrange(len(champ))] for _ in range(len(champ))]
-        diffs.append(_mean(c) - _mean(h))
+        diffs.append(_mean(_resample(cand)) - _mean(_resample(champ)))
     diffs.sort()
     idx = min(len(diffs) - 1, max(0, int(alpha * len(diffs))))
     return round(diffs[idx], 4)
@@ -80,7 +96,8 @@ def promotion_check(cand_rs: List[float], champ_rs: List[float],
     champ = [float(x) for x in (champ_rs or [])]
     mean_diff = round(_mean(cand) - _mean(champ), 4)
     boot_lower = (bootstrap_diff_lower(cand, champ, c["bootstrap_n"],
-                                       c["bootstrap_alpha"])
+                                       c["bootstrap_alpha"],
+                                       block=int(c.get("bootstrap_block", 1)))
                   if cand and champ else float("-inf"))
     cand_dd, champ_dd = max_drawdown(cand), max_drawdown(champ)
     checks = [

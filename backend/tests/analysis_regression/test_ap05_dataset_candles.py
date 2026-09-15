@@ -189,7 +189,9 @@ class TestR14CacheOverlapReload:
 
         async def fake_fetch(session, symbol, start_ms, end_ms, job=None, pace=None):
             calls["start"] = start_ms
-            updated = _candles(12, start=start0)
+            # Quelle liefert dieselbe Historie + 2 neue Kerzen; die zuletzt
+            # gecachte Kerze (Index 9) war beim Cachen noch offen -> neuer Close.
+            updated = [dict(c) for c in base] + _candles(12, start=start0)[10:]
             updated[9]["close"] += 3.0
             keep = [c for c in updated if c["timestamp"] >= start_ms]
             return CandleArray.from_dicts(keep)

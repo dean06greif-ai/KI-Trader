@@ -121,6 +121,10 @@ def compute_features(candles: List[Dict], prev_regime: Optional[str] = None) -> 
                                      vol_rank=vol_rank, change_60m_pct=chg_60,
                                      volume_ratio=vol_ratio, prev_regime=prev_regime),
         "regime_v": REGIME_V,
+        # AP08/R15: Kurzfrist-Regime ist setup_context – KEIN strukturelles
+        # Regime (anderer Horizont/Modell); Taxonomie-Vertrag market_context.
+        "context_layer": "setup_context",
+        "taxonomy_version": 1,
         "vol_basis": "percentile" if vol_rank is not None else "fixed_fallback",
     }
     if vol_rank is not None:

@@ -32,19 +32,11 @@ _locks: Dict[str, asyncio.Lock] = {}
 
 
 def phase_from_label(label: Optional[str]) -> Optional[str]:
-    """Regime-Label -> grobe Phase. Deckt beide Engines ab:
-    kmeans ('Leicht aufwärts · …') und v2 ('Starker/Leichter Aufwärtstrend',
-    'Aufwärtstrend · hohe Volatilität', 'Seitwärtsmarkt')."""
-    low = (label or "").strip().lower()
-    if not low:
-        return None
-    if "seitwärts" in low:
-        return "seitwärts"
-    if "aufwärts" in low:
-        return "bulle"
-    if "abwärts" in low:
-        return "bär"
-    return None
+    """Regime-Label -> grobe Phase. AP08/R15: nur noch benannter LEGACY-Adapter
+    (market_context.legacy_phase_from_label) für KMeans-Modelle ohne
+    Richtungs-IDs; v2-Modelle liefern die Richtung über die Regime-ID."""
+    from services import market_context as mc
+    return mc.legacy_phase_from_label(label)
 
 
 def _cached(symbol: str) -> Optional[Dict]:
@@ -55,6 +47,7 @@ def _cached(symbol: str) -> Optional[Dict]:
 
 
 async def _detect(symbol: str) -> Dict:
+    from services import market_context as mc
     from services import regime as rg
     from services.backtester import fetch_history
     from services.timeframes import aggregate_candles
@@ -72,11 +65,25 @@ async def _detect(symbol: str) -> Dict:
         raise RuntimeError(f"{symbol}: Marktphasen konnten nicht bestimmt werden")
     cur = rg.current_regime(model, candles, DETECT_TIMEFRAME)
     label = cur.get("label")
+    # AP08/R15: Richtung aus der Regime-ID (v2-Taxonomie); nur Legacy-KMeans
+    # (Cluster-IDs ohne Richtung) nutzt den benannten Label-Adapter.
+    direction = None
+    if rg.is_v2(model):
+        mode = (model.get("config") or {}).get("regime_mode",
+                                               model.get("regime_mode"))
+        direction = mc.direction_from_regime_id(cur.get("regime"), mode)
+    if direction is None:
+        direction = mc.direction_from_phase(mc.legacy_phase_from_label(label))
+    ctx = mc.structural_context(
+        "regime_gate", direction=direction, label=label,
+        confidence=cur.get("confidence"), model_fp=mc.model_fingerprint(model))
     return {"_at": time.monotonic(),
             "symbol": symbol,
-            "phase": phase_from_label(label),
+            "phase": ctx["phase"],
             "label": label,
             "confidence": cur.get("confidence"),
+            "market_context": ctx,
+            "state": ctx["state"],
             "checked_at": datetime.now(timezone.utc).isoformat()}
 
 
@@ -113,7 +120,16 @@ async def check_signal_allowed(cfg: Dict, symbol: str) -> Tuple[bool, str]:
     try:
         ent = await current_phase(symbol)
     except Exception as e:  # noqa: BLE001 – fail-open
-        logger.warning(f"Regime-Gate {symbol}: Erkennung fehlgeschlagen ({e}) – Trade erlaubt")
+        # AP08: abgelaufener Cache-Stand wird als ECHTER Zustand 'stale'
+        # sichtbar gemacht (statt kommentarlos zu verschwinden); Verhalten
+        # bleibt fail-open.
+        old = _cache.get(symbol)
+        if old is not None:
+            old["state"] = "stale"
+            if isinstance(old.get("market_context"), dict):
+                old["market_context"]["state"] = "stale"
+        logger.warning(f"Regime-Gate {symbol}: Erkennung fehlgeschlagen ({e}) – Trade erlaubt"
+                       + (" (letzter Stand: stale)" if old else ""))
         return True, ""
     phase = ent.get("phase")
     if phase in blocked:

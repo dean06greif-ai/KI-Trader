@@ -236,12 +236,16 @@ def provider_for_seg(strategy, seg: Dict, settings: Dict, sym: str):
 
 def simulate_segment(strategy, seg: Dict, sym: str, settings: Dict, cfg: Dict,
                      should_stop=None, provider=None) -> List[Dict]:
-    """Ein Segment simulieren; nur Trades zählen, die IM Segment geöffnet wurden
-    (Warmup-Trades werden verworfen)."""
+    """Ein Segment simulieren; nur Trades zählen, die IM Segment geöffnet wurden.
+    R08: Entries sind erst ab Segmentstart erlaubt (entry_allowed_from_ts) –
+    ein Warmup-Trade kann keinen Entry im Segment mehr blockieren. Eine am
+    Segmentende (= Regimewechsel) offene Position wird Mark-to-Market
+    geschlossen (end_forced=True) statt stillschweigend verworfen."""
     if provider is None:
         provider = provider_for_seg(strategy, seg, settings, sym)
     res = simulate_pair(strategy, seg["candles"], sym, settings, cfg,
-                        None, True, should_stop, provider)
+                        None, True, should_stop, provider,
+                        entry_allowed_from_ts=seg.get("start_ts"))
     start_iso = _iso(seg["start_ts"])
     return [t for t in (res.get("all_trades") or [])
             if (t.get("opened") or "") >= start_iso]

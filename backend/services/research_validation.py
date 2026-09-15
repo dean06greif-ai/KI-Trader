@@ -1,0 +1,83 @@
+"""AP07 (Befunde R05/R09/R10): Forschungsvalidierung ohne Holdout-Tuning.
+
+Reine Kernfunktionen + persistenter Versuchszähler:
+- Auswahl von Kandidaten (EMA-Periode, Kombi-Parameter) erfolgt auf der
+  INNEREN Validierung (letzter Teil des Trainingsfensters) – NIE auf dem
+  Holdout. Der Holdout ist ausschließlich abschließender Test (final_test).
+- Jeder Suchlauf/Holdout-Blick wird gezählt (research_attempts) – wiederholte
+  manuelle Suche auf demselben sichtbaren Holdout wird dadurch sichtbar.
+- Zu wenig Holdout-Evidenz wird als `insufficient_evidence` benannt statt
+  stillschweigend als Ergebnis verkauft.
+"""
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
+
+INNER_FRACTION = 0.25          # letzter Anteil des Trainingsfensters
+MIN_HOLDOUT_BARS = 50          # darunter: insufficient_evidence
+
+
+def inner_anchor_ts(candles: List[Dict], cut: int,
+                    frac: float = INNER_FRACTION) -> Optional[int]:
+    """Zeitanker, AB dem (exklusiv) die innere Validierung beginnt.
+    cut = erster Index NACH dem Trainingsfenster. None wenn zu wenig Daten."""
+    if not candles or cut < 8:
+        return None
+    idx = max(int(cut * (1.0 - frac)), 1)
+    if idx >= cut:
+        return None
+    return int(candles[idx - 1]["timestamp"])
+
+
+def select_best_row(rows: List[Dict], metric: str = "inner_direction_pct",
+                    fallback: str = "direction_pct",
+                    key_field: str = None) -> Tuple[Optional[Dict], str]:
+    """Beste Zeile NACH INNERER VALIDIERUNG wählen – niemals nach dem Holdout
+    (R10). Fallback (Altdaten ohne inneres Fenster): Trainingsmetrik, klar
+    benannt. Rückgabe: (row|None, selection_basis)."""
+    cand = [r for r in rows if r.get(metric) is not None]
+    if cand:
+        return max(cand, key=lambda r: r[metric]), "inner_validation"
+    cand = [r for r in rows if r.get(fallback) is not None]
+    if cand:
+        return max(cand, key=lambda r: r[fallback]), "train_only"
+    return None, "none"
+
+
+def evidence_verdict(holdout_bars: Optional[int],
+                     min_bars: int = MIN_HOLDOUT_BARS) -> str:
+    if not holdout_bars or int(holdout_bars) < min_bars:
+        return "insufficient_evidence"
+    return "ok"
+
+
+def experiment_manifest(kind: str, params: Dict, dataset: Dict = None) -> Dict:
+    """Experiment-Steckbrief VOR Suchstart: Fragestellung/Suchraum/Datenbezug.
+    Wird am Ergebnis gespeichert (Provenienz, R10-Versuchstransparenz)."""
+    return {"kind": kind, "params": dict(params or {}),
+            "dataset_ref": ({sym: {"start_ts": d.get("start_ts"),
+                                   "end_ts": d.get("end_ts"),
+                                   "hash": d.get("hash")}
+                             for sym, d in (dataset or {}).get(
+                                 "per_symbol", {}).items()}
+                            if dataset else None),
+            "holdout_role": "final_test",
+            "selection_rule": "inner_validation",
+            "created_at": datetime.now(timezone.utc).isoformat()}
+
+
+async def register_attempt(db, scope: str, kind: str) -> Optional[int]:
+    """Persistenter Versuchszähler je Suchziel (z.B. Analyse+Bereich).
+    Gibt die laufende Versuchsnummer zurück; fail-safe (None bei DB-Fehler)."""
+    if db is None:
+        return None
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        await db.research_attempts.update_one(
+            {"scope": scope},
+            {"$inc": {"attempts": 1},
+             "$set": {"kind": kind, "last_at": now}},
+            upsert=True)
+        doc = await db.research_attempts.find_one({"scope": scope})
+        return int((doc or {}).get("attempts") or 0)
+    except Exception:  # noqa: BLE001
+        return None

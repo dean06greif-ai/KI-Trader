@@ -67,6 +67,9 @@ def build_updates(t: Dict, exact: Dict) -> Optional[Dict]:
     if abs(diff) >= MIN_DIFF_USDT:
         updates["pnl_local_estimate"] = round(local_pnl, 6)
         updates["pnl_reconcile_diff"] = round(diff, 6)
+        # AP09/T07: PnL-Revision = neue Outcome-Version -> Lern-Sync holt den
+        # Trade erneut (exakt einmal je Version), statt am Boolean zu hängen.
+        updates["ai_learn_synced"] = False
         updates["events"] = (list(t.get("events") or []) + [
             f"PNL-ABGLEICH (Bitunix): {local_pnl:+.4f} -> {real_pnl:+.4f} USDT "
             f"(echter Börsen-PnL inkl. Fees/Funding, Δ {diff:+.4f})"])[-20:]

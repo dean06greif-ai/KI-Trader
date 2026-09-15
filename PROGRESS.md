@@ -190,13 +190,218 @@
 - App-Smoke: `/api/health` alive, Frontend lädt (lokale Dev-Instanz,
   lokale Mongo, keine Broker-/LLM-Keys).
 
+## Paket AP05 – Reproduzierbare Datenstände & saubere Candlegrenzen ✅ (26.06.2026)
+- Bezug: Befunde **R06, R07, R11, R14, R16** · Basis: Branch `conflict_150926_2127`.
+- Vorgefundener Stand: Die komplette AP05-Implementierung lag bereits im Repo
+  (abgebrochene Session, Commit `3b55e7e`, nicht dokumentiert). Diese Session hat
+  den Stand VERIFIZIERT, einen Bug im Solltest behoben und abgenommen.
+- Implementierung (verifiziert):
+  - `backend/services/research_dataset.py` (NEU, rein): `candles_hash`
+    (IEEE754-binär, kein Rundungsdrift), `symbol_manifest`, `dataset_manifest`,
+    `verify_histories` (Abweichung ⇒ verständliche Begründung je Symbol),
+    `dataset_status` (`pinned` vs. `legacy_unpinned`).
+  - `backend/services/regime_lab.py`:
+    - R06 `fetch_histories(start_ts=, dataset=)`: Anker aus gespeicherten
+      `bounds` fixieren das Datenfenster; Manifest-Abweichung ⇒ ERKLÄRTER
+      RuntimeError statt stiller Ergebnisdrift. `run_analysis` speichert das
+      Manifest (`dataset`) an jeder neuen Analyse.
+    - R07 `_segments_payload`: `to_ts` = letzte Kerze des Segments (inklusiv),
+      additiv `end_exclusive_ts`; `segments_from_ranges` liest neue Dokumente
+      halboffen (`bisect_left(end_exclusive_ts)`), Altdokumente unverändert
+      über `bisect_right(to_ts)` (Schemaadapter, Legacy-Verhalten erhalten).
+    - R11: Aggregation in fetch_histories mit `drop_partial=True`.
+  - `backend/services/regime_opt.py`: `_build_regime_segments` +
+    `run_walkforward` übergeben Anker + Manifest (Manifest-Prüfung nur bei
+    gleichem Timeframe – anderer TF lädt dieselben Anker, andere Aggregation).
+  - `backend/services/candle_cache.py` (R14): Tail-Reload überlappend
+    (3 min), `_merge_tail` ersetzt überlappende Zeitstempel – eine beim Cachen
+    noch offene 1m-Kerze wird mit ihrem endgültigen Stand überschrieben.
+  - `backend/services/dynamic_live.py`, `regime_gate.py` (R11): alle
+    Regime-Aggregationen `drop_partial=True` (Teilkerze ist kein Regime-Input).
+  - `backend/services/regime.py` (R16): serialisierte `norm_std` ≥ 1e-9
+    (Rundung drückt Mindest-Std nicht mehr auf 0); `classify_point`/
+    `classify_matrix` fluten Alt-Modelle mit std=0 (kein divide-by-zero).
+  - `backend/routers/regime_lab.py`: `list` liefert additiv `dataset_status`
+    (`legacy_unpinned` für Bestandsanalysen – nichts wird rückwirkend
+    „validiert“).
+- Fix dieser Session: `tests/analysis_regression/test_ap05_dataset_candles.py::
+  TestR14CacheOverlapReload::test_get_candles_refetches_with_overlap` –
+  Fake-Quelle erzeugte durch RNG-Verbrauch (n=12 vs. n=10) eine DIVERGIERENDE
+  Historie; jetzt Basis+2 neue Kerzen (deterministisch). Produktionscode war korrekt.
+- Testnachweise: Offline-Solltests **87 passed** (74 + 13 AP05);
+  Unit-Suite **1553 passed**, 2 skipped (ohne iter38-Umgebungstests).
+- Migrationswirkung: Bestandsanalysen bleiben lesbar (Legacy-Reader),
+  erhalten aber sichtbar `legacy_unpinned`; nur NEUE Analysen sind gepinnt.
+- Rückfall: Manifest-Prüfung greift nur, wenn `dataset` am Dokument existiert;
+  kein bestehender Workflow ändert sich ohne neues Analyse-Dokument.
+
+## Paket AP06 – Referenzsimulation: ehrliches Positions-/Kostenmodell ✅ (26.06.2026)
+- Bezug: Befund **R08** (Kern von AP06; R12 bereits in AP03/AP04 abgedeckt,
+  W02-Statistik folgt in AP09) · Basis: Branch `conflict_150926_2127`.
+- Geänderte Dateien & Verhalten:
+  - `backend/services/backtester.py::simulate_pair`:
+    - R08-2 Same-Bar TP1+TPFull: TP1-Teilverkauf wirkt jetzt AUCH, wenn TPFull
+      in derselben Kerze erreicht wird (TP1 liegt näher am Entry und wird auf
+      dem Weg zuerst berührt). Befund-Fixture Long 100→TP1 101/TPFull 103,
+      50 %, Fee 0: **+4 statt +6**; Short spiegelbildlich. Same-Bar-Priorität
+      bleibt konservativ: SL/Liquidation VOR jedem TP.
+    - R08-1 Offene Endposition: wird am letzten verfügbaren Schlusskurs
+      Mark-to-Market geschlossen (inkl. Exit-Gebühr) statt stillschweigend
+      verworfen (vorher: schwebender Verlust + Entry-Fee = trades=0/pnl=0).
+      Additive Felder: Trade-Row `end_forced`, Report `end_forced_trades`.
+      PnL/Fees/Drawdown/Winrate enthalten diese Trades jetzt ehrlich.
+    - R08-3 NEU Parameter `entry_allowed_from_ts` (additiv): Warmup baut nur
+      Indikatoren auf, Entries erst ab dem Anker. Modellannahme dokumentiert:
+      Close-on-close-Fill auf der Signalkerze.
+  - `backend/services/dynamic_strategy.py::simulate_segment` +
+    `backend/services/parallel_sim.py::sim_segment_task`: übergeben
+    `entry_allowed_from_ts=Segmentstart` – ein Warmup-Trade kann keinen Entry
+    im eigentlichen Segment mehr blockieren; die am Segmentende (=
+    Regimewechsel) offene Position wird gemäß Docstring jetzt wirklich
+    geschlossen (end_forced), beide Pfade (sequenziell/Kind-Prozess) identisch.
+  - Geprüft, KEINE Änderung nötig: `setup_backtest/simulator.py` ist bereits
+    konservativ korrekt (SL zuerst, TP1-Teilverkauf mit `continue` – TPf
+    frühestens Folgekerze, Zeit-Exit rechnet Restmenge ab);
+    Fast-Sim nutzt dieselbe simulate_pair-Engine (Parität T4 besteht weiter);
+    `fee_model` deckt Krypto-/Forex-Gebühren ab. Funding/Spread-Daten liegen
+    nicht vor und werden lt. Plan NICHT erfunden (dokumentierte Modellgrenze).
+- Solltests: `tests/analysis_regression/test_ap06_reference_sim.py` (9 neu:
+  +4-Fixture Long/Short, SL-Priorität Same-Bar, TP1-then-open, MtM-Endclose
+  mit Fees, Flat-Breakeven, kein Phantom-end_forced, Anchor-Skip,
+  simulate_segment-Blockade-Nachweis).
+- Testnachweise: Offline-Solltests **96 passed** (87 + 9);
+  Unit-Suite **1562 passed**, 2 skipped – KEINE Regression (bestehende
+  Backtest-/Optimizer-/Dynamic-Tests unverändert grün).
+- Migrationswirkung: Backtest-/Optimizer-/Dynamic-Ergebnisse können durch die
+  ehrliche Abrechnung SCHLECHTER (realistischer) ausfallen – bewusste
+  Entscheidung laut Plan („Ergebnisse dürfen durch ehrliche Kosten schlechter
+  werden“). Gespeicherte Alt-Ergebnisse werden nicht angefasst.
+- Rückfall: `entry_allowed_from_ts=None` (Default) = altes Entry-Verhalten;
+  end_forced-Trades sind über das Flag identifizierbar und herausfilterbar.
+
+## Paket AP07 – Forschungsvalidierung ohne Holdout-Tuning ✅ (26.06.2026)
+- Bezug: Befunde **R05, R10** (R09 wurde bereits in AP04 über das
+  Release-Statusmodell geschlossen; W02-Blockbootstrap folgt in AP09).
+- Geänderte/neue Dateien & Verhalten:
+  - `backend/services/research_validation.py` (NEU, rein + Zähler):
+    `inner_anchor_ts` (innere Validierung = letzte 25 % des TRAININGS-Fensters),
+    `select_best_row` (Auswahl NIE nach Holdout; Fallback Altdaten =
+    `train_only`, klar benannt), `evidence_verdict` (<50 Holdout-Bars ⇒
+    `insufficient_evidence`), `experiment_manifest` (Suchraum/Datenbezug/
+    Rollen-Deklaration VOR Suchstart), `register_attempt` (persistenter
+    Versuchszähler `research_attempts` je Suchziel, fail-safe).
+  - `backend/services/regime_lab.py`:
+    - `_live_agreement`/`_symbol_payload`: additiv `inner_direction_pct`/
+      `inner_bars` (Fenster (inner_start, train_end], disjunkt zum Holdout).
+    - R10 `run_ema_compare`: **best_period wird über die INNERE Validierung
+      gewählt** (vorher max(holdout_direction_pct) = Holdout-Tuning). Der
+      Holdout ist jetzt reiner finaler Test (Report). Ergebnis additiv:
+      `selection_basis`, `holdout_role=final_test`, `evidence`, `attempt_no`,
+      `manifest`, je Zeile `inner_direction_pct`/`holdout_bars`.
+    - R10 `run_kombi_calibrate`: Score = innere Trefferquote − Zielband-Strafe
+      (vorher Holdout im Score); Holdout nur Bericht; gleiche additive Felder.
+  - `backend/services/regime_opt.py`:
+    - R05 `run_regime_optimizer`-Ergebnis: `label_basis=
+      "retrospective_reference"` – Suchsegmente stammen aus rückblickenden
+      Final-Labels (Diagnose/Training, kein handelbarer Beleg).
+    - R05/R10 `run_walkforward`-Ergebnis: `label_basis="causal_live"`
+      (klassifiziert ausschließlich kausal via classify_series) +
+      `attempt_no` (jede Wiederverwendung desselben sichtbaren Holdouts
+      wird gezählt und ausgewiesen).
+- Solltests: `tests/analysis_regression/test_ap07_research_validation.py`
+  (9 neu: Auswahl ignoriert Holdout-Sieger, Fallback=train_only, Anker im
+  Trainingsfenster, Evidenz-Verdikt, EMA/Kombi-Verdrahtung (AST), Zähler-
+  Inkrement, disjunkte Inner-/Holdout-Fenster, **R05-Präfix-Stabilität der
+  kausalen Live-Labels (positiv-numerisch)**, label_basis-Kennzeichnung).
+- Testnachweise: Offline-Solltests **105 passed**; Unit-Suite **1571 passed**,
+  2 skipped – keine Regression. `/api/health` alive.
+- Migrationswirkung: `best_period`/Kombi-`best` können sich gegenüber früher
+  ändern (ehrlichere Auswahl); alte gespeicherte Runs bleiben unangetastet.
+  UI-Beschriftung der Holdout-Spalten („finaler Test statt Auswahl“) folgt
+  gebündelt in AP10 (R17), Backend liefert die Felder bereits.
+- Rückfall: Felder sind additiv; Altverhalten wäre nur durch Code-Revert
+  erreichbar (bewusst kein Schalter – Holdout-Tuning soll nicht wählbar sein).
+
+## Paket AP08 – Gemeinsamer MarketContext ✅ (26.06.2026)
+- Bezug: Befund **R15** (T05-Fingerprint-Erweiterung folgt in AP09 und nutzt
+  den hier eingeführten Modell-Fingerprint).
+- Geänderte/neue Dateien & Verhalten:
+  - `backend/services/market_context.py` (NEU, rein): versionierte Taxonomie
+    (TAXONOMY_VERSION 1) mit drei getrennten EBENEN `structural` /
+    `setup_context` / `risk_overlay`; `direction_from_regime_id` (Richtung aus
+    Regime-ID via split_id – keine Label-Substrings als Identität);
+    EXPLIZIT benannter Legacy-Adapter `legacy_phase_from_label` (nur für
+    KMeans-Cluster ohne Richtungs-IDs); `observer_context` (Kurzfrist-Regime
+    des Observers → eigene setup_context-Zustände `short_term_*`, bewusst
+    KEINE strukturelle Identität); `structural_context` mit echten Zuständen
+    `ok|stale|unknown`, `confidence_kind="heuristic"` (kein kalibriertes
+    Gewinn-Wahrscheinlichkeits-Versprechen) und `model_fingerprint`
+    (Provenienz: welcher Artifact-Stand lieferte den Kontext).
+  - `backend/services/regime_gate.py`: v2-Modelle → Richtung aus der
+    Regime-ID; KMeans → benannter Legacy-Adapter; Antwort additiv um
+    `market_context`/`state` erweitert; Erkennungsfehler markiert einen
+    abgelaufenen Cache-Stand sichtbar als `stale` (Verhalten bleibt
+    fail-open, kein Live-Bruch); `phase_from_label` delegiert an den Adapter.
+  - `backend/services/ai_market_observer.py`: Features tragen additiv
+    `context_layer="setup_context"` + `taxonomy_version` – Alttrades werden
+    NICHT neu gelabelt (nur neue Snapshots tragen die Ebene).
+- Solltests: `tests/analysis_regression/test_ap08_market_context.py` (8 neu:
+  ID-Richtung über alle Modi 3/5/9, Legacy-Adapter-Grenzen, Observer-Ebene
+  getrennt, Feature-Layer, unknown/stale/ok, Fingerprint stabil+sensitiv,
+  Gate-stale-Pfad, **gleicher Artifact ⇒ identische Richtung in Lab- und
+  Gate-Pfad** (funktional, v2-Modell)).
+- Testnachweise: Offline-Solltests **113 passed**; Unit-Suite **1579 passed**,
+  2 skipped – keine Regression.
+- Rückfall: Alle Felder additiv; Gate-Blockverhalten und Config-Werte
+  (`regime_block_phases`) unverändert – nur die Herleitung ist jetzt
+  vertraglich statt zufällig.
+
+## Paket AP09 – Policy-/Lernprovenienz, idempotente Ergebnisse ✅ (26.06.2026)
+- Bezug: Befunde **T05, T07, T08, W02**.
+- Geänderte Dateien & Verhalten:
+  - `backend/services/policy_fingerprint.py` (T05): NEU `POLICY_CONFIG_KEYS`
+    (min_confidence, collection_min_confidence, fee_guard_*, live_gate_bypass_
+    enabled) + `policy_config_hash` – min_confidence gehört ausdrücklich NICHT
+    in den Sizing-Hash. `build(..., policy_config_h=, regime_artifact=)` ⇒
+    **fingerprint_schema=2** (erweiterter combined); Alt-Aufrufer ohne neue
+    Teile liefern unverändert Schema 1 (Alttrades bleiben stabil gruppierbar).
+    `ai_engine` übergibt den Config-Hash zyklusweit (neue Decisions = Schema 2).
+  - `backend/services/ai_learning.py`:
+    - T07 `sync_outcomes`: Decisions-Update kommt jetzt VOR der Markierung;
+      Markierung trägt `ai_learn_outcome_version` (reine Funktion
+      `outcome_version`: Hash aus PnL/Result/closed_at/Fees/Funding); Fehler
+      je Trade ⇒ Trade bleibt unsynchronisiert (Retry im nächsten Lauf).
+    - T08 `_bump_lesson_candidate`: erneute Bestätigung derselben Lektion
+      zählt NUR mit ≥ N neuen geschlossenen Trades seit der letzten Zählung
+      (`lesson_evidence_min_trades`, Default 2; Evidenzbasis `evidence_ts` –
+      Verallgemeinerung von real_confirmations aus 2.8). LLM-Wiederholung
+      allein erhöht keinen Zähler mehr.
+    - T08 `aggregate_performance`: Datensammel-Trades in eigenem Bucket
+      `collect`, aus paper/live und `totals.total_pnl` herausgehalten.
+  - `backend/services/pnl_reconcile.py` (T07): materielle Broker-PnL-Revision
+    setzt `ai_learn_synced=False` ⇒ neue Outcome-Version wird exakt einmal
+    nachkonsumiert (kein Hängenbleiben am Boolean).
+  - `backend/services/policy_promotion.py` (W02): `bootstrap_diff_lower(...,
+    block=)` = Block-Bootstrap über zusammenhängende Trade-Blöcke
+    (korrelierte Trades), `promotion_check` nutzt `bootstrap_block` (Default 5).
+- Solltests: `tests/analysis_regression/test_ap09_provenance.py` (11 neu:
+  Schema-2-Combined ändert sich bei min_confidence-Änderung trotz identischem
+  Sizing-Hash, Schema-1-Kompatibilität, Regime-Artifact im Hash,
+  Outcome-Version deterministisch/revisionssensitiv, Sync-Reihenfolge (AST),
+  Revision-Reset, Collection-Trennung, Lektions-Evidenz-Pflicht,
+  Block- konservativer als IID-Bootstrap, Promotion-Determinismus).
+- Testnachweise: Offline-Solltests **124 passed**; Unit-Suite **1590 passed**,
+  2 skipped – keine Regression (bestehende Promotion-/Learning-Tests grün).
+- Migrationswirkung: Neue Decisions tragen Schema-2-Fingerprints (im
+  Policy-Report erscheinen sie als neue Version – korrekt, die Policy-
+  Beschreibung wurde vollständiger). Alt-Daten unverändert.
+- Rückfall: `bootstrap_block=1` stellt IID-Bootstrap wieder her;
+  `lesson_evidence_min_trades=0` das alte Zählverhalten.
+
 ## Nächste zulässige Schritte (laut Plan, noch NICHT umgesetzt)
-1. **AP05** Reproduzierbare Datenstände (feste Anker/Manifeste, überlappender
-   Merge nach Candleidentität, UTC-Kerzengrenzen, R16-K-Means-Präzision,
-   `legacy_unpinned`-Kennzeichnung alter Analysen).
-2. **AP06** Referenzsimulation (Same-Bar-Reihenfolge +4 statt +6, offene
-   Endpositionen im Report, ehrliche Kosten, Paritätsgrenze Fast-Sim).
-3. **AP07–AP09** Forschungsvalidierung ohne Holdout-Tuning, gemeinsamer
-   MarketContext, Policy-/Lernprovenienz.
-4. **AP10–AP13** UI-Zustände, Worker-Vertrag, gestufte Abnahme, Bereinigung.
+1. **AP10** Labor-Pilot / verständliche UI-Zustände (R17): WF-Status
+   differenzieren, Holdout als finaler Test beschriften, selection_basis/
+   attempt_no anzeigen, negative Werte nicht positiv färben.
+2. **AP11** Worker-/Betriebsvertrag · **AP12** gestufte Abnahme ·
+   **AP13** Bereinigung.
 

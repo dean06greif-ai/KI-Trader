@@ -187,9 +187,11 @@ def static_metrics_task(spec: Dict, keys: List[str], symbols: List[str],
 
 def sim_segment_task(spec: Dict, key: str, symbol: str, settings: Dict, cfg: Dict,
                      start_iso: str, use_fast: bool = True) -> List[Dict]:
-    """Einen Regime-Abschnitt simulieren (dynamischer Modus). Es werden nur Trades
-    zurückgegeben, die IM Abschnitt geöffnet wurden (Warmup verworfen) – identisch
-    zu dynamic_strategy.simulate_segment, nur im Kind-Prozess."""
+    """Einen Regime-Abschnitt simulieren (dynamischer Modus). Identisch zu
+    dynamic_strategy.simulate_segment, nur im Kind-Prozess: Entries erst ab
+    Segmentstart (R08), Warmup nur für Indikatoren."""
+    from datetime import datetime
+
     from services import fast_sim
     from services.backtester import simulate_pair
     try:
@@ -202,8 +204,14 @@ def sim_segment_task(spec: Dict, key: str, symbol: str, settings: Dict, cfg: Dic
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"fast_sim fallback (segment) {key}: {e}")
                 provider = None
+        start_ts = None
+        try:
+            start_ts = int(datetime.fromisoformat(start_iso).timestamp() * 1000)
+        except Exception:  # noqa: BLE001
+            start_ts = None
         res = simulate_pair(strat, candles, symbol, settings, cfg, None, True,
-                            _child_should_stop, provider)
+                            _child_should_stop, provider,
+                            entry_allowed_from_ts=start_ts)
         return [t for t in (res.get("all_trades") or [])
                 if (t.get("opened") or "") >= start_iso]
     except Exception as e:  # noqa: BLE001

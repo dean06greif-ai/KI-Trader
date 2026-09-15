@@ -1587,6 +1587,8 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                 _pol_lessons = ""
             _pol_playbook = policy_fingerprint.short_hash(ai_playbook.revision_versions())
             _pol_sizing = policy_fingerprint.sizing_hash(self.config)
+            # AP09/T05 (Schema 2): entscheidungsrelevante Nicht-Sizing-Configs
+            _pol_cfg = policy_fingerprint.policy_config_hash(self.config)
             try:
                 from services.ml_gate import ml_gate as _pol_gate
                 _pol_gate_v = (_pol_gate.model_meta or {}).get("version")
@@ -1691,7 +1693,8 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                         "policy_version": policy_fingerprint.build(
                             prompt_hash=pv.get("combined"), lessons_h=_pol_lessons,
                             playbook_version=_pol_playbook, model=model_used,
-                            gate_version=_pol_gate_v, sizing_h=_pol_sizing),
+                            gate_version=_pol_gate_v, sizing_h=_pol_sizing,
+                            policy_config_h=_pol_cfg),
                         "entry_market_snapshot": _observer.entry_snapshot(sym),
                     }
                     if dec.get("levels_clamp") and action in ("LONG", "SHORT"):

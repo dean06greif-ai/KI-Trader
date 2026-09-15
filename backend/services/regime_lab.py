@@ -23,7 +23,7 @@ import aiohttp
 
 from services import regime as rg
 from services import regime_engine as eng
-from services import research_dataset
+from services import research_dataset, research_validation
 from services.backtester import JobCancelled
 
 logger = logging.getLogger(__name__)
@@ -256,15 +256,19 @@ def _coin_similarity(histories: Dict[str, List[Dict]],
 
 
 def _live_agreement(candles, live_labels, final_labels, model,
-                    train_end_ts=None):
+                    train_end_ts=None, inner_start_ts=None):
     """Wie gut trifft die LIVE-Sicht (kausal, ohne Zukunftswissen) die
     pivot-korrigierten FINAL-Phasen? Richtung je Kerze – gesamt, nur im
     Holdout (Walk-Forward-Testzeitraum) und nur auf Trend-Kerzen. Das ist
     die entscheidende Kennzahl dafür, ob man die Regime-Umschaltung im
-    Paper-/Live-Trading nutzen kann."""
+    Paper-/Live-Trading nutzen kann.
+
+    AP07/R10: `inner_start_ts` liefert zusätzlich die INNERE Validierung
+    (letzter Teil des Trainingsfensters, VOR dem Holdout) – Kandidaten-Auswahl
+    läuft darauf, der Holdout bleibt unangetasteter finaler Test."""
     mode = eng.norm_mode((model.get("config") or {}).get(
         "regime_mode", model.get("regime_mode", eng.DEFAULT_REGIME_MODE)))
-    tot = same = hot = hsame = ttot = tsame = 0
+    tot = same = hot = hsame = ttot = tsame = itot = isame = 0
     for c, lv, fn in zip(candles, live_labels, final_labels):
         if lv is None or fn is None:
             continue
@@ -276,19 +280,24 @@ def _live_agreement(candles, live_labels, final_labels, model,
         if b != 1:
             ttot += 1
             tsame += eq
-        if train_end_ts and int(c["timestamp"]) > int(train_end_ts):
+        ts = int(c["timestamp"])
+        if train_end_ts and ts > int(train_end_ts):
             hot += 1
             hsame += eq
+        elif inner_start_ts and ts > int(inner_start_ts):
+            itot += 1
+            isame += eq
     pct = lambda x, y: round(x / y * 100.0, 1) if y else None  # noqa: E731
     return {"direction_pct": pct(same, tot),
             "holdout_direction_pct": pct(hsame, hot),
+            "inner_direction_pct": pct(isame, itot),
             "trend_hit_pct": pct(tsame, ttot),
-            "bars": tot, "holdout_bars": hot}
+            "bars": tot, "holdout_bars": hot, "inner_bars": itot}
 
 
 def _symbol_payload(model: Dict, candles, timeframe: str, conf_min: float,
                     min_hold_days: float, with_ideal: bool,
-                    train_end_ts=None):
+                    train_end_ts=None, inner_start_ts=None):
     """CPU-lastige Auswertung EINES Symbols (läuft in einem Thread, damit der
     Event-Loop – und damit Worker-Heartbeat/API – nie blockiert)."""
     reactive = (rg.is_v2(model) and str((model.get("config") or {})
@@ -304,7 +313,8 @@ def _symbol_payload(model: Dict, candles, timeframe: str, conf_min: float,
                  "live_segments": _segments_payload(candles, pay["live_labels"]),
                  "corrections": pay["report"],
                  "live_agreement": _live_agreement(candles, pay["live_labels"],
-                                                   labels, model, train_end_ts),
+                                                   labels, model, train_end_ts,
+                                                   inner_start_ts),
                  "validation": _validation_payload(candles, labels, model),
                  "current": _current_payload(candles, model, timeframe,
                                              conf_min, min_hold_days),
@@ -507,12 +517,14 @@ async def run_ema_compare(job_id: str, body: Dict, db):
         if not histories:
             raise RuntimeError("Zu wenig Daten für diesen Timeframe/Zeitraum")
         bpd = rg.bars_per_day(timeframe)
-        bounds, train_hist = {}, {}
+        bounds, inner_anchor, train_hist = {}, {}, {}
         for sym, candles in histories.items():
             cut = min(max(int(len(candles) * train_pct / 100.0), 100), len(candles))
             train_hist[sym] = candles[:cut]
             bounds[sym] = (int(candles[cut - 1]["timestamp"])
                            if cut < len(candles) else None)
+            # AP07/R10: innere Validierung = letzter Teil des TRAININGS-Fensters
+            inner_anchor[sym] = research_validation.inner_anchor_ts(candles, cut)
 
         rows = []
         for pi, period in enumerate(periods):
@@ -528,6 +540,7 @@ async def run_ema_compare(job_id: str, body: Dict, db):
                 rows.append({"period": period, "error": "Modell fehlgeschlagen"})
                 continue
             agg = {"direction_pct": [], "holdout_direction_pct": [],
+                   "inner_direction_pct": [], "holdout_bars": 0,
                    "trend_hit_pct": [], "avg_final_days": [], "avg_live_days": [],
                    "switches_final": 0, "switches_live": 0,
                    "violation_pct": [], "passed": True}
@@ -536,11 +549,14 @@ async def run_ema_compare(job_id: str, body: Dict, db):
                     raise JobCancelled()
                 _labels, entry = await asyncio.to_thread(
                     _symbol_payload, model, candles, timeframe,
-                    conf_min, min_hold, False, bounds.get(sym))
+                    conf_min, min_hold, False, bounds.get(sym),
+                    inner_anchor.get(sym))
                 la = entry.get("live_agreement") or {}
-                for k in ("direction_pct", "holdout_direction_pct", "trend_hit_pct"):
+                for k in ("direction_pct", "holdout_direction_pct",
+                          "inner_direction_pct", "trend_hit_pct"):
                     if la.get(k) is not None:
                         agg[k].append(la[k])
+                agg["holdout_bars"] += int(la.get("holdout_bars") or 0)
                 segs = entry.get("segments") or []
                 lsegs = entry.get("live_segments") or []
                 if segs:
@@ -559,6 +575,8 @@ async def run_ema_compare(job_id: str, body: Dict, db):
             rows.append({"period": period,
                          "direction_pct": mean(agg["direction_pct"]),
                          "holdout_direction_pct": mean(agg["holdout_direction_pct"]),
+                         "inner_direction_pct": mean(agg["inner_direction_pct"]),
+                         "holdout_bars": agg["holdout_bars"],
                          "trend_hit_pct": mean(agg["trend_hit_pct"]),
                          "avg_final_segment_days": mean(agg["avg_final_days"]),
                          "avg_live_segment_days": mean(agg["avg_live_days"]),
@@ -566,10 +584,23 @@ async def run_ema_compare(job_id: str, body: Dict, db):
                          "switches_live": agg["switches_live"],
                          "violation_pct": mean(agg["violation_pct"]),
                          "passed": agg["passed"]})
-        best = max((r for r in rows if r.get("holdout_direction_pct") is not None),
-                   key=lambda r: r["holdout_direction_pct"], default=None)
+        # AP07/R10: Auswahl NUR über die innere Validierung – der Holdout ist
+        # abschließender Test und darf die Periodenwahl nicht mehr steuern.
+        best, selection_basis = research_validation.select_best_row(rows)
+        attempt_no = await research_validation.register_attempt(
+            db, f"ema_compare:{timeframe}:{','.join(sorted(histories.keys()))}",
+            "ema_compare")
         result = {"kind": "ema_compare", "rows": rows,
                   "best_period": best["period"] if best else None,
+                  "selection_basis": selection_basis,
+                  "holdout_role": "final_test",
+                  "evidence": research_validation.evidence_verdict(
+                      (best or {}).get("holdout_bars")),
+                  "attempt_no": attempt_no,
+                  "manifest": research_validation.experiment_manifest(
+                      "ema_compare", {"periods": periods, "days": days,
+                                      "train_pct": train_pct,
+                                      "timeframe": timeframe}),
                   "symbols": list(histories.keys()), "timeframe": timeframe,
                   "days": days, "train_pct": train_pct,
                   "created_at": datetime.now(timezone.utc).isoformat()}
@@ -626,12 +657,13 @@ async def run_kombi_calibrate(job_id: str, body: Dict, db):
         if not histories:
             raise RuntimeError("Zu wenig Daten für diesen Timeframe/Zeitraum")
         bpd = rg.bars_per_day(timeframe)
-        bounds, train_hist = {}, {}
+        bounds, inner_anchor, train_hist = {}, {}, {}
         for sym, candles in histories.items():
             cut = min(max(int(len(candles) * train_pct / 100.0), 100), len(candles))
             train_hist[sym] = candles[:cut]
             bounds[sym] = (int(candles[cut - 1]["timestamp"])
                            if cut < len(candles) else None)
+            inner_anchor[sym] = research_validation.inner_anchor_ts(candles, cut)
 
         combos = [(t, s) for t in thr_grid for s in slope_grid]
         rows = []
@@ -649,6 +681,7 @@ async def run_kombi_calibrate(job_id: str, body: Dict, db):
                              "error": "Modell fehlgeschlagen"})
                 continue
             agg = {"direction_pct": [], "holdout_direction_pct": [],
+                   "inner_direction_pct": [], "holdout_bars": 0,
                    "trend_hit_pct": [], "avg_final_days": [],
                    "avg_live_days": [], "switches_final": 0,
                    "switches_live": 0}
@@ -657,11 +690,14 @@ async def run_kombi_calibrate(job_id: str, body: Dict, db):
                     raise JobCancelled()
                 _labels, entry = await asyncio.to_thread(
                     _symbol_payload, model, candles, timeframe,
-                    conf_min, min_hold, False, bounds.get(sym))
+                    conf_min, min_hold, False, bounds.get(sym),
+                    inner_anchor.get(sym))
                 la = entry.get("live_agreement") or {}
-                for k in ("direction_pct", "holdout_direction_pct", "trend_hit_pct"):
+                for k in ("direction_pct", "holdout_direction_pct",
+                          "inner_direction_pct", "trend_hit_pct"):
                     if la.get(k) is not None:
                         agg[k].append(la[k])
+                agg["holdout_bars"] += int(la.get("holdout_bars") or 0)
                 segs = entry.get("segments") or []
                 lsegs = entry.get("live_segments") or []
                 if segs:
@@ -675,17 +711,22 @@ async def run_kombi_calibrate(job_id: str, body: Dict, db):
             mean = lambda xs: (sum(xs) / len(xs)) if xs else None  # noqa: E731
             dur = mean(agg["avg_final_days"])
             hold = mean(agg["holdout_direction_pct"])
-            # Score: Holdout-Trefferquote minus Strafe je Tag außerhalb des
-            # 5-15-Tage-Zielbands (Phasendauer hat Priorität, dann Treffer).
+            inner = mean(agg["inner_direction_pct"])
+            # AP07/R10: Score auf INNERER Validierung (Auswahl), nicht mehr auf
+            # dem Holdout – der bleibt reiner Bericht/finaler Test. Fallback
+            # (kein inneres Fenster, Altdaten): Trainings-Trefferquote.
+            sel = inner if inner is not None else mean(agg["direction_pct"])
             if dur is None:
                 out_band, score = None, None
             else:
                 out_band = max(0.0, t_lo - dur) + max(0.0, dur - t_hi)
-                score = (hold or 0.0) - 4.0 * out_band
+                score = (sel or 0.0) - 4.0 * out_band
             rnd = lambda v, d=1: round(v, d) if v is not None else None  # noqa: E731
             rows.append({"thr": thr, "slope_days": slope,
                          "direction_pct": rnd(mean(agg["direction_pct"])),
                          "holdout_direction_pct": rnd(hold),
+                         "inner_direction_pct": rnd(inner),
+                         "holdout_bars": agg["holdout_bars"],
                          "trend_hit_pct": rnd(mean(agg["trend_hit_pct"])),
                          "avg_final_segment_days": rnd(dur),
                          "avg_live_segment_days": rnd(mean(agg["avg_live_days"])),
@@ -704,6 +745,14 @@ async def run_kombi_calibrate(job_id: str, body: Dict, db):
         result = {"kind": "kombi_calibrate",
                   "rows": scored[:40] + [r for r in rows if r.get("score") is None],
                   "best": best, "best_config": best_config,
+                  "selection_basis": "inner_validation",
+                  "holdout_role": "final_test",
+                  "evidence": research_validation.evidence_verdict(
+                      (best or {}).get("holdout_bars")),
+                  "attempt_no": await research_validation.register_attempt(
+                      db, f"kombi_calibrate:{timeframe}:"
+                          f"{','.join(sorted(histories.keys()))}",
+                      "kombi_calibrate"),
                   "target_min_days": t_lo, "target_max_days": t_hi,
                   "symbols": list(histories.keys()), "timeframe": timeframe,
                   "days": days, "train_pct": train_pct,

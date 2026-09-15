@@ -106,7 +106,8 @@ function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineConfig, j
               <tr style={{ textAlign: 'left', opacity: 0.7 }}>
                 <th style={{ padding: '3px 10px 3px 0' }}>EMA</th>
                 <th style={{ padding: '3px 10px' }} title="Anteil der Kerzen, bei denen die Live-Sicht dieselbe Richtung sieht wie die finale Sicht">Live=Final</th>
-                <th style={{ padding: '3px 10px' }} title="Nur im Holdout (Walk-Forward-Zeitraum) – die ehrlichste Kennzahl">Holdout</th>
+                <th style={{ padding: '3px 10px' }} title="Innere Validierung (letzter Teil des Trainingsfensters) – DARAUF wird die beste Periode gewählt">Innere Val.</th>
+                <th style={{ padding: '3px 10px' }} title="Holdout = unangetasteter FINALER Test (keine Auswahlbasis)">Holdout (finaler Test)</th>
                 <th style={{ padding: '3px 10px' }} title="Nur auf Trend-Kerzen (Auf/Ab)">Trend-Treffer</th>
                 <th style={{ padding: '3px 10px' }} title="Durchschnittliche Phasendauer der finalen Sicht">Ø Phase final</th>
                 <th style={{ padding: '3px 10px' }} title="Durchschnittliche Phasendauer der Live-Sicht (kürzer = mehr Flackern)">Ø Phase live</th>
@@ -123,10 +124,11 @@ function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineConfig, j
                   <td style={{ padding: '3px 10px 3px 0' }}>
                     <b>{r.period}d</b>{r.period === result.best_period ? ' ★' : ''}
                   </td>
-                  {r.error ? <td colSpan={8} className="neg">{r.error}</td> : (
+                  {r.error ? <td colSpan={9} className="neg">{r.error}</td> : (
                     <>
                       <td style={{ padding: '3px 10px' }}>{fmt(r.direction_pct, 1)}%</td>
-                      <td style={{ padding: '3px 10px' }}><b>{fmt(r.holdout_direction_pct, 1)}%</b></td>
+                      <td style={{ padding: '3px 10px' }}><b>{fmt(r.inner_direction_pct, 1)}%</b></td>
+                      <td style={{ padding: '3px 10px' }}>{fmt(r.holdout_direction_pct, 1)}%</td>
                       <td style={{ padding: '3px 10px' }}>{fmt(r.trend_hit_pct, 1)}%</td>
                       <td style={{ padding: '3px 10px' }}>{fmt(r.avg_final_segment_days, 1)}d</td>
                       <td style={{ padding: '3px 10px' }}>{fmt(r.avg_live_segment_days, 1)}d</td>
@@ -141,8 +143,12 @@ function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineConfig, j
               ))}
             </tbody>
           </table>
-          <div className="opt-small" style={{ marginTop: 4 }}>
-            ★ = beste Holdout-Trefferquote. Tipp: die Sieger-Periode oben unter
+          <div className="opt-small" style={{ marginTop: 4 }} data-testid="ema-compare-selection-note">
+            ★ = beste INNERE Validierung (der Holdout ist finaler Test, keine Auswahlbasis
+            {result.selection_basis === 'train_only' ? ' · Auswahl hier: nur Training, kein inneres Fenster' : ''}).
+            {result.attempt_no ? ` Versuch #${result.attempt_no} auf diesem Holdout.` : ''}
+            {result.evidence === 'insufficient_evidence' ? ' ⚠ Zu wenig Holdout-Daten – Ergebnis nicht belastbar.' : ''}
+            {' '}Tipp: die Sieger-Periode oben unter
             Engine-Feineinstellungen → „EMA-Regime: Periode" eintragen und die
             Analyse mit Detektor 'ema' starten.
           </div>
@@ -514,7 +520,11 @@ function RegimeCard({ analysis, scope, symbol, regime, usage, strategies, jobBlo
               ? (assignment.strategy_name || assignment.strategy_id)
               : `Eigene Regeln (${(assignment.rules || []).length})`}</span>
             <M m={assignment.metrics} />
-            {assignment.validation && <span className="opt-small pos">WF-PnL {fmt(assignment.validation.pnl)}</span>}
+            {assignment.validation && (
+              <span className={`opt-small ${(assignment.validation.pnl || 0) >= 0 ? 'pos' : 'neg'}`}>
+                WF-PnL {fmt(assignment.validation.pnl)}
+              </span>
+            )}
             <span style={{ flex: 1 }} />
             <button className="opt-chip" onClick={removeAssignment} data-testid={`regime-assignment-remove-${scope}-${regime.id}`}>
               <Trash size={11} /> entfernen
@@ -1235,7 +1245,21 @@ export default function RegimeLab({ onClose }) {
               <span className="opt-small">{a.timeframe} · {a.days}d · Training {a.settings?.train_pct}%</span>
               {a.n_regimes_combined > 0 && <span className="opt-small">{a.n_regimes_combined} Regime (kombiniert)</span>}
               {a.n_assignments > 0 && <span className="opt-small pos">{a.n_assignments} Strategie(n) bestätigt</span>}
-              {a.has_walkforward && <span className="opt-small pos">WF getestet</span>}
+              {a.has_walkforward
+                ? <span className={`opt-small ${a.walkforward_passed ? 'pos' : 'neg'}`}
+                    data-testid={`wf-status-${a.id}`}
+                    title={a.walkforward_passed
+                      ? 'Finaler Walk-Forward bestanden (dynamisch schlägt Benchmark)'
+                      : 'Walk-Forward vorhanden, aber NICHT bestanden'}>
+                    {a.walkforward_passed ? 'WF bestanden' : 'WF nicht bestanden'}
+                  </span>
+                : <span className="opt-small" style={{ opacity: 0.55 }}
+                    data-testid={`wf-status-${a.id}`}>WF nicht geprüft</span>}
+              {a.dataset_status === 'legacy_unpinned' && (
+                <span className="opt-small" style={{ opacity: 0.55 }}
+                  title="Bestandsanalyse ohne Datensatz-Manifest – das Datenfenster ist nicht fixiert, spätere Läufe sind nicht exakt reproduzierbar"
+                  data-testid={`dataset-status-${a.id}`}>Daten nicht gepinnt</span>
+              )}
               <span style={{ flex: 1 }} />
               <span className="opt-small">{fmtDateTime(a.created_at)}</span>
               <button className="opt-chip" onClick={(e) => removeAnalysis(a.id, e)} data-testid={`regime-analysis-delete-${a.id}`}>

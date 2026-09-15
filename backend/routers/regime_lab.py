@@ -223,6 +223,12 @@ async def list_analyses():
                     "n_regimes_combined": len((comb.get("model") or {}).get("regimes") or []),
                     "n_assignments": len(r.get("assignments") or {}),
                     "has_walkforward": bool(r.get("walkforward")),
+                    # AP10/R17: differenzierter WF-Status statt pauschal "getestet"
+                    "walkforward_passed": (
+                        (lambda vs: all(vs) if vs else None)(
+                            [bool(((w or {}).get("verdict") or {}).get("dynamic_better"))
+                             for w in (r.get("walkforward") or {}).values()
+                             if isinstance(w, dict)])),
                     # AP05/R06: 'pinned' = Datensatz-Manifest vorhanden;
                     # Bestandsanalysen = 'legacy_unpinned' (nicht reproduzierbar fixiert)
                     "dataset_status": research_dataset.dataset_status(r)})

@@ -16,6 +16,7 @@ from typing import Dict, List
 from services import dynamic_strategy as dyn
 from services import regime as rg
 from services import regime_lab as lab
+from services import research_validation
 from services.backtester import JobCancelled
 
 logger = logging.getLogger(__name__)
@@ -326,6 +327,10 @@ async def run_regime_optimizer(job_id: str, body: Dict, registry, settings: Dict
         bpd = rg.bars_per_day(timeframe)
         result = {
             "kind": "regime_opt", "analysis_id": doc["id"], "analysis_name": doc.get("name"),
+            # AP07/R05: Trainings-/Suchsegmente stammen aus den RÜCKBLICKENDEN
+            # Final-Labels der Analyse (Diagnose-/Trainingsbasis). Handelbarer
+            # Beleg ist ausschließlich der Walk-Forward (kausale Live-Labels).
+            "label_basis": "retrospective_reference",
             "scope": scope, "symbol": symbol, "regime_id": regime_id,
             "regime_label": reg_meta.get("label"), "mode": mode,
             "objective": objective, "min_trades": min_trades,
@@ -532,11 +537,19 @@ async def run_walkforward(job_id: str, body: Dict, registry, settings: Dict,
                         for rid, rs in sorted(per_regime.items())]
 
         result = {"kind": "walkforward", "analysis_id": doc["id"], "scope": scope,
+                  # AP07/R05: Holdout wird ausschließlich mit KAUSALEN
+                  # Live-Labels (classify_series) klassifiziert.
+                  "label_basis": "causal_live",
                   "symbol": symbol, "symbols": list(histories.keys()),
                   "timeframe": tf, "train_pct": s_cfg.get("train_pct"),
                   "dynamic_test": dyn_m, "switches": switches,
                   "singles": singles, "best_single": best_single,
                   "per_regime": per_regime_m, "verdict": verdict,
+                  # AP07/R10: jede Wiederverwendung dieses sichtbaren Holdouts
+                  # wird gezählt und am Ergebnis ausgewiesen.
+                  "attempt_no": await research_validation.register_attempt(
+                      db, f"walkforward:{doc['id']}:{lab.scope_key(scope, symbol)}",
+                      "walkforward"),
                   "points": points[:8000],
                   "created_at": datetime.now(timezone.utc).isoformat()}
         key = lab.scope_key(scope, symbol)

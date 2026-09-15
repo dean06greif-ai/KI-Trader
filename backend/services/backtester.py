@@ -224,8 +224,15 @@ def effective_leverage(cfg: Dict, entry: float, sl: float) -> float:
 def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
                   cfg: Dict, progress_cb=None, collect_trades: bool = False,
                   should_stop: Callable[[], bool] = None,
-                  signal_provider: Callable[[int], Optional[Dict]] = None) -> Dict:
-    """Sync CPU-bound simulation for one (strategy, symbol) pair."""
+                  signal_provider: Callable[[int], Optional[Dict]] = None,
+                  entry_allowed_from_ts: Optional[int] = None) -> Dict:
+    """Sync CPU-bound simulation for one (strategy, symbol) pair.
+
+    AP06/R08: `entry_allowed_from_ts` trennt Warmup von Handel – Indikatoren
+    werden über die volle Historie gebildet, Entries erst ab dem Anker erlaubt
+    (ein Warmup-Trade kann keinen Entry im eigentlichen Segment mehr blockieren).
+    Modellannahme (dokumentiert): Signal auf geschlossener Kerze -> Fill zum
+    Schlusskurs dieser Kerze (Close-on-close); Management ab der Folgekerze."""
     from services import fee_model
     fee_pct = fee_model.fee_percent_for(
         symbol, float(cfg.get("fee_percent", 0.06)),
@@ -344,7 +351,11 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
                                        else "loss")
                 open_t = None
             else:
-                if tp1_hit and not tpf_hit:
+                # R08: TP1 wirkt auch, wenn TPFull in derselben Kerze erreicht
+                # wird – TP1 liegt näher am Entry und wird auf dem Weg zum
+                # TPFull ZUERST berührt. Vorher schloss die GESAMTE Menge zum
+                # TPFull (Fixture Long 100→101/103, 50%: +6 statt korrekt +4).
+                if tp1_hit:
                     cq = t["qty"] * tp1_close
                     fee = cq * t["tp1"] * fee_pct
                     t["pnl"] += ((t["tp1"] - t["entry"]) * cq if side == "LONG"
@@ -403,6 +414,8 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
 
         # ---- check for new signal on this closed candle ----
         if open_t is None:
+            if entry_allowed_from_ts is not None and c_ts < entry_allowed_from_ts:
+                continue
             if session_check and not session_check(c_ts):
                 continue
             if signal_provider is not None:
@@ -459,6 +472,18 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
                     "c_close": c_close, "c_volume": c_vol,
                 }
 
+    # ---- R08: offene Endposition ehrlich abrechnen ----
+    # Mark-to-Market zum letzten verfügbaren Schlusskurs inkl. Exit-Gebühr
+    # (dokumentierte Modellannahme, kein kostenloses "Verschwinden" mehr:
+    # vorher erschien ein Trade mit schwebendem Verlust als trades=0/pnl=0).
+    if open_t is not None and n > warmup:
+        t = open_t
+        t["end_forced"] = True
+        close_trade(t, c_close, "loss", c_ts)
+        t["result"] = ("win" if t["pnl"] > 1e-6
+                       else "breakeven" if t["pnl"] >= -1e-6 else "loss")
+        open_t = None
+
     # ---- metrics ----
     # Winrate basiert auf tatsächlichem PnL (nicht auf SL/TP-Label):
     # Ein Trade der TP1 realisiert und danach am BE-Stop schließt, ist trotzdem profitabel.
@@ -494,6 +519,7 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
                 "fees": round(t["fees"], 4), "qty": round(t["qty"], 6),
                 "tp1_done": t["tp1_done"], "breakeven_moved": t["be_moved"],
                 "profit_secured": t["secured"], "liquidated": t.get("liquidated", False),
+                "end_forced": t.get("end_forced", False),
                 "liq_price": round(t.get("liq", 0), 8),
                 "leverage": t.get("lev"),
                 "duration_min": round((t["closed_ts"] - t["opened_ts"]) / 60000, 1)
@@ -514,6 +540,7 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
         "secured": sum(1 for t in trades if t["secured"]),
         "be_moved": sum(1 for t in trades if t["be_moved"]),
         "liquidations": sum(1 for t in trades if t.get("liquidated")),
+        "end_forced_trades": sum(1 for t in trades if t.get("end_forced")),
         "win_rate": round(wins / decided * 100, 1) if decided else 0.0,
         "pnl": round(pnl_total, 2),
         "pnl_pct": round(pnl_total / capital * 100, 2) if capital else 0.0,

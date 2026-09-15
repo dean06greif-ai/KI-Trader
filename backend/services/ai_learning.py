@@ -9,6 +9,8 @@ in den Chat ein – unabhängig davon, was der Nutzer schreibt.
 Trigger: automatisch nach geschlossenen Trades (mit Mindestabstand),
 täglich beim 00:00-Berlin-Reset und manuell per Endpoint.
 """
+import hashlib
+import json
 import logging
 import time
 import uuid
@@ -107,6 +109,19 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def outcome_version(trade: Dict) -> str:
+    """AP09/T07 (rein): Version des Trade-Ergebnisses. Ändert sich, wenn eine
+    spätere Broker-Revision PnL/Fees/Result korrigiert – dieselbe Version wird
+    nie doppelt konsumiert, eine neue exakt einmal."""
+    raw = json.dumps({"pnl": trade.get("realized_pnl"),
+                      "result": trade.get("result"),
+                      "closed_at": trade.get("closed_at"),
+                      "fees": trade.get("fees_paid"),
+                      "funding": trade.get("funding_paid")},
+                     sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode()).hexdigest()[:12]
+
+
 def aggregate_performance(signals: List[Dict], trades: List[Dict]) -> Dict:
     """Reine Aggregation (testbar): Signal- und Trade-Listen -> Statistik-Dict."""
     sigs = [s for s in signals if s.get("signal_class") != "PRE_SIGNAL"]
@@ -146,14 +161,21 @@ def aggregate_performance(signals: List[Dict], trades: List[Dict]) -> Dict:
                 b["losses"] += 1
 
     closed = [t for t in trades if t.get("status") == "closed"]
+    # AP09/T08: Datensammel-Trades sind KEIN regulärer Paper-/Live-Erfolg –
+    # eigener Bucket, aus paper/live und dem Gesamtsaldo herausgehalten.
+    collection = [t for t in closed if t.get("data_collection") is True]
+    regular = [t for t in closed if t.get("data_collection") is not True]
     modes: Dict[str, Dict] = {}
-    for m in ("paper", "live"):
-        mt = [t for t in closed if t.get("mode") == m]
+    for m, pool in (("paper", regular), ("live", regular),
+                    ("collect", collection)):
+        mt = [t for t in pool if t.get("mode") == m] if m != "collect" else pool
         pnl = sum(float(t.get("realized_pnl", 0) or 0) for t in mt)
         w = sum(1 for t in mt if float(t.get("realized_pnl", 0) or 0) > 0)
         modes[m] = {"count": len(mt), "pnl": round(pnl, 4), "wins": w, "losses": len(mt) - w,
                     "win_rate": round(w / len(mt) * 100, 1) if mt else 0.0,
                     "avg_pnl": round(pnl / len(mt), 4) if mt else 0.0}
+        if m == "collect":
+            continue
         for t in mt:
             d = by_symbol.setdefault(t.get("symbol"), {"signals": 0, "wins": 0, "losses": 0,
                                                        "trades": 0, "pnl": 0.0})
@@ -303,20 +325,33 @@ class AILearning:
                 "ai_learn_synced": {"$ne": True},
             }).limit(100).to_list(100)
             for t in trades:
-                await self.db.auto_trades.update_one(
-                    {"id": t["id"]}, {"$set": {"ai_learn_synced": True}})
-                if t.get("signal_id"):
-                    # Fix 0.5: Trade-Ergebnis ist die kanonische Wahrheit ->
-                    # setzt outcome IMMER (überschreibt TP1-Touch-Label).
-                    upd = {"trade_pnl": t.get("realized_pnl"),
-                           "trade_mode": t.get("mode"),
-                           "trade_closed_at": t.get("closed_at")}
-                    if t.get("result") in ("win", "loss", "breakeven"):
-                        upd.update({"outcome": t["result"],
-                                    "outcome_source": "trade_pnl",
-                                    "outcome_ts": _now_iso()})
-                    await self.db.ai_decisions.update_many(
-                        {"signal_id": t["signal_id"]}, {"$set": upd})
+                # AP09/T07: ERST die Decisions aktualisieren (Konsumenten-Erfolg),
+                # DANN als konsumiert markieren – mit Outcome-Version. Ein
+                # Fehler lässt den Trade unsynchronisiert (nächster Lauf holt
+                # ihn nach); eine spätere PnL-Revision (pnl_reconcile) setzt
+                # ai_learn_synced zurück und erzeugt eine NEUE Outcome-Version.
+                try:
+                    ov = outcome_version(t)
+                    if t.get("signal_id"):
+                        # Fix 0.5: Trade-Ergebnis ist die kanonische Wahrheit ->
+                        # setzt outcome IMMER (überschreibt TP1-Touch-Label).
+                        upd = {"trade_pnl": t.get("realized_pnl"),
+                               "trade_mode": t.get("mode"),
+                               "trade_closed_at": t.get("closed_at"),
+                               "outcome_version": ov}
+                        if t.get("result") in ("win", "loss", "breakeven"):
+                            upd.update({"outcome": t["result"],
+                                        "outcome_source": "trade_pnl",
+                                        "outcome_ts": _now_iso()})
+                        await self.db.ai_decisions.update_many(
+                            {"signal_id": t["signal_id"]}, {"$set": upd})
+                    await self.db.auto_trades.update_one(
+                        {"id": t["id"]},
+                        {"$set": {"ai_learn_synced": True,
+                                  "ai_learn_outcome_version": ov}})
+                except Exception as e:  # noqa: BLE001 – Trade bleibt unsynced
+                    logger.warning(f"AI outcome sync Trade {t.get('id')}: {e}")
+                    continue
                 t.pop("_id", None)
                 new_trades.append(t)
         except Exception as e:
@@ -385,10 +420,39 @@ class AILearning:
             pass
         doc = await self.db.ai_lesson_candidates.find_one({"key": key}) or {}
         totals = (stats or {}).get("totals") or {}
+        # AP09/T08: Wiederholte SICHTUNG ist keine unabhängige Evidenz. Eine
+        # weitere Bestätigung zählt nur, wenn seit der zuletzt gezählten
+        # Bestätigung genügend NEUE geschlossene Trades vorliegen (disjunkte
+        # Evidenz-Fenster – Verallgemeinerung von ai_validation.real_confirmations).
+        confirmations = int(doc.get("confirmations", 0)) + 1
+        evidence_ts = doc.get("evidence_ts")
+        if doc:
+            try:
+                min_new = int(validation_gate.settings.get(
+                    "lesson_evidence_min_trades", 2))
+                q = {"strategy_id": "ai_trader", "status": "closed",
+                     "data_collection": {"$ne": True}}
+                if evidence_ts:
+                    q["closed_at"] = {"$gt": evidence_ts}
+                fresh = await self.db.auto_trades.count_documents(q)
+                if fresh < min_new:
+                    confirmations = int(doc.get("confirmations", 0))  # kein +1
+            except Exception:  # noqa: BLE001 – fail-open (altes Verhalten)
+                pass
+        if confirmations != int(doc.get("confirmations", 0)):
+            try:
+                latest = await self.db.auto_trades.find(
+                    {"strategy_id": "ai_trader", "status": "closed"}) \
+                    .sort("closed_at", -1).limit(1).to_list(1)
+                if latest:
+                    evidence_ts = latest[0].get("closed_at") or evidence_ts
+            except Exception:  # noqa: BLE001
+                pass
         entry = {
             "key": key, "title": title, "detail": detail, "model": model,
             "weight": max(int(weight or 2), int(doc.get("weight", 0) or 0)),
-            "confirmations": int(doc.get("confirmations", 0)) + 1,
+            "confirmations": confirmations,
+            "evidence_ts": evidence_ts,
             "sample": int(totals.get("closed_trades") or 0)
             + int(totals.get("signal_wins") or 0) + int(totals.get("signal_losses") or 0),
             "first_seen": doc.get("first_seen") or _now_iso(),

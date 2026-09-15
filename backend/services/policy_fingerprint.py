@@ -21,9 +21,19 @@ SIZING_KEYS = (
 # Inhaltstragende Lektions-Felder (Zeitstempel/Zähler ändern die Policy nicht)
 _LESSON_KEYS = ("title", "detail", "weight")
 
+# AP09/T05: entscheidungsrelevante NICHT-Sizing-Configs – Änderung = neue Policy
+# (eigener Config-Hash, gehört ausdrücklich NICHT in den Sizing-Hash).
+POLICY_CONFIG_KEYS = (
+    "min_confidence", "collection_min_confidence", "fee_guard_enabled",
+    "fee_guard_mult", "fee_guard_atr_mult", "fee_guard_crv_relax",
+    "live_gate_bypass_enabled",
+)
+
 # Einzelteile des Fingerprints (Reihenfolge = Anzeige-/Hash-Reihenfolge)
 PART_KEYS = ("prompt_hash", "lessons_hash", "playbook_version",
              "model", "gate_version", "sizing_hash")
+# Schema 2 (AP09): zusätzlich Policy-Config-Hash + Regime-Artifact
+PART_KEYS_V2 = PART_KEYS + ("config_hash", "regime_artifact")
 
 
 def short_hash(obj) -> str:
@@ -47,9 +57,21 @@ def sizing_hash(config: Optional[Dict]) -> str:
     return short_hash({k: cfg.get(k) for k in SIZING_KEYS})
 
 
+def policy_config_hash(config: Optional[Dict]) -> str:
+    """AP09/T05: Hash über entscheidungsrelevante Nicht-Sizing-Configs."""
+    cfg = config or {}
+    return short_hash({k: cfg.get(k) for k in POLICY_CONFIG_KEYS})
+
+
 def build(prompt_hash: str = "", lessons_h: str = "", playbook_version: str = "",
-          model: Optional[str] = None, gate_version=None, sizing_h: str = "") -> Dict:
-    """Fingerprint-Dokument bauen; `combined` = Gruppierungs-Schlüssel."""
+          model: Optional[str] = None, gate_version=None, sizing_h: str = "",
+          policy_config_h: str = "", regime_artifact: Optional[str] = None) -> Dict:
+    """Fingerprint-Dokument bauen; `combined` = Gruppierungs-Schlüssel.
+
+    AP09/T05 additiv: mit policy_config_h/regime_artifact entsteht
+    `schema=2` (erweiterter combined). Alt-Aufrufer ohne die neuen Teile
+    erhalten unverändert den Schema-1-Fingerprint – gespeicherte Alttrades
+    bleiben dadurch stabil gruppierbar."""
     try:
         gv = int(gate_version) if gate_version is not None else None
     except (TypeError, ValueError):
@@ -62,7 +84,13 @@ def build(prompt_hash: str = "", lessons_h: str = "", playbook_version: str = ""
         "gate_version": gv,
         "sizing_hash": str(sizing_h or ""),
     }
-    fp["combined"] = short_hash({k: fp[k] for k in PART_KEYS})
+    if policy_config_h or regime_artifact:
+        fp["config_hash"] = str(policy_config_h or "")
+        fp["regime_artifact"] = (str(regime_artifact or "") or None)
+        fp["schema"] = 2
+        fp["combined"] = short_hash({k: fp.get(k) for k in PART_KEYS_V2})
+    else:
+        fp["combined"] = short_hash({k: fp[k] for k in PART_KEYS})
     return fp
 
 
