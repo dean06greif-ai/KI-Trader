@@ -176,6 +176,7 @@ async def dynamic_confirm(did: str, _: bool = Depends(require_admin)):
                 doc, switched, doc.get("last_state") or {})
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Übergangsschutz beim Confirm fehlgeschlagen: {e}")
+            transition = {"status": "failed", "reason": str(e)[:200]}
     try:
         applied = await dynamic_live.apply_active(doc)
     except RuntimeError as e:

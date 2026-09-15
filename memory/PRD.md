@@ -55,3 +55,16 @@ ehrliche Messung und nachvollziehbare Policy-Entwicklung.
 
 ## Detail-Protokoll
 Siehe `/app/UMSETZUNG_FORTSCHRITT.md` (Quelle der Wahrheit, wird je Schritt fortgeschrieben).
+
+## Umgesetzt 15.06.2026 – Analyseplan AP00–AP03 (Paket `analysis_paket/`)
+Basis: Commit 792ff0ac (Branch conflict_150926_0200), Plan aus Branch conflict_150926_1731.
+- AP00: Offline-Testbasis `backend/tests/analysis_regression/` (Fake-DB, opt. Netzsperre via KI_OFFLINE_TESTS=1), 55 Solltests.
+- AP01 (T01/R03): `leftover_evidence()` – Watchdog schließt Fremdpositionen nie ohne ID-/Mengenbeleg; `transition_close_query()` scoped; Übergangsschutz nur im Apply-/Confirm-Pfad (Refresh handelswirkungsfrei).
+- AP02 (T02/T03/T06): `recovered_fill_qty()` bucht echte Fillmenge; `sl_exchange_status` confirmed/missing/unknown (additiv); Risikobudget fail-closed bei unbekannter Equity + `unknown_sl_risk_pct` (2%) für offene Trades ohne SL.
+- AP03 (R01/R02): `services/strategy_plan.py` – deterministischer Resolver (plan_hash), Basis-Ableitung statt kumulativer Merges (`dynamic_keys`/`dynamic_param_keys`), Sub-Strategie-Regeln transparent am Coin-Override.
+- Fortschrittsdatei: `/app/PROGRESS.md` (Berichtsformat des Handoffs). Tests: 1466 unit + 54 offline + 25 API-Regression grün.
+
+## Backlog (aus Plan, priorisiert)
+- P1: AP04 (observed/desired/applied, CAS-Confirm, idempotenter Apply), AP05 (Datenmanifeste/Candlegrenzen), AP06 (Referenzsimulation Same-Bar/offene Positionen), AP07–AP09 (Holdout-Trennung, MarketContext, Policy-Provenienz)
+- P1/P2: AP10 (UI-Zustände), AP11 (Worker-Vertrag), AP12 (Shadow/Paper-Abnahme)
+- P2: AP13 (Bereinigung/Erweiterung)
