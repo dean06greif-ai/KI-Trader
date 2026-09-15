@@ -181,6 +181,12 @@
 - Backend-Unit-Suite (`pytest tests -m unit`, ohne iter38-Umgebungstests):
   **1540 passed**, 2 skipped – keine Regression.
 - Root-Suite `/app/tests`: **169 passed** (3 vorbestehende Fails behoben, s.o.).
+- Testing-Agent (iteration_5, 26.06.2026): Backend **17/17 grün** (Login/401,
+  Draft⇒409-Gate, approve⇒apply, validated ohne Gate, Confirm-400, Archiv +
+  Log-Erhalt, list-Filter), Frontend-E2E **100%** (Login ⇒ Tools ⇒ Optimizer ⇒
+  DynamicPanel: Draft-Badge, Freigeben-Toast, Badge „Freigegeben", Delete).
+  Neue E2E-Datei `backend/tests/test_ap04_api_flows.py` (Env-Creds/Fallback +
+  Skip ohne Backend – CI-sicher, auto-markiert live).
 - App-Smoke: `/api/health` alive, Frontend lädt (lokale Dev-Instanz,
   lokale Mongo, keine Broker-/LLM-Keys).
 

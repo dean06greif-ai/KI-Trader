@@ -1,0 +1,35 @@
+{
+  "summary": "AP04 Release-Lifecycle (draft/validated/approved), Apply-Gate, Confirm-CAS, Approve-Endpoint und Delete=Archive vollständig getestet – Backend 17/17 pytest grün, Frontend-E2E über AdminLogin -> Tools -> Optimizer -> DynamicPanel grün. Draft-Badge 'Entwurf – nicht validiert', Freigeben-Klick zeigt Toast 'Strategie ausdrücklich freigegeben' und wechselt Badge zu 'Freigegeben'; Delete entfernt Karte aus der Liste.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/safety/status", "issue": "Erfordert Auth (401 ohne Bearer). Review-Request nannte einfach '200' – nicht kritisch, aber inkonsistent zur Spezifikation. Bitte prüfen, ob so gewollt."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ap04_api_flows.py",
+    "/app/test_reports/pytest/ap04_api_flows.xml"
+  ],
+  "action_items": [
+    "Optional: klären, ob /api/safety/status public sein soll (Review-Request beschreibt 200 ohne Auth; aktuell 401 ohne Token)."
+  ],
+  "critical_code_review_comments": [
+    "DynamicPanel.js Approve/Delete verwenden window.confirm/alert – Playwright-Dialog-Handler erforderlich; für automatisierbaren Test wären shadcn Dialog-Confirms robuster, aber Feature funktioniert.",
+    "GET /api/dynamic/list liefert {strategies: [...]} statt einer flachen Liste – konsistent, aber Tests/Clients müssen das Format kennen."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ap04_api_flows.py (NEU)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (Login, Panel-Toggle, Draft-Badge, Approve-Toast, Badge-Wechsel Freigegeben, Delete-Entfernen)"},
+  "test_credentials": "Admin / LocalDev06! (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "Testflow legt Strategien mit Namen 'AP04-Test-Draft', 'AP04-Test-Validated', 'AP04-UI-Test' an und räumt sie via DELETE wieder auf. Final: keine Reste in /api/dynamic/list.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend-Suite: pytest /app/backend/tests/test_ap04_api_flows.py -p no:xdist -o addopts=\"\". UI-Flow: admin-lock-button -> admin-login -> tools-menu-button -> tools-menu-optimizer -> dyn-panel-toggle -> dyn-release-{id}/dyn-approve-{id}/dyn-delete-{id}. Approve+Delete triggern window.confirm – Playwright braucht page.on('dialog', accept). Frontend-Waits: nicht auf networkidle warten (App pollt kontinuierlich).",
+  "rca of the issue": "Keine offenen Bugs. Zwei Initial-Testfehler waren rein Testartefakte: (a) pytest-xdist verletzte die Reihenfolge module-scoped State (DRAFT_ID), gelöst mit -p no:xdist; (b) /api/dynamic/list gibt {strategies: [...]} zurück – Test korrigiert. Timeouts 10s waren zu knapp für den Ingress-Cold-Start – auf 30s erhöht."
+}

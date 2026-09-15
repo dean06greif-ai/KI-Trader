@@ -64,7 +64,20 @@ Basis: Commit 792ff0ac (Branch conflict_150926_0200), Plan aus Branch conflict_1
 - AP03 (R01/R02): `services/strategy_plan.py` – deterministischer Resolver (plan_hash), Basis-Ableitung statt kumulativer Merges (`dynamic_keys`/`dynamic_param_keys`), Sub-Strategie-Regeln transparent am Coin-Override.
 - Fortschrittsdatei: `/app/PROGRESS.md` (Berichtsformat des Handoffs). Tests: 1466 unit + 54 offline + 25 API-Regression grün.
 
+## Umgesetzt 26.06.2026 – Analyseplan AP04 (Session conflict_150926_2016)
+- AP04 (R04/R09/R13/T04) vervollständigt (Grundlagen aus abgebrochener Session lagen vor):
+  Release-Statusmodell draft/validated/approved/stale/legacy (`strategy_release.py` +
+  `revised_release`); Router-Anbindung: Save/Builds setzen Release, Apply+Confirm mit
+  409-Gate, Confirm = CAS (command_id, Ablauf, Zustandsversion; Apply-Fehler retrybar),
+  NEU `POST /api/dynamic/{id}/approve`, DELETE = Archivieren mit scoped Unapply
+  (Wechsel-Protokoll bleibt), `/api/dynamic/list` additiv `release_status`.
+- T04: `_setup_live_gate` fail-closed bei Exceptions; `live_gate_bypass_enabled` Default AUS.
+- UI (DynamicPanel.js, additiv): Release-Badges, „Freigeben"-Button, Confirm mit command_id.
+- Tests: analysis_regression 74 grün (20 neu), Unit-Suite 1540, Root-Suite 169 (3 vorbestehende
+  Econ-Session-Fails gefixt inkl. hartkodiertem Prod-Passwort in test_iter44!),
+  Testing-Agent iteration_5: Backend 17/17 + Frontend-E2E 100% (test_ap04_api_flows.py neu).
+
 ## Backlog (aus Plan, priorisiert)
-- P1: AP04 (observed/desired/applied, CAS-Confirm, idempotenter Apply), AP05 (Datenmanifeste/Candlegrenzen), AP06 (Referenzsimulation Same-Bar/offene Positionen), AP07–AP09 (Holdout-Trennung, MarketContext, Policy-Provenienz)
+- P1: AP05 (Datenmanifeste/Candlegrenzen/R16), AP06 (Referenzsimulation Same-Bar/offene Positionen), AP07–AP09 (Holdout-Trennung, MarketContext, Policy-Provenienz)
 - P1/P2: AP10 (UI-Zustände), AP11 (Worker-Vertrag), AP12 (Shadow/Paper-Abnahme)
 - P2: AP13 (Bereinigung/Erweiterung)
