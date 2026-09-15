@@ -15,7 +15,7 @@ import aiohttp
 from core import state
 from core.state import autotrader, scanner
 from services import regime as rg
-from services import strategy_plan
+from services import strategy_plan, strategy_release
 from strategies.registry import registry as strategy_registry
 
 logger = logging.getLogger(__name__)
@@ -404,11 +404,20 @@ async def check_one(doc: Dict, days: int, auto_apply: bool) -> Dict:
     new_state = await refresh_state(doc, days)
     switched_syms = _switched_symbols(doc, new_state)
     switches = await log_switches(doc, new_state, auto_applied=auto_apply and not needs_confirm)
+    observed_version = strategy_release.state_version(new_state)
     transition = None
     update = {"last_state": new_state}
     pending = None
     if switches and auto_apply and needs_confirm:
-        pending = {"at": _now_iso(), "switches": switches,
+        # R13: Bestätigung bindet an Command-ID + gesehene Zustandsversion
+        # und läuft ab – ein späterer Confirm auf anderem Stand wird abgelehnt.
+        pending = {"command_id": f"cmd_{uuid.uuid4().hex[:10]}",
+                   "at": _now_iso(),
+                   "expires_at": (datetime.now(timezone.utc)
+                                  + timedelta(hours=24)).isoformat(),
+                   "observed_version": observed_version,
+                   "actor": "auto_check",
+                   "switches": switches,
                    "switched_symbols": switched_syms,
                    "per_symbol": {sym: {"regime": st.get("regime"),
                                         "label": st.get("label"),
@@ -419,7 +428,19 @@ async def check_one(doc: Dict, days: int, auto_apply: bool) -> Dict:
     await state.db.dynamic_strategies.update_one({"id": doc["id"]}, {"$set": update})
     doc["last_state"] = new_state
     applied = None
-    if auto_apply and switches and not needs_confirm:
+    app_status = doc.get("application_status") or {}
+    # R04: fehlgeschlagenes Apply desselben Zielzustands im nächsten Zyklus
+    # erneut versuchen – Beobachten ist nicht Anwenden.
+    retry_due = (auto_apply and not needs_confirm and not switches
+                 and app_status.get("status") == "failed"
+                 and app_status.get("desired_version") == observed_version)
+    if auto_apply and not needs_confirm and (switches or retry_due):
+        block = strategy_release.activation_block_reason(doc)
+        if block:
+            logger.warning(f"dynamic auto-apply {doc['id']} blockiert: {block}")
+            await _record_application(doc["id"], "blocked", observed_version, block)
+            return {"state": new_state, "switches": switches, "applied": None,
+                    "pending": pending, "transition": None, "blocked": block}
         # AP01/R03: Übergangsschutz (Sperren/Closes) NUR als Teil der
         # tatsächlichen Übernahme – ein reiner Refresh oder ein offener
         # Bestätigungs-Vorschlag hat keinerlei Handelswirkung.
@@ -430,11 +451,54 @@ async def check_one(doc: Dict, days: int, auto_apply: bool) -> Dict:
                 logger.warning(f"Übergangsschutz fehlgeschlagen: {e}")
         try:
             applied = await apply_active(doc)
-            logger.info(f"dynamic auto-apply {doc['id']}: {switches} Wechsel übernommen")
+            await _record_application(doc["id"], "applied", observed_version)
+            logger.info(f"dynamic auto-apply {doc['id']}: {switches} Wechsel übernommen"
+                        + (" (Retry)" if retry_due else ""))
         except Exception as e:  # noqa: BLE001
+            await _record_application(doc["id"], "failed", observed_version, str(e)[:300])
             logger.warning(f"dynamic auto-apply failed: {e}")
     return {"state": new_state, "switches": switches, "applied": applied,
             "pending": pending, "transition": transition}
+
+
+async def _record_application(did: str, status: str, desired_version: str,
+                              error: str = None):
+    """R04: Apply-Ergebnis getrennt vom beobachteten Zustand festhalten."""
+    prev = await state.db.dynamic_strategies.find_one({"id": did}) or {}
+    attempts = int((prev.get("application_status") or {}).get("attempts") or 0)
+    await state.db.dynamic_strategies.update_one(
+        {"id": did},
+        {"$set": {"application_status": {
+            "status": status, "at": _now_iso(), "error": error,
+            "desired_version": desired_version,
+            "attempts": attempts + 1 if status == "failed" else 0}}})
+
+
+async def unapply_dynamic(doc: Dict) -> Dict:
+    """R13: Scoped Unapply beim Deaktivieren/Archivieren – entfernt NUR die
+    von DIESER dynamischen Strategie gesetzten Wirkungen (Coin-Overrides mit
+    passender dynamic_id, eigene Übergangssperren). Offene Trades und
+    schützende Brokerorders werden NICHT angefasst."""
+    did = doc["id"]
+    cleaned = []
+    for sid in _owned_strategy_ids(doc):
+        for sym in doc.get("symbols") or []:
+            key = f"{sid}_{sym}"
+            row = await state.db.strategy_coin_configs.find_one({"_id": key})
+            cfg = dict((row or {}).get("config") or {})
+            if cfg.get("dynamic_id") != did:
+                continue
+            base = strategy_plan.merge_overrides(cfg, {}, params={})
+            for marker in ("dynamic_keys", "dynamic_param_keys", "dynamic_applied",
+                           "dynamic_id", "dynamic_regime", "dynamic_sub_strategy"):
+                base.pop(marker, None)
+            await state.db.strategy_coin_configs.replace_one(
+                {"_id": key}, {"_id": key, "config": base}, upsert=True)
+            autotrader.config.setdefault("strategy_coin_configs", {})[key] = base
+            cleaned.append(key)
+    locks = await state.db.dynamic_transition_locks.delete_many({"dynamic_id": did})
+    return {"cleaned_overrides": cleaned,
+            "removed_locks": getattr(locks, "deleted_count", 0)}
 
 
 def _due(doc: Dict) -> bool:
@@ -459,7 +523,8 @@ async def watch_loop():
         try:
             if state.db is not None:
                 docs = await state.db.dynamic_strategies.find(
-                    {"settings.auto_check_enabled": True}).to_list(50)
+                    {"settings.auto_check_enabled": True,
+                     "archived": {"$ne": True}}).to_list(50)
                 for doc in docs:
                     if not _due(doc):
                         continue
