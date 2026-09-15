@@ -1,0 +1,62 @@
+{
+  "summary": "Isolierte Regressionstests + statische Code-Analyse für R01-R13 auf /app/review_source durchgeführt. 16/16 gezielte Backend-Tests bestanden (sie belegen die gemeldeten Problemstellen). Frontend-URL lädt nur eine Placeholder-Seite ('Building something incredible ~!'), kein fachliches UI verifizierbar.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "services/dynamic_live.apply_configs + apply_active", "issue": "sub_strategies/definitionen werden im Single-Strategy-Pfad nicht exekutiert; nur Trade-Overrides aus active_config greifen.", "priority": "HIGH"},
+      {"endpoint": "services/dynamic_live.apply_configs", "issue": "Leere Folge-Konfiguration ({}) markiert baseline=true, lässt aber alte Coin-Overrides bestehen (stale inheritance).", "priority": "HIGH"},
+      {"endpoint": "services/dynamic_live.transition_protect + check_one", "issue": "close_open schließt alle offenen Trades pro Symbol ohne Strategie-/Mode-Scope; check_one ruft transition_protect auch bei auto_apply=False / require_confirmation=True auf.", "priority": "HIGH"},
+      {"endpoint": "services/dynamic_live.check_one", "issue": "last_state wird vor erfolgreichem apply_active gespeichert; bei Apply-Fehler entfällt Folgeretry (switches=0 bei nächstem identischen Refresh).", "priority": "HIGH"},
+      {"endpoint": "services/regime_lab._symbol_payload + regime_ranges", "issue": "segments basieren auf final_labels; regime_ranges nutzt segments statt live_segments -> Holdout/Train-Zuordnung kann final-label-abhängig sein.", "priority": "HIGH"},
+      {"endpoint": "services/regime_lab.fetch_histories", "issue": "end_ts wird nur nachgelagert abgeschnitten; fetch_history selbst kennt den Endanker nicht -> bei rollender Quelle schrumpfen reproduzierte Datensätze.", "priority": "HIGH"},
+      {"endpoint": "services/regime_lab._segments_payload + segments_from_ranges", "issue": "to_ts/e-Index vs bisect_right führt zu Grenzkerzen-Überlappung zwischen Segmenten.", "priority": "HIGH"},
+      {"endpoint": "services/backtester.simulate_pair + services/dynamic_strategy.simulate_segment", "issue": "Offene Positionen am Segmentende werden nicht zwangs-geschlossen und fallen aus Kennzahlen; bei TP1+TPF in gleicher Kerze wird TP1-Teilverkauf übersprungen (optimistisch).", "priority": "CRITICAL"},
+      {"endpoint": "routers/regime_lab.keep + assign + build", "issue": "keep/assign invalidieren walkforward nicht; build/apply erzwingen keinen aktuellen bestandenen, fingerprint-gebundenen Walkforward-Verifikationstatus.", "priority": "HIGH"},
+      {"endpoint": "services/regime_lab.run_ema_compare + run_kombi_calibrate", "issue": "Bestwahl basiert auf holdout_direction_pct bzw. holdout-basiertem Score, Validation ist damit kein strikt unberührter finaler Testpfad.", "priority": "HIGH"},
+      {"endpoint": "services/timeframes.aggregate_candles + dynamic_live/regime_gate Aufrufer", "issue": "Standard drop_partial=False lässt unvollständige Kerzen in Detect/Refresh-Pfaden bestehen.", "priority": "HIGH"},
+      {"endpoint": "services/dynamic_strategy.eval_dynamic + services/dynamic_live.apply_regime_strategies", "issue": "Unzugeordnetes Regime fällt in eval_dynamic auf Basisstrategie zurück, während Live-Apply in gleichem Fall alle gemappten Strategien deaktiviert.", "priority": "HIGH"},
+      {"endpoint": "routers/dynamic.dynamic_confirm + dynamic_delete", "issue": "confirm verwendet doc.last_state statt pending_snapshot; delete räumt dynamiknahe Artefakte (z.B. transition locks / strategy overrides) nicht mit auf.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Public frontend landing", "issue": "Externe URL zeigt nur Placeholder/Coming-Soon statt KI-Trader/Regime-Lab UI", "selector": "text=Building something incredible ~!", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Root page", "issues": ["Nur statischer Splash/Placeholder, keine testbaren User-Flows sichtbar"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/review_source/backend/tests/test_regime_dynamic_r01_r13_regressions.py",
+    "/app/test_reports/pytest/regime_dynamic_r01_r13.xml"
+  ],
+  "action_items": [
+    "R01/R02: apply_configs Merge-/Reset-Semantik korrigieren (stale keys löschen oder explizit resetten).",
+    "R03/R04: transition scope einschränken und check_one commit-reihenfolge auf 'apply success -> persist state' umbauen.",
+    "R05-R07: Segmentgrenzen/Live-vs-Final-Pipeline entkoppeln und to_ts-Inklusivität konsistent definieren.",
+    "R08: Segmentende-Force-Close in Simulation ergänzen; TP1+TPF Same-Bar-Reihenfolge konservativ/neutral abbilden.",
+    "R09/R13: pending snapshot strikt für confirm verwenden; delete muss Locks/Overrides bereinigen; walkforward invalidation bei keep/assign einbauen.",
+    "R10/R11/R12: Auswahlkriterien (holdout leakage risk), partial-candle policy, und Unmapped-Regime-Verhalten zwischen Backtest/Live harmonisieren.",
+    "Frontend deployment prüfen: öffentliches UI liefert aktuell Placeholder statt Produktoberfläche."
+  ],
+  "critical_code_review_comments": [
+    "Mehrere sicherheitsrelevante Entscheidungen sind zustandsbasiert aber nicht atomar (check_one persistiert vor erfolgreichem apply).",
+    "Regime-Lab und Live-Dynamic verwenden inkonsistente Fallback-Logik (base fallback vs disable-all).",
+    "Build-/Confirm-Pfade validieren keine frische Walkforward-Passung (Fingerprint-Bindung fehlt)."
+  ],
+  "updated_files": [
+    "/app/review_source/backend/tests/test_regime_dynamic_r01_r13_regressions.py",
+    "/app/test_reports/iteration_1.json"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 targeted regression tests executed)",
+    "frontend": "Smoke only: page loads placeholder"
+  },
+  "test_credentials": "not required (no auth flow tested)",
+  "seed_data_creation": "none",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Diese Iteration testet nur isolierte Regressionen auf /app/review_source/backend (kein produktiver Code-Patch). Für Re-Run: pytest /app/review_source/backend/tests/test_regime_dynamic_r01_r13_regressions.py -v --junitxml=/app/test_reports/pytest/regime_dynamic_r01_r13.xml. Öffentliche Frontend-URL zeigte Placeholder und keine App-Flows.",
+  "rca of the issue": "Root causes sind überwiegend Zustands-/Merge-Semantik (stale config, fehlende invalidation), inkonsistente Live-vs-Backtest-Pfade (Fallback/disable), und Segment-/Label-Grenzdefinitionen (final vs live, inclusive/exclusive)."
+}

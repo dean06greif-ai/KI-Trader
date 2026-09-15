@@ -1,0 +1,98 @@
+{
+  "summary": "Erweiterte isolierte Offline-Backend-Pr\u00fcfung abgeschlossen (kein Frontend, keine Produktcode-\u00c4nderung). Regressionssuite aus /app/analysis/tests lief mit 25 passed, 3 xfailed; zus\u00e4tzlich 4 bestehende reine Unit-Tests ohne conftest passed.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "services/position_watchdog.py::_adopt",
+        "issue": "Bei k\u00fcrzlich geschlossenem Bot-Trade kann eine neue fremde Vollposition (andere position_id, gro\u00dfe qty) per flash_close(full=True) geschlossen werden, ohne Identit\u00e4ts-/Dust-Nachweis.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "services/bitunix_trade.py (Exception-Recovery Branch 2380-2402)",
+        "issue": "Bei untracked >= 50% wird recovered code=0 gesetzt, Qty-Semantik bleibt auf geplanter voller Menge; 40%-Fall f\u00fchrt in reject.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "services/bitunix_trade.py (SL-Check 2490-2547)",
+        "issue": "Bei vorhandener position_id und _ensure_live_sl == None bleibt sl_exchange_missing=False; unbest\u00e4tigter SL wird so nicht als fehlend markiert.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "services/ai_engine.py::AIEngine._setup_live_gate",
+        "issue": "Missing setup und Exception in cached_setup_stats werden durchgelassen; Default-Bypass (conf 70, min 65, opened 0) erlaubt Live trotz nicht live-reif.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "services/policy_fingerprint.py",
+        "issue": "Policy-Fingerprint ignoriert min_confidence, fee_guard_enabled und regime-Konfigurations\u00e4nderungen bei konstanten anderen Teilen; unvollst\u00e4ndige Policy-Identit\u00e4t.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "services/backtester.py (R08)",
+        "issue": "Same-Bar TP1+TPFull liefert optimistischen PnL (LONG/SHORT je 6 statt sequenziell 4); offene Trades mit Floating-Loss/Entryfee fallen aus Trades/PnL/Fees-Metriken.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "services/candle_cache.py::get_candles",
+        "issue": "Tail-Start bei cached_end+60000 kann Update der letzten (ggf. offenen) Minute nicht nachholen.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "R05 Forschungspr\u00fcfung (regime_engine final_labels)",
+        "issue": "Kausale Prefix-Invarianz nachgewiesen; retrospektive final_labels-\u00c4nderung durch Future-Append auf diesem synthetischen Datensatz nicht robust nachweisbar (xfail)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "out-of-scope",
+        "issues": [
+          "Frontend wurde in dieser Iteration nicht getestet; Placeholder-Befund aus iteration_1 als false positive f\u00fcr Nutzerwebsite zur\u00fcckgenommen."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/analysis/tests/conftest.py",
+    "/app/analysis/tests/test_regime_dynamic_r01_r13_regressions.py",
+    "/app/analysis/tests/test_offline_extended_findings.py",
+    "/app/test_reports/pytest/iteration_2_offline.xml",
+    "/app/analysis/08_TESTNACHWEISE.md"
+  ],
+  "action_items": [
+    "T01: _adopt-Restlogik an Positionsidentit\u00e4t/Mengen-Schwelle koppeln, full-close f\u00fcr fremde Vollpositionen absichern.",
+    "T02/T03: Recovery- und SL-Statuspfade in bitunix_trade semantisch konsistent machen (teilgef\u00fcllte Recovery-Menge, None-Status f\u00fcr SL explizit behandeln).",
+    "T04: Live-Gate-Ausnahmen nicht stillschweigend durchlassen bzw. Bypass-Regeln h\u00e4rten/auditierbar machen.",
+    "T05: Fingerprint auf weitere policy-relevante Parameter erweitern (min_confidence, fee_guard, regime config).",
+    "R08: Same-Bar-TP-Logik sequenziell/konservativ implementieren; offene Trades am Segmentende korrekt in Kennzahlen/Fee-Accounting behandeln.",
+    "R14: Tail-Fetch so erweitern, dass letzte Minute aktualisiert werden kann (inkl. offene Kerze).",
+    "R05: Zus\u00e4tzliche Datens\u00e4tze f\u00fcr final_labels-Future-Append-Effekt erfassen; aktuell nur kausale Invarianz belastbar belegt."
+  ],
+  "critical_code_review_comments": [
+    "Mehrere Sicherheits-/Gate-Pfade sind fail-open statt fail-safe.",
+    "Policy-Identit\u00e4t ist derzeit nicht vollst\u00e4ndig, was Audit/Attribution verf\u00e4lschen kann.",
+    "Backtest-Metriken bilden bestimmte Live-relevante Zust\u00e4nde (same-bar exits, offene Endpositionen) unvollst\u00e4ndig ab."
+  ],
+  "updated_files": [
+    "/app/analysis/tests/conftest.py",
+    "/app/analysis/tests/test_regime_dynamic_r01_r13_regressions.py",
+    "/app/analysis/tests/test_offline_extended_findings.py",
+    "/app/analysis/08_TESTNACHWEISE.md",
+    "/app/test_reports/iteration_2.json"
+  ],
+  "success_rate": {
+    "backend": "analysis-suite: 25 passed + 3 xfailed (0 failed); additional existing unit tests: 4 passed",
+    "frontend": "not tested (out-of-scope by Auftrag)"
+  },
+  "test_credentials": "not required (no auth flow tested)",
+  "seed_data_creation": "none",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Isolierte Harness liegt jetzt unter /app/analysis/tests mit confcutdir-f\u00e4higem Setup. Die 16 bestehenden Charakterisierungstests wurden aus dem Quellrepo ausgelagert und erneut erfolgreich ausgef\u00fchrt. Drei xfails sind bewusst: 2x Soll-Abnahme R08 (sequenzielle TP-Logik) und 1x R05-Forschung (Future-Append-Effekt auf final_labels hier unbewiesen).",
+  "rca of the issue": "RCA-Muster: (1) Identit\u00e4ts-/Scope-L\u00fccken in Schutzpfaden (_adopt), (2) Recovery-/Status-Semantik inkonsistent (bitunix_trade Recovery, SL-None), (3) fail-open Gate-Design (_setup_live_gate), (4) unvollst\u00e4ndiger Policy-Fingerprint, (5) Simulationslogik mit optimistischen bzw. unvollst\u00e4ndigen Metrikpfaden (R08), (6) Cache-Inkrement-Startpunkt schlie\u00dft letzte Minute aus (R14)."
+}
