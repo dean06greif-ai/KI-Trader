@@ -104,3 +104,24 @@ Basis: Commit 792ff0ac (Branch conflict_150926_0200), Plan aus Branch conflict_1
 - P1 (operativ, Nutzer): AP12-Rest – Shadow-/Paper-Beobachtungszeit auf Render, danach
   menschliche Live-Freigabe (Beweispaket-Panel als Grundlage); Push via „Save to GitHub".
 - P2: AP13 (gezielte Bereinigung/Erweiterung – laut Plan erst nach Pilotnachweis).
+
+## Umgesetzt 26.06.2026 – Analyseplan AP13 (Session conflict_160926_0048)
+- Baseline nach Import exakt bestätigt (163 Offline-Solltests / 1629 Unit).
+- AP13a Archiv-Katalog: `ARCHIV_KATALOG.md` + `archive/` (README_FIX*/Patches,
+  überholte Reviews) – dokumentiert verschoben, nichts gelöscht, keine Code-Referenzen.
+- AP13b Indikator-Ablation: `services/research_ablation.py` (Varianten je Detektor +
+  Beitrags-Verdikte), `regime_lab.run_ablation`, `POST /api/regime-lab/ablation`,
+  UI-Sektion „Indikator-Ablation“ (testids ablation-*). Auswahl strikt AP07
+  (innere Validierung; Holdout = finaler Test), Versuchszähler + Manifest.
+- AP13c Assetgruppen-Pooling: `services/research_pooling.py` – kerzen-gewichtete
+  Klassen-Pools mit sichtbarer Symbol-Abweichung; in jeder Ablation-Zeile.
+- AP13d Unsicherheitskalibrierung: `services/research_calibration.py` – Score-Bins
+  (Live=Final-Richtungstreffer), Datenstärke-Regel (symbol ab 300 Punkten, sonst
+  Klassen-Pool, sonst `insufficient`), überall `score_is_calibrated_probability=false`;
+  `combined.uncertainty` an neuen Analysen + UI-Badge `regime-detail-uncertainty`.
+- Tests: Offline-Solltests **181**, Unit **1647** (keine Regression), Testing-Agent
+  iteration_7 Backend 6/6 + Frontend 7/7 grün; neue E2E-Datei
+  `backend/tests/test_ap13_ablation_uncertainty.py` (Env-Creds, Skip ohne Backend).
+- Analyseplan AP00–AP13 (kodierbare Teile) damit KOMPLETT. Offen: AP12 operative
+  Abnahme (Shadow/Paper auf Render + menschliche Freigabe) und AP13-Restpunkte
+  (Modul-Herauslösung/HMM/Performance – nur nach Pilotnachweis/Bedarf).

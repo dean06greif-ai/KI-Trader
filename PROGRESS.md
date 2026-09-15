@@ -596,6 +596,30 @@
 - Rückfall: alles additiv – neuer Endpoint/Job, neue Felder; bestehende
   Analysen/Flows unverändert.
 
+## Testnachweise (Stand 26.06.2026, nach AP13)
+- Offline-Solltests `backend/tests/analysis_regression/`: **181 passed**
+  (163 + 18 AP13).
+- Backend-Unit-Suite (`pytest tests -m unit`, ohne iter38-Umgebungstests):
+  **1647 passed**, 2 skipped – keine Regression.
+- Live-Verifikation (lokale Dev-Instanz, echte Bitunix-Kerzen):
+  Ablation BTC+ETH/1h/90d in ~25 s → volle Tabelle mit Verdikten
+  (z.B. Volumen-Bestätigung „trägt bei“, alt_ema-Vergleich ehrlich getrennt
+  nach innerer Val./Holdout); Mini-Analyse BTC/15m/30d → `combined.
+  uncertainty` mit Bins (Ø-Abweichung 17.5pp – bestätigt Zielbild-Aussage
+  „Score ist keine kalibrierte Wahrscheinlichkeit“).
+- Testing-Agent (iteration_7, 26.06.2026): Backend **6/6 grün** (401-Gate,
+  Ablation-Job end-to-end inkl. Pooling/Verdicts/attempt_no, Analyze mit
+  uncertainty, Regression health/safety/list/ema-compare+cancel);
+  Frontend-E2E **7/7 grün** (Login → Regime-Lab → Ablation-Lauf mit echter
+  Ergebnistabelle + Pooling-Zeile, ema-compare-Regression, Alt-Analyse ohne
+  uncertainty öffnet fehlerfrei). Keine Bugs. Neue E2E-Datei
+  `backend/tests/test_ap13_ablation_uncertainty.py` (auf Repo-Konvention
+  gebracht: Env-Creds + Skip ohne Backend – CI-sicher; verifiziert:
+  6 passed mit Backend, 6 skipped ohne).
+- Bekannte vorbestehende Kosmetik (NICHT AP13, aus iteration_6/7-Review):
+  Vor-Login-Konsolen-Rauschen (Session/Notifications-Fetch ohne Token) und
+  fehlendes aria-pressed an Coin-Chips – optionale UX-Punkte für später.
+
 ## Nächste zulässige Schritte (laut Plan, noch NICHT umgesetzt)
 1. **AP12 (operativ, Nutzer/Betrieb):** Shadow-/Paper-Beobachtungszeit auf
    Render laufen lassen; danach menschliche Freigabe für engen Live-Scope –
