@@ -23,6 +23,7 @@ import aiohttp
 
 from services import regime as rg
 from services import regime_engine as eng
+from services import research_dataset
 from services.backtester import JobCancelled
 
 logger = logging.getLogger(__name__)
@@ -54,14 +55,23 @@ def running_job() -> Optional[Dict]:
 
 async def fetch_histories(symbols: List[str], days: int, timeframe: str,
                           job: Dict = None, end_ts: Dict[str, int] = None,
-                          progress_span=(0, 10)) -> Dict[str, List[Dict]]:
-    """Kerzen laden + auf den Timeframe aggregieren. Mit end_ts (aus einer
-    gespeicherten Analyse) werden die Daten exakt auf den Analyse-Zeitraum
-    geschnitten, damit spätere Läufe reproduzierbar bleiben."""
+                          progress_span=(0, 10), start_ts: Dict[str, int] = None,
+                          dataset: Dict = None) -> Dict[str, List[Dict]]:
+    """Kerzen laden + auf den Timeframe aggregieren (nur ABGESCHLOSSENE Buckets,
+    R11 – die aktuelle Teilkerze verändert die Historie nicht).
+
+    R06 (Reproduzierbarkeit): Mit start_ts/end_ts (aus den gespeicherten
+    bounds einer Analyse) wird exakt das ursprüngliche Datenfenster geladen –
+    unabhängig davon, wie viel Zeit seit der Analyse vergangen ist. Ein
+    mitgegebenes Datensatz-Manifest (`dataset`) wird geprüft; Abweichungen
+    führen zu einem erklärten Abbruch statt stiller Ergebnisdrift."""
+    import time as _time
+
     from services.backtester import fetch_history
     from services.timeframes import aggregate_candles
     histories: Dict[str, List[Dict]] = {}
     p0, p1 = progress_span
+    now_ms = int(_time.time() * 1000)
     async with aiohttp.ClientSession() as session:
         for i, sym in enumerate(symbols):
             if job and job.get("cancel"):
@@ -69,13 +79,29 @@ async def fetch_histories(symbols: List[str], days: int, timeframe: str,
             if job:
                 job["phase"] = f"Lade Daten: {sym}"
                 job["progress"] = p0 + round(i / max(len(symbols), 1) * (p1 - p0))
-            raw = await fetch_history(session, sym, days, job=job)
-            candles = aggregate_candles(raw, timeframe)
+            sym_days = days
+            anchor = (start_ts or {}).get(sym)
+            if anchor:
+                # Fenster-ANFANG fixieren: Tage ab JETZT zurück bis vor den Anker
+                sym_days = int(min(max((now_ms - int(anchor)) / 86400000 + 2,
+                                       days), 5500))
+            raw = await fetch_history(session, sym, sym_days, job=job)
+            candles = aggregate_candles(raw, timeframe, drop_partial=True)
             del raw
+            if anchor:
+                candles = [c for c in candles if c["timestamp"] >= int(anchor)]
             if end_ts and end_ts.get(sym):
                 candles = [c for c in candles if c["timestamp"] <= end_ts[sym]]
             if len(candles) > 100:
                 histories[sym] = candles
+    if dataset:
+        from services import research_dataset
+        problems = research_dataset.verify_histories(histories, dataset)
+        if problems:
+            raise RuntimeError(
+                "Datensatz nicht reproduzierbar – die Quelle liefert nicht mehr "
+                "exakt die Kerzen der gespeicherten Analyse: "
+                + " · ".join(problems[:4]))
     return histories
 
 
@@ -118,12 +144,20 @@ def _ema_payload(candles: List[Dict], timeframe: str, ema_days,
 
 
 def _segments_payload(candles: List[Dict], labels: List) -> List[Dict]:
+    """R07: to_ts = LETZTE Kerze des Segments (inklusiv); zusätzlich additiv
+    end_exclusive_ts (= erste Kerze der Folgephase) für halboffene Leser.
+    Vorher zeigte to_ts auf die erste Kerze des NÄCHSTEN Segments – der
+    bisect_right-Leser zählte diese Kerze dadurch doppelt."""
     out = []
     for (s, e, rid) in rg.segments_from_labels(labels):
-        out.append({"regime": int(rid),
-                    "from_ts": int(candles[s]["timestamp"]),
-                    "to_ts": int(candles[min(e, len(candles) - 1)]["timestamp"]),
-                    "bars": int(e - s)})
+        last = min(e - 1, len(candles) - 1)
+        seg = {"regime": int(rid),
+               "from_ts": int(candles[s]["timestamp"]),
+               "to_ts": int(candles[last]["timestamp"]),
+               "bars": int(e - s)}
+        if e < len(candles):
+            seg["end_exclusive_ts"] = int(candles[e]["timestamp"])
+        out.append(seg)
     return out
 
 
@@ -419,6 +453,10 @@ async def run_analysis(job_id: str, body: Dict, db):
                                                   eng.DEFAULT_REGIME_MODE))
                                 if engine == "v2" else None)},
                "bounds": bounds,
+               # AP05/R06: unveränderliches Datensatz-Manifest (Anker + Checksum)
+               "dataset": research_dataset.dataset_manifest(
+                   histories, timeframe,
+                   created_at=datetime.now(timezone.utc).isoformat()),
                "chart": {sym: _downsample(c) for sym, c in histories.items()},
                "chart_emas": {sym: _ema_payload(c, timeframe, chart_ema_days)
                               for sym, c in histories.items()},
@@ -902,11 +940,17 @@ def regime_ranges(doc: Dict, scope: str, symbol: str, sym: str,
         if s["regime"] != regime_id:
             continue
         from_ts, to_ts = s["from_ts"], s["to_ts"]
+        end_ex = s.get("end_exclusive_ts")
         if only_train and train_end:
             if from_ts > train_end:
                 continue
-            to_ts = min(to_ts, train_end)
-        out.append({"from_ts": from_ts, "to_ts": to_ts})
+            if to_ts > train_end:
+                to_ts = train_end
+                end_ex = int(train_end) + 1
+        r = {"from_ts": from_ts, "to_ts": to_ts}
+        if end_ex is not None:
+            r["end_exclusive_ts"] = end_ex
+        out.append(r)
     return out
 
 
@@ -918,7 +962,14 @@ def segments_from_ranges(candles: List[Dict], ranges: List[Dict], regime_id: int
     segs = []
     for r in ranges:
         s = bisect.bisect_left(ts, r["from_ts"])
-        e = bisect.bisect_right(ts, r["to_ts"])
+        # R07-Schemaadapter: neue Dokumente liefern end_exclusive_ts (halboffen,
+        # [from, end_ex) – jede Kerze genau einmal). Alte Dokumente ohne das
+        # Feld werden weiter über bisect_right(to_ts) gelesen (Legacy-Verhalten).
+        end_ex = r.get("end_exclusive_ts")
+        if end_ex is not None:
+            e = bisect.bisect_left(ts, int(end_ex))
+        else:
+            e = bisect.bisect_right(ts, r["to_ts"])
         if e - s < 10:
             continue
         w0 = max(s - warmup_bars, 0)

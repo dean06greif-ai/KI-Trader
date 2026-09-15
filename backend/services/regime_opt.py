@@ -83,9 +83,15 @@ async def _build_regime_segments(doc: Dict, scope: str, symbol: str,
     abbilden. Bei abweichendem Timeframe werden die Zeitbereiche der Analyse
     auf die neuen Kerzen übertragen (Regime bleiben identisch definiert)."""
     syms = [symbol] if scope == "per_coin" else list(doc.get("symbols") or [])
-    end_ts = {s: (doc.get("bounds") or {}).get(s, {}).get("end_ts") for s in syms}
+    bounds = doc.get("bounds") or {}
+    end_ts = {s: (bounds.get(s) or {}).get("end_ts") for s in syms}
+    start_anchor = {s: (bounds.get(s) or {}).get("start_ts") for s in syms}
+    # R06: gleicher Timeframe wie die Analyse -> Manifest-Prüfung möglich;
+    # abweichender Timeframe lädt dieselben Anker, andere Aggregation.
+    dataset = doc.get("dataset") if timeframe == doc.get("timeframe") else None
     histories = await lab.fetch_histories(syms, int(doc["days"]), timeframe,
-                                          job, end_ts=end_ts)
+                                          job, end_ts=end_ts,
+                                          start_ts=start_anchor, dataset=dataset)
     segments: Dict[str, List[Dict]] = {}
     for sym, candles in histories.items():
         ranges = lab.regime_ranges(doc, scope, symbol, sym, regime_id, only_train)
@@ -411,8 +417,12 @@ async def run_walkforward(job_id: str, body: Dict, registry, settings: Dict,
         conf_min = float(s_cfg.get("confidence_min") or 70) / 100.0
         min_hold = float(s_cfg.get("min_hold_days") or 2)
         end_ts = {s: (doc.get("bounds") or {}).get(s, {}).get("end_ts") for s in syms}
+        start_anchor = {s: (doc.get("bounds") or {}).get(s, {}).get("start_ts")
+                        for s in syms}
         histories = await lab.fetch_histories(syms, int(doc["days"]), tf, job,
-                                              end_ts=end_ts, progress_span=(0, 20))
+                                              end_ts=end_ts, start_ts=start_anchor,
+                                              dataset=doc.get("dataset"),
+                                              progress_span=(0, 20))
         if not histories:
             raise RuntimeError("Zu wenig Daten")
 

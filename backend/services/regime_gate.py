@@ -62,7 +62,7 @@ async def _detect(symbol: str) -> Dict:
 
     async with aiohttp.ClientSession() as session:
         raw = await fetch_history(session, symbol, DETECT_DAYS)
-    candles = aggregate_candles(raw, DETECT_TIMEFRAME)
+    candles = aggregate_candles(raw, DETECT_TIMEFRAME, drop_partial=True)
     del raw
     if len(candles) < 200:
         raise RuntimeError(f"{symbol}: zu wenig Kerzen für Regime-Erkennung ({len(candles)})")

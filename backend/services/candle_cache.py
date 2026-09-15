@@ -245,7 +245,12 @@ async def get_candles(session, symbol: str, days: int, job: Dict = None) -> Cand
             logger.info(f"candle_cache EXTEND-HEAD {symbol} +{len(head)}")
 
     if needs_tail:
-        tail_start = int(cached.ts[-1]) + 60000 if len(cached) else start
+        # R14: überlappend nachladen – die letzte gecachte 1m-Kerze kann beim
+        # Cachen noch offen gewesen sein; ihr endgültiger Stand wird erneut
+        # angefordert und ersetzt das eingefrorene Zwischenergebnis.
+        overlap_ms = 3 * 60000
+        tail_start = (max(int(cached.ts[-1]) - overlap_ms, int(cached.ts[0]))
+                      if len(cached) else start)
         tail = await _fetch_range(session, symbol, tail_start, end, job=job)
         cached = _merge_tail(cached, tail)
         logger.info(f"candle_cache EXTEND-TAIL {symbol} +{len(tail)}")

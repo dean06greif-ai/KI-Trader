@@ -15,7 +15,7 @@ from core.state import scanner
 from core.utils import _clean, _job_public, _watch_job_task
 from services import ram_queue
 from services import regime_lab as lab
-from services import regime_opt, strategy_release
+from services import regime_opt, research_dataset, strategy_release
 from services.bitunix_trade import DEFAULT_COIN_CFG
 from strategies.registry import registry as strategy_registry
 
@@ -222,7 +222,10 @@ async def list_analyses():
                     "created_at": r.get("created_at"),
                     "n_regimes_combined": len((comb.get("model") or {}).get("regimes") or []),
                     "n_assignments": len(r.get("assignments") or {}),
-                    "has_walkforward": bool(r.get("walkforward"))})
+                    "has_walkforward": bool(r.get("walkforward")),
+                    # AP05/R06: 'pinned' = Datensatz-Manifest vorhanden;
+                    # Bestandsanalysen = 'legacy_unpinned' (nicht reproduzierbar fixiert)
+                    "dataset_status": research_dataset.dataset_status(r)})
     return {"analyses": out}
 
 

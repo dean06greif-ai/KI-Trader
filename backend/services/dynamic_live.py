@@ -38,7 +38,8 @@ async def detect_current(symbol: str, timeframe: str, days: int, max_regimes: in
 
     async with aiohttp.ClientSession() as session:
         raw = await fetch_history(session, symbol, days)
-    candles = aggregate_candles(raw, timeframe)
+    # R11: nur ABGESCHLOSSENE Buckets – die aktuelle Teilkerze ist kein Regime-Input
+    candles = aggregate_candles(raw, timeframe, drop_partial=True)
     if len(candles) < 200:
         raise RuntimeError("Zu wenig Daten – Zeitraum erhöhen oder kleineren Timeframe wählen")
     cfg = dict(engine_config or {})
@@ -94,7 +95,7 @@ async def refresh_state(doc: Dict, days: int) -> Dict:
         for sym in doc.get("symbols") or []:
             try:
                 raw = await fetch_history(session, sym, days)
-                candles = aggregate_candles(raw, tf)
+                candles = aggregate_candles(raw, tf, drop_partial=True)
                 del raw
                 if len(candles) < 50:
                     per_symbol[sym] = {"error": "Zu wenig Daten"}

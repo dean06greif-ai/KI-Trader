@@ -262,7 +262,9 @@ def _detect_regimes_kmeans(histories: Dict[str, List[Dict]], timeframe: str,
         })
     return {"centroids": [[round(float(v), 6) for v in c] for c in C],
             "norm_mean": [round(float(v), 6) for v in mean],
-            "norm_std": [round(float(v), 6) for v in std],
+            # R16: Rundung darf die Mindest-Std (1e-9) nicht auf 0 drücken –
+            # sonst dividiert die Klassifikation später durch null.
+            "norm_std": [max(round(float(v), 6), 1e-9) for v in std],
             "timeframe": timeframe, "lookback_days": lookback_days,
             "lookback_bars": lookback_bars, "silhouette": round(score, 3),
             "k_tested_max": max_k, "n_samples": int(len(X)),
@@ -275,7 +277,8 @@ def classify_point(model: Dict, feat_row) -> Tuple[Optional[int], float, List[fl
     auf dem Abstand zum besten vs. zweitbesten Centroid."""
     if feat_row is None or np.isnan(feat_row).any():
         return None, 0.0, []
-    x = (np.array(feat_row) - np.array(model["norm_mean"])) / np.array(model["norm_std"])
+    x = (np.array(feat_row) - np.array(model["norm_mean"])) \
+        / np.maximum(np.array(model["norm_std"], dtype=float), 1e-9)
     C = np.array(model["centroids"])
     d = np.linalg.norm(C - x, axis=1)
     sims = 1.0 / np.maximum(d, 1e-9)
@@ -296,7 +299,8 @@ def classify_matrix(model: Dict, feats: np.ndarray):
     if not valid.any():
         return rid, conf, valid
     mean = np.array(model["norm_mean"])
-    std = np.array(model["norm_std"])
+    # R16: Altmodelle können norm_std=0 gespeichert haben (6-Dezimal-Rundung)
+    std = np.maximum(np.array(model["norm_std"], dtype=float), 1e-9)
     C = np.array(model["centroids"])
     X = (feats[valid] - mean) / std
     d = np.linalg.norm(X[:, None, :] - C[None, :, :], axis=2)
