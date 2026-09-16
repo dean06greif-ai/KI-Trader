@@ -125,3 +125,53 @@ Basis: Commit 792ff0ac (Branch conflict_150926_0200), Plan aus Branch conflict_1
 - Analyseplan AP00–AP13 (kodierbare Teile) damit KOMPLETT. Offen: AP12 operative
   Abnahme (Shadow/Paper auf Render + menschliche Freigabe) und AP13-Restpunkte
   (Modul-Herauslösung/HMM/Performance – nur nach Pilotnachweis/Bedarf).
+
+## Session 16.09.2026 – Render-Deploy-Fix + offene Prüfbericht-Punkte
+Basis: Branch `conflict_160926_0902` (Commit 50dc7b2 – exakt der vom Prüfbericht
+geprüfte Stand). Branch `conflict_160926_1112` war KAPUTT (nur Template +
+committete 626-MB-venv in `review/`) → Ursache beider Render-Build-Fehler.
+
+### Deploy-Fixes
+- Backend: korrektes requirements.txt (kein `emergentintegrations` mehr; pip-freeze für Py 3.11)
+- Frontend: `frontend/yarn.lock` committet → Render nutzt yarn deterministisch;
+  npm-Baum zusätzlich verifiziert (date-fns 4.1 + react-day-picker 9.14 kompatibel, kein ERESOLVE)
+- Produktions-Build (`yarn build`) grün; App-Preview läuft mit Live-Marktdaten
+- WICHTIG: Render-Services nach "Save to GitHub" auf den NEUEN Branch umstellen
+
+### Prüfbericht-Fixes (alle mit Regressionstests)
+1. R01 Discovery-Regelumschaltung: `strategy_plan.resolve_symbol_plan` liefert
+   `rules_override` (Discovery-Definition ersetzt Regeln, Regel-Variante additiv);
+   `dynamic_live.apply_configs` schaltet via `_apply_strategy_params` +
+   `coin_params['rules_override']` TATSÄCHLICH im Scanner um
+   (`custom_params.apply_params` + `CustomStrategy.get_params`); Builtin-Basis →
+   ehrliches `rules_switch: unsupported_builtin` Flag
+2. R09 Freigabe-Gate: `/api/dynamic/{id}/approve` verweigert ohne Testnachweis (409);
+   bewusstes Override nur mit `override_missing_evidence:true` + `note`, wird als
+   `approved_without_evidence` protokolliert und im Beweispaket als Blocker gezeigt;
+   Frontend-Prompt-Flow in DynamicPanel.js
+3. R13 Confirm-CAS: atomarer DB-Claim (`dynamic_live.claim_pending_switch`,
+   `pending_claim_query`) – parallele Bestätigungen laufen nie doppelt;
+   Claim-Release bei Apply-Fehler (Retry möglich)
+4. AP07 Kombi-Kalibrierung: Dauer-Term der Auswahl nur noch aus Trainings-Segmenten
+   (`regime_lab._train_segment_days`), Holdout rein Bericht; neue Felder
+   `avg_final_segment_days_train`, selection_basis `inner_validation+train_duration`
+5. Basisparameter-Restore: `merge_overrides` sichert überdeckte persönliche Werte in
+   `dynamic_prev`/`dynamic_prev_params` und stellt sie beim Zurückschalten wieder her;
+   analog Scanner-seitig `coin_params_dynamic_prev` (+ DEFAULT_SETTINGS)
+6. Beweispaket-Kleinfixes: kein fremder Coin-Test mehr (`_wf_for_doc`), konsistenter
+   Testbereich (`walkforward_status_for`), fehlender Sicherheitsstatus als
+   `runtime_health: unknown` + `warnings` gekennzeichnet
+   (Watchdog-Positions-ID-Fix war bereits im Repo enthalten)
+
+### Tests
+- Neu: backend/tests/test_audit_fixes_160926.py (27), Parallel-Confirm-Racetest in
+  test_ap04_release_confirm.py, FakeDB um find_one_and_update/dotted-paths erweitert
+- Testing-Agent iteration_8: 10/10 E2E grün + 209/209 offline grün
+- Bekannt umgebungsabhängig (nicht Teil des Auftrags): iter38-Tests gegen localhost:8055,
+  Playbook-Setup-Anzahl (Datenstand), Mistral-Backup-Key-Anzahl (.env)
+
+### Offene Punkte / Backlog
+- P1: Dynamik vs. unveränderte Basisstrategie im Paperbetrieb vergleichen (Prüfbericht-Empfehlung)
+- P1: Offengelegte Zugangsdaten erneuern (API-Keys/Passwörter standen im Klartext im Chat/Repo)
+- P2: Regel-Umschaltung für Builtin-Basisstrategien (echter Strategie-Swap statt Flag)
+- P2: Render: Node-Version pinnen (.node-version), npm-Fallback-Guard
