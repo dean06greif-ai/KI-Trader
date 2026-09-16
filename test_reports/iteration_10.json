@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend-only smoke test of integrated Event-Setups in the KI-Trader-Setups tab (iteration 10). Backtester modal now has exactly 2 tabs (Strategien, KI Trader · Setups) - the separate Events tab has been removed. On the KI-Trader tab the event-seed-section is visible with all 5 chips (fomc/cpi/nfp/ppi/pce), CPI and NFP already show validated backtests in the event-seed-table, CPI status is 'Edge bestätigt (validiert)' in green. Empty run (no class + no event) did not start any job. Event-only run with just CPI selected successfully triggered /api/event-setups/backtest, event-seed-progress appeared, job completed in ~35s with success toast, and no ai/playbook job was started (as expected). Admin live-toggle for CPI works (final state left OFF as required).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "EventSetupSeeding live-toggle", "issue": "The live checkbox reflects the server-fetched state (ev.live_enabled) rather than local optimistic state. On rapid consecutive clicks the checked attribute temporarily shows the stale (pre-toggle) value until the next overview poll returns, which can confuse users into thinking the click did not register. Final state was correct after settle, so functionally safe but UX/perception issue.", "selector": "[data-testid='event-seed-live-cpi'] input", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional UX: make the live-toggle checkbox optimistic (update local state immediately, roll back on API error) so rapid toggles feel responsive."
+  ],
+  "critical_code_review_comments": [
+    "AITraderSeeding.js is 437 lines and mixes many concerns (manual run, auto config, history table, results table, event ref delegation) - consider splitting the automation/history block into its own component (>700-line-heuristic not yet exceeded but growing).",
+    "AITraderSeeding.js lines 156-164 contain a duplicated paragraph about 'Mindest-Trades adaptiv' inside the intro <details> - one block should be removed."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "100% of required UI checks passed"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "none - re-used existing validated CPI/NFP backtests; triggered one live CPI event-backtest run (~35s) which refreshed the CPI row.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backtester modal now has 2 tabs only. Event-Setup chips + result table live inside AITraderSeeding via EventSetupSeeding (forwardRef exposing getSelected/start/isRunning). Main run button in ai-seed-run first delegates to eventRef.start() when any event chip is selected, then only starts the class backtest if classes are selected. localStorage key 'bt_ui_state_v1' maps saved tab 'events' -> 'ai'. Toast library uses a custom container, generic '.toast, [role=alert]' selectors did not pick up toast text in this run but toasts render (verified visually).",
+  "rca of the issue": "Live-toggle stale-UI: onChange handler calls fetch and then load() to re-fetch overview; the checked prop is bound to ev.live_enabled from server state, so between click and successful re-fetch the input still shows the old value. Fix: keep an optimistic local override map, e.g. useState liveOverride[key] applied over ev.live_enabled until the next overview response confirms it."
+}
