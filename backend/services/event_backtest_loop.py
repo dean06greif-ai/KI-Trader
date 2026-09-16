@@ -12,7 +12,7 @@ je Event in db.settings persistiert und beim nächsten Lauf als Basis genutzt.
 import logging
 from datetime import datetime, timezone
 
-from services import econ_backtest, econ_event, fomc_backtest
+from services import econ_backtest, econ_event, event_assets, fomc_backtest
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +51,14 @@ SYSTEM = (
 JOB: dict = {"status": "idle"}
 
 
-def params_id(key: str) -> str:
-    return f"{key}_event_params_ai"
+def params_id(key: str, asset_class: str = "crypto") -> str:
+    return f"{key}_event_params_ai{event_assets.result_suffix(asset_class)}"
 
 
-def base_params(key: str) -> dict:
-    if key == "fomc":
-        return dict(fomc_backtest.FIXED)
-    return dict(econ_backtest.FIXED.get(key) or econ_backtest._DATA_RELEASE_FIXED)
+def base_params(key: str, asset_class: str = "crypto") -> dict:
+    base = (dict(fomc_backtest.FIXED) if key == "fomc"
+            else dict(econ_backtest.FIXED.get(key) or econ_backtest._DATA_RELEASE_FIXED))
+    return {**base, **event_assets.class_overrides(asset_class)}
 
 
 def sanitize_params(raw, base: dict) -> dict | None:
@@ -109,24 +109,26 @@ def job_running() -> bool:
 
 def job_public() -> dict:
     return {k: JOB.get(k) for k in ("status", "progress", "phase", "events",
-                                    "results", "started_at", "finished_at", "error")}
+                                    "asset_classes", "results", "started_at",
+                                    "finished_at", "error")}
 
 
-async def stored_params(db, key: str) -> dict | None:
-    doc = await db.settings.find_one({"_id": params_id(key)})
+async def stored_params(db, key: str, asset_class: str = "crypto") -> dict | None:
+    doc = await db.settings.find_one({"_id": params_id(key, asset_class)})
     return (doc or {}).get("params") or None
 
 
-async def stored_params_meta(db, key: str) -> dict | None:
-    doc = await db.settings.find_one({"_id": params_id(key)})
+async def stored_params_meta(db, key: str, asset_class: str = "crypto") -> dict | None:
+    doc = await db.settings.find_one({"_id": params_id(key, asset_class)})
     if not doc:
         return None
     doc.pop("_id", None)
     return doc
 
 
-async def save_params(db, key: str, proposal: dict, result: dict) -> None:
-    await db.settings.update_one({"_id": params_id(key)}, {"$set": {
+async def save_params(db, key: str, proposal: dict, result: dict,
+                      asset_class: str = "crypto") -> None:
+    await db.settings.update_one({"_id": params_id(key, asset_class)}, {"$set": {
         "params": proposal["params"],
         "reason": proposal.get("reason", ""),
         "changes": proposal.get("changes", []),
@@ -138,27 +140,32 @@ async def save_params(db, key: str, proposal: dict, result: dict) -> None:
     }}, upsert=True)
 
 
-async def reset_params(db, key: str) -> None:
-    await db.settings.delete_one({"_id": params_id(key)})
+async def reset_params(db, key: str, asset_class: str = "crypto") -> None:
+    await db.settings.delete_one({"_id": params_id(key, asset_class)})
 
 
-async def last_result_light(db, key: str) -> dict | None:
+async def last_result_light(db, key: str, asset_class: str = "crypto") -> dict | None:
     """Ergebnis OHNE Einzeltrades (Payload-schonend für die Übersicht)."""
-    rid = fomc_backtest.RESULT_ID if key == "fomc" else econ_backtest.result_id(key)
+    rid = (fomc_backtest.RESULT_ID + event_assets.result_suffix(asset_class)
+           if key == "fomc" else econ_backtest.result_id(key, asset_class))
     doc = await db.settings.find_one({"_id": rid}, {"trades": 0})
     if doc:
         doc.pop("_id", None)
     return doc
 
 
-async def _run_single(db, key: str, years: float, params: dict | None) -> dict:
+async def _run_single(db, key: str, years: float, params: dict | None,
+                      asset_class: str = "crypto") -> dict:
     if key == "fomc":
-        return await fomc_backtest.run(db, years=years, params=params)
-    return await econ_backtest.run(db, key, years=years, params=params)
+        return await fomc_backtest.run(db, years=years, params=params,
+                                       asset_class=asset_class)
+    return await econ_backtest.run(db, key, years=years, params=params,
+                                   asset_class=asset_class)
 
 
 async def _propose(db, key: str, params_now: dict, result: dict,
-                   lessons: list[str], version: int) -> dict | None:
+                   lessons: list[str], version: int,
+                   asset_class: str = "crypto") -> dict | None:
     from services.ai_engine import ai_engine
     if not getattr(ai_engine, "key", None):
         logger.info("Event-KI-Schleife: kein LLM-Key – Revision übersprungen")
@@ -170,9 +177,15 @@ async def _propose(db, key: str, params_now: dict, result: dict,
     ev_lines = "\n".join(f"- {d}: {e.get('trades')}T, PnL {e.get('pnl'):+.2f}$"
                          for d, e in list(per_ev.items())[-10:])
     lesson_txt = "\n".join(lessons[-5:]) or "- noch keine Revision getestet"
+    from services import setup_asset_class as ac
+    cls_line = (f"ANLAGEKLASSE: {event_assets.LABELS.get(asset_class, asset_class)} "
+                f"(Symbole {', '.join(event_assets.symbols_for(asset_class))}) – "
+                f"{ac.HINTS.get(asset_class, '')} Optimiere die Parameter SPEZIELL "
+                f"für die Eigenheiten dieser Klasse (Volatilität, Range-Größe, "
+                f"Reaktionstempo auf US-Makro-Daten).")
     prompt = (
         f"EVENT-SETUP '{EVENT_LABELS.get(key, key)}' – Backtest NICHT validiert: "
-        f"{result.get('validation_reason', '?')}\n\n"
+        f"{result.get('validation_reason', '?')}\n\n{cls_line}\n\n"
         f"Statistik: Gesamt {agg.get('total')}\nIn-Sample {agg.get('in_sample')}\n"
         f"Out-of-Sample {agg.get('out_of_sample')}\n\nLetzte Events:\n{ev_lines or '- keine'}\n\n"
         f"LERNSCHLEIFE bisheriger Revisionen:\n{lesson_txt}\n\n"
@@ -201,38 +214,45 @@ async def _propose(db, key: str, params_now: dict, result: dict,
 
 
 async def run_batch(db, events: list[str], years: float = 2.0,
-                    ai_revise: bool = False, ai_rounds: int = 2) -> None:
+                    ai_revise: bool = False, ai_rounds: int = 2,
+                    asset_classes: list[str] | None = None) -> None:
     global JOB
     keys = [k for k in events if k in EVENT_KEYS]
+    classes = [c for c in (asset_classes or ["crypto"])
+               if c in event_assets.CLASSES] or ["crypto"]
     JOB = {"status": "running", "progress": 0, "phase": "Startet…", "events": keys,
+           "asset_classes": classes,
            "results": {}, "started_at": datetime.now(timezone.utc).isoformat(),
            "finished_at": None, "error": None}
     ai_rounds = max(1, min(MAX_ROUNDS, int(ai_rounds or 1)))
+    pairs = [(k, c) for k in keys for c in classes]
     try:
-        for i, key in enumerate(keys):
-            label = EVENT_LABELS.get(key, key)
+        for i, (key, cls) in enumerate(pairs):
+            label = f"{EVENT_LABELS.get(key, key)} · {event_assets.LABELS.get(cls, cls)}"
             JOB["phase"] = f"{label}: Backtest läuft…"
-            JOB["progress"] = round(i / len(keys) * 100)
-            base = base_params(key)
-            params_now = {**base, **(await stored_params(db, key) or {})}
+            JOB["progress"] = round(i / len(pairs) * 100)
+            base = base_params(key, cls)
+            params_now = {**base, **(await stored_params(db, key, cls) or {})}
             use_override = params_now != base
             res = await _run_single(db, key, years,
-                                    params_now if use_override else None)
+                                    params_now if use_override else None, cls)
+            rkey = f"{key}:{cls}"
             if res.get("status") == "busy":
-                JOB["results"][key] = {"error": res.get("detail"), "rounds": 0}
+                JOB["results"][rkey] = {"error": res.get("detail"), "rounds": 0}
                 continue
             rounds, lessons = 0, []
-            version = ((await stored_params_meta(db, key)) or {}).get("version", 0)
+            version = ((await stored_params_meta(db, key, cls)) or {}).get("version", 0)
             while (ai_revise and not res.get("validated") and rounds < ai_rounds
                    and res.get("status") == "ok"):
                 rounds += 1
                 version += 1
                 JOB["phase"] = f"{label}: KI-Revision {rounds}/{ai_rounds}…"
-                proposal = await _propose(db, key, params_now, res, lessons, version)
+                proposal = await _propose(db, key, params_now, res, lessons,
+                                          version, cls)
                 if not proposal:
                     break
                 JOB["phase"] = f"{label}: Re-Test KI-Rev.{version}…"
-                res2 = await _run_single(db, key, years, proposal["params"])
+                res2 = await _run_single(db, key, years, proposal["params"], cls)
                 if res2.get("status") != "ok":
                     break
                 improved = res2.get("validated") or score(res2) > score(res)
@@ -244,20 +264,24 @@ async def run_batch(db, events: list[str], years: float = 2.0,
                 if improved:
                     params_now = proposal["params"]
                     res = res2
-                    await save_params(db, key, proposal, res2)
+                    await save_params(db, key, proposal, res2, cls)
                 else:
                     # schlechtere Revision: alten (besseren) Stand erneut persistieren,
                     # damit Ergebnis-Doc + Live-Validierung zum besten Lauf passen
                     await _run_single(db, key, years,
-                                      params_now if params_now != base else None)
+                                      params_now if params_now != base else None, cls)
             agg = res.get("aggregate") or {}
-            JOB["results"][key] = {
+            entry = {
                 "validated": bool(res.get("validated")),
                 "reason": res.get("validation_reason", ""),
+                "asset_class": cls,
                 "score": score(res), "rounds": rounds, "lessons": lessons,
                 "trades": (agg.get("total") or {}).get("trades", 0),
                 "ai_params": params_now != base,
             }
+            JOB["results"][rkey] = entry
+            if cls == "crypto":
+                JOB["results"][key] = entry   # Abwärtskompatibilität
         JOB["progress"] = 100
         JOB["phase"] = "Fertig"
         JOB["status"] = "done"

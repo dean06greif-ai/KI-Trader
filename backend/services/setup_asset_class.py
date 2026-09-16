@@ -31,16 +31,16 @@ _GROUP_TO_CLASS: Dict[str, str] = {
 # Setups, die in einer Anlageklasse fachlich keinen Sinn ergeben:
 #  * funding_fade braucht Perp-Funding-Raten der Krypto-Crowd (FUNDING-FADE-
 #    RADAR liefert nur Krypto-Daten) -> außerhalb von Krypto nicht handelbar.
-#  * fomc_event zielt auf die stärkste Event-Reaktion (Krypto + US-Indizes);
-#    Rohstoffe/Forex reagieren indirekter (USD) -> dort nicht handelbar.
-#    cpi_event/nfp_event/ppi_event/pce_event: gleiche Logik (US-Datenveröffentlichungen).
+#  * Event-Setups (fomc/cpi/nfp/ppi/pce_event) sind seit 06/2026 in ALLEN
+#    Klassen erlaubt: je Klasse eigener Backtest, eigene KI-Parameter und
+#    eigene Validierung (services/event_assets.py + event_backtest_loop).
+#    Paper läuft sofort; LIVE erst nach bestandener Klassen-Validierung +
+#    Trader-Opt-in (live_override(asset_class) prüft genau diese Klasse).
 EXCLUDED: Dict[str, Set[str]] = {
     CRYPTO: set(),
     INDICES: {"funding_fade"},
-    RESOURCES: {"funding_fade", "fomc_event", "cpi_event", "nfp_event",
-                "ppi_event", "pce_event"},
-    FOREX: {"funding_fade", "fomc_event", "cpi_event", "nfp_event",
-            "ppi_event", "pce_event"},
+    RESOURCES: {"funding_fade"},
+    FOREX: {"funding_fade"},
 }
 
 # Kompakte Klassen-Hinweise für den Prompt (bewusst 1 Zeile – Token-Budget).

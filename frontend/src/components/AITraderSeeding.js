@@ -133,7 +133,18 @@ export default function AITraderSeeding() {
     evRunning ? `Events: ${evJob?.phase || '…'}` : null,
   ].filter(Boolean).join(' · ');
   const evEvents = evState?.events || {};
-  const evTested = evState?.tested || [];
+  const evClassMeta = evState?.assetClasses || [];
+  const CLS_ORDER = ['crypto', 'indices', 'resources', 'forex'];
+  const clsLabelOf = (c) => (evClassMeta.find(m => m.key === c)?.label) || c;
+  const eventRows = [];
+  Object.keys(EVENT_META).forEach(k => {
+    const ev = evEvents[k];
+    if (!ev) return;
+    const bts = ev.backtests || (ev.backtest ? { crypto: ev.backtest } : {});
+    CLS_ORDER.filter(c => bts[c]).forEach((c, idx) => {
+      eventRows.push({ k, cls: c, ev, bt: bts[c], first: idx === 0 });
+    });
+  });
   const rules = info?.rules || {};
   const rows = (result?.rows || []).filter(r => r.setup);
   const auto = info?.auto;
@@ -380,7 +391,7 @@ export default function AITraderSeeding() {
         </div>
       )}
 
-      {(result || evTested.length > 0) && (
+      {(result || eventRows.length > 0) && (
         <div style={{ marginTop: 10 }} data-testid="ai-seed-result">
           <div className="btc-sub">
             {result ? (
@@ -389,8 +400,8 @@ export default function AITraderSeeding() {
                 {result.ai_rounds ? ` · ${result.ai_rounds} KI-Revisionen` : ''}
                 {result.ai_proposals ? ` · ${result.ai_proposals} für nächsten Lauf vorgemerkt` : ''}</>
             ) : 'ERGEBNIS'}
-            {evTested.length > 0 && (
-              <> · Events: {evTested.filter(k => evEvents[k]?.backtest?.validated).length}/{evTested.length} validiert (~2 Jahre Event-Historie, 5m)</>
+            {eventRows.length > 0 && (
+              <> · Events: {eventRows.filter(r => r.bt?.validated).length}/{eventRows.length} Klassen-Backtests validiert</>
             )}
           </div>
           <div className="bt-table-wrap">
@@ -438,21 +449,19 @@ export default function AITraderSeeding() {
                   </td>
                 </tr>
               ))}
-              {evTested.map(k => {
-                const ev = evEvents[k];
-                const bt = ev.backtest || {};
+              {eventRows.map(({ k, cls, ev, bt, first }) => {
                 const agg = bt.aggregate || {};
-                const jr = evJob?.results?.[k];
-                const ai = ev.ai_params;
+                const jr = evJob?.results?.[`${k}:${cls}`] || (cls === 'crypto' ? evJob?.results?.[k] : null);
+                const ai = (ev.ai_params_by_class || {})[cls] || (cls === 'crypto' ? ev.ai_params : null);
                 return (
-                  <tr key={`event-${k}`} data-testid={`ai-seed-row-events-${k}`}>
-                    <td>Events</td>
-                    <td className="bt-name">{EVENT_META[k].label} <span className="mono" style={{ opacity: 0.6, fontSize: 10 }}>{ev.setup}</span></td>
+                  <tr key={`event-${k}-${cls}`} data-testid={`ai-seed-row-events-${k}-${cls}`}>
+                    <td title={bt.data_note || ''}>Events · {clsLabelOf(cls)}</td>
+                    <td className="bt-name">{EVENT_META[k].label} <span className="mono" style={{ opacity: 0.6, fontSize: 10 }}>{ev.setup} · {(bt.symbols || []).join('/')}</span></td>
                     <td className="mono" title={ai?.reason || 'feste Basis-Regeln (ex-ante, kein Tuning)'}>
                       {ai ? `KI-Rev.${ai.version}` : 'Basis'}
                       {ai && admin && (
-                        <button className="bt-tool-btn" style={{ marginLeft: 6 }} onClick={() => eventRef.current?.resetParams(k)}
-                          title="KI-Parameter löschen – zurück zu den festen Basis-Regeln" data-testid={`event-seed-reset-${k}`}>
+                        <button className="bt-tool-btn" style={{ marginLeft: 6 }} onClick={() => eventRef.current?.resetParams(k, cls)}
+                          title={`KI-Parameter (${clsLabelOf(cls)}) löschen – zurück zu den festen Basis-Regeln`} data-testid={`event-seed-reset-${k}-${cls}`}>
                           <ArrowCounterClockwise size={11} weight="bold" />
                         </button>
                       )}
@@ -463,17 +472,21 @@ export default function AITraderSeeding() {
                     <td className="mono">{eventCell(agg.in_sample)}</td>
                     <td className={`mono ${(agg.out_of_sample?.pnl || 0) > 0 ? 'pos' : (agg.out_of_sample?.pnl || 0) < 0 ? 'neg' : ''}`}>{eventCell(agg.out_of_sample)}</td>
                     <td className="mono" title="Event-Setups speichern keine OOS-Trades fürs Reife-Gate – Live-Freigabe direkt per Opt-in">—</td>
-                    <td style={{ color: bt.validated ? '#00FF66' : '#FFB020' }} title={bt.validation_reason || ''} data-testid={`event-seed-status-${k}`}>
+                    <td style={{ color: bt.validated ? '#00FF66' : '#FFB020' }} title={bt.validation_reason || ''} data-testid={`event-seed-status-${k}-${cls}`}>
                       {bt.validated ? 'Edge bestätigt (validiert)' : 'kein Edge'}
                       {jr?.rounds ? ` · ${jr.rounds}× KI` : ''}
-                      <label className="bt-check" style={{ marginTop: 2 }}
-                        title={bt.validated ? 'Live-Trading für dieses Event-Setup erlauben' : 'Erst Backtest bestehen, dann live'}
-                        data-testid={`event-seed-live-${k}`}>
-                        <input type="checkbox" checked={!!ev.live_enabled} disabled={!admin} onChange={() => eventRef.current?.toggleLive(k, ev.live_enabled)} />
-                        Live {ev.live_enabled ? 'AN' : 'aus'}
-                      </label>
+                      {first ? (
+                        <label className="bt-check" style={{ marginTop: 2 }}
+                          title="Live-Opt-in gilt je Event – live geht eine Anlageklasse aber nur, wenn IHR Backtest validiert ist"
+                          data-testid={`event-seed-live-${k}`}>
+                          <input type="checkbox" checked={!!ev.live_enabled} disabled={!admin} onChange={() => eventRef.current?.toggleLive(k, ev.live_enabled)} />
+                          Live {ev.live_enabled ? 'AN' : 'aus'}
+                        </label>
+                      ) : (
+                        <div style={{ opacity: 0.6, fontSize: 10 }}>Live-Schalter s. oben ({EVENT_META[k].label})</div>
+                      )}
                       {jr?.lessons?.length > 0 && (
-                        <div style={{ opacity: 0.75, fontSize: 10 }} title={jr.lessons.join('\n')} data-testid={`event-seed-lesson-${k}`}>
+                        <div style={{ opacity: 0.75, fontSize: 10 }} title={jr.lessons.join('\n')} data-testid={`event-seed-lesson-${k}-${cls}`}>
                           <Brain size={10} weight="bold" /> {jr.lessons[jr.lessons.length - 1]}
                         </div>
                       )}

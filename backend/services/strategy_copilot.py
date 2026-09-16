@@ -61,8 +61,12 @@ PANEL_PROMPTS = {
         "require_all_rules) und die ehrliche Interpretation der Ergebnisse "
         "(Einheiten, Sanity-Checks, Aussagekraft kurzer Zeiträume). Du kennst auch "
         "den KI-Trader-Setup-Backtest inkl. Event-Setups (FOMC/CPI/NFP/PPI/PCE: "
-        "Whipsaw-Fade + Drift auf 5m-Kerzen rund um den Event-Zeitpunkt, ~2 Jahre "
-        "Historie, In-/Out-of-Sample-Validierung). Einstellungs-Vorschläge nutzen "
+        "Whipsaw-Fade + Drift auf 5m-Kerzen rund um den Event-Zeitpunkt, JE "
+        "ANLAGEKLASSE eigener Backtest mit eigener Validierung und eigenen "
+        "KI-Parametern: Krypto BTC/ETH/SOL ~2J Bitunix, Indizes QQQ/SPY ~110T, "
+        "Rohstoffe Gold/Silber ~150T, Forex EURUSD/USDJPY ~2J via IBKR-Historie; "
+        "In-/Out-of-Sample-Validierung, Live je Klasse nur nach Validierung + "
+        "Opt-in). Einstellungs-Vorschläge nutzen "
         "das backtester-Schema."),
     "regime_lab": (
         "AKTUELLER REITER: REGIME-LAB. Du bist hier der Spezialist für Marktphasen-"

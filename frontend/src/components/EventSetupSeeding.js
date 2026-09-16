@@ -23,12 +23,13 @@ const loadSaved = () => { try { return JSON.parse(localStorage.getItem(STATE_KEY
 const EventSetupSeeding = forwardRef(({ onState }, ref) => {
   const [data, setData] = useState(null);
   const [selected, setSelected] = useState(loadSaved().selected || []);
+  const [selectedClasses, setSelectedClasses] = useState(loadSaved().classes || ['crypto']);
   const pollRef = useRef(null);
   const prevStatus = useRef(null);
 
   useEffect(() => {
-    try { localStorage.setItem(STATE_KEY, JSON.stringify({ selected })); } catch { /* ignore */ }
-  }, [selected]);
+    try { localStorage.setItem(STATE_KEY, JSON.stringify({ selected, classes: selectedClasses })); } catch { /* ignore */ }
+  }, [selected, selectedClasses]);
 
   const load = useCallback(async () => {
     try {
@@ -49,6 +50,7 @@ const EventSetupSeeding = forwardRef(({ onState }, ref) => {
       running: job?.status === 'running',
       job,
       events,
+      assetClasses: data?.asset_classes || [],
       tested: Object.keys(EVENT_META).filter(k => events[k]?.backtest),
     });
   }, [data, onState]);
@@ -81,10 +83,10 @@ const EventSetupSeeding = forwardRef(({ onState }, ref) => {
     } catch { toast.error('Verbindungsfehler'); }
   };
 
-  const resetParams = async (key) => {
-    if (!window.confirm(`KI-revidierte Parameter für ${EVENT_META[key].label} löschen (zurück zu den festen Basis-Regeln)?`)) return;
+  const resetParams = async (key, cls = 'crypto') => {
+    if (!window.confirm(`KI-revidierte Parameter für ${EVENT_META[key].label} (${cls}) löschen (zurück zu den festen Basis-Regeln)?`)) return;
     try {
-      const r = await fetch(`${API_URL}/api/event-setups/${key}/reset-params`, { method: 'POST', headers: authHeaders() });
+      const r = await fetch(`${API_URL}/api/event-setups/${key}/reset-params?asset_class=${encodeURIComponent(cls)}`, { method: 'POST', headers: authHeaders() });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { toast.error(d.detail || 'Fehler'); return; }
       toast.success('KI-Parameter zurückgesetzt');
@@ -102,7 +104,11 @@ const EventSetupSeeding = forwardRef(({ onState }, ref) => {
       try {
         const r = await fetch(`${API_URL}/api/event-setups/backtest`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
-          body: JSON.stringify({ events: selected, years: 2, ai_revise: !!aiRevise, ai_rounds: aiRounds || 2 }),
+          body: JSON.stringify({
+            events: selected, years: 2,
+            asset_classes: selectedClasses.length ? selectedClasses : ['crypto'],
+            ai_revise: !!aiRevise, ai_rounds: aiRounds || 2,
+          }),
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok || d.status === 'busy') { toast.error(d.detail || 'Event-Backtest: Start fehlgeschlagen'); return false; }
@@ -111,15 +117,20 @@ const EventSetupSeeding = forwardRef(({ onState }, ref) => {
       } catch { toast.error('Verbindungsfehler (Event-Backtest)'); return false; }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [selected, jobRunning, load]);
+  }), [selected, selectedClasses, jobRunning, load]);
 
   const toggleEvent = (k) => setSelected(prev => (prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]));
+  const toggleClass = (c) => setSelectedClasses(prev => {
+    if (prev.includes(c)) return prev.length > 1 ? prev.filter(x => x !== c) : prev;
+    return [...prev, c];
+  });
   const events = data?.events || {};
+  const classMeta = data?.asset_classes || [];
 
   return (
     <div data-testid="event-seed-section">
       <div className="bt-col" style={{ marginTop: 4 }}>
-        <div className="bt-label">EVENT-SETUPS <span className="btc-hint-inline">(mit anhaken – laufen beim Start mit: gemeinsamer Fortschritt & gemeinsame Tabelle unten, ~2 Jahre Event-Historie)</span></div>
+        <div className="bt-label">EVENT-SETUPS <span className="btc-hint-inline">(mit anhaken – laufen beim Start mit: gemeinsamer Fortschritt & gemeinsame Tabelle unten)</span></div>
         <div className="bt-chips" data-testid="event-seed-select">
           {Object.entries(EVENT_META).map(([k, m]) => (
             <button key={k} className={`bt-chip ${selected.includes(k) ? 'on' : ''}`} onClick={() => toggleEvent(k)}
@@ -130,6 +141,21 @@ const EventSetupSeeding = forwardRef(({ onState }, ref) => {
           ))}
         </div>
       </div>
+      {selected.length > 0 && classMeta.length > 0 && (
+        <div className="bt-col" style={{ marginTop: 4 }}>
+          <div className="bt-label">EVENT-ANLAGEKLASSEN <span className="btc-hint-inline">(je Klasse eigener Backtest, eigene KI-Parameter & eigene Live-Validierung)</span></div>
+          <div className="bt-chips" data-testid="event-class-select">
+            {classMeta.map(c => (
+              <button key={c.key} className={`bt-chip ${selectedClasses.includes(c.key) ? 'on' : ''}`}
+                onClick={() => toggleClass(c.key)}
+                title={`${c.symbols.join(', ')} · ${c.hist_note}`}
+                data-testid={`event-class-chip-${c.key}`}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {data?.job?.status === 'error' && (
         <div className="bt-rule-warnings" data-testid="event-seed-job-error">Event-Backtest-Fehler: {data.job.error}</div>
       )}

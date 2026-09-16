@@ -22,15 +22,14 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from services import fomc_event
+from services import event_assets, fomc_event
 from services import setup_lifecycle as lifecycle
-from services.bitunix_client import fetch_klines_range
 
 logger = logging.getLogger(__name__)
 
 RESULT_ID = "fomc_backtest_result"
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-ASSET_CLASS = "crypto"          # Bitunix liefert nur Krypto-Historie
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]   # Krypto-Default (Abwärtskompatibilität)
+ASSET_CLASS = "crypto"
 NOTIONAL = 300.0                # USDT Nominal je Trade (nur für PnL-Skalierung)
 FEE_RT = 0.0012                 # Roundtrip Taker-Fees ~0.12 %
 
@@ -47,7 +46,7 @@ MIN_TRADES = 10
 MIN_OOS_TRADES = 4
 OOS_SHARE = 1.0 / 3.0
 
-_running = False
+_running: dict[str, bool] = {}   # je Anlageklasse ein Lauf
 
 
 # ---------------------------------------------------------------------------
@@ -179,46 +178,58 @@ def validated(agg: dict) -> (bool, str):
 # ---------------------------------------------------------------------------
 # Lauf (DB-Anbindung dünn)
 # ---------------------------------------------------------------------------
-async def _event_candles(symbol: str, t0_ms: int, p: dict | None = None) -> list[dict]:
+async def _event_candles(symbol: str, t0_ms: int, p: dict | None = None,
+                         asset_class: str = "crypto") -> list[dict]:
     p = p or FIXED
     start = t0_ms - int(p["pre_range_hours"] * 3600 * 1000) - 600_000
     end = t0_ms + int(p["timeout_drift_min"] + 30) * 60_000
-    return await fetch_klines_range(symbol, "5m", start_ms=start, end_ms=end, limit=200)
+    return await event_assets.fetch_event_candles(asset_class, symbol, start, end)
 
 
 async def run(db, years: float = 2.0, symbols: list[str] | None = None,
-              params: dict | None = None) -> dict:
-    global _running
-    if _running:
-        return {"status": "busy", "detail": "FOMC-Backtest läuft bereits"}
-    _running = True
+              params: dict | None = None, asset_class: str = "crypto") -> dict:
+    cls = event_assets.normalize(asset_class)
+    if _running.get(cls):
+        return {"status": "busy",
+                "detail": f"FOMC-Backtest ({event_assets.LABELS[cls]}) läuft bereits"}
+    _running[cls] = True
     try:
-        symbols = symbols or SYMBOLS
-        p = {**FIXED, **(params or {})}
+        symbols = symbols or event_assets.symbols_for(cls)
+        p = {**FIXED, **event_assets.class_overrides(cls), **(params or {})}
+        years = event_assets.years_cap(cls, years)
         decisions = fomc_event.past_decisions(years=years)
         all_trades: list[dict] = []
         per_event: dict[str, dict] = {}
+        data_events = 0
         for dt in decisions:
             ev = dt.strftime("%Y-%m-%d")
             t0 = int(dt.timestamp())
             ev_trades = []
+            ev_has_data = False
             for sym in symbols:
-                candles = await _event_candles(sym, t0 * 1000, p)
+                candles = await _event_candles(sym, t0 * 1000, p, cls)
                 if len(candles) < 20:
                     continue
+                ev_has_data = True
                 for t in simulate_event(candles, t0, p=p):
                     t.update({"event": ev, "symbol": sym})
                     ev_trades.append(t)
-                await asyncio.sleep(0.15)   # Bitunix-Rate schonen
+                await asyncio.sleep(0.15)   # Daten-API-Rate schonen
+            data_events += 1 if ev_has_data else 0
             all_trades += ev_trades
             per_event[ev] = {"trades": len(ev_trades),
                              "pnl": round(sum(t["pnl"] for t in ev_trades), 2)}
         events_sorted = [dt.strftime("%Y-%m-%d") for dt in decisions]
         agg = aggregate(all_trades, events_sorted)
         ok, why = validated(agg)
+        if data_events == 0 and decisions:
+            why = ("keine Kursdaten für diese Anlageklasse erreichbar"
+                   + (" (IBKR-Gateway eingeloggt?)" if cls == event_assets.FOREX else ""))
         result = {
             "run_at": datetime.now(timezone.utc).isoformat(),
-            "years": years, "symbols": symbols, "asset_class": ASSET_CLASS,
+            "years": years, "symbols": symbols, "asset_class": cls,
+            "data_note": event_assets.HIST_NOTE.get(cls, ""),
+            "events_with_data": data_events,
             "params_fixed": p, "ai_params": bool(params),
             "aggregate": agg, "per_event": per_event,
             "trades": sorted(all_trades, key=lambda t: t["entry_ts"]),
@@ -226,23 +237,27 @@ async def run(db, years: float = 2.0, symbols: list[str] | None = None,
             "note": ("Feste Regeln ohne Parameter-Optimierung; Validierung verlangt "
                      "positives Gesamt- UND Out-of-Sample-PnL (Overfitting-Schutz)."),
         }
-        await db.settings.update_one({"_id": RESULT_ID}, {"$set": result}, upsert=True)
+        rid = RESULT_ID + event_assets.result_suffix(cls)
+        await db.settings.update_one({"_id": rid}, {"$set": result}, upsert=True)
         await fomc_event.set_validation(
-            db, ASSET_CLASS, ok, why,
+            db, cls, ok, why,
             {"trades": agg["total"]["trades"], "pnl": agg["total"]["pnl"],
              "oos_pnl": agg["out_of_sample"]["pnl"]})
-        logger.info(f"FOMC-Backtest: {len(all_trades)} Trades, validiert={ok} ({why})")
+        logger.info(f"FOMC-Backtest [{cls}]: {len(all_trades)} Trades, validiert={ok} ({why})")
         return {"status": "ok", **result}
     finally:
-        _running = False
+        _running[cls] = False
 
 
-async def last_result(db) -> dict | None:
-    doc = await db.settings.find_one({"_id": RESULT_ID})
+async def last_result(db, asset_class: str = "crypto") -> dict | None:
+    rid = RESULT_ID + event_assets.result_suffix(asset_class)
+    doc = await db.settings.find_one({"_id": rid})
     if doc:
         doc.pop("_id", None)
     return doc
 
 
-def is_running() -> bool:
-    return _running
+def is_running(asset_class: str | None = None) -> bool:
+    if asset_class:
+        return bool(_running.get(event_assets.normalize(asset_class)))
+    return any(_running.values())

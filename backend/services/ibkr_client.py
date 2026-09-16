@@ -362,6 +362,41 @@ class IBKRClient:
         res = await self._req("GET", "/iserver/account/trades")
         return res if isinstance(res, list) else []
 
+    async def history_bars(self, conid: int, start_ms: int, end_ms: int,
+                           bar: str = "5min") -> List[Dict]:
+        """Historische Kerzen über /iserver/marketdata/history, konvertiert ins
+        Bitunix-Kerzenformat ({time s, open, high, low, close}). Die startTime-
+        Semantik unterscheidet sich je Gateway-Version (Daten vor/nach dem
+        Anker) – deshalb beide Anker versuchen und hart auf [start, end] filtern."""
+        from datetime import datetime, timezone as _tz
+        hours = max(2, int((end_ms - start_ms) / 3_600_000) + 2)
+        period = f"{min(hours, 48)}h"
+        for anchor in (end_ms, start_ms):
+            ts = datetime.fromtimestamp(anchor / 1000, tz=_tz.utc).strftime("%Y%m%d-%H:%M:%S")
+            res = await self._req("GET", "/iserver/marketdata/history",
+                                  params={"conid": int(conid), "bar": bar,
+                                          "period": period, "startTime": ts,
+                                          "outsideRth": "true"})
+            rows = res.get("data") if isinstance(res, dict) else None
+            if not isinstance(rows, list):
+                if isinstance(res, dict) and res.get("_error"):
+                    logger.warning(f"IBKR-Historie conid={conid}: {res['_error']}")
+                    return []
+                continue
+            out: List[Dict] = []
+            for r in rows:
+                try:
+                    t = int(r["t"]) // 1000
+                    if start_ms // 1000 <= t <= end_ms // 1000:
+                        out.append({"time": t, "open": float(r["o"]),
+                                    "high": float(r["h"]), "low": float(r["l"]),
+                                    "close": float(r["c"])})
+                except (KeyError, TypeError, ValueError):
+                    continue
+            if out:
+                return sorted(out, key=lambda c: c["time"])
+        return []
+
     async def get_order_status(self, order_id: str) -> Dict:
         res = await self._req("GET", f"/iserver/account/order/status/{order_id}")
         return res if isinstance(res, dict) else {}
