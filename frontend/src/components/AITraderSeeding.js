@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Play, X, Repeat, ArrowRight, ArrowCounterClockwise, Clock, Brain, Cloud, Desktop, Gear } from '@phosphor-icons/react';
 import LocalWorkerPanel from './LocalWorkerPanel';
+import EventSetupSeeding from './EventSetupSeeding';
 import { toast } from '../lib/toast';
 import { authHeaders, isAdmin } from '../auth';
 
@@ -43,6 +44,7 @@ export default function AITraderSeeding() {
   const [lwOnline, setLwOnline] = useState(false);
   const [showLW, setShowLW] = useState(false);
   const pollRef = useRef(null);
+  const eventRef = useRef(null);
   const admin = isAdmin();
 
   useEffect(() => {
@@ -91,7 +93,13 @@ export default function AITraderSeeding() {
   const toggleClass = (c) => setClasses(prev => (prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]));
 
   const run = async () => {
-    if (!classes.length) { toast.error('Mindestens 1 Anlageklasse wählen'); return; }
+    const evSel = eventRef.current?.getSelected() || [];
+    if (!classes.length && !evSel.length) { toast.error('Mindestens 1 Anlageklasse oder Event-Setup wählen'); return; }
+    if (evSel.length) {
+      const ok = await eventRef.current.start({ aiRevise, aiRounds: mode === 'ai_loop' ? aiRounds : 2 });
+      if (ok) toast.success(`Event-Setups laufen mit: ${evSel.map(e => e.toUpperCase()).join(', ')}`);
+    }
+    if (!classes.length) return; // nur Event-Setups gewählt
     const body = { asset_classes: classes, days, mode, ai_revise: aiRevise, ai_rounds: aiRounds, target_passed: targetPassed };
     const r = await fetch(`${API_URL}/api/ai/playbook/backtest/run`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
@@ -197,6 +205,8 @@ export default function AITraderSeeding() {
           </div>
         </div>
       </div>
+
+      <EventSetupSeeding ref={eventRef} />
 
       <div className="bt-params" data-testid="ai-seed-run-row">
         <label>Zeitraum

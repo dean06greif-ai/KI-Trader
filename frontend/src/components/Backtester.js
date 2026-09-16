@@ -12,7 +12,6 @@ import EquityChart from './EquityChart';
 import StrategyCopilot from './StrategyCopilot';
 import PortfolioBacktestCard from './PortfolioBacktestCard';
 import AITraderSeeding from './AITraderSeeding';
-import EventBacktestPanel from './EventBacktestPanel';
 import TIMEFRAMES from '../constants/timeframes';
 import './Backtester.css';
 import './BacktesterExtra.css';
@@ -90,9 +89,8 @@ export default function Backtester({ onClose }) {
   const [applying, setApplying] = useState(false);
   const [execution, setExecution] = useState(saved.execution || 'cloud');
   // Reiter: 'strategies' (Strategie-Backtest) | 'ai' (KI Trader · Setup-Backtest)
-  const [tab, setTab] = useState(saved.tab || (saved.aiSeed ? 'ai' : 'strategies'));
+  const [tab, setTab] = useState(saved.tab === 'events' ? 'ai' : (saved.tab || (saved.aiSeed ? 'ai' : 'strategies')));
   const aiTab = tab === 'ai';
-  const eventTab = tab === 'events';
   const [lwOnline, setLwOnline] = useState(false);
   const [showLW, setShowLW] = useState(false);
   const pollRef = useRef(null);
@@ -727,21 +725,15 @@ export default function Backtester({ onClose }) {
             </button>
             <button className={`bt-tab ${aiTab ? 'on' : ''}`} onClick={() => setTab('ai')}
               role="tab" aria-selected={aiTab} data-testid="bt-tab-ai"
-              title="KI Trader: Playbook-Setups je Anlageklasse auf Vergangenheitsdaten testen, KI überarbeitet Setups ohne Edge">
+              title="KI Trader: Playbook- und Event-Setups auf Vergangenheitsdaten testen, KI überarbeitet Setups ohne Edge">
               🤖 KI Trader · Setups
-            </button>
-            <button className={`bt-tab ${eventTab ? 'on' : ''}`} onClick={() => setTab('events')}
-              role="tab" aria-selected={eventTab} data-testid="bt-tab-events"
-              title="Event-Setups (FOMC, CPI, NFP, PPI, PCE) backtesten – mit Auswahl und KI-Schleife">
-              📅 Event-Setups
             </button>
           </div>
           <button className="bt-close" onClick={onClose} data-testid="backtester-close"><X size={22} weight="bold" /></button>
         </div>
 
         {aiTab && <AITraderSeeding />}
-        {eventTab && <EventBacktestPanel />}
-        {!aiTab && !eventTab && <>
+        {!aiTab && <>
         <div className="bt-setup">
           <div className="bt-col">
             <div className="bt-label">STRATEGIEN <span className="btc-hint-inline">(⚙ = Trade-Einstellungen: Hebel, Auto-Leverage, TP/SL, Break-Even, Gewinnsicherung, Zeitfenster & Parameter – kommen aus der Strategie)</span></div>

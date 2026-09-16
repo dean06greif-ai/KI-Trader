@@ -39,7 +39,7 @@ export default function EventScheduleBadges() {
       </div>
       <div className="fomc-sub">
         Nur Info: wann das nächste Event ansteht und ob das Setup validiert/live ist.
-        Backtest, KI-Schleife &amp; Live-Freischaltung: Backtester → Tab „Event-Setups“.
+        Backtest, KI-Schleife &amp; Live-Freischaltung: Backtester → „🤖 KI Trader · Setups" (Event-Setups anhaken).
       </div>
       {err && <div className="fomc-err">Zeitplan nicht ladbar</div>}
       {events && (
