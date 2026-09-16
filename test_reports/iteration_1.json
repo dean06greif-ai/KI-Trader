@@ -1,0 +1,83 @@
+{
+  "summary": "Backend-Review im isolierten Clone abgeschlossen: Offline-Baseline reproduziert, neue Charakterisierungstests für die gemeldeten AP01/AP03/AP04/AP12-Lücken ergänzt und ausgeführt.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "services/position_watchdog._adopt",
+        "issue": "Kleine Fremdposition ohne belastbaren ID-/Zeitbeleg kann noch als Rest interpretiert und via flash_close geschlossen werden (als strict-xfail reproduziert).",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "POST /api/dynamic/{id}/confirm",
+        "issue": "Race: Zwei gleichzeitige Confirm-Requests auf denselben pending_switch können beide erfolgreich sein (strict-xfail reproduziert).",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "services/strategy_plan.merge_overrides",
+        "issue": "Manueller Altwert (z.B. leverage=3) wird nach dynamischem Override (10) und Rückkehr zu {} nicht restauriert, sondern entfernt."
+      },
+      {
+        "endpoint": "services/strategy_release.definition_fingerprint",
+        "issue": "Fingerprint berücksichtigt im model nur regime id/label; andere Modell-Konfigänderungen lassen Release weiterhin approved."
+      },
+      {
+        "endpoint": "services/strategy_release._wf_for_doc",
+        "issue": "Wenn coin-spezifischer/combined WF fehlt, fällt Auswahl auf beliebigen sortierten anderen Coin-WF zurück."
+      },
+      {
+        "endpoint": "services/strategy_release.evidence_bundle",
+        "issue": "ready_for_live kann trotz safety=None (und ohne Shadow/Paper-spezifische Evidenzprüfung) true sein."
+      },
+      {
+        "endpoint": "services/dynamic_live.apply_configs",
+        "issue": "Entgegengesetzte sub_strategy.rules werden nur als dynamic_sub_strategy in Coin-Config persistiert; keine direkte Runtime-Umschaltung im Scanner nachweisbar."
+      },
+      {
+        "endpoint": "pytest -m unit (Offline)",
+        "issue": "10 Failures in localhost:8055-Umgebungstests + 4 Collection-Errors (fehlendes frontend/.env, fehlendes ADMIN_PASSWORD) im isolierten Review-Setup."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/review/KI-Trader/backend/tests/analysis_regression/test_ap14_characterization_gaps.py",
+    "/app/review/KI-Trader/backend/tests/analysis_regression/conftest.py",
+    "/app/test_reports/pytest/analysis_regression_baseline.xml",
+    "/app/test_reports/pytest/analysis_regression_after_stubfix.xml",
+    "/app/test_reports/pytest/ap14_characterization.xml",
+    "/app/test_reports/pytest/unit_suite_offline.xml"
+  ],
+  "action_items": [
+    "Main-Fix AP01: Restclose nur bei eindeutiger Positions-Ownership (ID-belegt; fehlende Zeitbelege fail-closed).",
+    "Main-Fix AP04: Confirm atomar machen (DB-CAS auf pending_switch.command_id/observed_version), damit Doppel-Confirm verhindert wird.",
+    "Main-Fix AP03: merge_overrides um Restore-Mechanik für manuelle Ursprungswerte erweitern.",
+    "Main-Fix AP12: activation/evidence-Gates harmonisieren (approve darf Evidence-Blocker nicht semantisch übergehen oder klar trennen).",
+    "Unit-Tests entkoppeln von lokalen Artefakten (frontend/.env, ADMIN_PASSWORD, localhost:8055) oder als live markieren."
+  ],
+  "critical_code_review_comments": [
+    "position_watchdog.py hat >700 Zeilen (855) und mischt Parsing, Ownership-Heuristik, Adoption, SL-Management, Notfall-Close; hohes Regression-Risiko.",
+    "Release-Gate vs Evidence-Gate ist konzeptionell inkonsistent: activation_block_reason kann None liefern, während evidence_bundle weiterhin ready_for_live=false ist.",
+    "_wf_for_doc nutzt unscharfen Fallback auf beliebige Walkforward-Quelle statt Scope-harter Zuordnung."
+  ],
+  "updated_files": [
+    "/app/review/KI-Trader/backend/tests/analysis_regression/conftest.py",
+    "/app/review/KI-Trader/backend/tests/analysis_regression/test_ap14_characterization_gaps.py",
+    "/app/test_reports/iteration_1.json"
+  ],
+  "success_rate": {
+    "backend": "analysis_regression: 187 passed, 2 xfailed, 0 failed; unit(-m unit): 1676 tests, 10 failed, 4 errors, 12 skipped",
+    "frontend": "0% (nicht beauftragt)"
+  },
+  "test_credentials": "Datei /app/memory/test_credentials.md vorhanden, aber inhaltlich leer; keine Credentials verwendet.",
+  "seed_data_creation": "Keine Seed-Daten erstellt.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Offline-Stub für telegram wurde im analysis_regression/conftest ergänzt (inkl. telegram.constants.ParseMode), damit Unit-Imports ohne optionales Paket laufen. Die zwei bekannten Kernlücken sind bereits als strict-xfail in test_ap14_characterization_gaps.py reproduzierbar hinterlegt.",
+  "rca of the issue": "RCA kurz: (1) Watchdog-Restlogik akzeptiert aktuell kleine Mengen ohne harte Ownership-Beweise (fehlende PID/Zeit), dadurch potenzieller Fremd-Close. (2) dynamic_confirm prüft pending nicht atomar gegen parallele Requests; beide können denselben Vorschlag übernehmen, bevor pending entfernt wird. (3) merge_overrides kennt keinen Ursprungswert-Speicher für manuelle Keys nach dynamischer Überschreibung. (4) Evidence bewertet Reife strenger als Activation-Gate; dadurch Freigabe-Entkopplung."
+}
