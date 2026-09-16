@@ -67,9 +67,9 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
   const bodyRef = useRef(null);
 
   const loadHistory = useCallback(() => {
-    fetch(`${API_URL}/api/copilot/history?limit=40`)
+    fetch(`${API_URL}/api/copilot/history?limit=40&panel=${encodeURIComponent(panel || '')}`)
       .then(r => r.json()).then(d => setMessages(d.messages || [])).catch(() => {});
-  }, []);
+  }, [panel]);
 
   const loadStatus = useCallback(() => {
     fetch(`${API_URL}/api/copilot/status`).then(r => r.json()).then(setStatus).catch(() => {});
@@ -210,7 +210,8 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
 
   const clearChat = async () => {
     if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
-    await fetch(`${API_URL}/api/copilot/history`, { method: 'DELETE', headers: authHeaders() }).catch(() => {});
+    await fetch(`${API_URL}/api/copilot/history?panel=${encodeURIComponent(panel || '')}`,
+      { method: 'DELETE', headers: authHeaders() }).catch(() => {});
     setMessages([]);
   };
 
@@ -222,7 +223,7 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
       <button className="cp-toggle" onClick={() => setOpen(o => !o)} data-testid="copilot-toggle">
         <Robot size={16} weight="bold" />
         <span>STRATEGIE-COPILOT</span>
-        <span className="cp-toggle-hint">berät, prüft & ändert Einstellungen nur nach Bestätigung – entwickelt nie selbst</span>
+        <span className="cp-toggle-hint">berät, prüft & ändert Einstellungen nur nach Bestätigung – eigener Verlauf & Spezialwissen je Reiter</span>
         {open ? <CaretUp size={14} /> : <CaretDown size={14} />}
       </button>
       {open && (
@@ -305,7 +306,9 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
                 Ich bin dein Strategie-Copilot: Ich sehe deine aktuellen Einstellungen und alle
                 vorhandenen Strategien (Indikatoren + echte Ergebnisse), erkläre jede Funktion,
                 bewerte Ergebnisse und ändere Einstellungen auf Wunsch – immer erst nach deiner
-                Bestätigung. Ich entwickle keine Strategien auf eigene Faust.
+                Bestätigung. Ich entwickle keine Strategien auf eigene Faust. Dieser Verlauf
+                gehört nur zu diesem Reiter – jeder Reiter hat seinen eigenen Copilot-Verlauf
+                mit passendem Spezialwissen.
               </div>
             )}
             {messages.map((m, i) => (

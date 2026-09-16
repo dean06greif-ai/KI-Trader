@@ -39,6 +39,54 @@ MAX_HISTORY_DOCS = 300
 HISTORY_FOR_PROMPT = 6
 PROPOSAL_TYPES = ("definition", "params", "settings")
 
+# ---- Reiter-Trennung: eigener Verlauf + Spezial-Prompt je Panel ------------
+# Jeder Reiter (Optimizer, Backtester, Regime-Lab, Builder) hat seinen eigenen
+# Chat-Verlauf (Feld "panel" in copilot_chat) und einen Fokus-Prompt. Der
+# Copilot kennt die anderen Reiter weiterhin über einen Kurz-Digest im Prompt.
+PANELS = ("optimizer", "backtester", "regime_lab", "builder")
+DEFAULT_PANEL = "optimizer"
+PANEL_LABELS = {"optimizer": "Strategie-Optimizer", "backtester": "Backtester",
+                "regime_lab": "Regime-Lab", "builder": "Strategie-Builder"}
+
+PANEL_PROMPTS = {
+    "optimizer": (
+        "AKTUELLER REITER: STRATEGIE-OPTIMIZER. Du bist hier der Spezialist für "
+        "Parameter-Optimierung, Discovery, Deep-Test, Endlos-Suche und dynamische "
+        "Strategien: Suchmodus-Wahl, Iterationen, Objective, Walk-Forward-/"
+        "Robustheits-Checks und Overfitting-Vermeidung haben Priorität. "
+        "Einstellungs-Vorschläge nutzen das optimizer-Schema."),
+    "backtester": (
+        "AKTUELLER REITER: BACKTESTER. Du bist hier der Spezialist für saubere "
+        "Backtest-Konfiguration (Strategien, Coins, Zeitraum, Kapital, Gebühren, "
+        "require_all_rules) und die ehrliche Interpretation der Ergebnisse "
+        "(Einheiten, Sanity-Checks, Aussagekraft kurzer Zeiträume). Du kennst auch "
+        "den KI-Trader-Setup-Backtest inkl. Event-Setups (FOMC/CPI/NFP/PPI/PCE: "
+        "Whipsaw-Fade + Drift auf 5m-Kerzen rund um den Event-Zeitpunkt, ~2 Jahre "
+        "Historie, In-/Out-of-Sample-Validierung). Einstellungs-Vorschläge nutzen "
+        "das backtester-Schema."),
+    "regime_lab": (
+        "AKTUELLER REITER: REGIME-LAB. Du bist hier der Spezialist für Marktphasen-"
+        "Erkennung (Bulle/Bär/Seitwärts ohne Lookahead): Coin-Auswahl, Timeframe, "
+        "Zeitraum, Scope (combined/per_coin), Bewertung der Regime-Qualität und "
+        "wann eine dynamische Strategie bzw. der Marktphasen-Filter "
+        "(regime_filter_enabled) sinnvoll ist. Einstellungs-Vorschläge nutzen das "
+        "regime_lab-Schema."),
+    "builder": (
+        "AKTUELLER REITER: STRATEGIE-BUILDER. Du bist hier der Spezialist für "
+        "saubere Regel-Definitionen: wenige, sich ergänzende Regeln, sinnvolle "
+        "Indikator-Kombinationen, SL/TP-Logik und CRV. Definition-Vorschläge nur "
+        "auf ausdrücklichen Wunsch."),
+}
+PANEL_SHARED = (
+    "Jeder Reiter hat seinen EIGENEN Chat-Verlauf – Kurzfassungen der anderen "
+    "Reiter-Verläufe stehen ggf. im Prompt (nur zur Orientierung). Passt ein "
+    "Anliegen besser in einen anderen Reiter, sage das kurz und beantworte es "
+    "trotzdem so gut wie möglich.")
+
+
+def normalize_panel(panel: Optional[str]) -> str:
+    return panel if panel in PANELS else DEFAULT_PANEL
+
 # Antwort-Budget: Render/Ingress kappt HTTP-Requests nach ~60s. Der Copilot
 # probiert deshalb SCHNELLE Free-Modelle zuerst und bricht langsame Modelle
 # hart ab, statt (wie der KI-Trader im Hintergrund) minutenlang zu warten.
@@ -492,23 +540,54 @@ class StrategyCopilot:
         return self._cfg_cache
 
     # ---------------- Verlauf ----------------
-    async def history(self, limit: int = 60) -> List[Dict]:
+    async def history(self, limit: int = 60, panel: Optional[str] = None) -> List[Dict]:
+        """Verlauf – optional je Reiter gefiltert (panel=None: alle, abwärtskompatibel)."""
         db = self._db()
         if db is None:
             return []
-        rows = await db[CHAT_COLLECTION].find({}, {"_id": 0}) \
+        query = {"panel": normalize_panel(panel)} if panel else {}
+        rows = await db[CHAT_COLLECTION].find(query, {"_id": 0}) \
             .sort("ts", -1).limit(max(1, min(200, limit))).to_list(200)
         return list(reversed(rows))
 
-    async def clear_history(self) -> int:
+    async def clear_history(self, panel: Optional[str] = None) -> int:
         db = self._db()
         if db is None:
             return 0
-        res = await db[CHAT_COLLECTION].delete_many({})
+        query = {"panel": normalize_panel(panel)} if panel else {}
+        res = await db[CHAT_COLLECTION].delete_many(query)
         return res.deleted_count
 
-    async def _store(self, role: str, content: str, extra: Optional[Dict] = None) -> Dict:
+    async def _other_panels_digest(self, panel: str, per_panel: int = 4,
+                                   max_chars: int = 160) -> str:
+        """Kurz-Digest der anderen Reiter-Verläufe – der Copilot bleibt so über
+        alle Reiter informiert, ohne dass sich die Verläufe vermischen."""
+        db = self._db()
+        if db is None:
+            return ""
+        lines: List[str] = []
+        for p in PANELS:
+            if p == panel:
+                continue
+            rows = await db[CHAT_COLLECTION] \
+                .find({"panel": p}, {"_id": 0, "role": 1, "content": 1}) \
+                .sort("ts", -1).limit(per_panel).to_list(per_panel)
+            if not rows:
+                continue
+            snip = " | ".join(
+                f"{'NUTZER' if r.get('role') == 'user' else 'COPILOT'}: "
+                f"{str(r.get('content') or '')[:max_chars]}"
+                for r in reversed(rows))
+            lines.append(f"- {PANEL_LABELS.get(p, p)}: {snip}")
+        if not lines:
+            return ""
+        return ("VERLÄUFE DER ANDEREN REITER (Kurzfassung, nur zur Orientierung):\n"
+                + "\n".join(lines))
+
+    async def _store(self, role: str, content: str, extra: Optional[Dict] = None,
+                     panel: Optional[str] = None) -> Dict:
         doc = {"id": str(uuid.uuid4()), "role": role, "content": content,
+               "panel": normalize_panel(panel),
                "ts": datetime.now(timezone.utc).isoformat(), **(extra or {})}
         db = self._db()
         if db is not None:
@@ -726,12 +805,17 @@ class StrategyCopilot:
                 f"Kein OpenRouter-Key gefunden: bitte {KEY_ENV} (eigene Copilot-Keys) "
                 f"oder {SHARED_KEY_ENV} in der .env setzen")
 
-        history = await self.history(HISTORY_FOR_PROMPT)
+        panel = normalize_panel((ctx or {}).get("panel"))
+        system = "\n\n".join([SYSTEM_PROMPT, PANEL_PROMPTS.get(panel, ""), PANEL_SHARED])
+        history = await self.history(HISTORY_FOR_PROMPT, panel=panel)
         hist_txt = "\n".join(
             f"{'NUTZER' if m['role'] == 'user' else 'COPILOT'}: {m['content'][:400]}"
             for m in history) or "(kein Verlauf)"
         context = await self._context_block(ctx or {})
-        prompt = (f"KONTEXT:\n{context}\n\nBISHERIGER CHAT:\n{hist_txt}\n\n"
+        digest = await self._other_panels_digest(panel)
+        prompt = (f"KONTEXT:\n{context}\n\n"
+                  + (f"{digest}\n\n" if digest else "")
+                  + f"BISHERIGER CHAT ({PANEL_LABELS.get(panel, panel)}):\n{hist_txt}\n\n"
                   f"NUTZER: {message}\n\nAntworte als JSON gemäß Formatvorgabe.")
 
         models = self._chain((await self.config()).get("model"))
@@ -748,7 +832,8 @@ class StrategyCopilot:
                 try:
                     text = await asyncio.wait_for(
                         self._openrouter_call(key, m, prompt,
-                                              min(per_call, remaining)),
+                                              min(per_call, remaining),
+                                              system=system),
                         timeout=min(per_call, remaining))
                     model = m
                     break
@@ -778,10 +863,10 @@ class StrategyCopilot:
 
         # Nutzer-Nachricht erst NACH erfolgreichem LLM-Call speichern
         # (keine verwaisten Halb-Turns im Verlauf bei Timeout/Fehler)
-        await self._store("user", message)
+        await self._store("user", message, panel=panel)
         msg = await self._store("assistant", reply, {
             "proposal": proposal, "checks": checks,
-            "provider": provider, "model": model})
+            "provider": provider, "model": model}, panel=panel)
         return {"reply": reply, "proposal": proposal, "checks": checks,
                 "provider": provider, "model": model, "id": msg["id"]}
 

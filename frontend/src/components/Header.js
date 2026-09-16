@@ -638,7 +638,10 @@ const Header = ({ sessionActive, onSettingsClick, currentSession, customSessions
         <div className="header-brand">
           <ChartLineUp size={28} weight="bold" className="brand-icon" />
           <div className="header-brand-text">
-            <h1 className="header-title">CRYPTO SCANNER</h1>
+            <div className="header-title-row">
+              <h1 className="header-title">CRYPTO SCANNER</h1>
+              <SafetyLight adminAuthed={adminAuthed} />
+            </div>
             {activeStrategy && (
               <div className="header-strategy" data-testid="active-strategy-display">
                 🎯 {activeStrategy.name}
@@ -649,7 +652,6 @@ const Header = ({ sessionActive, onSettingsClick, currentSession, customSessions
       </div>
 
       <div className="header-right">
-        <SafetyLight adminAuthed={adminAuthed} />
         <NotificationBell />
         {/* Uhrzeit + Session-Badge als eigener Block NEBEN den Labels (keine Überlagerung mehr) */}
         <div className="header-session" data-testid="header-session">

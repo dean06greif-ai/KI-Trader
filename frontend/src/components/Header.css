@@ -45,6 +45,20 @@
   margin: 0;
 }
 
+/* Sicherheits-Ampel direkt NEBEN der Überschrift (gleiche Zeile, auch mobil) */
+.header-title-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+}
+.header-title-row .safety-light {
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+
 .header-subtitle {
   font-size: 11px;
   color: #5C6070;

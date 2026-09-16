@@ -6,7 +6,7 @@ Der Copilot berät beim Strategie-Bau, erkennt die aktuellen Einstellungen
 """
 import logging
 import uuid
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -49,13 +49,15 @@ async def copilot_set_model(body: Dict, _: bool = Depends(require_admin)):
 
 
 @router.get("/api/copilot/history")
-async def copilot_history(limit: int = 60):
-    return {"messages": await copilot.history(limit)}
+async def copilot_history(limit: int = 60, panel: Optional[str] = None):
+    """Verlauf – mit ?panel= je Reiter getrennt (ohne panel: alle, abwärtskompatibel)."""
+    return {"messages": await copilot.history(limit, panel=panel or None)}
 
 
 @router.delete("/api/copilot/history")
-async def copilot_clear(_: bool = Depends(require_admin)):
-    return {"status": "success", "deleted": await copilot.clear_history()}
+async def copilot_clear(panel: Optional[str] = None, _: bool = Depends(require_admin)):
+    return {"status": "success",
+            "deleted": await copilot.clear_history(panel=panel or None)}
 
 
 @router.post("/api/copilot/chat")
