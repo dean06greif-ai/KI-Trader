@@ -1,177 +1,36 @@
-# PRD – KI-Trader (externe Daytrading-Website, Render-Deploy)
+# PRD – KI-Trader (externe Daytrading-Website, Render-Deployment)
 
-## Original-Problemstellung
-Bestehende, produktiv laufende Daytrading-Website (Repo dean06greif-ai/KI-Trader) soll
-verbessert werden: sauber, modular, rückwärtskompatibel, Originalstruktur beibehalten
-(Render-Deploy). Verbindliche Quelle: Plan-Dateien im Repo (`KI_TRADER_AUDIT.md`,
-`UMSETZUNGSPLAN_LIVE_QUALITAET.md`), lebendes Protokoll `UMSETZUNG_FORTSCHRITT.md`
-(nach jedem Schritt aktualisieren – Nutzer pusht via Emergent "Save to GitHub").
+## Original-Problemstellung (16.06.2026)
+Bestehende, produktiv laufende Daytrading-Website (GitHub: dean06greif-ai/KI-Trader, Branch conflict_160926_1325) verbessern. Grundsatz: sauber, modular, rückwärtskompatibel, Originalstruktur für Render-Deploy beibehalten.
+1. KI-Labor Space-Quota-Problem (Atlas 512 MB, Writes blockiert)
+2. KI-Modelle nicht mehr auswählbar, KI-Chat nicht schreibbar
+3. WARNUNG-Punkt im Header erklären / KI-Team-Modellwechsel geht nicht
+4. Event-Backtest in den Backtester verschieben (Button, Event-Auswahl, KI-Schleife wie bei Setups); alter Ort nur noch Info-Badge/Zeitplan
+5. News-Wächter: Gemini nötig oder reicht Ministral/Groq bei 3-Min-Takt? (nur Analyse)
 
 ## Architektur
-- Backend: FastAPI (`backend/server.py`, routers/, services/, core/), MongoDB (Motor)
-- Frontend: React (frontend/src/components), Trading-Dashboard (Scanner, KI-Trader, Analyse)
-- Extern: Bitunix (Futures), IBKR via ibeam-Gateway, OpenRouter/Groq/Mistral/Gemini (LLM),
-  Telegram, Supabase. Deploy: Render (Python 3.11). Lokal: lokale Mongo, keine Exchange-Keys,
-  `AI_TRADER_LOCAL_DISABLE=1`.
-- Test-Suiten: `backend/tests` (`-m unit`, xdist -n 2) + Root-`/tests` (T1, pytest-fähig)
+- Backend: FastAPI (backend/server.py, routers/, services/), MongoDB Atlas (motor), Bitunix/IBKR-Anbindung, KI-Team über Groq/Gemini/Mistral/OpenRouter
+- Frontend: React (CRA/craco), Komponenten unter frontend/src/components
+- Deployment: Render (Struktur unverändert gelassen)
 
-## Nutzer-Persona
-Einzelner Betreiber (Admin) – handelt live/paper mit KI-Unterstützung, will Stabilität,
-ehrliche Messung und nachvollziehbare Policy-Entwicklung.
+## Umgesetzt (16.06.2026)
+1. **Atlas-Quota gelöst**: `sample_mflix` (181 MB Atlas-Beispieldaten) + 2 Test-DBs gedroppt → Writes wieder frei (388/512 MB, 76 %). NEU: `db_storage`-Check in services/safety_status.py (warn ≥85 %, critical ≥97 %, Env `ATLAS_QUOTA_MB`, Default 512) – sichtbar in der Header-Ampel BEVOR Atlas blockt.
+2. **Globaler Mongo-Fehlerhandler** in server.py: Quota-Fehler (Code 8000/"space quota") → HTTP 507 mit klarer deutscher Meldung; UI-Toasts zeigen jetzt `detail` (AITradingPanel: saveRole/resetRole/Chat).
+3. **Modellwechsel funktioniert wieder** (war Folge des Write-Blocks) – verifiziert via POST /api/ai/roles.
+4. **Header-Sicherheitsampel klickbar** (Header.js SafetyLight): zeigt Detail-Checks auch mobil (data-testid safety-status-details).
+5. **Event-Backtests in Backtester verschoben**:
+   - Neuer Tab „Event-Setups" (bt-tab-events) mit EventBacktestPanel.js: Event-Auswahl (FOMC/CPI/NFP/PPI/PCE), Zeitraum, KI-Schleife (Revision durch Forschungs-Analyst innerhalb PARAM_BOUNDS + Re-Test), Live-Opt-in, Reset auf Basis-Regeln.
+   - Backend: services/event_backtest_loop.py (Batch-Job, KI-Revision, Params-Persistenz je Event in db.settings `{key}_event_params_ai`), routers/event_setups.py (/api/event-setups/overview|backtest|{key}/live|{key}/reset-params). fomc_backtest/econ_backtest um optionalen `params`-Override erweitert. Alte /api/fomc/* und /api/econ/*-Endpunkte unverändert (rückwärtskompatibel).
+   - AITradingPanel „Events"-Sektion: nur noch EventScheduleBadges.js (Zeitplan/Phase/validiert/live, Info-only).
+   - Overfitting-Schutz erhalten: Validierung verlangt weiterhin positives Gesamt- UND OOS-PnL.
+6. **Tests**: backend/tests/test_event_backtest_loop.py (15 Unit-Tests, grün) + E2E backend/tests/test_iter9_event_setups_e2e.py (11/11 grün, Testing-Agent). CPI-Backtest validiert (38T, WR 63 %).
 
-## Umgesetzt (Stand 26.06.2026)
-- Phase 1 Geldschutz (1.1–1.9) ✅ · Phase 2 Ehrliche Messung (2.1–2.10) ✅
-- Phase 3 Champion vs. Kandidat (3.1–3.5) ✅ · Phase T Test-Hygiene (T1–T4) ✅ → **Audit-Plan komplett**
-- Diese Session: Repo-Import Branch `conflict_140926_1702`, Baseline bestätigt,
-  Testing-Agent Smoke iteration_62 (15/15 grün), **T2** GitHub-Action, **T3** Prod-Probe,
-  **3.5 Portfolio-Backtest** (services/portfolio_backtest.py + /api/portfolio-backtest/* +
-  PortfolioBacktestCard im Backtester; 10 Unit-Tests, Testing-Agent iteration_63 100% grün,
-  Unit-Suite 1403 passed).
+## News-Wächter-Analyse (Empfehlung, noch NICHT umgestellt – User entscheidet)
+- Ist-Zustand: Primär Groq `openai/gpt-oss-20b`, Fallback1 Gemini `gemini-3.1-flash-lite`, Fallback2 Mistral `ministral-8b-latest`. Im Event-Fenster automatisch 3-Min-Takt (FOMC_INTERVAL_MIN=3, gilt auch CPI/NFP/PPI/PCE).
+- Empfehlung: Kette so lassen. Gemini ist NICHT primär nötig – nur Ausfall-Fallback (separate Quota). Groq ist schnellstes/günstigstes Modell für die simple JSON-Relevanzbewertung; Ministral-8b reicht fachlich auch, ist aber langsamer als Groq. Umstellbar jederzeit im KI-Team-Panel (funktioniert wieder).
 
-## Umgesetzt (14.09.2026 – Session conflict_140926_2137)
-- VERIFIZIERT (war bereits implementiert): News-Turbo (News-Wächter 3-min-Takt im
-  Event-Fenster) + Playbook-Cache (stale-while-revalidate, Endpoint nie mehr ~34s)
-- NEU Event-Setups im FOMC-Muster: services/econ_event.py (generische EconEvent-Klasse,
-  BLS/BEA-Kalender 2024–2026) mit cpi_event/nfp_event/ppi_event/pce_event,
-  services/econ_backtest.py (re-used pure fomc_backtest-Regeln, Overfitting-Schutz),
-  routers/econ.py (/api/econ/...), EconEventPanel.js (Button „Events" im KI-Trader).
-  Voll integriert: Entry-Gates, Prompt-Blöcke, 5-min-Fast-Takt, News-Turbo, Playbook,
-  Asset-Klassen-Ausschlüsse, Live-Opt-in per Backtest-Validierung
-- Impact-Backtests (2J, echte Bitunix-5m): CPI ✅ (+56.08, OOS+48.60), PPI ✅ (+39.15,
-  OOS+24.75), PCE ✅ knapp (OOS nur +5.67), NFP ❌ (−44.55, bleibt Paper-Datensammlung)
-- Trail-SL-Optimierung: Optimizer-Gruppe „trail" (trail_after_tp1 + trail_atr_mult 1.0–4.0),
-  OPT_TRADE_KEYS erweitert (Übernehmen-Button schreibt Trail in Live/Paper/Backtest),
-  Checkbox in Optimizer.js, wirkt in allen Modi inkl. Endlos-Suche/Nacht-Serie (Hintergrund)
-- Tests: test_econ_event.py + test_trail_optimizer.py (63 grün inkl. FOMC-Regression),
-  Testing-Agent iteration_2 Backend 13/13 + Frontend 100%
-
-## Offen / Backlog (priorisiert)
-- P0: Nutzer-Push via "Save to GitHub"; Phase-0-Punkte beim Nutzer (JWT_SECRET auf Render,
-  Key-Rotation, Bitunix-IP-Whitelist)
-- P1: 2–4 Wochen MESSPHASE der Live-Ausführungsparameter (A+B-Schwellen einfrieren; Strategie-
-  Suche/Backtests/Policy-Lab/Website-Arbeit weiterhin erlaubt), danach Auswertung
-  slippage-stats + Policy-Report
-- P2: Entscheid Option 3 (1m-Hybrid-Trigger) nach Messphase
-
-## Detail-Protokoll
-Siehe `/app/UMSETZUNG_FORTSCHRITT.md` (Quelle der Wahrheit, wird je Schritt fortgeschrieben).
-
-## Umgesetzt 15.06.2026 – Analyseplan AP00–AP03 (Paket `analysis_paket/`)
-Basis: Commit 792ff0ac (Branch conflict_150926_0200), Plan aus Branch conflict_150926_1731.
-- AP00: Offline-Testbasis `backend/tests/analysis_regression/` (Fake-DB, opt. Netzsperre via KI_OFFLINE_TESTS=1), 55 Solltests.
-- AP01 (T01/R03): `leftover_evidence()` – Watchdog schließt Fremdpositionen nie ohne ID-/Mengenbeleg; `transition_close_query()` scoped; Übergangsschutz nur im Apply-/Confirm-Pfad (Refresh handelswirkungsfrei).
-- AP02 (T02/T03/T06): `recovered_fill_qty()` bucht echte Fillmenge; `sl_exchange_status` confirmed/missing/unknown (additiv); Risikobudget fail-closed bei unbekannter Equity + `unknown_sl_risk_pct` (2%) für offene Trades ohne SL.
-- AP03 (R01/R02): `services/strategy_plan.py` – deterministischer Resolver (plan_hash), Basis-Ableitung statt kumulativer Merges (`dynamic_keys`/`dynamic_param_keys`), Sub-Strategie-Regeln transparent am Coin-Override.
-- Fortschrittsdatei: `/app/PROGRESS.md` (Berichtsformat des Handoffs). Tests: 1466 unit + 54 offline + 25 API-Regression grün.
-
-## Umgesetzt 26.06.2026 – Analyseplan AP04 (Session conflict_150926_2016)
-- AP04 (R04/R09/R13/T04) vervollständigt (Grundlagen aus abgebrochener Session lagen vor):
-  Release-Statusmodell draft/validated/approved/stale/legacy (`strategy_release.py` +
-  `revised_release`); Router-Anbindung: Save/Builds setzen Release, Apply+Confirm mit
-  409-Gate, Confirm = CAS (command_id, Ablauf, Zustandsversion; Apply-Fehler retrybar),
-  NEU `POST /api/dynamic/{id}/approve`, DELETE = Archivieren mit scoped Unapply
-  (Wechsel-Protokoll bleibt), `/api/dynamic/list` additiv `release_status`.
-- T04: `_setup_live_gate` fail-closed bei Exceptions; `live_gate_bypass_enabled` Default AUS.
-- UI (DynamicPanel.js, additiv): Release-Badges, „Freigeben"-Button, Confirm mit command_id.
-- Tests: analysis_regression 74 grün (20 neu), Unit-Suite 1540, Root-Suite 169 (3 vorbestehende
-  Econ-Session-Fails gefixt inkl. hartkodiertem Prod-Passwort in test_iter44!),
-  Testing-Agent iteration_5: Backend 17/17 + Frontend-E2E 100% (test_ap04_api_flows.py neu).
-
-## Umgesetzt 26.06.2026 – Analyseplan AP10/AP11/AP12-Kern (Session conflict_150926_2313)
-- Repo-Import (AP05–AP09 lagen bereits umgesetzt+dokumentiert vor); Baseline bestätigt.
-- AP10 (R17, UI-Zustände): `research_validation.walkforward_status` (passed/stale, rein) +
-  `walkforward_stale` in /api/regime-lab/list; RegimeLab.js: 4-stufiger WF-Status inkl.
-  „WF veraltet", WF-Provenienz-Zeile (label_basis kausal, attempt_no, Trades-Warnung),
-  Datenversion „Daten (nicht) gepinnt" im Detail, keine positive Färbung ohne Evidenz;
-  DynamicPanel.js: tatsächlicher applied_state (Badges „Übernahme fehlgeschlagen – Retry"/
-  „blockiert", „Stand angewendet ✓").
-- AP11 (W01, Worker-Vertrag): `payload_input_hash`/`canonical_hash`; Input-Hash am Auftrag,
-  Worker (v1.11.0) echot ihn, Mismatch = verständliche Ablehnung; Evidenz
-  {input_hash, result_hash, worker} additiv am Ergebnis; **idempotenter Jobabschluss**
-  (Doppel-/Spät-Upload verworfen – vorher Doppel-Persistenz möglich); Paketmanifest mit
-  Dateihashes/code_fingerprint/commit; rekursive Unterpaket-Allowlist
-  (services/setup_backtest jetzt wirklich im ZIP, .env/Configs hart ausgeschlossen).
-- AP12 (kodierbarer Kern): `strategy_release.evidence_bundle` (rein) +
-  `GET /api/dynamic/{id}/evidence` (read-only) + „Beweispaket"-Panel im DynamicPanel:
-  Klartext-Blocker, ready_for_live nur bei leerer Liste (PnL allein genügt nicht);
-  menschliche Live-Freigabe bleibt Nutzer-Aktion.
-- Tests: analysis_regression **163 grün** (12 AP10 + 15 AP11 + 12 AP12 neu), Unit-Suite
-  **1629 passed** (keine Regression), Testing-Agent iteration_6: Backend 5/5 + Frontend-E2E
-  4/4 (echte Mini-Analyse BTC/15m/30d, „Daten gepinnt", WF-Status). Screenshot-Verify des
-  Beweispakets. `/app/memory/test_credentials.md` neu angelegt (Dev-Login).
-
-## Backlog (aus Plan, priorisiert)
-- P1 (operativ, Nutzer): AP12-Rest – Shadow-/Paper-Beobachtungszeit auf Render, danach
-  menschliche Live-Freigabe (Beweispaket-Panel als Grundlage); Push via „Save to GitHub".
-- P2: AP13 (gezielte Bereinigung/Erweiterung – laut Plan erst nach Pilotnachweis).
-
-## Umgesetzt 26.06.2026 – Analyseplan AP13 (Session conflict_160926_0048)
-- Baseline nach Import exakt bestätigt (163 Offline-Solltests / 1629 Unit).
-- AP13a Archiv-Katalog: `ARCHIV_KATALOG.md` + `archive/` (README_FIX*/Patches,
-  überholte Reviews) – dokumentiert verschoben, nichts gelöscht, keine Code-Referenzen.
-- AP13b Indikator-Ablation: `services/research_ablation.py` (Varianten je Detektor +
-  Beitrags-Verdikte), `regime_lab.run_ablation`, `POST /api/regime-lab/ablation`,
-  UI-Sektion „Indikator-Ablation“ (testids ablation-*). Auswahl strikt AP07
-  (innere Validierung; Holdout = finaler Test), Versuchszähler + Manifest.
-- AP13c Assetgruppen-Pooling: `services/research_pooling.py` – kerzen-gewichtete
-  Klassen-Pools mit sichtbarer Symbol-Abweichung; in jeder Ablation-Zeile.
-- AP13d Unsicherheitskalibrierung: `services/research_calibration.py` – Score-Bins
-  (Live=Final-Richtungstreffer), Datenstärke-Regel (symbol ab 300 Punkten, sonst
-  Klassen-Pool, sonst `insufficient`), überall `score_is_calibrated_probability=false`;
-  `combined.uncertainty` an neuen Analysen + UI-Badge `regime-detail-uncertainty`.
-- Tests: Offline-Solltests **181**, Unit **1647** (keine Regression), Testing-Agent
-  iteration_7 Backend 6/6 + Frontend 7/7 grün; neue E2E-Datei
-  `backend/tests/test_ap13_ablation_uncertainty.py` (Env-Creds, Skip ohne Backend).
-- Analyseplan AP00–AP13 (kodierbare Teile) damit KOMPLETT. Offen: AP12 operative
-  Abnahme (Shadow/Paper auf Render + menschliche Freigabe) und AP13-Restpunkte
-  (Modul-Herauslösung/HMM/Performance – nur nach Pilotnachweis/Bedarf).
-
-## Session 16.09.2026 – Render-Deploy-Fix + offene Prüfbericht-Punkte
-Basis: Branch `conflict_160926_0902` (Commit 50dc7b2 – exakt der vom Prüfbericht
-geprüfte Stand). Branch `conflict_160926_1112` war KAPUTT (nur Template +
-committete 626-MB-venv in `review/`) → Ursache beider Render-Build-Fehler.
-
-### Deploy-Fixes
-- Backend: korrektes requirements.txt (kein `emergentintegrations` mehr; pip-freeze für Py 3.11)
-- Frontend: `frontend/yarn.lock` committet → Render nutzt yarn deterministisch;
-  npm-Baum zusätzlich verifiziert (date-fns 4.1 + react-day-picker 9.14 kompatibel, kein ERESOLVE)
-- Produktions-Build (`yarn build`) grün; App-Preview läuft mit Live-Marktdaten
-- WICHTIG: Render-Services nach "Save to GitHub" auf den NEUEN Branch umstellen
-
-### Prüfbericht-Fixes (alle mit Regressionstests)
-1. R01 Discovery-Regelumschaltung: `strategy_plan.resolve_symbol_plan` liefert
-   `rules_override` (Discovery-Definition ersetzt Regeln, Regel-Variante additiv);
-   `dynamic_live.apply_configs` schaltet via `_apply_strategy_params` +
-   `coin_params['rules_override']` TATSÄCHLICH im Scanner um
-   (`custom_params.apply_params` + `CustomStrategy.get_params`); Builtin-Basis →
-   ehrliches `rules_switch: unsupported_builtin` Flag
-2. R09 Freigabe-Gate: `/api/dynamic/{id}/approve` verweigert ohne Testnachweis (409);
-   bewusstes Override nur mit `override_missing_evidence:true` + `note`, wird als
-   `approved_without_evidence` protokolliert und im Beweispaket als Blocker gezeigt;
-   Frontend-Prompt-Flow in DynamicPanel.js
-3. R13 Confirm-CAS: atomarer DB-Claim (`dynamic_live.claim_pending_switch`,
-   `pending_claim_query`) – parallele Bestätigungen laufen nie doppelt;
-   Claim-Release bei Apply-Fehler (Retry möglich)
-4. AP07 Kombi-Kalibrierung: Dauer-Term der Auswahl nur noch aus Trainings-Segmenten
-   (`regime_lab._train_segment_days`), Holdout rein Bericht; neue Felder
-   `avg_final_segment_days_train`, selection_basis `inner_validation+train_duration`
-5. Basisparameter-Restore: `merge_overrides` sichert überdeckte persönliche Werte in
-   `dynamic_prev`/`dynamic_prev_params` und stellt sie beim Zurückschalten wieder her;
-   analog Scanner-seitig `coin_params_dynamic_prev` (+ DEFAULT_SETTINGS)
-6. Beweispaket-Kleinfixes: kein fremder Coin-Test mehr (`_wf_for_doc`), konsistenter
-   Testbereich (`walkforward_status_for`), fehlender Sicherheitsstatus als
-   `runtime_health: unknown` + `warnings` gekennzeichnet
-   (Watchdog-Positions-ID-Fix war bereits im Repo enthalten)
-
-### Tests
-- Neu: backend/tests/test_audit_fixes_160926.py (27), Parallel-Confirm-Racetest in
-  test_ap04_release_confirm.py, FakeDB um find_one_and_update/dotted-paths erweitert
-- Testing-Agent iteration_8: 10/10 E2E grün + 209/209 offline grün
-- Bekannt umgebungsabhängig (nicht Teil des Auftrags): iter38-Tests gegen localhost:8055,
-  Playbook-Setup-Anzahl (Datenstand), Mistral-Backup-Key-Anzahl (.env)
-
-### Offene Punkte / Backlog
-- P1: Dynamik vs. unveränderte Basisstrategie im Paperbetrieb vergleichen (Prüfbericht-Empfehlung)
-- P1: Offengelegte Zugangsdaten erneuern (API-Keys/Passwörter standen im Klartext im Chat/Repo)
-- P2: Regel-Umschaltung für Builtin-Basisstrategien (echter Strategie-Swap statt Flag)
-- P2: Render: Node-Version pinnen (.node-version), npm-Fallback-Guard
+## Backlog / Nächste Schritte
+- P1: Kosmetische React-Warnung `<span>` in `<option>` (pre-existing, Backtester-Selects)
+- P1: Automatik-Schedule für Event-Backtests (wie seed_auto beim Setup-Backtest)
+- P2: db_storage-Check: automatische Bereinigung alter Backtests/Logs bei warn-Level
+- P2: ATLAS_QUOTA_MB in Render-Env setzen, falls Cluster-Upgrade erfolgt (z. B. 5120 bei Flex)

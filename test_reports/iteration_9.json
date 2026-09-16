@@ -1,0 +1,30 @@
+{
+  "summary": "Iter9 E2E-Test (Backend + Frontend) für Event-Setups-Router, Sicherheitsstatus db_storage, KI-Rollen-Persistenz und Rückwärtskompatibilität. Backend: 11/11 pytest-Cases grün gegen die externe Preview-URL (test_iter9_event_setups_e2e.py, ~369 s, u.a. NFP-Backtest-Polling ~3 min). Frontend: Admin-Login (admin-lock-button) funktioniert, Sicherheitsampel (safety-status-light) im Header erscheint und öffnet safety-status-details mit sichtbarem 'MongoDB-Speicher 389/512 MB (76%)'. Backtester-Modal via tools-menu-backtester enthält alle drei Tabs (bt-tab-strategies/-ai/-events); Event-Setups-Tab zeigt event-bt-panel mit allen Chips (fomc/cpi/nfp/ppi/pce), event-bt-years, event-bt-ai-revise, event-bt-run (aktiv als Admin) und event-bt-card-cpi mit VALIDIERT-Verdict (38T, WR 63%). AI-Trading-Panel öffnet über edit-strategy-params-btn bei aktivem KI-Trader-Tab; ai-fomc-toggle blendet ai-event-setups-section mit event-schedule-badges ein (FOMC/CPI/NFP/PPI/PCE mit Datum/UTC-Zeiten; CPI zeigt '✓ validiert'). Keine alten FomcPanel/EconEventPanel-Backtest-Buttons im AI-Panel. NFP-Live-Toggle wurde nach dem Test explizit auf false zurückgesetzt (Snapshot bestätigt).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AI Panel Events section", "issues": ["Kleine React-Hydration-Warnung im Browser-Log: 'In HTML, <span> cannot be a child of <option>' – rein kosmetisch, keine Funktionsauswirkung"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_event_setups_e2e.py",
+    "/app/test_reports/pytest/iter9_e2e.xml"
+  ],
+  "action_items": [
+    "Optional: React-Hydration-Warnung <span> in <option> beheben (vermutlich Select-Option in Backtester/Modal). Nicht blockierend."
+  ],
+  "critical_code_review_comments": [
+    "event_setups.py: Klar strukturiert, korrekte 400/404/503-Fehler, admin-guarded. Idempotenter Live-Toggle. OK.",
+    "Event-Backtest-Job ist modul-global (nur einer gleichzeitig) – bewusst so, in Doku/Header-Hinweis 'Es läuft bereits ein Event-Backtest' abgedeckt."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter9_event_setups_e2e.py"],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (alle geforderten Test-IDs sichtbar & funktional)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md ist datei leer, Credentials aus Review-Request verwendet und funktionieren)",
+  "seed_data_creation": "Keine dauerhafte Seed-Daten. NFP-Backtest-Job wurde ausgeführt (schrieb Result-Snapshot), NFP-Live-Toggle testweise true->false zurückgesetzt.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backtester öffnet via [data-testid='tools-menu-button'] -> [data-testid='tools-menu-backtester']. AI-Panel öffnet über [data-testid='strategy-tab-ai_trader'] + [data-testid='edit-strategy-params-btn'] (Admin erforderlich). EventScheduleBadges hinter [data-testid='ai-fomc-toggle'] (Sektion ai-event-setups-section). Sicherheitsampel [data-testid='safety-status-light'] nur nach Admin-Login sichtbar. Reusable Regression: pytest /app/backend/tests/test_iter9_event_setups_e2e.py (~6 min wegen NFP-Poll-Loop).",
+  "rca of the issue": "n/a – keine Bugs gefunden; alle geforderten Endpunkte, UI-Test-IDs und Rückwärtskompatibilitäts-Pfade verhalten sich spezifikationskonform."
+}
