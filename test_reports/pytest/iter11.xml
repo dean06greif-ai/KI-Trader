@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="7" time="108.145" timestamp="2026-09-16T18:25:15.757058+00:00" hostname="agent-env-debba08e-677f-4594-8485-33e98a606720"><testcase classname="tests.test_iter11_copilot_panels" name="test_copilot_status_ok" time="0.230" /><testcase classname="tests.test_iter11_copilot_panels" name="test_history_no_panel_returns_all" time="0.456" /><testcase classname="tests.test_iter11_copilot_panels" name="test_history_backtester_panel_ok" time="0.257" /><testcase classname="tests.test_iter11_copilot_panels" name="test_history_optimizer_panel_ok" time="0.315" /><testcase classname="tests.test_iter11_copilot_panels" name="test_event_setups_overview" time="1.460" /><testcase classname="tests.test_iter11_copilot_panels" name="test_ai_playbook_backtest_overview" time="11.306" /><testcase classname="tests.test_iter11_copilot_panels" name="test_backtester_chat_isolation_and_cleanup" time="94.034"><failure message="AssertionError: chat did not complete: status=error&#10;assert 'error' == 'done'&#10;  &#10;  - done&#10;  + error">backend/tests/test_iter11_copilot_panels.py:116: in test_backtester_chat_isolation_and_cleanup
+    assert status == "done", f"chat did not complete: status={status}"
+E   AssertionError: chat did not complete: status=error
+E   assert 'error' == 'done'
+E     
+E     - done
+E     + error</failure></testcase></testsuite></testsuites>

@@ -1,36 +1,47 @@
 # PRD – KI-Trader (externe Daytrading-Website, Render-Deployment)
 
-## Original-Problemstellung (16.06.2026)
-Bestehende, produktiv laufende Daytrading-Website (GitHub: dean06greif-ai/KI-Trader, Branch conflict_160926_1325) verbessern. Grundsatz: sauber, modular, rückwärtskompatibel, Originalstruktur für Render-Deploy beibehalten.
-1. KI-Labor Space-Quota-Problem (Atlas 512 MB, Writes blockiert)
-2. KI-Modelle nicht mehr auswählbar, KI-Chat nicht schreibbar
-3. WARNUNG-Punkt im Header erklären / KI-Team-Modellwechsel geht nicht
-4. Event-Backtest in den Backtester verschieben (Button, Event-Auswahl, KI-Schleife wie bei Setups); alter Ort nur noch Info-Badge/Zeitplan
-5. News-Wächter: Gemini nötig oder reicht Ministral/Groq bei 3-Min-Takt? (nur Analyse)
+## Original-Problemstellung
+Bestehende, produktiv laufende Daytrading-Website (Repo: dean06greif-ai/KI-Trader, Branch conflict_160926_1839).
+Grundsatz: Stabilität, Rückwärtskompatibilität, saubere modulare Integration; Originalstruktur beibehalten
+(externes Render-Deployment). Verbesserungen sollen in die bestehende Architektur eingepflegt werden.
 
-## Architektur
-- Backend: FastAPI (backend/server.py, routers/, services/), MongoDB Atlas (motor), Bitunix/IBKR-Anbindung, KI-Team über Groq/Gemini/Mistral/OpenRouter
-- Frontend: React (CRA/craco), Komponenten unter frontend/src/components
-- Deployment: Render (Struktur unverändert gelassen)
+## Architektur (Bestand, unverändert)
+- Backend: FastAPI (`backend/server.py` + `routers/` + `services/`), MongoDB Atlas (MONGO_URL), Supabase-Spiegel,
+  Bitunix-Marktdaten, OpenRouter/Groq/Mistral-LLM-Stack, Telegram.
+- Frontend: React (CRA/craco), Komponenten unter `frontend/src/components/`.
+- Deployment: Render (Ordnerstruktur unangetastet lassen!). Lokal: supervisor (backend 8001, frontend 3000).
 
-## Umgesetzt (16.06.2026)
-1. **Atlas-Quota gelöst**: `sample_mflix` (181 MB Atlas-Beispieldaten) + 2 Test-DBs gedroppt → Writes wieder frei (388/512 MB, 76 %). NEU: `db_storage`-Check in services/safety_status.py (warn ≥85 %, critical ≥97 %, Env `ATLAS_QUOTA_MB`, Default 512) – sichtbar in der Header-Ampel BEVOR Atlas blockt.
-2. **Globaler Mongo-Fehlerhandler** in server.py: Quota-Fehler (Code 8000/"space quota") → HTTP 507 mit klarer deutscher Meldung; UI-Toasts zeigen jetzt `detail` (AITradingPanel: saveRole/resetRole/Chat).
-3. **Modellwechsel funktioniert wieder** (war Folge des Write-Blocks) – verifiziert via POST /api/ai/roles.
-4. **Header-Sicherheitsampel klickbar** (Header.js SafetyLight): zeigt Detail-Checks auch mobil (data-testid safety-status-details).
-5. **Event-Backtests in Backtester verschoben**:
-   - Neuer Tab „Event-Setups" (bt-tab-events) mit EventBacktestPanel.js: Event-Auswahl (FOMC/CPI/NFP/PPI/PCE), Zeitraum, KI-Schleife (Revision durch Forschungs-Analyst innerhalb PARAM_BOUNDS + Re-Test), Live-Opt-in, Reset auf Basis-Regeln.
-   - Backend: services/event_backtest_loop.py (Batch-Job, KI-Revision, Params-Persistenz je Event in db.settings `{key}_event_params_ai`), routers/event_setups.py (/api/event-setups/overview|backtest|{key}/live|{key}/reset-params). fomc_backtest/econ_backtest um optionalen `params`-Override erweitert. Alte /api/fomc/* und /api/econ/*-Endpunkte unverändert (rückwärtskompatibel).
-   - AITradingPanel „Events"-Sektion: nur noch EventScheduleBadges.js (Zeitplan/Phase/validiert/live, Info-only).
-   - Overfitting-Schutz erhalten: Validierung verlangt weiterhin positives Gesamt- UND OOS-PnL.
-6. **Tests**: backend/tests/test_event_backtest_loop.py (15 Unit-Tests, grün) + E2E backend/tests/test_iter9_event_setups_e2e.py (11/11 grün, Testing-Agent). CPI-Backtest validiert (38T, WR 63 %).
+## Nutzer-Personas
+- Admin/Trader (Dean): einziger Nutzer, Admin-Login (siehe /app/memory/test_credentials.md).
 
-## News-Wächter-Analyse (Empfehlung, noch NICHT umgestellt – User entscheidet)
-- Ist-Zustand: Primär Groq `openai/gpt-oss-20b`, Fallback1 Gemini `gemini-3.1-flash-lite`, Fallback2 Mistral `ministral-8b-latest`. Im Event-Fenster automatisch 3-Min-Takt (FOMC_INTERVAL_MIN=3, gilt auch CPI/NFP/PPI/PCE).
-- Empfehlung: Kette so lassen. Gemini ist NICHT primär nötig – nur Ausfall-Fallback (separate Quota). Groq ist schnellstes/günstigstes Modell für die simple JSON-Relevanzbewertung; Ministral-8b reicht fachlich auch, ist aber langsamer als Groq. Umstellbar jederzeit im KI-Team-Panel (funktioniert wieder).
+## Umgesetzt (16.06.2026 – nach User-Wahl: dauerhafte Verläufe je Reiter, Spezial-Prompt + Kontext der anderen Reiter, Ampel auch mobil neben Titel)
+1. Strategie-Copilot: eigener, dauerhaft gespeicherter Verlauf PRO REITER (optimizer/backtester/regime_lab/builder).
+   - `services/strategy_copilot.py`: PANELS/PANEL_PROMPTS/PANEL_SHARED, `history(panel)`, `clear_history(panel)`,
+     `_store(panel)`, `_other_panels_digest()` (Kurzfassung der anderen Reiter im Prompt), Chat nutzt panel-System-Prompt.
+   - `routers/copilot.py`: GET/DELETE `/api/copilot/history?panel=` (ohne panel abwärtskompatibel: alle).
+   - `StrategyCopilot.js`: lädt/löscht Verlauf je panel-Prop.
+   - Alt-Nachrichten ohne panel-Feld erscheinen nur noch in der ungefilterten API-Ansicht (bewusster Clean-Cut).
+2. Sicherheits-Ampel (SafetyLight) im Header: jetzt direkt NEBEN der Überschrift „CRYPTO SCANNER" (gleiche Zeile,
+   Desktop + Mobil). `Header.js` (`.header-title-row`), `Header.css`.
+3. Backtester „KI Trader · Setups": Event-Setups (FOMC/CPI/NFP/PPI/PCE) kein separater Prozess mehr in der UI:
+   - Gemeinsamer Fortschrittsbalken (Setup-Job + Event-Job kombiniert), Events als Zeilen (Klasse „Events") in der
+     gemeinsamen Ergebnis-Tabelle inkl. Live-Toggle + KI-Param-Reset.
+   - `EventSetupSeeding.js`: nur noch Chips + onState-Callback/ref (toggleLive/resetParams/start).
+   - `AITraderSeeding.js`: kombinierter Fortschritt + Event-Zeilen. Backend-APIs UNVERÄNDERT (event_backtest_loop,
+     setup_backtest) – reine UI-Zusammenführung, kein Risiko für Render-Jobs.
 
-## Backlog / Nächste Schritte
-- P1: Kosmetische React-Warnung `<span>` in `<option>` (pre-existing, Backtester-Selects)
-- P1: Automatik-Schedule für Event-Backtests (wie seed_auto beim Setup-Backtest)
-- P2: db_storage-Check: automatische Bereinigung alter Backtests/Logs bei warn-Level
-- P2: ATLAS_QUOTA_MB in Render-Env setzen, falls Cluster-Upgrade erfolgt (z. B. 5120 bei Flex)
+## Fakten Event-Backtests (Frage des Users beantwortet, Stand im Code)
+- Regeln: A) Whipsaw-Fade (Spike über Pre-Range der zurück schließt → Gegenposition), B) Drift (nachhaltiger
+  Schluss jenseits der Pre-Range → Trendrichtung). Feste Basis-Regeln, KI-Revision nur in PARAM_BOUNDS.
+- Daten: ~2 Jahre Event-Historie, 5m-Kerzen von Bitunix rund um den Event-Zeitpunkt, Symbole BTCUSDT/ETHUSDT/SOLUSDT
+  (nur Krypto – Bitunix liefert keine Aktien-/Index-Historie). Validierung: Gesamt- UND OOS-PnL positiv.
+
+## Tests
+- iteration_11.json: Backend 7/7 (Panel-Isolation, DELETE?panel, Overviews), Frontend alle Checks grün.
+- Bestands-Tests des Users unter `backend/tests/` (pytest -n 2). Neuer Test: `test_iter11_copilot_panels.py`.
+
+## Backlog / Nächstes
+- P1: Cancel-Endpoint für Event-Backtest-Job (aktuell läuft er bis zum Abschluss).
+- P2: `_chat_jobs` in routers/copilot.py mit bounded LRU statt nur TTL.
+- P2: AITraderSeeding.js ggf. aufteilen (Review-Hinweis, >450 Zeilen).
+- P2: Legacy-Copilot-Nachrichten (ohne panel) optional migrieren statt Clean-Cut.

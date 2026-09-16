@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 11 – validated 3 changes: (a) per-panel Copilot chat history, (b) SafetyLight beside 'CRYPTO SCANNER' heading in header-title-row (desktop & mobile), (c) merged Event-Setups inside the KI-Trader-Setups table with shared progress bar. Backend: 6/7 pytest passed on the first run; the chat-isolation test failed once due to a transient OpenRouter free-model error and passed on the second manual run – panel isolation and DELETE?panel= behavior verified end-to-end via curl (bt=+2 msgs panel='backtester', opt unchanged; DELETE deleted only 2 backtester msgs, optimizer still 0). Frontend: SafetyLight is a child of .header-title-row, same-row with h1 on both 1920x1080 and 390x844 viewports (y-center delta <3px, positioned right of h1). Backtester → KI Trader · Setups shows 5 event chips, ai-seed-table with rows ai-seed-row-events-{fomc,cpi,nfp,ppi,pce} (class 'Events', IS/OOS metrics, status, live checkbox); no [data-testid='event-seed-progress'] element exists in DOM. Copilot panel opens with per-tab empty-state text ('eigener Verlauf & Spezialwissen je Reiter'). No console errors from changed components (Header.js, AITraderSeeding.js, EventSetupSeeding.js, StrategyCopilot.js). Initial 'Failed to fetch'/401 console messages occur pre-login on the public URL bootstrap and are pre-existing, unrelated to this iteration.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/copilot/chat/start", "issue": "First automated pytest run received status='error' from the chat job (transient 'Modelle überlastet' from OpenRouter free tier). Retry succeeded within ~15s. Expected per task notes."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_copilot_panels.py",
+    "/app/test_reports/pytest/iter11.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/copilot.py line 107: _chat_jobs is a module-level dict without size cap beyond TTL cleanup; if TTL cleanup only runs at start it can grow. Fine for current scale but consider bounded LRU.",
+    "AITraderSeeding.js still >430 lines and now also renders event rows – close to the 700-line split threshold; carry forward the previous review comment."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_copilot_panels.py"
+  ],
+  "success_rate": {"backend": "100% (7/7 after retry)", "frontend": "100% (all required selectors + behaviors verified)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Sent exactly ONE Copilot chat (panel='backtester') during isolation test, then deleted only the backtester panel history (DELETE ?panel=backtester, deleted=2). Production DB left in same state as before the test. No live-toggle changes, no setup/event backtests started.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest.ini enforces -n 2 --dist loadscope; the copilot chat endpoint (~110s deadline) causes urllib3 30s read-timeouts when a parallel worker hits other slow endpoints simultaneously. Run this specific test file with '-n 0' or bump per-request timeout to 90+s. Panel-history schema stores 'panel' field on messages; legacy rows without panel still appear under GET without ?panel=.",
+  "rca of the issue": "n/a – no bug found. Transient chat failure was upstream OpenRouter free-model load and is already covered by the fallback chain."
+}
