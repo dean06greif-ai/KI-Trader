@@ -85,3 +85,9 @@ android-sdk/
 **/.emergent/recordings/
 review/test-venv/lib/python3.11/site-packages/xgboost/lib/libxgboost.so
 review/test-venv/lib/python3.11/site-packages/nvidia/nccl/lib/libnccl.so.2
+.env
+.env.*
+*.env
+credentials.json
+*.key
+.credentials
