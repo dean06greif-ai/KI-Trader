@@ -1,0 +1,477 @@
+{
+  "generated_at": "2026-09-15T13:14:23.103501+00:00",
+  "commit": "792ff0ac44861df447d3e619042ecef1704c37c5",
+  "product_code_modified": false,
+  "production_access": false,
+  "source_diff_empty": true,
+  "warning": "Passing characterization tests reproduce defects; NOT a product quality or profitability approval.",
+  "total_passed": 84,
+  "total_xfail": 3,
+  "xfail_meaning": {
+    "unmet_tp_acceptance": 2,
+    "unproven_reactive_future_append_probe": 1
+  },
+  "known_warnings": [
+    "Legacy K-Means normalization RuntimeWarning, finding R16",
+    "python_multipart dependency deprecation warning"
+  ],
+  "runs": [
+    {
+      "label": "targeted_characterization_and_acceptance",
+      "report": "final_offline.xml",
+      "executed": 28,
+      "passed": 25,
+      "failed": 0,
+      "xfail": 3,
+      "deselected": 0,
+      "tests": [
+        {
+          "name": "test_t01_watchdog_adopt_closes_full_foreign_position_without_identity_proof[asyncio]",
+          "class": "tests.test_offline_extended_findings",
+          "state": "passed"
+        },
+        {
+          "name": "test_t02_exception_recovery_branch_accepts_half_fill_but_keeps_planned_qty_semantics[asyncio]",
+          "class": "tests.test_offline_extended_findings",
+          "state": "passed"
+        },
+        {
+          "name": "test_t03_sl_verification_none_does_not_set_sl_exchange_missing_and_countercases[asyncio]",
+          "class": "tests.test_offline_extended_findings",
+          "state": "passed"
+        },
+        {
+          "name": "test_t04_setup_live_gate_allows_missing_setup_exception_path_and_default_bypass[asyncio]",
+          "class": "tests.test_offline_extended_findings",
+          "state": "passed"
+        },
+        {
+          "name": "test_r14_candle_cache_tail_start_skips_last_open_minute_update[asyncio]",
+          "class": "tests.test_offline_extended_findings",
+          "state": "passed"
+        },
+        {
+          "name": "test_t05_policy_fingerprint_ignores_min_conf_fee_guard_and_regime_config_but_tracks_real_sizing_change",
+          "class": "tests.test_offline_extended_findings",
+          "state": "passed"
+        },
+        {
+          "name": "test_r08_same_bar_tp1_tpf_characterizes_optimistic_pnl[LONG-90.0-101.0-103.0-104.0-99.0]",
+          "class": "tests.test_offline_extended_findings",
+          "state": "passed"
+        },
+        {
+          "name": "test_r08_same_bar_tp1_tpf_characterizes_optimistic_pnl[SHORT-110.0-99.0-97.0-101.0-96.0]",
+          "class": "tests.test_offline_extended_findings",
+          "state": "passed"
+        },
+        {
+          "name": "test_r08_acceptance_same_bar_tp_should_be_sequential_not_optimistic[LONG-90.0-101.0-103.0-104.0-99.0]",
+          "class": "tests.test_offline_extended_findings",
+          "state": "xfail"
+        },
+        {
+          "name": "test_r08_acceptance_same_bar_tp_should_be_sequential_not_optimistic[SHORT-110.0-99.0-97.0-101.0-96.0]",
+          "class": "tests.test_offline_extended_findings",
+          "state": "xfail"
+        },
+        {
+          "name": "test_r08_open_trade_with_floating_loss_and_entry_fee_still_reported_as_zero_metrics",
+          "class": "tests.test_offline_extended_findings",
+          "state": "passed"
+        },
+        {
+          "name": "test_r05_prefix_invariance_causal_vs_retrospective_labels_with_fixed_model_and_config",
+          "class": "tests.test_offline_extended_findings",
+          "state": "xfail"
+        },
+        {
+          "name": "test_r01_apply_active_ignores_sub_strategy_definitions_when_no_regime_mapping[asyncio]",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r02_apply_configs_baseline_keeps_stale_overrides[asyncio]",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r03_transition_protect_close_open_not_scoped_to_strategy[asyncio]",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r03_check_one_calls_transition_protect_even_without_auto_apply[asyncio]",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r04_check_one_updates_last_state_before_failed_apply_and_skips_retry[asyncio]",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r06_fetch_histories_end_anchor_can_shrink_data_when_source_rolls[asyncio]",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r12_eval_dynamic_falls_back_to_base_and_apply_regime_strategies_disables_unmapped[asyncio]",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r13_dynamic_confirm_uses_last_state_and_delete_only_removes_doc_and_log[asyncio]",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r05_symbol_payload_uses_final_labels_and_regime_ranges_reads_segments",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r07_segment_boundary_overlap_between_segments_payload_and_segments_from_ranges",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r08_open_position_at_segment_end_is_dropped_from_metrics",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r08_tp1_and_tpf_same_bar_skips_tp1_partial[LONG-100-1.01]",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r08_tp1_and_tpf_same_bar_skips_tp1_partial[SHORT-100-0.99]",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r09_keep_assign_do_not_invalidate_walkforward_and_build_has_no_verdict_guard",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r10_selection_logic_uses_holdout_for_best_choice_contract",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        },
+        {
+          "name": "test_r11_drop_partial_default_false_and_callers_use_default",
+          "class": "tests.test_regime_dynamic_r01_r13_regressions",
+          "state": "passed"
+        }
+      ]
+    },
+    {
+      "label": "existing_selected_baseline",
+      "report": "baseline_additional.xml",
+      "executed": 59,
+      "passed": 59,
+      "failed": 0,
+      "xfail": 0,
+      "deselected": 3,
+      "tests": [
+        {
+          "name": "test_short_hash_key_order_stable",
+          "class": "tests.baseline.test_policy_fingerprint",
+          "state": "passed"
+        },
+        {
+          "name": "test_lessons_hash_ignores_volatile_fields",
+          "class": "tests.baseline.test_policy_fingerprint",
+          "state": "passed"
+        },
+        {
+          "name": "test_sizing_hash_reacts_only_on_sizing_keys",
+          "class": "tests.baseline.test_policy_fingerprint",
+          "state": "passed"
+        },
+        {
+          "name": "test_build_combined_and_none_handling",
+          "class": "tests.baseline.test_policy_fingerprint",
+          "state": "passed"
+        },
+        {
+          "name": "test_policy_groups_aggregation",
+          "class": "tests.baseline.test_policy_fingerprint",
+          "state": "passed"
+        },
+        {
+          "name": "test_playbook_revision_versions_shape",
+          "class": "tests.baseline.test_policy_fingerprint",
+          "state": "passed"
+        },
+        {
+          "name": "test_ols_stats_recovers_slope_and_tstat",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_ols_stats_flat_series_has_small_tstat",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_rolling_zscore_is_backward_only",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_adx_rises_in_trend_and_falls_in_chop",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_strong_uptrend_is_labelled_up",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_strong_downtrend_is_labelled_down",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_slow_long_decline_is_not_sideways",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_sideways_is_labelled_sideways",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_random_walk_has_no_directional_bias",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_regime_switch_is_detected_and_not_too_late",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_more_than_two_regimes_over_mixed_market",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_high_volatility_is_recognised",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_no_lookahead_prefix_stability",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_model_config_is_serialisable_and_stable",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_hysteresis_reduces_switching",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_min_hold_days_is_respected",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_validation_passes_on_clean_series[0.5-1.0-81]",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_validation_passes_on_clean_series[-0.5-1.0-82]",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_validation_passes_on_clean_series[-0.1-0.8-84]",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_validation_passes_on_clean_series[0.25-2.0-86]",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_validation_flags_wrong_labels",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_ideal_labels_agree_with_live_direction",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_regime_module_dispatches_to_v2_by_default",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_kmeans_engine_still_available",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_early_warning_signals_reversal_before_switch",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_early_warning_quiet_in_stable_trend",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_early_warning_fields_are_serialisable",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_nnfx_mapping_covers_all_regimes",
+          "class": "tests.baseline.test_regime_engine",
+          "state": "passed"
+        },
+        {
+          "name": "test_phase_from_label_mapping",
+          "class": "tests.baseline.test_regime_gate",
+          "state": "passed"
+        },
+        {
+          "name": "test_blocked_phases_default_and_validation",
+          "class": "tests.baseline.test_regime_gate",
+          "state": "passed"
+        },
+        {
+          "name": "test_gate_disabled_allows",
+          "class": "tests.baseline.test_regime_gate",
+          "state": "passed"
+        },
+        {
+          "name": "test_gate_blocks_blocked_phase",
+          "class": "tests.baseline.test_regime_gate",
+          "state": "passed"
+        },
+        {
+          "name": "test_gate_allows_other_phase",
+          "class": "tests.baseline.test_regime_gate",
+          "state": "passed"
+        },
+        {
+          "name": "test_gate_fail_open_on_error",
+          "class": "tests.baseline.test_regime_gate",
+          "state": "passed"
+        },
+        {
+          "name": "test_gate_empty_blocklist_allows",
+          "class": "tests.baseline.test_regime_gate",
+          "state": "passed"
+        },
+        {
+          "name": "test_default_coin_cfg_contains_filter_keys",
+          "class": "tests.baseline.test_regime_gate",
+          "state": "passed"
+        },
+        {
+          "name": "test_v2_vol_percentile_bases",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_v2_fallback_fixed_thresholds_without_rank",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_v2_trend_hysteresis",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_v2_breakout_needs_confirmation",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_v1_unchanged_for_legacy",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_compute_features_marks_regime_v2",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_compute_features_percentile_and_daily_trend",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_compute_features_daily_bias_up",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_compute_features_prev_regime_hysteresis",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_snapshot_to_text_with_and_without_daily",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_shadow_predict_skips_out_of_domain",
+          "class": "tests.baseline.test_regime_v2_and_gate_domain",
+          "state": "passed"
+        },
+        {
+          "name": "test_trade_risk_usdt",
+          "class": "tests.baseline.test_risk_budget",
+          "state": "passed"
+        },
+        {
+          "name": "test_open_risk_filters_mode_and_collection",
+          "class": "tests.baseline.test_risk_budget",
+          "state": "passed"
+        },
+        {
+          "name": "test_check_portfolio_limit",
+          "class": "tests.baseline.test_risk_budget",
+          "state": "passed"
+        },
+        {
+          "name": "test_check_cluster_limit_uses_instrument_group",
+          "class": "tests.baseline.test_risk_budget",
+          "state": "passed"
+        },
+        {
+          "name": "test_check_fail_open_without_equity_and_when_disabled",
+          "class": "tests.baseline.test_risk_budget",
+          "state": "passed"
+        },
+        {
+          "name": "test_hook_in_on_signal_before_order_and_not_for_collection",
+          "class": "tests.baseline.test_risk_budget",
+          "state": "passed"
+        }
+      ]
+    }
+  ]
+}

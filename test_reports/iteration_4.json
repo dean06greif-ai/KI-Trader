@@ -1,0 +1,29 @@
+{
+  "summary": "Backend-only regression testing for AP00-AP03 hardening (T01/R03/T02/T03/T06/AP03). Wrote pytest suite tests/test_hardening_regression.py covering all requested paths: health, admin login/verify, watchdog status contract (no 500 when Bitunix not configured), dynamic strategies list/confirm/dismiss, risk-budget, regime-lab base routes, and 13 core GET endpoints (parametrised no-500 checks). Serial run: 25/25 passed (2 initially skipped because DB had no dynamic_strategies; after seeding a TEST_ doc, both passed and verified 400 'Kein offener Regime-Wechsel'/dismiss 200). Additionally re-ran KI_OFFLINE_TESTS=1 analysis_regression suite: 54/54 passed. No 500s, no regressions detected on the hardened paths.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "N/A (test infra)", "issue": "Parallel pytest-xdist run against the preview URL caused occasional ReadTimeouts on /api/health and /api/dynamic/current-regime under concurrent load; serial run is stable. Not a product bug – flag for future test harness (use -n 0 for external URL) or higher timeouts."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_hardening_regression.py",
+    "/app/test_reports/pytest/hardening_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/dynamic.py: transition_protect is wrapped in broad except Exception during /confirm (line ~177). This is intentional (best-effort scoped protection per AP01/R03) but silently degrades to apply without protection. Consider surfacing the failure in the response payload (e.g. transition: {status: 'failed', reason: str(e)}) so the operator sees the degradation instead of only warning logs.",
+    "backend/routers/dynamic.py: /api/dynamic/list clamps to 100 rows without pagination; fine for MVP but should paginate before growth.",
+    "The requested public GET route 'GET /api/dynamic' does not exist – only /api/dynamic/list. If external callers/UI expect the shorter path, add an alias; otherwise document accordingly."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_hardening_regression.py"
+  ],
+  "success_rate": {"backend": "100% (25/25 online + 54/54 offline)", "frontend": "skipped per request"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md) – used successfully.",
+  "seed_data_creation": "Temporarily seeded dynamic_strategies with id=TEST_dyn_confirm to validate 400 confirm path; deleted afterwards. No residual test data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "New pytest file /app/backend/tests/test_hardening_regression.py is the canonical regression suite for the AP00-AP03 hardening. Run it serially with `python -m pytest tests/test_hardening_regression.py -o addopts= -v` (default pytest.ini enables xdist which can cause external-URL timeouts). All hardened paths verified: watchdog/status no 500 when Bitunix unconfigured, dynamic/confirm returns 400 (not 500) without pending_switch, dismiss is idempotent, risk-budget response OK. No live-order (write) endpoints were touched. Live analysis_regression offline suite still 54/54 green."
+}

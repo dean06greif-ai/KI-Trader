@@ -1,0 +1,28 @@
+{
+  "summary": "AP13 review (Ablation, Class-Pooling, Uncertainty). 6/6 pytest tests + full frontend E2E green. Backend: POST /api/regime-lab/ablation ohne Token = 403 (auth ok), mit Token startet Job, GET /status polling bis done, kind='ablation', rows enthalten full/no_mtf/no_volume/no_ema_confirm/alt_ema, pooling.classes.crypto.direction_pct pro Zeile, best_variant/selection_basis(inner_validation|train_only)/holdout_role='final_test' vorhanden, verdicts als dict{variant_key: {delta_pp, verdict}} für Nicht-Full-Varianten, attempt_no zaehlt hoch bei zweitem Lauf. Analyze mit scope='combined' produziert analysis.combined.uncertainty mit score_is_calibrated_probability=false und per_symbol.BTCUSDT{basis,n,gap_pp,verdict,bins}. Regression grün: /api/health 200, /api/safety/status 200, /api/regime-lab/list 200, /api/regime-lab/ema-compare startet + cancel funktioniert. Frontend: Login via Schloss + Tools-Menü → Regime-Lab öffnet Modal. Sektion 'INDIKATOR-ABLATION' (data-testid=ablation-section) inkl. ablation-run/ablation-status sichtbar. Nach Klick: ablation-status zeigt 'Startet · 0% … Abbrechen', in ~90s erscheint ablation-table mit allen 5 erwarteten Zeilen (ablation-row-full/no_mtf/no_volume/no_ema_confirm/alt_ema); Beitrag-Spalte gefüllt (z.B. 'schadet (-2.2pp)', 'trägt bei (+4.5pp)', 'redundant (0pp)', 'schadet (-18pp)'). ablation-selection-note zeigt '★ = beste INNERE Validierung … Versuch #1 auf diesem Holdout.'. ablation-pooling zeigt 'Pooling … Krypto 75.4% (4 Symbole, Abweichung BNBUSDT +5.1pp, BTCUSDT -11pp, ETHUSDT +3.2pp, SOLUSDT +2.6pp)'. Regression: ema-compare-section weiterhin sichtbar. Alt-Analyse ra_2a4033ee öffnet ohne JS-Fehler und zeigt korrekterweise keinen regime-detail-uncertainty-Span (pre-AP13 Daten – wie in Spec beschrieben).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "App root (pre-login)", "issues": ["Bekanntes Vor-Login-Console-Rauschen (fetchSession/fetchNotif/… → 'TypeError: Failed to fetch' + 401) besteht weiter. Funktional harmlos, wurde bereits in iteration_6 empfohlen zu gaten."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_ap13_ablation_uncertainty.py",
+    "/app/test_reports/pytest/ap13.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Coin-Chips (data-testid=regime-coin-<SYMBOL>) haben keinen aria-pressed / kein data-selected-Attribut. Für Testautomation aktuell nur über Klassenname 'on' erkennbar (funktioniert, aber nicht semantisch stabil). Empfehlung: aria-pressed={selected} ergänzen.",
+    "Vor-Login-Storm: Effekte für /api/session, /api/notifications feuern ohne Token und produzieren Konsolen-Errors. Weiterhin empfehlenswert (siehe iter_6): if(!token) return in useEffect gaten oder 401 still swallow."
+  ],
+  "updated_files": ["/app/backend/tests/test_ap13_ablation_uncertainty.py"],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (7/7 Checks)"},
+  "test_credentials": "Admin / Dean06Greif!Dev (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "Zwei Ablation-Analysen (BTC/ETH/BNB/SOL · 1h/90d, 4-symbol pooling) und eine Combined-Analyse (BTC · 15m/30d/train80) neu in regime_analyses geschrieben – als Regression-Referenz nutzbar.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "AP13 vollständig grün. Testdatei /app/backend/tests/test_ap13_ablation_uncertainty.py ist idempotent (login-timeout 60s wegen erstem Login → Cold-Start). Ablation-Läufe belegen den einzelnen Job-Lane (409 sonst); vor Runs mit 'curl POST /api/regime-lab/cancel/{job_id}' abbrechen oder /api/regime-lab/active pollen. Coin-Testids sind FULL-Symbole: regime-coin-BTCUSDT, -ETHUSDT etc. – NICHT 'regime-coin-BTC'. Für BTC-only-Läufe ETH/BNB/SOL deselektieren (Klasse 'on' entfernen). Alt-Analyse ra_2a4033ee hat kein uncertainty-Feld (pre-AP13) – das ist by design, keine Regression.",
+  "rca of the issue": "Keine Bugs gefunden – AP13 additiv & rückwärtskompatibel implementiert."
+}
