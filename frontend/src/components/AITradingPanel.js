@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Robot, PaperPlaneRight, X, Trash, ArrowsClockwise, Lightning, CaretDown, CaretUp, Newspaper, PushPin, Brain, GraduationCap, CheckCircle, XCircle, Sliders, Coins, Flask, ArrowCounterClockwise, PencilSimple, Crown, Plus, FloppyDisk, Warning, ArrowDown, Prohibit, ChartLineUp, Bank } from '@phosphor-icons/react';
 import { toast } from '../lib/toast';
 import { authHeaders } from '../auth';
+import useBodyScrollLock from '../lib/useBodyScrollLock';
 import useInstruments, { assetLabel } from '../hooks/useInstruments';
 import useDragScroll from '../hooks/useDragScroll';
 import AILabPanel from './AILabPanel';
@@ -90,6 +91,7 @@ const friendlyAiError = (raw) => {
 };
 
 const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
+  useBodyScrollLock();
   const { symbols: ALL_COINS, groups: ASSET_GROUPS } = useInstruments();
   const [status, setStatus] = useState(null);
   const [messages, setMessages] = useState(chatHistoryCache);
