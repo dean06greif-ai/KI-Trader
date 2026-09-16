@@ -50,13 +50,21 @@ class TestLeftoverEvidence:
         after_ms = (datetime.now(timezone.utc) + timedelta(minutes=1)).timestamp() * 1000
         ok, why = leftover_evidence(_pos(qty=0.5, pid="P-NEW", opened_ms=after_ms),
                                     _closed_trade(qty=10.0, pid=""))
-        assert ok is False and "NACH" in why
+        assert ok is False and "Positions-ID" in why
 
-    def test_small_rest_opened_before_close_is_leftover(self):
+    def test_small_qty_without_id_match_is_not_closed(self):
+        """Prüfbericht-Kleinfix: kleine Menge + Zeitfenster ist KEIN
+        Identitätsbeleg mehr – ohne übereinstimmende Positions-ID wird die
+        Position nicht als vermeintlicher Rest geschlossen."""
         before_ms = (datetime.now(timezone.utc) - timedelta(hours=2)).timestamp() * 1000
-        ok, _ = leftover_evidence(_pos(qty=0.5, pid="P-NEW", opened_ms=before_ms),
-                                  _closed_trade(qty=10.0, pid=""))
-        assert ok is True
+        ok, why = leftover_evidence(_pos(qty=0.5, pid="P-NEW", opened_ms=before_ms),
+                                    _closed_trade(qty=10.0, pid=""))
+        assert ok is False and "Identitätsbeleg" in why
+
+    def test_both_ids_missing_is_not_closed(self):
+        ok, why = leftover_evidence(_pos(qty=0.1, pid=""),
+                                    _closed_trade(qty=10.0, pid=""))
+        assert ok is False and "Positions-ID" in why
 
     def test_unknown_source_qty_is_no_evidence(self):
         ok, _ = leftover_evidence(_pos(qty=0.1, pid=""), _closed_trade(qty=0, pid=""))

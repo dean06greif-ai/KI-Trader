@@ -49,14 +49,17 @@ def _wd(db, client):
     return wd
 
 
-async def _seed_closed_bot_trade(db, minutes_ago=5):
-    # AP01 (T01): Rest-Erkennung braucht einen Mengenbeleg – der geschlossene
-    # Bot-Trade führt seine Menge, der Rest muss klein dagegen sein.
+async def _seed_closed_bot_trade(db, minutes_ago=5, pid=None):
+    # AP01 (T01, Prüfbericht-Kleinfix): Rest-Erkennung braucht einen
+    # IDENTITÄTSBELEG – der geschlossene Bot-Trade führt seine
+    # Bitunix-Positions-ID; nur eine übereinstimmende ID gilt als Rest.
     doc = {"id": str(uuid.uuid4()), "symbol": SYM, "side": "LONG",
            "mode": "live", "status": "closed", "strategy_id": "ai_trader",
            "strategy_name": "KI Trader", "qty": 10.0,
            "closed_at": (datetime.now(timezone.utc)
                          - timedelta(minutes=minutes_ago)).isoformat()}
+    if pid:
+        doc["bitunix_position_id"] = pid
     await db.auto_trades.insert_one(dict(doc))
     return doc
 
@@ -80,10 +83,11 @@ def db():
 def test_leftover_cleaned_at_exchange(db):
     async def scenario():
         await _cleanup(db)
-        await _seed_closed_bot_trade(db)
+        pos = _pos()
+        await _seed_closed_bot_trade(db, pid=pos["position_id"])
         client = _FakeClient(close_ok=True)
         wd = _wd(db, client)
-        result = await wd._adopt(SYM, _pos())
+        result = await wd._adopt(SYM, pos)
         assert result is None, "Rest darf NICHT als Trade übernommen werden"
         assert len(client.close_calls) == 1, "Rest muss an der Börse geschlossen werden"
         adopted = await db.auto_trades.find_one({"symbol": SYM, "status": "open"})
@@ -95,15 +99,34 @@ def test_leftover_cleaned_at_exchange(db):
 def test_leftover_adopted_when_close_fails(db):
     async def scenario():
         await _cleanup(db)
-        await _seed_closed_bot_trade(db)
+        pos = _pos()
+        await _seed_closed_bot_trade(db, pid=pos["position_id"])
         client = _FakeClient(close_ok=False)
         wd = _wd(db, client)
-        result = await wd._adopt(SYM, _pos())
+        result = await wd._adopt(SYM, pos)
         assert result is not None
         assert result["strategy_name"] == "Rest nach Bot-Close"
         assert result["leftover"] is True
         assert result["manual_trade"] is False, \
             "Rest darf nicht als manueller Bitunix-Trade markiert werden"
+        await _cleanup(db)
+    _run(scenario())
+
+
+def test_no_id_match_adopted_as_manual_not_closed(db):
+    """Prüfbericht-Kleinfix: kleine Position OHNE übereinstimmende Positions-ID
+    wird NICHT als vermeintlicher Rest geschlossen, sondern als manuelle
+    Bitunix-Position übernommen."""
+    async def scenario():
+        await _cleanup(db)
+        await _seed_closed_bot_trade(db)  # ohne bitunix_position_id
+        client = _FakeClient(close_ok=True)
+        wd = _wd(db, client)
+        result = await wd._adopt(SYM, _pos(qty=0.4))
+        assert result is not None
+        assert result["strategy_name"] == "Manuell (Bitunix)"
+        assert not client.close_calls, \
+            "ohne Identitätsbeleg darf NIE geschlossen werden"
         await _cleanup(db)
     _run(scenario())
 

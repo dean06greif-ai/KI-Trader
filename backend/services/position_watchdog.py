@@ -129,38 +129,27 @@ def emergency_sl(side: str, entry: float, mark: float, pct: float,
 
 def leftover_evidence(pos: Dict, closed_trade: Optional[Dict],
                       max_fraction: float = 0.25) -> Tuple[bool, str]:
-    """AP01 (Befund T01): Beweis, dass eine unbekannte Börsen-Position ein
-    Rest eines kürzlich geschlossenen Bot-Trades ist. Symbol+Seite+Zeitfenster
-    genügt NICHT – ohne Mengen-/Identitätsbeleg wird NICHT geschlossen (rein).
+    """AP01 (Befund T01, Prüfbericht-Kleinfix): Beweis, dass eine unbekannte
+    Börsen-Position ein Rest eines kürzlich geschlossenen Bot-Trades ist.
+    Symbol+Seite+Zeitfenster genügt NICHT – und auch eine kleine Menge ist
+    KEIN Identitätsbeleg mehr: ohne ÜBEREINSTIMMENDE Bitunix-Positions-ID
+    wird nicht als Rest geschlossen (fail-closed, rein).
       * gleiche Bitunix-Position-ID wie der geschlossene Trade -> Rest
       * unterschiedliche bekannte Position-IDs -> KEIN Rest (fremde Position)
-      * sonst: Menge muss klein sein (<= max_fraction der Bot-Menge) und die
-        Position darf nicht NACH dem Bot-Close eröffnet worden sein."""
+      * fehlende ID auf einer Seite -> KEIN Rest (kein Identitätsbeleg)
+    `max_fraction` bleibt aus Kompatibilitätsgründen in der Signatur, die
+    frühere Mengen-/Zeit-Heuristik ist bewusst entfernt."""
     if not closed_trade:
         return False, "kein passender Bot-Close"
     src_pid = str(closed_trade.get("bitunix_position_id") or "")
-    if src_pid and src_pid == str(pos.get("position_id")):
+    pos_pid = str(pos.get("position_id") or "")
+    if src_pid and src_pid == pos_pid:
         return True, "identische Bitunix-Position-ID"
-    if src_pid and str(pos.get("position_id")):
-        return False, (f"andere Position-ID ({pos.get('position_id')} != {src_pid}) "
+    if src_pid and pos_pid:
+        return False, (f"andere Position-ID ({pos_pid} != {src_pid}) "
                        "– fremde/neue Position, kein Rest")
-    src_qty = _f(closed_trade.get("qty"))
-    if src_qty <= 0:
-        return False, "Bot-Menge unbekannt – kein Mengenbeleg"
-    if pos.get("qty", 0) > src_qty * max_fraction:
-        return False, (f"Menge {pos.get('qty')} zu groß für einen Rest "
-                       f"(> {max_fraction:.0%} von {src_qty})")
-    opened_ms = _f(pos.get("opened_ms"))
-    closed_at = closed_trade.get("closed_at")
-    if opened_ms > 0 and closed_at:
-        try:
-            closed_ts = datetime.fromisoformat(
-                str(closed_at).replace("Z", "+00:00")).timestamp()
-            if opened_ms / 1000.0 > closed_ts + 1.0:
-                return False, "Position wurde NACH dem Bot-Close eröffnet"
-        except (ValueError, TypeError):
-            pass
-    return True, "kleine Restmenge, nicht nach dem Close eröffnet"
+    return False, ("keine übereinstimmende Positions-ID – ohne Identitätsbeleg "
+                   "wird nicht als Rest geschlossen")
 
 
 class PositionWatchdog:
