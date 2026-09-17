@@ -36,11 +36,34 @@ Grundsatz: Stabilität, Rückwärtskompatibilität, saubere modulare Integration
 - Daten: ~2 Jahre Event-Historie, 5m-Kerzen von Bitunix rund um den Event-Zeitpunkt, Symbole BTCUSDT/ETHUSDT/SOLUSDT
   (nur Krypto – Bitunix liefert keine Aktien-/Index-Historie). Validierung: Gesamt- UND OOS-PnL positiv.
 
+## Umgesetzt (17.09.2026 – Edge-Register für den Setup-Backtester, Plan ARBEITSSTAND_E1 abgeschlossen + gelöscht)
+Befund aus dem Prod-Stand (read-only Probe): bestätigte Edges (z. B. crypto/session_open KI-Rev.17, OOS 222T/60 %/+23)
+wurden durch spätere Fehlläufe (verkürztes Datenfenster) auf `exhausted` überschrieben, `tuned` + OOS-Trades gelöscht;
+schmale 12-Trade-Sätze ersetzten breit bestätigte. Umsetzung (modular, rückwärtskompatibel, Details in
+`BACKTEST_SEEDING_PLAN.md` → Phase 1c):
+- `backend/services/setup_backtest/edges.py` (neu): Collection `setup_backtest_edges`, genau ein aktiver Edge je
+  Klasse × Setup; reine Funktionen `overfit_flags`, `robust_score`, `better`, `decide`; `activate` (Rollback inkl.
+  OOS-Trades fürs Reife-Gate), `recover_from_history` (rückwirkend aus dem State-Verlauf, idempotent).
+- `runner._evaluate_setup`: aktiver Edge wird zuerst geprüft; Schleifen-Modi prüfen trotzdem alle Varianten + bis zu
+  2 gespeicherte Herausforderer; Fehllauf → `stale` 1..3 (Edge bleibt, Trades bleiben), erst danach Status `stale`;
+  Ersetzen nur per `better()` (≥ +10 % Robustheit, ≥ 70 % OOS-Trades, keine harten Overfitting-Signale).
+  `_optimize_setup` mit Overfitting-Bremse; `reset` deaktiviert Edges nur.
+- Boot-Migration `setup_backtest_edges_v1` (einmalig, auf Render automatisch): importiert Verlauf, reaktiviert
+  robustesten Edge für Setups ohne Edge (Prod-Probe: 20 importiert, 6 reaktiviert).
+- API: `GET /api/ai/playbook/backtest/edges`, `POST …/edges/activate`, `POST …/edges/recover` (Admin).
+- UI: `frontend/src/components/EdgeRegister.js` im Reiter „KI Trader · Setups“ + Edge-Entscheidung je Ergebniszeile.
+- Tests: `backend/tests/test_setup_backtest_edges.py` (10, unit), `backend/tests/test_edges_api.py` (11, live);
+  stale Tests angepasst (`test_fomc_event` Event-Setups in allen Klassen, `test_iter38…` Setup-Anzahl dynamisch).
+  Unit-Suite: 1747 passed; verbleibende 5 Fehler in `test_iter38…` brauchen Bitunix-Keys (lokal bewusst nicht gesetzt).
+
 ## Tests
+- iteration_2.json (17.09.2026): Backend 11/11, Frontend-Flows (Register, Verlauf, Admin-Login, Rollback) grün.
 - iteration_11.json: Backend 7/7 (Panel-Isolation, DELETE?panel, Overviews), Frontend alle Checks grün.
 - Bestands-Tests des Users unter `backend/tests/` (pytest -n 2). Neuer Test: `test_iter11_copilot_panels.py`.
 
 ## Backlog / Nächstes
+- P1: Edge-Register – Herausforderer-Anzahl/Margen ggf. per Auto-Config einstellbar machen (aktuell Konstanten).
+- P2: Optimierer-Modus zusätzlich gegen die gespeicherten Kandidaten laufen lassen (heute nur Basis-Satz).
 - P1: Cancel-Endpoint für Event-Backtest-Job (aktuell läuft er bis zum Abschluss).
 - P2: `_chat_jobs` in routers/copilot.py mit bounded LRU statt nur TTL.
 - P2: AITraderSeeding.js ggf. aufteilen (Review-Hinweis, >450 Zeilen).
