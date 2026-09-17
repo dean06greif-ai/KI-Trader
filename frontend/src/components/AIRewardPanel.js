@@ -72,6 +72,8 @@ const AIRewardPanel = () => {
 
   const hist = data?.history || [];
   const regimes = data?.by_regime || [];
+  const structural = data?.by_structural_regime || [];
+  const hasStructural = structural.some(r => r.regime !== 'unbekannt');
   const calib = data?.calibration;
   const sum = data?.summary || {};
 
@@ -141,6 +143,28 @@ const AIRewardPanel = () => {
             <tbody>
               {regimes.map(r => (
                 <tr key={r.regime} data-testid={`reward-regime-${r.regime}`}>
+                  <td>{r.regime}</td>
+                  <td>{r.trades}</td>
+                  <td className={r.avg_reward >= 0 ? 'pos' : 'neg'}>{r.avg_reward >= 0 ? '+' : ''}{r.avg_reward.toFixed(2)}</td>
+                  <td>{r.win_rate}%</td>
+                  <td className={r.pnl >= 0 ? 'pos' : 'neg'}>{r.pnl >= 0 ? '+' : ''}{r.pnl.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {hasStructural && (
+        <div className="reward-regimes" data-testid="reward-structural-regimes"
+          title="Regime-Brücke: Struktur-Regime aus der freigegebenen Lab-Analyse (Stufe Shadow/Wirksam) zum Entscheidungszeitpunkt – NICHT das Kurzfrist-Regime der Tabelle oben. „unbekannt“ = Trade vor der Freigabe oder Lab-Stand veraltet.">
+          <div className="reward-sub">Reward nach Struktur-Regime (Lab-Brücke)</div>
+          <table>
+            <thead>
+              <tr><th>Struktur</th><th>Trades</th><th>Ø Reward</th><th>Winrate</th><th>PnL</th></tr>
+            </thead>
+            <tbody>
+              {structural.map(r => (
+                <tr key={r.regime} data-testid={`reward-structural-${r.regime}`}>
                   <td>{r.regime}</td>
                   <td>{r.trades}</td>
                   <td className={r.avg_reward >= 0 ? 'pos' : 'neg'}>{r.avg_reward >= 0 ? '+' : ''}{r.avg_reward.toFixed(2)}</td>

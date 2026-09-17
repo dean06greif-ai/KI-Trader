@@ -194,3 +194,48 @@ def test_handle_recommendation_cooldown_and_needs_data(monkeypatch):
     _Engine.config["structural_regime_autonomy"] = "off"
     db.ai_proposals.docs.clear()
     assert asyncio.run(rr.handle_recommendation(db, _Engine(), rec)) is None
+
+
+def test_validate_release_scope_both_normalized_to_combined():
+    """Analyse-Scope `both` (kombiniert + je Coin) wird für die Freigabe als
+    `combined` behandelt – kein `both` im release-Dokument."""
+    d = _doc()
+    d["scope"] = "both"
+    ok, reasons, ev = rr.validate_release(d, "shadow", {}, _jobs())
+    assert ok and ev["scope"] == "combined"
+    rel = rr.apply_stage(d, "shadow", ev, "Admin", "m")
+    assert rel["scope"] == "combined"
+
+
+def test_apply_proposal_reruns_activation_gate(monkeypatch):
+    """Trader klickt `Übernehmen` auf einen regime_release-Vorschlag: das
+    Stichproben-Gate wird erneut geprüft – ohne grünes Gate keine Umschaltung."""
+    from services.ai_engine_governance import AIEngineGovernanceMixin as GovernanceMixin
+    a = _doc()
+    a["release"] = {"stage": "shadow", "asset_classes": ["crypto"]}
+
+    class _DB:
+        regime_analyses = _Coll([a])
+
+    class _Eng(GovernanceMixin):
+        db = _DB()
+        config = {}
+    from services import ai_rewards
+    thin = [{"regime": "strukturell bär", "trades": 3, "avg_reward": 0.1}]
+    monkeypatch.setattr(ai_rewards, "by_structural_regime", lambda db, days: _aw(thin))
+    changes = {"structural_regime_stage": "active", "asset_class": "crypto", "aid": "ra_test"}
+    try:
+        asyncio.run(_Eng()._apply_changes("regime_release", None, changes))
+        assert False, "Gate hätte greifen müssen"
+    except ValueError as e:
+        assert "Stichproben-Gate" in str(e)
+    assert a["release"]["stage"] == "shadow"
+    good = [{"regime": "strukturell bär", "trades": 40, "avg_reward": -0.4},
+            {"regime": "strukturell bulle", "trades": 40, "avg_reward": 0.3}]
+    monkeypatch.setattr(ai_rewards, "by_structural_regime", lambda db, days: _aw(good))
+    asyncio.run(_Eng()._apply_changes("regime_release", None, changes))
+    assert a["release"]["stage"] == "active"
+
+
+async def _aw(v):
+    return v

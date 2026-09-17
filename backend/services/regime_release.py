@@ -91,7 +91,8 @@ def validate_release(doc: Dict, stage: str, body: Dict, jobs: Dict) -> Tuple[boo
     reasons: List[str] = []
     if stage not in ("shadow", "active"):
         return False, [f"Stufe '{stage}' ist keine Freigabestufe"], {}
-    scope = str(body.get("scope") or doc.get("scope") or "combined")
+    # Analyse-Scope `both` (kombiniert + je Coin) -> Freigabe läuft über das kombinierte Modell
+    scope = "per_coin" if str(body.get("scope") or doc.get("scope") or "") == "per_coin" else "combined"
     symbol = body.get("symbol")
     if scope == "per_coin" and not symbol:
         reasons.append("scope=per_coin braucht ein Symbol")

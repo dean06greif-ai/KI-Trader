@@ -23,6 +23,11 @@ export const policySubtitle = (r) => {
   const p = r.policy || {};
   const parts = [`${fmtDay(r.first_ts)}–${fmtDay(r.last_ts)}`, p.model || 'Modell ?'];
   if (p.gate_version) parts.push(`ML-Gate v${p.gate_version}`);
+  // Regime-Brücke 4.2: Artefakt der freigegebenen Lab-Analyse in Kurzform
+  if (p.regime_artifact) {
+    const fp = String(p.regime_artifact).split(':').pop();
+    parts.push(fp && fp !== p.regime_artifact ? `Lab-Modell ${fp.slice(0, 6)}` : `Regime ${p.regime_artifact}`);
+  }
   if ((r.changed || []).length) parts.push(`geändert: ${r.changed.join(', ')}`);
   else if (r.version_no === 1) parts.push('erste Version');
   return parts.join(' · ');

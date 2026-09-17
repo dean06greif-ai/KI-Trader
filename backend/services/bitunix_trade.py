@@ -997,6 +997,9 @@ DEFAULT_COIN_CFG = {
     # laufen unverändert weiter.
     "regime_filter_enabled": False,
     "regime_block_phases": ["seitwärts"],
+    # Regime-Brücke 2.2: Quelle der Phase – `own` (eigene Erkennung, heutiges
+    # Verhalten) | `lab` (freigegebene Lab-Analyse, wirkt nur bei Stufe active)
+    "regime_gate_source": "own",
     # --- Gewinnsicherung: SL in den Gewinn ziehen + Marge freisetzen ---
     "profit_secure_enabled": False,
     "profit_secure_trigger_pct": 30.0,   # ab X% Gewinn auf die Marge

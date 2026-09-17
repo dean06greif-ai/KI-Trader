@@ -17,6 +17,7 @@ import { regimeColor } from '../lib/regimeColors';
 import { fmtDate, fmtDateTime } from '../lib/time';
 import './RegimeLab.css';
 import NumInput from './NumInput';
+import { RegimeReleaseBadge, RegimeReleaseControls } from './RegimeRelease';
 
 const NNFX_LABELS = { trend: 'NNFX: Trend', range: 'NNFX: Seitwärts', breakout: 'NNFX: Breakout' };
 
@@ -1125,6 +1126,7 @@ export default function RegimeLab({ onClose }) {
   const [name, setName] = useState('');
   const [job, setJob] = useState(null);
   const [analyses, setAnalyses] = useState(null);
+  const [shadowTrades, setShadowTrades] = useState(null);
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const pollRef = useRef(null);
@@ -1142,6 +1144,8 @@ export default function RegimeLab({ onClose }) {
   const loadList = useCallback(() => {
     fetch(`${API_URL}/api/regime-lab/list`).then(r => r.json())
       .then(d => setAnalyses(d.analyses || [])).catch(() => setAnalyses([]));
+    fetch(`${API_URL}/api/regime-lab/releases`).then(r => r.json())
+      .then(d => setShadowTrades(d?.activation?.shadow_trades ?? null)).catch(() => {});
   }, []);
 
   const loadDetail = useCallback((aid) => {
@@ -1417,6 +1421,7 @@ export default function RegimeLab({ onClose }) {
               <span className="opt-small">{a.timeframe} · {a.days}d · Training {a.settings?.train_pct}%</span>
               {a.n_regimes_combined > 0 && <span className="opt-small">{a.n_regimes_combined} Regime (kombiniert)</span>}
               {a.n_assignments > 0 && <span className="opt-small pos">{a.n_assignments} Strategie(n) bestätigt</span>}
+              <RegimeReleaseBadge analysis={a} shadowTrades={shadowTrades} />
               {a.has_walkforward
                 ? (a.walkforward_stale
                   ? <span className="opt-small" style={{ color: '#FFB74D' }}
@@ -1450,6 +1455,7 @@ export default function RegimeLab({ onClose }) {
         {selected && detail && (
           <div className="opt-row">
             <div className="opt-label">3 · ANALYSE: {detail.name}</div>
+            <RegimeReleaseControls analysis={detail} onChanged={() => { loadDetail(selected); loadList(); }} />
             <AnalysisDetail analysis={detail} strategies={strategies}
               jobBlocked={jobBlocked} execution={execution} onChanged={() => loadDetail(selected)} />
           </div>

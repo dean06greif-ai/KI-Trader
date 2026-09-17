@@ -896,11 +896,22 @@ async def patch_ai_protection(updates: Dict, _admin=Depends(require_admin)):
 async def get_regime_phase(symbol: str):
     """Aktuell erkannte Marktphase (bulle/bär/seitwärts) für den
     Marktphasen-Filter – gecacht (15 Min), rein lesend."""
-    from services import regime_gate
+    from services import regime_gate, structural_regime
     sym = symbol.upper()
+    # Regime-Brücke 2.2: Lab-Sicht (Stufe/Phase) immer mitliefern, damit die UI
+    # anzeigen kann, ob die Quelle `lab` überhaupt wirksam wäre.
+    lab: Dict = {"stage": "none", "phase": None}
+    try:
+        lab["stage"] = await structural_regime.stage_of(sym)
+        if lab["stage"] != "none":
+            ctx = await structural_regime.resolve(sym)
+            lab.update({"phase": ctx.get("phase"), "state": ctx.get("state"),
+                        "label": ctx.get("label"), "confidence": ctx.get("confidence")})
+    except Exception as e:  # noqa: BLE001
+        lab["error"] = str(e)[:120]
     try:
         ent = await regime_gate.current_phase(sym)
     except Exception as e:  # noqa: BLE001
-        return {"symbol": sym, "error": str(e)[:200]}
+        return {"symbol": sym, "error": str(e)[:200], "lab": lab}
     return {"symbol": sym, "phase": ent.get("phase"), "label": ent.get("label"),
-            "confidence": ent.get("confidence"), "checked_at": ent.get("checked_at")}
+            "confidence": ent.get("confidence"), "checked_at": ent.get("checked_at"), "lab": lab}

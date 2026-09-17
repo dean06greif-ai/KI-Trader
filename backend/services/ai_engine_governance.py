@@ -61,12 +61,18 @@ class AIEngineGovernanceMixin:
             await self.update_config(dict(changes))
             return
         if scope == "regime_release":
-            # Regime-Brücke 1.4: Trader-Klick "Übernehmen" -> Stufe setzen (Gate
-            # wurde beim Erzeugen geprüft; needs_data-Vorschläge kommen nur per Trader)
-            from services import regime_release
+            # Regime-Brücke 1.4: Trader-Klick "Übernehmen" -> Stufe setzen. Das
+            # Stichproben-Gate wird hier ERNEUT geprüft: ein `needs_data`-Vorschlag
+            # bleibt sichtbar, ist aber nicht umsetzbar (die KI umgeht kein Gate).
+            from services import ai_rewards, regime_release
+            target = changes.get("structural_regime_stage", "active")
+            if target == "active":
+                ok, reasons, _ = regime_release.validate_activation(
+                    await ai_rewards.by_structural_regime(self.db, 90))
+                if not ok:
+                    raise ValueError("Stichproben-Gate nicht erfüllt: " + "; ".join(reasons))
             await regime_release.set_stage(
-                self.db, changes.get("aid"), changes.get("structural_regime_stage", "active"),
-                {}, "Admin", "Vorschlag der KI übernommen")
+                self.db, changes.get("aid"), target, {}, "Admin", "Vorschlag der KI übernommen")
             return
         if scope == "candidate":
             await strategy_lab.update_macro_params(symbol, dict(changes))

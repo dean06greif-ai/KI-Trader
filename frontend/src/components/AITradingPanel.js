@@ -20,6 +20,7 @@ import { MODEL_OPTIONS } from '../lib/aiModels';
 import './AITradingPanel.css';
 import AIDiagnosisPanel from './AIDiagnosisPanel';
 import { LessonImpactBadge, LessonImpactSummary } from './LessonImpact';
+import { StructuralStagePanel, CLASS_LABELS } from './RegimeRelease';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -694,7 +695,11 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ action }),
       });
-      if (!res.ok) { toast.error(res.status === 401 ? 'Admin-Login erforderlich' : 'Fehler'); return; }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        toast.error(res.status === 401 ? 'Admin-Login erforderlich' : (typeof d?.detail === 'string' ? d.detail : 'Fehler'));
+        return;
+      }
       toast.success(action === 'approve' ? 'Änderung übernommen' : 'Vorschlag abgelehnt');
       loadProposals(); loadHistory();
     } catch (e) { toast.error('Verbindungsfehler'); }
@@ -1698,6 +1703,15 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                 <option value="on">an</option>
               </select>
             </label>
+            <label title="Regime-Brücke: Darf der KI-Trader (Forschungs-Analyst) den Wechsel einer freigegebenen Lab-Analyse von Shadow auf Wirksam selbst vorschlagen (suggest: du klickst im Vorschläge-Panel) oder vollziehen (auto: 24 h Karenz mit Stopp-Knopf, Widerruf jederzeit)? Die KI kann das Nachweis-Gate (≥ 30 Shadow-Trades, Reward-Unterschied ≥ 0,25 R) nie umgehen.">
+              <span>Struktur-Freigabe (KI)</span>
+              <select value={cfg.structural_regime_autonomy || 'suggest'} onChange={e => updateConfig({ structural_regime_autonomy: e.target.value })} data-testid="ai-structural-autonomy-select">
+                <option value="off">nur manuell</option>
+                <option value="suggest">Vorschlag</option>
+                <option value="auto">auto (24 h Karenz)</option>
+              </select>
+            </label>
+            <StructuralStagePanel refreshKey={cfg.structural_regime_autonomy} />
             <label title="Blockier-Statistik: Wie oft der Fee-Wächter in den letzten 7 Tagen einen KI-Trade geblockt hat und welche Roundtrip-Gebühren (Kapital × Hebel × 2 × Fee) diese Trades mindestens gekostet hätten.">
               <span>Geblockt (7 Tage)</span>
               <span className="mono" data-testid="ai-fee-guard-stats">
@@ -2287,9 +2301,13 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
             {proposals.map(p => (
               <div key={p.id} className="ai-proposal-card" data-testid="ai-proposal-card">
                 <div className="ai-prop-head">
-                  <b className="ai-prop-sym">{p.symbol === 'ENGINE' ? 'Engine' : coinLabel(p.symbol)}</b>
+                  <b className="ai-prop-sym">{p.symbol === 'ENGINE' ? 'Engine' : p.scope === 'regime_release' ? `Struktur-Regime ${CLASS_LABELS[p.symbol] || p.symbol}` : coinLabel(p.symbol)}</b>
                   <span className="ai-prop-changes">
-                    {Object.entries(p.changes || {}).map(([k, v]) => (
+                    {p.scope === 'regime_release' ? (
+                      <span className="ai-prop-chg" data-testid={`ai-proposal-regime-release-${p.id}`}>
+                        Freigabe-Stufe → <b>{p.changes?.structural_regime_stage === 'active' ? 'Wirksam' : 'Shadow'}</b>
+                      </span>
+                    ) : Object.entries(p.changes || {}).map(([k, v]) => (
                       <span key={k} className="ai-prop-chg">
                         {k}: <s>{String(p.current?.[k])}</s> → <b>{String(v)}</b>
                       </span>
@@ -2300,7 +2318,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                   <div className="ai-prop-wait" data-testid={`ai-proposal-status-${p.id}`}>
                     {p.status === 'needs_confirmation' ? 'wartet auf Bestätigungen' : 'wartet auf Daten'}
                     {': '}
-                    {(p.macro_validation?.reason || p.validation?.reason || '')}
+                    {(p.macro_validation?.reason || p.validation?.reason || (p.gate_reasons || []).join('; ') || '')}
                     {p.clamped && ' · Schrittweite begrenzt'}
                   </div>
                 )}

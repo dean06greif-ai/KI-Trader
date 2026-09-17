@@ -47,6 +47,7 @@ const DEFAULT_CFG = {
   auto_lev_max: 50,
   regime_filter_enabled: false,
   regime_block_phases: ['seitwärts'],
+  regime_gate_source: 'own',
 };
 
 export default function StrategyAutoTradeModal({ strategyId, strategyName, symbol, onClose, onSaved }) {
@@ -671,6 +672,25 @@ export default function StrategyAutoTradeModal({ strategyId, strategyName, symbo
                       : ' Aktuelle Phase wird beim ersten Signal automatisch bestimmt.'}
                     {' '}Tipp: Für Strategien mit eigener Logik je Marktphase nutze „Dynamische Strategie" im Optimizer.
                   </div>
+                  {/* Regime-Brücke 2.2: Quelle der Phase */}
+                  <label className="at-check" style={{ marginTop: 8 }}
+                    title="Eigene Erkennung = heutiges Verhalten (1h-Kerzen, 30 Tage, eigenes 3-Regime-Modell). Freigegebene Lab-Analyse = das im Regime-Lab auf „Wirksam“ geschaltete Struktur-Modell dieser Assetklasse. Ohne Freigabe (Stufe none/shadow) oder bei veraltetem Stand bleibt das Gate fail-open – der Trade wird erlaubt.">
+                    <span style={{ minWidth: 110 }}>Regime-Quelle:</span>
+                    <select value={cfg.regime_gate_source || 'own'} onChange={e => update('regime_gate_source', e.target.value)}
+                      data-testid="sat-regime-gate-source">
+                      <option value="own">eigene Erkennung</option>
+                      <option value="lab">freigegebene Lab-Analyse</option>
+                    </select>
+                    {cfg.regime_gate_source === 'lab' && (
+                      <span className="opt-small" data-testid="sat-regime-lab-hint">
+                        {regimePhase?.lab?.stage === 'active'
+                          ? <>Lab wirksam{regimePhase.lab.label ? <>: <b>{regimePhase.lab.label}</b></> : ''}{regimePhase.lab.state === 'stale' ? ' (Stand veraltet → Trade erlaubt)' : ''}</>
+                          : regimePhase?.lab?.stage === 'shadow'
+                            ? 'Lab-Analyse nur im Shadow – Gate lässt alle Trades durch, bis sie „Wirksam“ ist'
+                            : 'Keine freigegebene Lab-Analyse für diese Assetklasse – Gate lässt alle Trades durch'}
+                      </span>
+                    )}
+                  </label>
                 </>
               )}
             </div>

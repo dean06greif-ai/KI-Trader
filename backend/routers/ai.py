@@ -672,7 +672,10 @@ async def ai_proposal_decide(pid: str, body: Dict, _: bool = Depends(require_adm
     action = (body.get("action") or "").lower()
     if action not in ("approve", "reject"):
         raise HTTPException(status_code=400, detail="action muss approve|reject sein")
-    prop = await ai_engine.decide_proposal(pid, action == "approve")
+    try:
+        prop = await ai_engine.decide_proposal(pid, action == "approve")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not prop:
         raise HTTPException(status_code=404, detail="Vorschlag nicht gefunden oder bereits entschieden")
     return {"status": "success", "proposal": prop}
