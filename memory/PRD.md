@@ -88,3 +88,10 @@ ai_decisions, settings), `AI_TRADER_LOCAL_DISABLE=1`; KEINE Bitunix-/IBKR-/Teleg
 - P1: Lektions-Bilanz Baustein A (applied_lessons in ai_decisions/auto_trades) -> B (HOLD-Gegenprobe) -> C (Impact-API + UI).
 - P1: Fingerprint-Granularität (ML-Gate-Retrain/Playbook-Statistik ohne neue Policy-Version) oder Grob-Gruppierung im Bericht.
 - P2: regime_gate optional auf freigegebene Lab-Analyse + `regime_artifact` im Fingerprint befüllen.
+
+## Pläne verfasst (17.09.2026, noch NICHT umgesetzt)
+- `PLAN_LEKTIONS_BILANZ.md`: Attribution (applied_lessons/would_be) -> HOLD-Counterfactual (`lesson_counterfactual.py`, Coll. `ai_lesson_cf`)
+  -> Impact (`lesson_impact.py`, `GET /api/ai/lessons/impact`, Prompt-Block, UI-Badges). Flags, Tests, Rollout je Phase. ~3,5 Tage.
+- `PLAN_REGIME_BRUECKE_LAB_KI_TRADER.md`: Lab-Freigabe (`/approve`) -> `structural_regime.py` Resolver -> Prompt-Block „Struktur"
+  -> `regime_artifact` im Fingerprint -> Gate-Quelle `lab` optional. Flags default aus. ~3,5 Tage.
+- Empfohlene Reihenfolge: Lektions-Bilanz A (Datensammlung) zuerst, dann Regime-Brücke 1–4, dann Lektions-Bilanz B/C.
