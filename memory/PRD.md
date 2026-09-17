@@ -95,3 +95,6 @@ ai_decisions, settings), `AI_TRADER_LOCAL_DISABLE=1`; KEINE Bitunix-/IBKR-/Teleg
 - `PLAN_REGIME_BRUECKE_LAB_KI_TRADER.md`: Lab-Freigabe (`/approve`) -> `structural_regime.py` Resolver -> Prompt-Block „Struktur"
   -> `regime_artifact` im Fingerprint -> Gate-Quelle `lab` optional. Flags default aus. ~3,5 Tage.
 - Empfohlene Reihenfolge: Lektions-Bilanz A (Datensammlung) zuerst, dann Regime-Brücke 1–4, dann Lektions-Bilanz B/C.
+- 17.09. Rev. 2 Regime-Plan: Freigabe zweistufig (shadow -> active) und nachweisgebunden (Kalibrierung + Ablation + Mindestabschnitte,
+  Evidence-Hash, history), kein TTL-Feld (Frische-Regel im Resolver), KI-Trader kann Umschaltung vorschlagen (suggest) oder mit
+  24 h Karenz selbst vollziehen (auto) über bestehenden Proposal-Mechanismus; Trader kann jederzeit manuell schalten/widerrufen.
