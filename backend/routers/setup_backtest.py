@@ -12,6 +12,7 @@ from services import setup_asset_class as ac
 from services import backtester as bt
 from services.setup_backtest import runner
 from services.setup_backtest import auto as seed_auto
+from services.setup_backtest import edges
 
 logger = logging.getLogger(__name__)
 
@@ -86,3 +87,45 @@ async def seeding_reset(body: Dict, _: bool = Depends(require_admin)):
     from services import ai_playbook
     ai_playbook.invalidate_cache()
     return {"status": "ok", "deleted_trades": deleted}
+
+
+# ---- Edge-Register (dauerhafte Edges, Rollback, rückwirkende Wiederherstellung) ----
+@router.get("/api/ai/playbook/backtest/edges")
+async def seeding_edges(asset_class: str = None, setup: str = None):
+    if asset_class and asset_class not in ac.CLASSES:
+        raise HTTPException(status_code=400, detail="unbekannte Anlageklasse")
+    items = await edges.list_edges(state.db, asset_class or None, setup or None)
+    return {"edges": items, "rules": {"stale_max": edges.STALE_MAX, "replace_margin": edges.REPLACE_MARGIN,
+                                      "min_trades_ratio": edges.MIN_TRADES_RATIO,
+                                      "oos_is_consistency": edges.OOS_IS_CONSISTENCY, "min_pf": edges.MIN_PF,
+                                      "wr_crv_margin": edges.WR_CRV_MARGIN}}
+
+
+@router.post("/api/ai/playbook/backtest/edges/activate")
+async def seeding_edge_activate(body: Dict, _: bool = Depends(require_admin)):
+    """Rollback: einen gespeicherten Edge wieder aktiv setzen (Parameter, Stand,
+    OOS-Trades fürs Reife-Gate)."""
+    cls, sid, edge_id = body.get("asset_class"), body.get("setup"), body.get("edge_id")
+    if cls not in ac.CLASSES or not sid or not edge_id:
+        raise HTTPException(status_code=400, detail="asset_class, setup und edge_id erforderlich")
+    if runner.running_job():
+        raise HTTPException(status_code=409, detail="Es läuft bereits ein Backtest")
+    try:
+        res = await edges.activate(state.db, cls, sid, edge_id, reason="manuell (Rollback)")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    from services import ai_playbook
+    ai_playbook.invalidate_cache()
+    return {"status": "ok", **res}
+
+
+@router.post("/api/ai/playbook/backtest/edges/recover")
+async def seeding_edge_recover(body: Dict = None, _: bool = Depends(require_admin)):
+    """Rückwirkend: früher bestandene Parameter-Sätze aus dem Verlauf ins
+    Register holen; Setups ohne Edge bekommen den robustesten davon zurück."""
+    if runner.running_job():
+        raise HTTPException(status_code=409, detail="Es läuft bereits ein Backtest")
+    res = await edges.recover_from_history(state.db, activate_best=bool((body or {}).get("activate_best", True)))
+    from services import ai_playbook
+    ai_playbook.invalidate_cache()
+    return {"status": "ok", **res}

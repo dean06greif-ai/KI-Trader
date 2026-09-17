@@ -45,6 +45,37 @@ Vorschlag. Umsetzung (rückwärtskompatibel, Alt-Stände in `settings.setup_back
   Rückwärtskompatibilität aller Varianten, sanitize-Kappung), `test_setup_backtest_ai_revision.py`
   angepasst, `test_ai_playbook_backtest_api.py` (API-Smoke).
 
+## Status Phase 1c – Edge-Register: Edges bleiben erhalten, Rollback, Overfitting-Bremse (17.09.2026)
+Befund (Prod-Stand 16.09.): Ein bestätigter Edge (z. B. crypto/session_open KI-Rev.17, OOS 222T/60 %/+23)
+wurde durch einen späteren Fehllauf (verkürztes Datenfenster) auf `exhausted` überschrieben, `tuned`
+und die OOS-Trades (Reife-Gate) gelöscht; anderswo ersetzte ein knapp bestandener 12-Trade-Satz einen
+breit bestätigten 43-Trade-Satz. Die Historie hielt nur 10 Einträge. Umsetzung (rückwärtskompatibel):
+- **`edges.py` (neu)**: Collection `setup_backtest_edges` – je Klasse × Setup × Parameter-Fingerprint
+  ein Dokument (Params, IS/OOS, Diagnose, Robustheits-Score, Bestätigungen, Läufe, OOS-Trades für
+  Rollback). Genau ein Edge je Klasse × Setup ist `active` und wird gehandelt/geprompt.
+  Reine Funktionen: `overfit_flags` (hart: OOS/Trade < 35 % des IS-Werts, Profit-Faktor < 1.15,
+  Winrate < Break-even-WR aus Payoff + 3 Pp.; weich: Walk-Forward 2/3, knapp über Mindest-Trades),
+  `robust_score` (analysis.score × √(Trades/Minimum, max 2.5) × Walk-Forward × IS/OOS-Konsistenz
+  × 0.8 je hartem Signal), `better` (≥ +10 % Score, ≥ 70 % der OOS-Trades, kein hartes Signal),
+  `decide` (adopt/confirm/replace/stale_keep/stale).
+- **Runner**: Der aktive Edge wird in jedem Lauf ZUERST geprüft; in Schleifen-Modi werden trotzdem alle
+  Basis-Varianten und bis zu 2 gespeicherte Herausforderer mitgeprüft (bessere Variante finden).
+  Fällt der aktive Edge durch, bleibt er (`stale` 1..3, Status `tuned`, Anzeige = bestätigter Stand,
+  `last_check` = aktueller Lauf, OOS-Trades bleiben); erst nach 3 Fehlläufen in Folge Status `stale`
+  (kein Edge fürs Trading, Edge bleibt reaktivierbar). Ersetzt wird nur per `better()`; der alte Edge
+  wird `retired` (Rollback). Optimierer übernimmt keine Kandidaten mit harten Overfitting-Signalen.
+- **Rückwirkend**: Boot-Migration `setup_backtest_edges_v1` (`boot_migrations.py`) importiert alle
+  bestandenen Historien-Einträge mit Parametern und reaktiviert für Setups ohne Edge den robustesten
+  (Prod-Probe: 20 importiert, 6 reaktiviert – u. a. session_open KI-Rev.17, trend_follow KI-Rev.26).
+- **API**: `GET /api/ai/playbook/backtest/edges`, `POST …/edges/activate` (Rollback, Admin),
+  `POST …/edges/recover` (Admin). `reset` deaktiviert Edges nur (bleiben im Register).
+- **UI**: `EdgeRegister.js` im Reiter „KI Trader · Setups“ (aktive Edges, Verlauf, Overfitting-Hinweise,
+  „aktivieren“, „Edges aus Verlauf wiederherstellen“); Ergebniszeilen zeigen die Edge-Entscheidung.
+- Tests: `backend/tests/test_setup_backtest_edges.py` (reine Funktionen + Fluss gegen lokale Mongo:
+  Edge überlebt Fehllauf, schmaler Kandidat ersetzt nicht, robusterer ersetzt, Rollback, stale nach 3,
+  Herausforderer, rückwirkende Wiederherstellung idempotent).
+
+
 ---
 Ursprünglicher Plan (Stand 06.06.2026):
 

@@ -355,6 +355,20 @@ async def migrate_risk_usdt_backfill(db):
     await _mark(db, "risk_usdt_backfill_v1")
 
 
+async def migrate_setup_backtest_edges(db):
+    """Edge-Register (09/2026): früher bestandene Backtest-Sätze aus dem Verlauf
+    von settings.setup_backtest_state rückwirkend ins Register holen; Setups,
+    deren Edge durch spätere Fehlläufe überschrieben wurde, bekommen den
+    robustesten Satz zurück (nächster Lauf prüft ihn zuerst). Einmalig."""
+    if await _done(db, "setup_backtest_edges_v1"):
+        return
+    from services.setup_backtest import edges
+    res = await edges.recover_from_history(db, activate_best=True)
+    logger.info(f"Boot-Migration: Edge-Register – {res['imported']} Edges importiert, "
+                f"reaktiviert: {', '.join(res['activated']) or 'keine'}")
+    await _mark(db, "setup_backtest_edges_v1")
+
+
 async def run_boot_migrations(db, engine):
     for fn, args in ((migrate_cerebras_shutdown, (db,)),
                      (migrate_heatmap_off, (db, engine)),
@@ -369,7 +383,8 @@ async def run_boot_migrations(db, engine):
                      (migrate_ml_findings_decouple, (db,)),
                      (migrate_test_artifacts, (db,)),
                      (migrate_fee_guard_relax, (db, engine)),
-                     (migrate_risk_usdt_backfill, (db,))):
+                     (migrate_risk_usdt_backfill, (db,)),
+                     (migrate_setup_backtest_edges, (db,))):
         try:
             await fn(*args)
         except Exception as e:

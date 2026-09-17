@@ -194,7 +194,7 @@ class TestPlaybookIntegration:
 
     def test_excluded_classes(self):
         from services import setup_asset_class as ac
-        assert ac.setup_allowed("crypto", "fomc_event")
-        assert ac.setup_allowed("indices", "fomc_event")
-        assert not ac.setup_allowed("resources", "fomc_event")
-        assert not ac.setup_allowed("forex", "fomc_event")
+        # Seit 06/2026 sind Event-Setups in ALLEN Klassen erlaubt (Zinsentscheide
+        # bewegen Gold/Öl/Forex genauso) – siehe setup_asset_class.EXCLUDED.
+        for cls in ("crypto", "indices", "resources", "forex"):
+            assert ac.setup_allowed(cls, "fomc_event")

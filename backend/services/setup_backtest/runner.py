@@ -27,7 +27,7 @@ from services import candle_cache
 from services import setup_asset_class as ac
 from services import setup_lifecycle as lifecycle
 from services.candles import CandleArray
-from services.setup_backtest import analysis, detectors, simulator, weights
+from services.setup_backtest import analysis, detectors, edges, simulator, weights
 from services.setup_backtest.detectors import Features
 
 logger = logging.getLogger(__name__)
@@ -245,6 +245,15 @@ async def reset(db, asset_class: Optional[str] = None, setup: Optional[str] = No
         classes = {}
     state["classes"] = classes
     await save_state(db, state)
+    # Edge-Register bleibt als Sicherheitsnetz erhalten (Rollback möglich),
+    # aktive Edges werden aber deaktiviert -> Neustart der Bewertung
+    q: Dict = {"status": "active"}
+    if asset_class:
+        q["asset_class"] = asset_class
+    if setup:
+        q["setup"] = setup
+    await db[edges.COLLECTION].update_many(
+        q, {"$set": {"status": "retired", "retired_at": _now_iso(), "retired_reason": "Reset"}})
     return int(res.deleted_count)
 
 
@@ -257,8 +266,9 @@ def no_edge_line(label: str, cls_state: Optional[Dict]) -> Optional[str]:
     """Prompt-Zeile (rein): Setups, deren regelbasierte Varianten in dieser
     Klasse OHNE Edge blieben – Hinweis für die KI, kein Ausschluss."""
     bad = sorted(sid for sid, e in (cls_state or {}).items()
-                 if isinstance(e, dict) and e.get("status") == "exhausted")
-    # (Feingetunte Setups – status "tuned" – gelten als Setups MIT Edge)
+                 if isinstance(e, dict) and e.get("status") in ("exhausted", "stale"))
+    # (Feingetunte Setups – status "tuned" – gelten als Setups MIT Edge; "stale" =
+    #  Edge mehrfach nicht bestätigt, pausiert, im Register reaktivierbar)
     if not bad:
         return None
     return (f"BACKTEST OHNE EDGE {label} (alle regelbasierten 5m-Varianten IS/OOS negativ, "
@@ -388,7 +398,7 @@ def optimize_score(res: Dict) -> tuple:
     return (int(o.get("trades") or 0), float(o.get("pnl") or 0), int(o.get("winrate") or 0))
 
 
-async def _optimize_setup(job: Dict, cls: str, sid: str, entry: Dict, feats: Dict,
+async def _optimize_setup(job: Dict, db, cls: str, sid: str, entry: Dict, feats: Dict,
                           split_ts: int) -> Dict:
     """Ein Edge-validiertes Setup optimieren. Verschlechtert NIE den Zustand:
     ohne bessere Kandidaten bleibt der bisherige Parameter-Satz/Status stehen."""
@@ -396,7 +406,9 @@ async def _optimize_setup(job: Dict, cls: str, sid: str, entry: Dict, feats: Dic
     job_id = job["id"]
     n_var = len(detectors.VARIANTS[sid])
     vi = int(entry.get("variant") or 0) % n_var
-    base_params = effective_params_of(sid, entry) or dict(detectors.VARIANTS[sid][vi])
+    active = await edges.get_active(db, cls, sid)
+    base_params = ({**active["params"], "name": active.get("name") or "Edge"} if active
+                   else effective_params_of(sid, entry) or dict(detectors.VARIANTS[sid][vi]))
     history = list(entry.get("history") or [])[-9:]
     job["phase"] = f"{label}: {sid} · Optimierer-Basis"
     base_res = await asyncio.to_thread(run_variant, sid, feats, vi, cls, split_ts,
@@ -404,6 +416,7 @@ async def _optimize_setup(job: Dict, cls: str, sid: str, entry: Dict, feats: Dic
     history.append(_hist(base_res, vi, optimize=True, base_run=True))
     tried = 1
     best = None
+    days = int(job["params"].get("days") or DEFAULT_DAYS)
     for params in optimize_candidates(sid, base_params):
         if job.get("cancel"):
             raise asyncio.CancelledError()
@@ -411,8 +424,10 @@ async def _optimize_setup(job: Dict, cls: str, sid: str, entry: Dict, feats: Dic
         res = await asyncio.to_thread(run_variant, sid, feats, vi, cls, split_ts,
                                       job_id, params)
         tried += 1
-        if optimize_better(base_res, res) and (best is None
-                                               or optimize_score(res) > optimize_score(best)):
+        # Overfitting-Bremse: Kandidaten mit harten Signalen (OOS-Abfall, PF,
+        # Winrate deckt CRV nicht) werden nie übernommen
+        if optimize_better(base_res, res) and not edges.overfit_flags(res)["hard"] \
+                and (best is None or optimize_score(res) > optimize_score(best)):
             best = res
     improved = best is not None
     res = best or base_res
@@ -421,9 +436,27 @@ async def _optimize_setup(job: Dict, cls: str, sid: str, entry: Dict, feats: Dic
         entry["tuned"] = dict(best["params"] or {})
         entry["status"] = "tuned"
         entry.update({"name": best["variant_name"], "is": best["is"], "oos": best["oos"],
-                      "min_trades": best.get("min_trades")})
+                      "min_trades": best.get("min_trades"), "stale": 0})
         entry.pop("ai_proposal", None)
         entry.pop("ai_proposal_meta", None)
+        doc = await edges.record(db, cls, sid, edges.summarize(best, "optimize", vi), days=days,
+                                 job_id=job_id, oos_trades=best["oos_trades"])
+        await edges.set_active(db, cls, sid, doc["id"], reason="Optimierer: mehr Trades/Winrate bei >= OOS-PnL")
+        if base_res["passed"]:
+            await edges.record(db, cls, sid, edges.summarize(base_res, "check", vi), days=days, job_id=job_id)
+        await edges.prune(db, cls, sid)
+        entry.update({"edge_id": doc["id"], "robust": doc.get("robust"), "flags": doc.get("flags"),
+                      "confirmations": doc.get("confirmations"), "edge_action": "replace",
+                      "edge_note": "Optimierer: robusterer Satz übernommen"})
+    elif base_res["passed"]:
+        doc = await edges.record(db, cls, sid, edges.summarize(base_res, "check", vi), days=days,
+                                 job_id=job_id, oos_trades=base_res["oos_trades"],
+                                 status="active" if not active else "candidate")
+        if not active:
+            await edges.set_active(db, cls, sid, doc["id"], reason="Optimierer-Basis bestätigt")
+        entry.update({"edge_id": doc["id"], "robust": doc.get("robust"), "flags": doc.get("flags"),
+                      "confirmations": doc.get("confirmations"), "edge_action": "confirm",
+                      "edge_note": "Optimierer: aktiver Edge bestätigt, kein besserer Satz", "stale": 0})
     # Ohne Verbesserung: Status/Parameter unangetastet lassen (kein Downgrade),
     # nur Verlauf/Zeitstempel aktualisieren.
     entry.update({"history": history[-10:], "updated_at": _now_iso(),
@@ -485,11 +518,64 @@ def effective_params_of(setup: str, entry: Optional[Dict]) -> Optional[Dict]:
     return dict(variants[int(entry.get("variant") or 0) % len(variants)])
 
 
+def active_params_of(sid: str, entry: Dict, active: Optional[Dict]) -> Optional[Dict]:
+    """Parameter-Satz, der in diesem Lauf ZUERST geprüft wird (rein): der aktive
+    Edge aus dem Register, sonst (Alt-Stand ohne Register) der bestandene Satz
+    des State-Eintrags."""
+    if active and isinstance(active.get("params"), dict):
+        return {**active["params"], "name": active.get("name") or "Edge"}
+    if isinstance(entry.get("tuned"), dict):
+        return dict(entry["tuned"])
+    if entry.get("status") in PASSED_STATES:
+        p = effective_params_of(sid, entry)
+        if p:
+            return {**p, "name": entry.get("name") or "Edge"}
+    return None
+
+
+def _apply_decision(entry: Dict, decision: Dict, active: Optional[Dict], active_res: Optional[Dict],
+                    cand: Optional[Dict], vi: int) -> Dict:
+    """State-Eintrag nach der Edge-Entscheidung (rein). Rückgabe = `res`, das im
+    Eintrag/in den Ergebniszeilen als Ergebnis dieses Laufs gilt."""
+    action = decision["action"]
+    entry["stale"] = int(decision.get("stale") or 0)
+    entry["edge_action"] = action
+    entry["edge_note"] = decision.get("why")
+    if action in ("adopt", "replace"):
+        res = cand
+        entry.update({"variant": int(res["variant"]), "status": "tuned" if res.get("params") else "passed"})
+        if res.get("params"):
+            entry["tuned"] = res["params"]
+        else:
+            entry.pop("tuned", None)
+        entry.pop("ai_proposal", None)
+        return res
+    if action == "confirm":
+        res = active_res
+        entry.update({"variant": int(res["variant"]), "status": "tuned" if res.get("params") else "passed"})
+        if res.get("params"):
+            entry["tuned"] = res["params"]
+        entry.pop("ai_proposal", None)
+        return res
+    if action == "stale_keep":
+        # Aktiver Edge bleibt gültig: Parameter/Status unverändert, aktueller
+        # (negativer) Lauf nur als Prüfergebnis vermerkt.
+        entry["status"] = "tuned"
+        if not isinstance(entry.get("tuned"), dict) and active and isinstance(active.get("params"), dict):
+            entry["tuned"] = {**active["params"], "name": active.get("name") or "Edge"}
+        entry["last_check"] = {"at": _now_iso(), "is": active_res["is"], "oos": active_res["oos"], "passed": False}
+        return active_res
+    # 'stale' oder 'none': kein Edge fürs Trading
+    return None
+
+
 async def _evaluate_setup(job: Dict, db, cls: str, sid: str, entry: Dict, feats: Dict,
                           split_ts: int, mode: str, ai: Dict, class_passed: int) -> Dict:
-    """Ein Setup einer Klasse komplett bewerten: Varianten(-Schleife), Feintuning,
-    KI-Revision(en). Gibt {'res', 'entry', 'tried', 'ai_rounds', 'ai_proposal'} zurück;
-    `entry` ist der neue Zustand für settings.setup_backtest_state."""
+    """Ein Setup einer Klasse komplett bewerten: aktiven Edge prüfen, Varianten
+    (-Schleife), Feintuning, KI-Revision(en), dann Edge-Entscheidung (edges.decide).
+    Gibt {'res', 'entry', 'tried', 'ai_rounds', 'ai_proposal', 'edge', 'store'} zurück;
+    `entry` ist der neue Zustand für settings.setup_backtest_state, `store`
+    steuert die OOS-Trades fürs Reife-Gate ({'clear': bool, 'trades': [...]})."""
     from services.setup_backtest import revise
     label = ac.LABELS[cls]
     job_id = job["id"]
@@ -498,42 +584,76 @@ async def _evaluate_setup(job: Dict, db, cls: str, sid: str, entry: Dict, feats:
     history = list(entry.get("history") or [])[-9:]
     tried = 0
     res = None
-    # 1) Bereits vorgemerkter KI-Vorschlag bzw. feingetunter Satz: zuerst bestätigen
+    active = await edges.get_active(db, cls, sid)
+    active_res: Optional[Dict] = None
+    cands: List[Dict] = []
+    # 1) Vorgemerkter KI-Vorschlag und der AKTIVE Edge (bzw. Alt-Stand): zuerst prüfen
     proposal = entry.get("ai_proposal") if isinstance(entry.get("ai_proposal"), dict) else None
-    tuned = entry.get("tuned") if isinstance(entry.get("tuned"), dict) else None
-    for params, flag in ((proposal, "ai"), (tuned, "tuned")):
-        if not params or (res is not None and res["passed"]):
+    base_active = active_params_of(sid, entry, active)
+    for params, flag in ((proposal, "ai"), (base_active, "active")):
+        if not params or (flag == "ai" and res is not None and res["passed"]):
             continue
-        job["phase"] = f"{label}: {sid} · {'KI-Vorschlag' if flag == 'ai' else 'Feintuning'} prüfen"
-        res = await asyncio.to_thread(run_variant, sid, feats, vi, cls, split_ts, job_id, params)
+        job["phase"] = f"{label}: {sid} · {'KI-Vorschlag' if flag == 'ai' else 'aktiven Edge'} prüfen"
+        r = await asyncio.to_thread(run_variant, sid, feats, vi, cls, split_ts, job_id, params)
         tried += 1
         meta = entry.get("ai_proposal_meta") if (flag == "ai" and isinstance(entry.get("ai_proposal_meta"), dict)) else {}
-        history.append(_hist(res, vi, **{flag: True}, **{k: meta[k] for k in ("reason", "expect", "base") if meta.get(k)}))
-    # 2) Varianten-Schleife
-    if res is None or not res["passed"]:
-        while True:
-            res = await asyncio.to_thread(run_variant, sid, feats, vi, cls, split_ts, job_id)
+        history.append(_hist(r, vi, **{flag: True}, **{k: meta[k] for k in ("reason", "expect", "base") if meta.get(k)}))
+        if flag == "active":
+            active_res = r
+        elif r["passed"]:
+            cands.append(r)
+        res = r if (res is None or not res["passed"] or (flag == "active" and r["passed"])) else res
+    active_ok = bool(active_res and active_res["passed"])
+    # 2) Varianten-Schleife. Mit gültigem aktivem Edge werden in den Schleifen-
+    #    Modi trotzdem ALLE Basis-Varianten geprüft (bessere Variante finden);
+    #    ohne Edge wie bisher bis zum ersten Bestehen.
+    if not active_ok or mode in ("loop", "ai_loop"):
+        base_fp = edges.fingerprint(base_active) if base_active else None
+        for k in range(n_var if (active_ok or mode != "single") else 1):
+            cur_vi = (vi + k) % n_var
+            if base_fp and edges.fingerprint(detectors.VARIANTS[sid][cur_vi]) == base_fp:
+                continue
+            r = await asyncio.to_thread(run_variant, sid, feats, cur_vi, cls, split_ts, job_id)
             tried += 1
-            history.append(_hist(res, vi))
-            if res["passed"] or mode == "single" or tried >= n_var + (1 if tuned else 0) + (1 if proposal else 0):
+            history.append(_hist(r, cur_vi))
+            if r["passed"]:
+                cands.append(r)
+            if not active_ok and (res is None or not res["passed"]):
+                res, vi = r, cur_vi
+            if r["passed"] and not active_ok:
                 break
-            vi = (vi + 1) % n_var
-    # 3) Feintuning (loop/ai_loop)
-    tuned_now = False
-    if not res["passed"] and mode in ("loop", "ai_loop"):
+    if res is None:
+        res = active_res
+    # 2b) Herausforderer aus dem Register (frühere/abgelöste Edges) auf den
+    #     aktuellen Daten mitprüfen – ein früher breit bestätigter Satz kann so
+    #     den aktiven wieder ablösen (Schleifen-Modi, nur mit aktivem Edge)
+    if active and mode in ("loop", "ai_loop"):
+        for ch in await edges.challengers(db, cls, sid, active):
+            job["phase"] = f"{label}: {sid} · Herausforderer {ch.get('name')} prüfen"
+            r = await asyncio.to_thread(run_variant, sid, feats, int(ch.get("variant") or vi), cls, split_ts, job_id,
+                                        {**ch["params"], "name": ch.get("name") or "Edge"})
+            tried += 1
+            history.append(_hist(r, int(ch.get("variant") or vi), challenger=True))
+            if r["passed"]:
+                cands.append(r)
+    # 3) Feintuning (loop/ai_loop) – nur wenn noch kein Satz besteht
+    if not res["passed"] and not cands and mode in ("loop", "ai_loop"):
         base_idx = best_base_variant(history)
         if base_idx is not None:
             job["phase"] = f"{label}: {sid} · Feintuning"
             tr = await asyncio.to_thread(tune, sid, feats, base_idx, cls, split_ts, job_id)
             tried += tr["tried"]
             if tr["best"]:
-                res, tuned_now = tr["best"], True
+                res = tr["best"]
                 history.append(_hist(res, base_idx, tuned=True))
+                cands.append(res)
     # 4) KI-Revision: ai_loop testet sofort (bis Ziel/Runden), sonst nur vormerken
+    #    – nur wenn in diesem Lauf noch kein Satz besteht (Edge-Verbesserung
+    #    bestehender Edges übernimmt der Modus "optimize").
     ai_rounds = 0
     new_proposal = None
     version = int(entry.get("ai_version") or 0)
-    if not res["passed"] and ai["ai_revise"]:
+    if not res["passed"] and not cands and ai["ai_revise"]:
         max_rounds = ai["ai_rounds"] if (mode == "ai_loop" and class_passed < ai["target_passed"]) else 1
         cur_entry = dict(entry)
         while ai_rounds < max_rounds and not res["passed"]:
@@ -558,17 +678,56 @@ async def _evaluate_setup(job: Dict, db, cls: str, sid: str, entry: Dict, feats:
             # nicht blind vom letzten Vorschlag – der Fallback bleibt der letzte Vorschlag.
             cur_entry = {**cur_entry, "ai_proposal": prop["params"]}
             if res["passed"]:
-                tuned_now = True
                 new_proposal = None
-    # 5) Zustand
-    if res["passed"]:
-        entry.update({"variant": vi if not tuned_now else int(res["variant"]),
-                      "status": "tuned" if (tuned_now or res.get("params")) else "passed"})
-        if res.get("params"):
-            entry["tuned"] = res["params"]
-        else:
-            entry.pop("tuned", None)
-        entry.pop("ai_proposal", None)
+                cands.append(res)
+    # 5) Edge-Entscheidung: aktiver Edge vs. bester anderer bestandener Satz
+    active_sum = edges.summarize(active_res, "check", int(active_res["variant"])) if active_res else None
+    active_ref = ({k: active.get(k) for k in ("params", "fingerprint", "name", "variant", "is", "oos",
+                                               "min_trades", "robust", "flags")} | {"passed": True}) if active else None
+    if active_ref is None and active_res and active_res["passed"]:
+        # Alt-Stand ohne Register: der bestandene bisherige Satz zählt als Kandidat
+        cands.insert(0, active_res)
+        active_sum = None
+    fp_active = (active_ref or {}).get("fingerprint")
+    cand_sums = [(r, edges.summarize(r, "ai" if r.get("params") and str(r.get("variant_name", "")).startswith("KI-Rev") else
+                                     ("tuned" if r.get("params") else "variant"), int(r["variant"])))
+                 for r in cands]
+    cand_sums = [(r, s) for r, s in cand_sums if s["fingerprint"] != fp_active]
+    cand_sums.sort(key=lambda p: p[1]["robust"], reverse=True)
+    ref = active_sum if (active_sum and active_sum.get("passed")) else active_ref
+    best_pair = next((p for p in cand_sums if ref is None or edges.better(p[1], ref)[0]),
+                     cand_sums[0] if cand_sums else None)
+    decision = edges.decide(active_ref, active_sum, best_pair[1] if best_pair else None,
+                            stale=int(entry.get("stale") or 0))
+    chosen = _apply_decision(entry, decision, active_ref, active_res, best_pair[0] if best_pair else None, vi)
+    store = {"clear": True, "trades": []}
+    edge_doc = None
+    if decision["action"] in ("adopt", "replace"):
+        edge_doc = await edges.record(db, cls, sid, best_pair[1], days=int(job["params"].get("days") or DEFAULT_DAYS),
+                                      job_id=job_id, oos_trades=chosen["oos_trades"], status="candidate")
+        await edges.set_active(db, cls, sid, edge_doc["id"], reason=decision["why"])
+        if active_sum:
+            await edges.record(db, cls, sid, active_sum, days=int(job["params"].get("days") or DEFAULT_DAYS), job_id=job_id)
+        store["trades"] = chosen["oos_trades"]
+        res = chosen
+    elif decision["action"] == "confirm":
+        edge_doc = await edges.record(db, cls, sid, active_sum, days=int(job["params"].get("days") or DEFAULT_DAYS),
+                                      job_id=job_id, oos_trades=active_res["oos_trades"], status="active")
+        store["trades"] = active_res["oos_trades"]
+        res = active_res
+    elif decision["action"] == "stale_keep":
+        await edges.mark_stale(db, cls, sid, decision["stale"])
+        store = {"clear": False, "trades": []}      # letzte bestätigte OOS-Trades behalten
+        res = active_res
+    elif decision["action"] == "stale":
+        await edges.mark_stale(db, cls, sid, decision["stale"])
+        entry.update({"status": "stale", "variant": vi})
+        entry.pop("tuned", None)
+        if new_proposal:
+            entry["ai_proposal"] = new_proposal["params"]
+            entry["ai_proposal_meta"] = {k: new_proposal.get(k) for k in
+                                         ("desc", "reason", "expect", "changes", "base", "model",
+                                          "version", "at", "live_revision")}
     else:
         nxt = next_variant(vi, n_var)
         if mode in ("loop", "ai_loop"):
@@ -583,16 +742,32 @@ async def _evaluate_setup(job: Dict, db, cls: str, sid: str, entry: Dict, feats:
         else:
             entry.pop("ai_proposal", None)
             entry.pop("ai_proposal_meta", None)
+    # Alle anderen bestandenen Sätze dieses Laufs ins Register (Kandidaten/Herausforderer)
+    for _r, s in cand_sums:
+        if s["fingerprint"] != (edge_doc or {}).get("fingerprint"):
+            await edges.record(db, cls, sid, s, days=int(job["params"].get("days") or DEFAULT_DAYS), job_id=job_id)
+    if cand_sums:
+        await edges.prune(db, cls, sid)
+    if edge_doc:
+        entry.update({"edge_id": edge_doc.get("id"), "robust": edge_doc.get("robust"),
+                      "flags": edge_doc.get("flags"), "confirmations": edge_doc.get("confirmations")})
     entry["ai_version"] = version
-    entry.update({"name": res["variant_name"], "is": res["is"], "oos": res["oos"],
-                  "min_trades": res.get("min_trades"),
-                  "history": history[-10:], "updated_at": _now_iso(),
+    shown = res if decision["action"] != "stale_keep" else None
+    entry.update({"history": history[-10:], "updated_at": _now_iso(),
                   "symbols": sorted(feats), "signals": res["signals"],
                   "split_at": _iso(split_ts),
-                  "diag": {"is": analysis.compact(res["diag"]["is"]), "oos": analysis.compact(res["diag"]["oos"])},
                   "lessons": analysis.lessons(history, detectors.param_defaults(sid))})
+    if shown is not None:
+        entry.update({"name": res["variant_name"], "is": res["is"], "oos": res["oos"],
+                      "min_trades": res.get("min_trades"),
+                      "diag": {"is": analysis.compact(res["diag"]["is"]), "oos": analysis.compact(res["diag"]["oos"])}})
+    edge_info = {"action": decision["action"], "why": decision["why"], "stale": entry.get("stale", 0),
+                 "robust": entry.get("robust"), "flags": entry.get("flags"),
+                 "confirmations": entry.get("confirmations"),
+                 "candidate": (best_pair[1]["name"] if best_pair else None),
+                 "candidate_oos": (best_pair[1]["oos"] if best_pair else None)}
     return {"res": res, "entry": entry, "tried": tried, "ai_rounds": ai_rounds,
-            "ai_proposal": new_proposal}
+            "ai_proposal": new_proposal, "edge": edge_info, "store": store}
 
 
 async def run_job(job_id: str, db, asset_classes: List[str], days: int = DEFAULT_DAYS,
@@ -652,7 +827,7 @@ async def run_job(job_id: str, db, asset_classes: List[str], days: int = DEFAULT
                                          "status": "no_edge_skip",
                                          "note": "kein validierter Edge – Optimierer überspringt"})
                             continue
-                        ev = await _optimize_setup(job, cls, sid, cur, feats, split_ts)
+                        ev = await _optimize_setup(job, db, cls, sid, cur, feats, split_ts)
                         res, entry = ev["res"], ev["entry"]
                         cls_state[sid] = entry
                         if res["passed"] and res["oos_trades"]:
@@ -675,6 +850,9 @@ async def run_job(job_id: str, db, asset_classes: List[str], days: int = DEFAULT
                                      "diag": {"is": analysis.compact(res["diag"]["is"]),
                                               "oos": analysis.compact(res["diag"]["oos"])},
                                      "lessons": [], "ai_proposal": None,
+                                     "edge": {"action": entry.get("edge_action"), "why": entry.get("edge_note"),
+                                              "robust": entry.get("robust"), "flags": entry.get("flags"),
+                                              "confirmations": entry.get("confirmations"), "stale": entry.get("stale", 0)},
                                      "note": (f"OOS {base_o.get('trades', 0)}T/{base_o.get('winrate', 0)}% "
                                               f"→ {res['oos'].get('trades', 0)}T/{res['oos'].get('winrate', 0)}%"
                                               if ev["improved"] else "kein besserer Parameter-Satz gefunden")})
@@ -691,18 +869,21 @@ async def run_job(job_id: str, db, asset_classes: List[str], days: int = DEFAULT
                     if res["passed"]:
                         class_passed += 1
                     cls_state[sid] = entry
-                    await db[weights.COLLECTION].delete_many({"asset_class": cls, "setup": sid})
-                    if res["passed"] and res["oos_trades"]:
+                    store = ev.get("store") or {"clear": True, "trades": []}
+                    if store.get("clear"):
+                        await db[weights.COLLECTION].delete_many({"asset_class": cls, "setup": sid})
+                    if store.get("trades"):
                         now = _now_iso()
                         await db[weights.COLLECTION].insert_many(
-                            [{**t, "run_at": now} for t in res["oos_trades"]])
+                            [{**t, "run_at": now, "edge_id": entry.get("edge_id")} for t in store["trades"]])
                     rows.append({"asset_class": cls, "setup": sid, "status": entry["status"],
                                  "variant": res["variant_name"], "variant_idx": int(entry.get("variant") or 0),
                                  "variants_total": res["variants_total"], "tried": ev["tried"],
                                  "is": res["is"], "oos": res["oos"], "signals": res["signals"],
                                  "min_trades": res.get("min_trades"),
-                                 "stored": len(res["oos_trades"]) if res["passed"] else 0,
+                                 "stored": len(store.get("trades") or []),
                                  "symbols": sorted(feats), "ai_rounds": ev["ai_rounds"],
+                                 "edge": ev.get("edge"),
                                  "diag": entry.get("diag"), "lessons": entry.get("lessons") or [],
                                  "ai_proposal": ({k: v for k, v in ev["ai_proposal"].items() if k != "params"}
                                                  if ev["ai_proposal"] else None)})
@@ -718,12 +899,18 @@ async def run_job(job_id: str, db, asset_classes: List[str], days: int = DEFAULT
                                     asset_class=cls)
                     continue
                 n_pass = sum(1 for r in rows if r.get("asset_class") == cls and r.get("status") in PASSED_STATES)
+                n_keep = sum(1 for r in rows if r.get("asset_class") == cls
+                             and (r.get("edge") or {}).get("action") in ("stale_keep", "confirm"))
+                n_repl = sum(1 for r in rows if r.get("asset_class") == cls
+                             and (r.get("edge") or {}).get("action") == "replace")
                 n_test = sum(1 for r in rows if r.get("asset_class") == cls and r.get("is"))
                 n_prop = sum(1 for r in rows if r.get("asset_class") == cls and r.get("ai_proposal"))
                 if n_test:
                     await _feed(db, (f"Backtest-Seeding {label} ({days} Tage, {MODE_LABELS.get(mode, mode)}): "
                                      f"{n_test} Setups getestet, {n_pass} mit Edge in In- und Out-of-Sample"
                                      + (f", {n_prop} KI-Revisionen für den nächsten Lauf vorgemerkt" if n_prop else "")
+                                     + (f", {n_keep} bestehende Edges bestätigt/behalten" if n_keep else "")
+                                     + (f", {n_repl} durch robustere Sätze ersetzt" if n_repl else "")
                                      + f". Backtest-Trades zählen ×{weights.BACKTEST_WEIGHT:g} und gedeckelt fürs "
                                      f"Reife-Gate – Live erst nach {weights.MIN_REAL_TRADES}+ profitablen echten "
                                      "Paper-Trades."),
@@ -775,5 +962,7 @@ async def overview(db) -> Dict:
                       "min_real_trades": weights.MIN_REAL_TRADES,
                       "max_backtest_weighted": weights.MAX_BACKTEST_WEIGHTED,
                       "min_oos_trades": MIN_OOS_TRADES, "min_is_trades": MIN_IS_TRADES,
-                      "is_share": IS_SHARE, "default_days": DEFAULT_DAYS, "max_days": MAX_DAYS},
+                      "is_share": IS_SHARE, "default_days": DEFAULT_DAYS, "max_days": MAX_DAYS,
+                      "edge_stale_max": edges.STALE_MAX, "edge_replace_margin": edges.REPLACE_MARGIN,
+                      "edge_min_trades_ratio": edges.MIN_TRADES_RATIO},
             "running": running_job() is not None}

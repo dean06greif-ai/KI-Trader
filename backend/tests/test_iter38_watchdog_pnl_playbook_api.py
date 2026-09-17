@@ -174,7 +174,9 @@ class TestPlaybook:
         assert isinstance(d["live_blocked"], dict)
         mat = d["maturity"]
         assert isinstance(mat, list)
-        assert len(mat) == 16, f"{len(mat)} Einträge: {[m.get('setup') for m in mat]}"
+        # Ein Eintrag je Setup der Bibliothek (Event-Setups seit 06/2026 dabei)
+        from services import ai_playbook
+        assert len(mat) == len(ai_playbook.SETUPS), f"{len(mat)} Einträge: {[m.get('setup') for m in mat]}"
         for m in mat:
             assert m.get("phase") in PHASES, m
             assert "paper_since_demotion" in m, m

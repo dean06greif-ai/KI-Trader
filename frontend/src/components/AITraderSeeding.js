@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, X, Repeat, ArrowRight, ArrowCounterClockwise, Clock, Brain, Cloud, Desktop, Gear, Lightning, CalendarCheck } from '@phosphor-icons/react';
 import LocalWorkerPanel from './LocalWorkerPanel';
 import EventSetupSeeding, { EVENT_META, eventCell } from './EventSetupSeeding';
+import EdgeRegister from './EdgeRegister';
 import { toast } from '../lib/toast';
 import { authHeaders, isAdmin } from '../auth';
 
@@ -19,6 +20,16 @@ const STATUS = {
   optimized: { l: 'verbessert (Optimierer)', c: '#00FF66' },
   kept: { l: 'kein besserer Satz – Stand behalten', c: '#8FB3FF' },
   no_edge_skip: { l: 'kein Edge – Optimierer überspringt', c: '#FFB020' },
+  stale: { l: 'Edge mehrfach nicht bestätigt – pausiert (Register: reaktivierbar)', c: '#FF3366' },
+};
+const EDGE_ACTION = {
+  adopt: 'neuer Edge ins Register',
+  confirm: 'aktiver Edge bestätigt',
+  replace: 'robusterer Satz übernommen (alter im Register)',
+  stale_keep: 'diesmal ohne Edge – aktiver Edge bleibt gültig',
+  stale: 'zu oft ohne Edge – pausiert',
+  rollback: 'per Rollback reaktiviert',
+  recovered: 'rückwirkend wiederhergestellt',
 };
 const STATE_KEY = 'ai_seed_ui_v1';
 const fmtTs = (ts) => (ts ? String(ts).slice(0, 16).replace('T', ' ') : '—');
@@ -124,7 +135,7 @@ export default function AITraderSeeding() {
   };
 
   const resetCls = async (cls) => {
-    if (!window.confirm(`Setup-Backtest für ${CLASS_LABELS[cls]} zurücksetzen (Trades + Varianten-Stand + KI-Vorschläge)?`)) return;
+    if (!window.confirm(`Setup-Backtest für ${CLASS_LABELS[cls]} zurücksetzen (Trades + Varianten-Stand + KI-Vorschläge)? Edges bleiben im Register (reaktivierbar), werden aber deaktiviert.`)) return;
     await fetch(`${API_URL}/api/ai/playbook/backtest/reset`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ asset_class: cls }) });
     toast.success('Zurückgesetzt');
     load();
@@ -467,6 +478,13 @@ export default function AITraderSeeding() {
                         )}
                       </div>
                     )}
+                    {r.edge?.action && EDGE_ACTION[r.edge.action] && (
+                      <div style={{ opacity: 0.85, fontSize: 10, marginTop: 2, color: r.edge.action === 'replace' || r.edge.action === 'adopt' ? '#00E5A0' : r.edge.action === 'stale' ? '#FF3366' : '#8FB3FF' }}
+                        title={r.edge.why || ''} data-testid={`ai-seed-edge-${r.asset_class}-${r.setup}`}>
+                        Edge: {EDGE_ACTION[r.edge.action]}{r.edge.stale ? ` (${r.edge.stale}/${info?.rules?.edge_stale_max || 3})` : ''}{r.edge.robust != null ? ` · Robustheit ${Number(r.edge.robust).toFixed(3)}` : ''}
+                        {(r.edge.flags?.hard || []).length > 0 && <span style={{ color: '#FF3366' }}> · Overfitting-Verdacht</span>}
+                      </div>
+                    )}
                     {lastLesson(r) && (
                       <div style={{ opacity: 0.75, fontSize: 10, marginTop: 2 }} title={(r.lessons || []).join('\n')} data-testid={`ai-seed-lesson-${r.asset_class}-${r.setup}`}>
                         Lernschleife: {lastLesson(r)}
@@ -525,6 +543,8 @@ export default function AITraderSeeding() {
           </div>
         </div>
       )}
+
+      <EdgeRegister admin={admin} running={!!job} onChanged={refreshInfo} />
 
       {info?.classes && Object.keys(info.classes).length > 0 && admin && (
         <div className="bt-tools" style={{ marginTop: 8 }} data-testid="ai-seed-reset-row">
