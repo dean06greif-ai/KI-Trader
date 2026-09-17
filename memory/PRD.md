@@ -98,3 +98,24 @@ ai_decisions, settings), `AI_TRADER_LOCAL_DISABLE=1`; KEINE Bitunix-/IBKR-/Teleg
 - 17.09. Rev. 2 Regime-Plan: Freigabe zweistufig (shadow -> active) und nachweisgebunden (Kalibrierung + Ablation + Mindestabschnitte,
   Evidence-Hash, history), kein TTL-Feld (Frische-Regel im Resolver), KI-Trader kann Umschaltung vorschlagen (suggest) oder mit
   24 h Karenz selbst vollziehen (auto) über bestehenden Proposal-Mechanismus; Trader kann jederzeit manuell schalten/widerrufen.
+
+## Umgesetzt (17.09.2026 – Branch `dein-branch-name3`: PLAN_REGIME_BRUECKE komplett, PLAN_LEKTIONS_BILANZ verifiziert)
+- Logbuch: `FORTSCHRITT_UMSETZUNG.md` (Repo-Root) – Stand je Baustein, Live-Checks, Regressionsläufe.
+- PLAN_LEKTIONS_BILANZ (A/B/C): war bereits im Branch fertig; Tests grün, Endpunkt + UI vorhanden → bestätigt.
+- PLAN_REGIME_BRUECKE B1–B4: Backend war vorhanden (`services/regime_release.py`, `services/structural_regime.py`,
+  Endpunkte in `routers/regime_lab.py`, Gate-Quelle in `regime_gate.py`, Prompt/Snapshot/Fingerprint in `ai_engine.py`),
+  aber ohne Frontend. Ergänzt:
+  - Backend: Scope `both` → `combined` bei Freigabe; Trader-„Übernehmen“ eines `regime_release`-Vorschlags prüft das
+    Stichproben-Gate erneut (400 statt Umgehung); `regime_gate_source="own"` als Default in `bitunix_trade.DEFAULT`;
+    `/api/autotrade/regime_phase/{sym}` liefert `lab{stage,phase,state}`; `scripts/live_check_regime_bridge.py` (lesend).
+  - Frontend NEU `components/RegimeRelease.js/.css`: Badge + Knöpfe Shadow/Wirksam/Widerruf + History (RegimeLab),
+    `StructuralStagePanel` + Select `structural_regime_autonomy` im KI-Trader-Setup, lesbare Vorschlagskarte,
+    Regime-Quelle-Select im Auto-Trade-Modal, Rewards-Tabelle nach Struktur-Regime, Policy-Untertitel „Lab-Modell …“.
+  - Tests: `tests/test_regime_release.py` (+2), Testing-Agent Iteration 4 (Backend 10/10, Frontend alle Kriterien).
+- Umgebung Preview: `AI_TRADER_LOCAL_DISABLE=1` gegen Produktiv-Atlas; `memory/test_credentials.md` angelegt.
+
+## Backlog / Nächste Schritte (Stand 17.09.2026)
+- Rollout Regime-Brücke Phase 1–2 (Trader): 1h-Krypto-Analyse anlegen, Regime „behalten“, Kalibrierung + Ablation
+  laufen lassen → Knopf „Beobachten (Shadow)“ grün → Shadow aktivieren; ≥ 30 Trades sammeln.
+- Optional: Marktphasen-Filter-Block im Auto-Trade-Modal auch für paper/off anzeigen (heute nur LIVE, Bestand).
+- B5 Strukturelle Lektionen erst nach 4 Wochen Shadow-Daten.
