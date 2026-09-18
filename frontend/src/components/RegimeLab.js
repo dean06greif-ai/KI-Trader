@@ -171,12 +171,22 @@ function AblationCompare({ selCoins, timeframe, days, trainPct, engineConfig, jo
 }
 
 // ---------------- EMA-Perioden-Vergleich (Detektor 'ema') ----------------
-function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineConfig, jobBlocked }) {
+function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineConfig, setEngineConfig, jobBlocked }) {
   const [periods, setPeriods] = useState('5, 9, 14');
   const [job, setJob] = useState(null);
   const [result, setResult] = useState(null);
+  const [applied, setApplied] = useState(false);
   const timer = useRef(null);
   useEffect(() => () => clearInterval(timer.current), []);
+
+  // Sieger-Periode direkt in die Engine-Feineinstellungen (Detektor 'ema') –
+  // danach „Regime suchen & speichern“ neu starten.
+  const apply = () => {
+    if (!result?.best_period || !setEngineConfig) return;
+    setEngineConfig({ ...(engineConfig || {}), detector: 'ema', ema_regime_days: result.best_period });
+    setApplied(true);
+    toast.success(`Detektor 'ema' mit Periode ${result.best_period}d übernommen – jetzt oben „Regime suchen & speichern“ starten`);
+  };
 
   const start = async () => {
     if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
@@ -289,9 +299,15 @@ function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineConfig, j
             {result.selection_basis === 'train_only' ? ' · Auswahl hier: nur Training, kein inneres Fenster' : ''}).
             {result.attempt_no ? ` Versuch #${result.attempt_no} auf diesem Holdout.` : ''}
             {result.evidence === 'insufficient_evidence' ? ' ⚠ Zu wenig Holdout-Daten – Ergebnis nicht belastbar.' : ''}
-            {' '}Tipp: die Sieger-Periode oben unter
-            Engine-Feineinstellungen → „EMA-Regime: Periode" eintragen und die
-            Analyse mit Detektor 'ema' starten.
+            {' '}
+            {result.best_period && setEngineConfig ? (
+              <button className="opt-chip" onClick={apply} disabled={applied} data-testid="ema-compare-apply">
+                {applied ? '✓ Übernommen' : `Beste Periode (${result.best_period}d) übernehmen`}
+              </button>
+            ) : (
+              <>Tipp: die Sieger-Periode oben unter Engine-Feineinstellungen → „EMA-Regime: Periode" eintragen und die
+                Analyse mit Detektor 'ema' starten.</>
+            )}
           </div>
         </div>
       )}
@@ -1391,8 +1407,22 @@ export default function RegimeLab({ onClose }) {
           )}
         </div>
 
+        <div className="opt-row" data-testid="regime-research-intro">
+          <div className="opt-label">1b · DETEKTOR-FORSCHUNG (WELCHE REGIME-ERKENNUNG IST DIE BESTE?)</div>
+          <div className="opt-small">
+            „Regime suchen &amp; speichern“ oben ist <b>regelbasiert</b> (Regression/ADX/EMA auf den Kerzen) – deshalb
+            in Sekunden fertig, kein Training. Die drei Werkzeuge hier unten <b>testen verschiedene Erkennungs-Einstellungen
+            gegeneinander</b> und speichern KEINE Analyse: Maßstab ist <b>Live=Final</b> = wie oft die Live-Sicht (ohne
+            Blick in die Zukunft) dasselbe Regime sieht wie die finale Rückschau, geprüft auf dem unangetasteten Holdout.
+            Ablauf: Vergleich/Kalibrierung laufen lassen → <b>„Übernehmen“</b> (landet in den Engine-Feineinstellungen) →
+            oben <b>„Regime suchen &amp; speichern“ erneut</b> starten → die Analyse erscheint unter „2 · Gespeicherte
+            Analysen“ und kann am Chart geprüft, behalten und für Strategie-Suche/Walk-Forward genutzt werden.
+            Es läuft immer nur EIN Regime-Lab-Job gleichzeitig.
+          </div>
+        </div>
+
         <EmaPeriodCompare selCoins={selCoins} timeframe={timeframe} days={days}
-          trainPct={trainPct} engineConfig={engineConfig} jobBlocked={jobBlocked} />
+          trainPct={trainPct} engineConfig={engineConfig} setEngineConfig={setEngineConfig} jobBlocked={jobBlocked} />
 
         <KombiAutoCalibrate selCoins={selCoins} timeframe={timeframe} days={days}
           trainPct={trainPct} engineConfig={engineConfig}
