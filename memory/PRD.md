@@ -119,3 +119,35 @@ ai_decisions, settings), `AI_TRADER_LOCAL_DISABLE=1`; KEINE Bitunix-/IBKR-/Teleg
   laufen lassen → Knopf „Beobachten (Shadow)“ grün → Shadow aktivieren; ≥ 30 Trades sammeln.
 - Optional: Marktphasen-Filter-Block im Auto-Trade-Modal auch für paper/off anzeigen (heute nur LIVE, Bestand).
 - B5 Strukturelle Lektionen erst nach 4 Wochen Shadow-Daten.
+
+## Umgesetzt (18.09.2026 – Backup, Entry-Modus, Historie, Panel-Bugs; Branch conflict_170926_2220)
+- **Backup nach Supabase Storage**: `services/supabase_storage.py` (gemeinsamer REST-Client), `services/backup.py`
+  (täglicher Dump kritischer Collections als json_util+gzip in Bucket `mongo-backups`, 30 Tage Aufbewahrung,
+  State `settings.backup_state`, Config `settings.backup_config`; Restore = Trockenlauf/`apply` per `_id`-Upsert,
+  löscht nie). API `GET/POST /api/maintenance/backup[/list|/run|/config|/restore]` (Admin für Schreibzugriffe).
+  CLI `backend/scripts/backup_restore.py list|backup|download|restore [--apply]`. UI: KI-Labor → Speicher →
+  `BackupCard.js`. Loop-Start in `server.py` (15 min nach Boot, dann alle 24 h).
+- **Retention verschärft** (`services/retention.py`): ai_decisions 14 d, ai_chat_archive 30 d, Backtest-/Optimizer-
+  Rohdaten 21 d, Ghost-Trades 60 d, local_jobs 7 d; neu gedeckelt: job_series, ai_token_usage, copilot_chat,
+  pending_entry_orders. Untergrenzen unverändert.
+- **Entry-Modus** (`services/entry_policy.py`, Setting `entry_mode`: ai | aggressive | conservative, Default ai =
+  bisheriges Verhalten): Setup→Entry-Stil-Tabelle (level/confirm/either), Prompt-Zusatz je Modus, Nachkontrolle
+  in `ai_engine` (konservativ: Limit→Market). UI: KI-Setup → „Entry-Modus (Limit/Market)“ (`ai-entry-mode-select`).
+  Befund: Engine konnte beides bereits (Key-Level-Limit + Sweep-Trigger→Market); es fehlte der Setup-Bezug.
+  Maker-Order-Modus (Post-Only, Fee) ist unabhängig davon.
+- **Kerzen-Historie Backtester**: statische Deckel 110/150/180 in `core/instruments.py` → `BITUNIX_HIST_CAP_DAYS=365`
+  (Bitunix liefert ab Listing, Stand 09/2026 XAU ~217 d, XAG ~249 d, CL/QQQ/SPY ~176-178 d, wächst täglich).
+  `candle_cache`: erschöpfte Quelle 24 h merken (`_HEAD_EXHAUSTED`), Archiv-Rückfall; `runner.history_note` nennt
+  die tatsächlich geladenen Tage. `services/candle_archive.py`: dauerhaftes `<symbol>.npy.gz` in Bucket
+  `candle-archive` (Download bei Cache-Miss, gedrosselter Upload bei persist) – Render-Disk ist flüchtig.
+  Kein freier Anbieter hat 365 d 1m/5m für diese Instrumente (Yahoo 1m 30 d / 5m 60 d / 1h 730 d).
+- **Frontend**: `.ai-panel-header`/`.ai-status-row` `flex: 0 0 auto` (Schrumpfen bei Setup/Analyse behoben),
+  `.ai-analysis-section` scrollt selbst, `PolicyReportCard` aus `PerformanceAnalytics` in den Analyse-Tab verschoben.
+- Tests: `backend/tests/test_backup_entry_mode_history.py` (16 Unit), Testing-Agent Iteration 5 (Backend 13/13,
+  Frontend alle Kriterien; `tests/test_iter5_backup_entry_mode_api.py`).
+
+## Backlog (Stand 18.09.2026)
+- P1 Bulk-Daten (Regime-Charts, Backtest-Rohdaten) aus Mongo nach Supabase (Audit 03) – Storage-Client liegt bereit.
+- P1 Kerzen-Archiv auch aus dem lokalen Worker befüllen (Upload) und Render-Env `CANDLE_ARCHIVE=0` zum Abschalten.
+- P2 Paper-Fill der KI-Limit-Orders auf Kerzen-Low/High statt 12-s-Tick-Preis (Paper/Live-Abweichung).
+- P2 Atlas M10 erst, wenn Retention + Auslagerung nicht mehr reichen.
