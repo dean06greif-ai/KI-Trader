@@ -1,0 +1,1155 @@
+From 017ca812b24582921b303d9776ebbbab90c46e2f Mon Sep 17 00:00:00 2001
+From: E1 <e1@emergent.sh>
+Date: Fri, 18 Sep 2026 11:32:21 +0000
+Subject: [PATCH] =?UTF-8?q?Regime-Lab:=20detektor-spezifische=20Kalibrieru?=
+ =?UTF-8?q?ng,=20Kalibrierungs-Verlauf,=20Erkennungs-Qualit=C3=A4t=20je=20?=
+ =?UTF-8?q?Anlageklasse,=20Status-Fallback=20nach=20Neustart=20+=20Regress?=
+ =?UTF-8?q?ionstests?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ REGIME_LAB_KLARHEIT_UND_KALIBRIERUNG.md       |  99 ++++++++
+ backend/routers/regime_lab.py                 |  31 ++-
+ backend/services/regime_quality.py            | 105 ++++++++
+ backend/services/regime_truth.py              |  77 +++++-
+ backend/tests/test_regime_lab_clarity.py      | 238 ++++++++++++++++++
+ .../components/RegimeCalibrationHistory.js    |  63 +++++
+ .../src/components/RegimeCalibrationResult.js |  69 +++++
+ .../src/components/RegimeEngineSettings.js    |  47 ++--
+ frontend/src/components/RegimeLab.css         |  28 +++
+ frontend/src/components/RegimeLab.js          |  42 +++-
+ frontend/src/components/RegimeQualityCard.js  |  74 ++++++
+ 11 files changed, 828 insertions(+), 45 deletions(-)
+ create mode 100644 REGIME_LAB_KLARHEIT_UND_KALIBRIERUNG.md
+ create mode 100644 backend/services/regime_quality.py
+ create mode 100644 backend/tests/test_regime_lab_clarity.py
+ create mode 100644 frontend/src/components/RegimeCalibrationHistory.js
+ create mode 100644 frontend/src/components/RegimeCalibrationResult.js
+ create mode 100644 frontend/src/components/RegimeQualityCard.js
+
+diff --git a/REGIME_LAB_KLARHEIT_UND_KALIBRIERUNG.md b/REGIME_LAB_KLARHEIT_UND_KALIBRIERUNG.md
+new file mode 100644
+index 0000000..2e7a5d7
+--- /dev/null
++++ b/REGIME_LAB_KLARHEIT_UND_KALIBRIERUNG.md
+@@ -0,0 +1,99 @@
++# Regime-Lab: Klarheit, Kalibrierungs-Fix & Erkennungs-Qualität (Stand 06/2026)
++
++Antworten auf die Fragen „Ich verstehe das Regime-Lab null“, „Kalibrierung wird nicht
++angezeigt“, „Wie sehe ich, wie gut die Regime-Erkennung für Krypto ist?“ und „Funktioniert
++das Backup langfristig?“ – inkl. der umgesetzten Änderungen (Branch `regime-lab-clarity`).
++
++---
++
++## 1. Was macht das Regime-Lab eigentlich? (2 Welten)
++
++| | **A · Regime erkennen & speichern** (Schritt 1) | **B · Erkennung verbessern** (Schritt 1b + „Wissenschaftlich kalibrieren“) |
++|---|---|---|
++| Was passiert | Regelbasierte Erkennung auf den Kerzen (Umkehrpunkte / EMA / Kombi / Regression). Kein Training → in Sekunden fertig. | Mehrere Einstellungen werden gegeneinander getestet (gegen eine Referenz oder gegen die Live=Final-Kennzahl). |
++| Ergebnis | **Gespeicherte Analyse** (Chart, Regime-Karten, Erkennungs-Qualität, Strategie-Suche, Walk-Forward). | **Empfohlene Einstellungen** – keine Analyse! Erst „Übernehmen“ + Schritt A neu starten macht sie wirksam. |
++| Wo sichtbar | „2 · Gespeicherte Analysen“ → „3 · Analyse“. | Direkt unter dem Werkzeug + neu: **Kalibrierungs-Verlauf** (gespeichert, jederzeit erneut übernehmbar). |
++
++**Das war die Verwirrung:** „Regime suchen“ war schnell, weil es keine Optimierung ist. Die
++Kalibrierung lief separat, ihr Ergebnis war nur eine kleine Textzeile – und ging nach einem
++Neustart / Schließen des Panels verloren. Und (siehe 2.) sie hat für die Standard-Detektoren
++faktisch nichts verändert.
++
++## 2. Bug: „Wissenschaftlich kalibrieren“ war für reactive / ema / kombi wirkungslos
++
++`services/regime_truth.calibrate` durchlief IMMER den Suchraum des alten Regressions-Detektors
++(`trend_t`, `adx_min`, `hysteresis`, `confirm_days`, `confidence_min`, `smooth_days`). Diese
++Parameter werden von den Detektoren **reactive (Standard), ema und kombi gar nicht benutzt**
++(`eng.CONFIG_GROUPS`). Folge: alle Kandidaten lieferten identische Labels → „vorher = nachher“.
++Zusätzlich fehlte `detector` in `best_config` und die UI ersetzte die komplette Konfiguration →
++der gewählte Detektor (z.B. „kombi“) wurde beim Übernehmen still auf „reactive“ zurückgesetzt.
++
++**Fix (rückwärtskompatibel):**
++- `regime_truth.calibration_grid(detector, base, days)`: Suchraum je Detektor
++  - reactive: `rev_atr_mult`, `persist_candles`, `side_leg_atr_mult`, `min_phase_days`, `min_hold_days`
++  - ema: `ema_regime_days`, `ema_regime_thr`, `ema_regime_smooth_days`, `ema_regime_persist_days`, `min_phase_days`, `min_hold_days`
++  - kombi: `kombi_ema_days`, `kombi_thr`, `kombi_slope_days`, `kombi_persist_days`, `kombi_dominance_days`, `min_phase_days`, `min_hold_days`
++  - regression: unverändert (alter Suchraum, identische Ergebnisse)
++- Bericht enthält jetzt `detector`, `tuned_keys`, `changes` (nur geänderte Parameter), `improved`.
++- `best_config` enthält `detector`; die UI **ergänzt** die Konfiguration statt sie zu ersetzen.
++- Synthetischer Test (klare Phasen, 1h): balancierte Richtungs-Treffer reactive 12 → 53, ema 40 → 75,
++  kombi 23 → 52; regression unverändert 25 → 33.
++
++**Wichtig für „Lokal“:** Der lokale Worker enthält eine Kopie von `services/` → nach dem Deploy
++das Worker-Paket neu herunterladen (Ausführung → Lokal → ⚙ Verwalten → Download) und den Worker
++neu starten, sonst rechnet er weiterhin mit dem alten Kalibrierungs-Code.
++
++## 3. „Ergebnis wird nicht angezeigt“ – Ursachen & Fixes
++
++1. **Server-Neustart während/nach dem Job** (Render-Deploy, Idle): die In-Memory-Jobliste ist leer,
++   `GET /status/{job}` lieferte 404 – die UI wertete das als „fertig ohne Ergebnis“ und blendete
++   still alles aus. → Status-Fallback liest jetzt auch `regime_calibrations` und `regime_lab_runs`;
++   die UI meldet unbekannte Jobs als Fehler statt zu schweigen (Kalibrierung, EMA-Vergleich,
++   Kombi-Auto-Kalibrierung, Ablation).
++2. **Ergebnis nur flüchtig:** neu `GET /api/regime-lab/calibrations` + UI „Kalibrierungs-Verlauf“
++   (Cloud + lokaler Worker), mit „Übernehmen“.
++3. **Ergebnis unlesbar:** neue Vorher/Nachher-Tabelle (`RegimeCalibrationResult.js`) mit den
++   geänderten Parametern und dem verwendeten Detektor.
++
++## 4. „Wie gut ist die Regime-Erkennung für Krypto?“ → Erkennungs-Qualität
++
++Neu in jeder geöffneten Analyse (oben, je Bereich „kombiniert“ / je Coin): **Erkennungs-Qualität**
++mit Note **gut / mittel / schwach** je Anlageklasse (Krypto, Forex, …), berechnet aus bereits
++gespeicherten Kennzahlen (`services/regime_quality.py`, funktioniert auch für alte Analysen):
++
++- **Holdout Live=Final** (Hauptkennzahl): wie oft die Live-Erkennung (ohne Zukunftswissen) im
++  unangetasteten Testzeitraum dieselbe Richtung sieht wie die finale Rückschau. ≥65 % gut, ≥50 % mittel.
++- Gesamt Live=Final, Trend-Treffer, Ø Phasendauer, Ø Erkennungs-Verzögerung, Verstöße, Holdout-Kerzen.
++- Ohne belastbaren Holdout (<200 Kerzen) wird der Gesamtwert mit Warnhinweis verwendet.
++
++**Vorgehen „ultimative Krypto-Erkennung“:** Krypto-Coins wählen → Training 75 % → Detektor wählen →
++„Wissenschaftlich kalibrieren“ (Referenz: Rückblick) → „Regime suchen & speichern“ → Qualität lesen →
++mit anderem Detektor / EMA-Vergleich / Kombi-Auto-Kalibrierung wiederholen → Analyse mit der besten
++Holdout-Qualität behalten und für Strategie-Suche / Walk-Forward nutzen.
++
++## 5. Backup – läuft das langfristig ohne weiteres Zutun?
++
++**Ja, sofern das Backend läuft.** `services/backup.py` startet 15 min nach Boot und prüft alle
++30 min, ob das letzte Backup ≥ 24 h alt ist → Dump der kritischen Collections (Settings, Trades,
++Lektionen, Regime-Analysen, Kalibrierungen, Strategien …) als `backup_YYYYMMDD_HHMMSS.json.gz`
++in den privaten Supabase-Bucket `mongo-backups`, Aufbewahrung 30 Tage. Standard `enabled=true`,
++nichts weiter zu aktivieren. Voraussetzungen/Checks:
++
++- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` auf Render gesetzt (sind es).
++- Kontrolle: `GET /api/maintenance/backup` → `last_run.at` sollte < 24 h alt sein, `last_error` leer;
++  `GET /api/maintenance/backup/list` zeigt die Dateien im Bucket. In der UI: Wartung → Backup-Karte.
++- Manuell: `POST /api/maintenance/backup/run` (Admin).
++- Wiederherstellung: `POST /api/maintenance/backup/restore` erst als Trockenlauf (`apply=false`),
++  dann `apply=true` – ersetzt nur per `_id`, löscht nie.
++- Einzige echte Lücke: schläft der Render-Dienst regelmäßig < 15 min nach dem Start wieder ein
++  (Free-Tier-Idle), kommt der erste Lauf nie zustande. Da der KI-Trader dauerhaft läuft, ist das im
++  Normalbetrieb kein Problem – bei Zweifel `last_run` prüfen.
++
++## 6. Geänderte / neue Dateien
++
++- `backend/services/regime_truth.py` – detektor-spezifischer Suchraum, `config_changes`, erweiterter Bericht
++- `backend/services/regime_quality.py` – NEU: Erkennungs-Qualität je Anlageklasse
++- `backend/routers/regime_lab.py` – Status-Fallback, `GET /calibrations`, `quality` in `GET /{aid}`
++- `backend/tests/test_regime_lab_clarity.py` – NEU: 25 Regressionstests (unit, ohne Netzwerk)
++- `frontend/src/components/RegimeCalibrationResult.js`, `RegimeCalibrationHistory.js`, `RegimeQualityCard.js` – NEU
++- `frontend/src/components/RegimeEngineSettings.js`, `RegimeLab.js`, `RegimeLab.css` – Einbindung + Texte
+diff --git a/backend/routers/regime_lab.py b/backend/routers/regime_lab.py
+index 5b0239a..c58da84 100644
+--- a/backend/routers/regime_lab.py
++++ b/backend/routers/regime_lab.py
+@@ -16,7 +16,7 @@ from core.utils import _clean, _job_public, _watch_job_task
+ from services import ram_queue
+ from services import regime_lab as lab
+ from services.ai_engine import ai_engine
+-from services import regime_opt, research_dataset, research_validation, strategy_release
++from services import regime_opt, regime_quality, research_dataset, research_validation, strategy_release
+ from services.bitunix_trade import DEFAULT_COIN_CFG
+ from strategies.registry import registry as strategy_registry
+ 
+@@ -196,18 +196,39 @@ async def job_status(job_id: str):
+     job = lab.JOBS.get(job_id)
+     if not job:
+         # Nach einem Backend-Neustart (Deploy) ist die In-Memory-Job-Liste
+-        # leer, die fertige Analyse aber gespeichert. Fallback: Analyse mit
+-        # dieser job_id suchen, damit die Oberfläche sauber abschließt.
++        # leer, das fertige Ergebnis aber gespeichert. Fallback: Analyse,
++        # Kalibrierung oder Forschungs-Lauf mit dieser job_id suchen, damit
++        # die Oberfläche sauber abschließt statt still zu verschwinden.
+         doc = await state.db.regime_analyses.find_one({"job_id": job_id},
+                                                       {"id": 1, "kind": 1})
+         if doc:
+             return {"id": job_id, "kind": "analysis", "status": "done",
+                     "progress": 100, "phase": "Fertig",
+                     "result": {"kind": "analysis", "analysis_id": doc["id"]}}
++        cal = await state.db.regime_calibrations.find_one({"id": job_id}, {"_id": 0})
++        if cal:
++            return {"id": job_id, "kind": "calibration", "status": "done",
++                    "progress": 100, "phase": "Fertig",
++                    "result": {"kind": "calibration", "report": cal.get("report")}}
++        run = await state.db.regime_lab_runs.find_one({"id": job_id}, {"_id": 0})
++        if run:
++            return {"id": job_id, "kind": (run.get("result") or {}).get("kind"),
++                    "status": "done", "progress": 100, "phase": "Fertig",
++                    "result": run.get("result")}
+         raise HTTPException(status_code=404, detail="Job nicht gefunden")
+     return _job_public(job)
+ 
+ 
++@router.get("/api/regime-lab/calibrations")
++async def list_calibrations(limit: int = 20):
++    """Verlauf der wissenschaftlichen Kalibrierungen (Cloud + lokaler Worker):
++    kompakt, ohne per_symbol-Rohdaten – zum Nachschlagen und erneuten Übernehmen."""
++    rows = await state.db.regime_calibrations.find(
++        {}, {"_id": 0, "report.per_symbol": 0}) \
++        .sort("created_at", -1).to_list(max(1, min(int(limit), 100)))
++    return {"calibrations": rows}
++
++
+ @router.get("/api/regime-lab/active")
+ async def active_job():
+     j = lab.running_job()
+@@ -372,7 +393,9 @@ async def get_analysis(aid: str):
+             changed = True
+     if changed:
+         await state.db.regime_analyses.replace_one({"id": aid}, doc)
+-    return {"analysis": _clean(doc)}
++    # Erkennungs-Qualität (Live=Final im Holdout je Anlageklasse) – wird aus
++    # den gespeicherten Kennzahlen berechnet, gilt daher auch für Bestandsanalysen.
++    return {"analysis": _clean(doc), "quality": regime_quality.summarize(doc)}
+ 
+ 
+ @router.get("/api/regime-lab/{aid}/transitions")
+diff --git a/backend/services/regime_quality.py b/backend/services/regime_quality.py
+new file mode 100644
+index 0000000..fc6971c
+--- /dev/null
++++ b/backend/services/regime_quality.py
+@@ -0,0 +1,105 @@
++"""Erkennungs-Qualität einer gespeicherten Regime-Analyse – EINE Kennzahl-
++Übersicht je Anlageklasse ("Wie gut ist die Regime-Erkennung für Krypto?").
++
++Reine Funktionen auf dem Analyse-Dokument, keine DB/IO. Nutzt ausschließlich
++Kennzahlen, die die Analyse bereits speichert (live_agreement, validation,
++corrections) – funktioniert damit auch für Bestandsanalysen.
++
++Hauptkennzahl: Live=Final im Holdout (Richtung). Sie sagt, wie oft die
++kausale Live-Erkennung (ohne Zukunftswissen) im unangetasteten Testzeitraum
++dasselbe Regime sieht wie die rückblickend korrigierte Final-Sicht.
++"""
++from typing import Dict, List, Optional
++
++from services.setup_asset_class import LABELS, asset_class_of
++
++GRADE_GOOD = 65.0   # ab hier: fürs Umschalten im Paper-/Live-Trading brauchbar
++GRADE_OK = 50.0     # dazwischen: nur mit Bestätigung/Filter nutzen
++MIN_HOLDOUT_BARS = 200
++
++
++def _mean(vals: List[Optional[float]]) -> Optional[float]:
++    xs = [float(v) for v in vals if v is not None]
++    return round(sum(xs) / len(xs), 1) if xs else None
++
++
++def grade_of(holdout_pct: Optional[float], overall_pct: Optional[float],
++             holdout_bars: int) -> Dict:
++    """Note + Klartext. Ohne Holdout zählt der Gesamtwert, aber mit Hinweis."""
++    basis = "holdout" if holdout_pct is not None and holdout_bars >= MIN_HOLDOUT_BARS else "overall"
++    pct = holdout_pct if basis == "holdout" else overall_pct
++    if pct is None:
++        return {"grade": "unbewertet", "basis": basis, "pct": None,
++                "text": "Keine Live=Final-Kennzahl vorhanden (nur Detektoren reactive/ema/kombi liefern sie)."}
++    if pct >= GRADE_GOOD:
++        g, txt = "gut", "Live-Erkennung trifft die finalen Phasen zuverlässig – fürs Umschalten geeignet."
++    elif pct >= GRADE_OK:
++        g, txt = "mittel", "Live-Erkennung trifft die Richtung mehrheitlich, aber mit spürbarer Verzögerung/Flackern – nur mit Bestätigung nutzen."
++    else:
++        g, txt = "schwach", "Live-Erkennung liegt zu oft daneben – Detektor/Einstellungen ändern (Kalibrierung, EMA-Vergleich) und neu analysieren."
++    if basis == "overall":
++        txt += " Achtung: kein belastbarer Holdout – Wert stammt aus dem Gesamtzeitraum (inkl. Training)."
++    return {"grade": g, "basis": basis, "pct": pct, "text": txt}
++
++
++def _symbol_row(sym: str, entry: Dict) -> Optional[Dict]:
++    ag = (entry or {}).get("live_agreement") or {}
++    val = (entry or {}).get("validation") or {}
++    corr = (entry or {}).get("corrections") or {}
++    if not ag and not val:
++        return None
++    return {"symbol": sym, "asset_class": asset_class_of(sym),
++            "holdout_direction_pct": ag.get("holdout_direction_pct"),
++            "direction_pct": ag.get("direction_pct"),
++            "trend_hit_pct": ag.get("trend_hit_pct"),
++            "holdout_bars": int(ag.get("holdout_bars") or 0),
++            "violation_bars_pct": val.get("violation_bars_pct"),
++            "avg_segment_days": val.get("avg_segment_days"),
++            "validation_passed": val.get("passed"),
++            "avg_delay_days": corr.get("avg_delay_days")}
++
++
++def _aggregate(rows: List[Dict]) -> Dict:
++    hb = sum(r["holdout_bars"] for r in rows)
++    hold = _mean([r["holdout_direction_pct"] for r in rows])
++    overall = _mean([r["direction_pct"] for r in rows])
++    return {"n_symbols": len(rows),
++            "holdout_direction_pct": hold, "direction_pct": overall,
++            "trend_hit_pct": _mean([r["trend_hit_pct"] for r in rows]),
++            "violation_bars_pct": _mean([r["violation_bars_pct"] for r in rows]),
++            "avg_segment_days": _mean([r["avg_segment_days"] for r in rows]),
++            "avg_delay_days": _mean([r["avg_delay_days"] for r in rows]),
++            "validation_passed": all(r["validation_passed"] is not False for r in rows),
++            "holdout_bars": hb, **grade_of(hold, overall, hb)}
++
++
++def summarize_scope(per_symbol: Dict[str, Dict]) -> Optional[Dict]:
++    """Qualität für einen Bereich (kombiniert oder je Coin): je Symbol, je
++    Anlageklasse gepoolt und gesamt."""
++    rows = [r for r in (_symbol_row(s, e) for s, e in (per_symbol or {}).items()) if r]
++    if not rows:
++        return None
++    by_class: Dict[str, List[Dict]] = {}
++    for r in rows:
++        by_class.setdefault(r["asset_class"], []).append(r)
++    classes = {cls: {"label": LABELS.get(cls, cls), **_aggregate(rs)}
++               for cls, rs in by_class.items()}
++    return {"overall": _aggregate(rows), "classes": classes, "symbols": rows,
++            "thresholds": {"good": GRADE_GOOD, "ok": GRADE_OK,
++                           "min_holdout_bars": MIN_HOLDOUT_BARS}}
++
++
++def summarize(doc: Dict) -> Dict:
++    """Qualität je Bereich der Analyse: 'combined' + 'per_coin:<SYMBOL>'."""
++    out: Dict[str, Dict] = {}
++    comb = (doc.get("combined") or {}).get("per_symbol")
++    if comb:
++        q = summarize_scope(comb)
++        if q:
++            out["combined"] = q
++    for sym, pc in (doc.get("per_coin") or {}).items():
++        if pc and not pc.get("error"):
++            q = summarize_scope({sym: pc})
++            if q:
++                out[f"per_coin:{sym}"] = q
++    return out
+diff --git a/backend/services/regime_truth.py b/backend/services/regime_truth.py
+index 1f9f7de..89c5174 100644
+--- a/backend/services/regime_truth.py
++++ b/backend/services/regime_truth.py
+@@ -436,6 +436,60 @@ def _uniq_clip(vals, lo, hi):
+     return out
+ 
+ 
++def calibration_grid(detector: str, base: Dict, d: float) -> Dict[str, List[float]]:
++    """Suchraum je Erkennungs-Prinzip: NUR Parameter, die der gewählte
++    Detektor tatsächlich nutzt (vgl. eng.CONFIG_GROUPS). Vorher wurde immer
++    der Regressions-Suchraum durchlaufen – bei reactive/ema/kombi änderten
++    sich dadurch die Labels nicht und 'kalibriert' war wirkungslos."""
++    hold = {"min_hold_days": _uniq_clip([base["min_hold_days"], d * 0.006, d * 0.012,
++                                         d * 0.024, d * 0.045], 1.0, 30.0)}
++    phase = {"min_phase_days": _uniq_clip([base["min_phase_days"], 0.0, d * 0.006,
++                                           d * 0.012, d * 0.024], 0.0, 90.0)}
++    if detector == "regression":
++        return {
++            "smooth_days": _uniq_clip([base["smooth_days"], d * 0.002, d * 0.0055, d * 0.010], 0.1, 15.0),
++            "trend_t": _uniq_clip([base["trend_t"], 1.2, 1.6, 2.0, 2.5, 3.2], 0.5, 10.0),
++            "hysteresis": _uniq_clip([base["hysteresis"], 0.15, 0.3, 0.45], 0.0, 0.9),
++            "confirm_days": _uniq_clip([base["confirm_days"], d * 0.003, d * 0.008, d * 0.015], 0.25, 20.0),
++            **hold,
++            "adx_min": _uniq_clip([base["adx_min"], 10.0, 18.0, 25.0], 0.0, 60.0),
++            "confidence_min": _uniq_clip([base["confidence_min"], 0.45, 0.55, 0.65], 0.0, 0.95),
++        }
++    if detector == "ema":
++        return {
++            "ema_regime_days": _uniq_clip([base["ema_regime_days"], 5.0, 9.0, 14.0, 21.0], 2.0, 100.0),
++            "ema_regime_thr": _uniq_clip([base["ema_regime_thr"], 0.10, 0.18, 0.30, 0.45], 0.05, 1.0),
++            "ema_regime_smooth_days": _uniq_clip([base["ema_regime_smooth_days"], 0.5, 1.0, 2.0], 0.25, 10.0),
++            "ema_regime_persist_days": _uniq_clip([base["ema_regime_persist_days"], 0.5, 1.0, 2.0], 0.0, 30.0),
++            **phase, **hold,
++        }
++    if detector == "kombi":
++        return {
++            "kombi_ema_days": _uniq_clip([base["kombi_ema_days"], 9.0, 14.0, 21.0], 2.0, 100.0),
++            "kombi_thr": _uniq_clip([base["kombi_thr"], 0.10, 0.18, 0.30], 0.05, 1.0),
++            "kombi_slope_days": _uniq_clip([base["kombi_slope_days"], 3.0, 5.0, 8.0], 0.5, 20.0),
++            "kombi_persist_days": _uniq_clip([base["kombi_persist_days"], 0.5, 1.0, 2.0], 0.0, 30.0),
++            "kombi_dominance_days": _uniq_clip([base["kombi_dominance_days"], 0.0, 3.0, 6.0], 0.0, 15.0),
++            **phase, **hold,
++        }
++    return {  # reactive (Standard): Umkehrpunkte
++        "rev_atr_mult": _uniq_clip([base["rev_atr_mult"], 1.5, 2.0, 3.0, 4.0, 6.0], 0.5, 15.0),
++        "persist_candles": _uniq_clip([base["persist_candles"], 2, 3, 5, 8], 1, 20),
++        "side_leg_atr_mult": _uniq_clip([base["side_leg_atr_mult"], 1.0, 1.5, 2.5], 0.5, 6.0),
++        **phase, **hold,
++    }
++
++
++def config_changes(baseline_cfg: Dict, best_cfg: Dict) -> List[Dict]:
++    """Nur die tatsächlich geänderten Parameter (für die Anzeige)."""
++    out = []
++    for k in sorted(best_cfg):
++        a, b = baseline_cfg.get(k), best_cfg.get(k)
++        if a is None or abs(float(a) - float(b)) > 1e-9:
++            out.append({"key": k, "from": a, "to": b})
++    return out
++
++
+ def calibrate(histories: Dict[str, List[Dict]], timeframe: str,
+               engine_config: Dict, source: str = "centered",
+               stop: Callable = None, progress: Callable = None) -> Optional[Dict]:
+@@ -471,7 +525,7 @@ def calibrate(histories: Dict[str, List[Dict]], timeframe: str,
+     def evaluate(ov: Dict) -> Dict:
+         per, scores = {}, []
+         for sym, candles in histories.items():
+-            f = features_for(sym, ov["smooth_days"])
++            f = features_for(sym, ov.get("smooth_days", base["smooth_days"]))
+             cfg = eng.resolve_config({**base_user, **ov}, timeframe, len(candles))
+             ids, _c = eng.classify_arrays(f, cfg)
+             live = [None if x < 0 else int(x) for x in ids]
+@@ -495,21 +549,14 @@ def calibrate(histories: Dict[str, List[Dict]], timeframe: str,
+         summary["score"] = round(float(np.mean(scores)), 2)
+         return {"score": float(np.mean(scores)), "summary": summary, "per_symbol": per}
+ 
+-    grid = {
+-        "smooth_days": _uniq_clip([base["smooth_days"], d * 0.002, d * 0.0055, d * 0.010], 0.1, 15.0),
+-        "trend_t": _uniq_clip([base["trend_t"], 1.2, 1.6, 2.0, 2.5, 3.2], 0.5, 10.0),
+-        "hysteresis": _uniq_clip([base["hysteresis"], 0.15, 0.3, 0.45], 0.0, 0.9),
+-        "confirm_days": _uniq_clip([base["confirm_days"], d * 0.003, d * 0.008, d * 0.015], 0.25, 20.0),
+-        "min_hold_days": _uniq_clip([base["min_hold_days"], d * 0.006, d * 0.012,
+-                                     d * 0.024, d * 0.045], 1.0, 30.0),
+-        "adx_min": _uniq_clip([base["adx_min"], 10.0, 18.0, 25.0], 0.0, 60.0),
+-        "confidence_min": _uniq_clip([base["confidence_min"], 0.45, 0.55, 0.65], 0.0, 0.95),
+-    }
++    detector = str(base.get("detector") or "reactive")
++    grid = calibration_grid(detector, base, d)
+     cur = {k: (base[k] if k != "min_hold_days" else min(base[k], 30.0)) for k in grid}
+     total_evals = 2 * sum(len(v) for v in grid.values())
+     done_evals = 0
+ 
+     baseline = evaluate(cur)
++    baseline_cur = dict(cur)
+     best_score = baseline["score"]
+     best_eval = baseline
+     for sweep in range(2):
+@@ -530,21 +577,27 @@ def calibrate(histories: Dict[str, List[Dict]], timeframe: str,
+                     best_eval = ev
+                     cur = trial
+ 
++    tuned = {k: round(float(v), 4) for k, v in cur.items()}
+     best_config = {
+         "auto_adapt": False, "adapt_profile": "off", "regime_mode": mode,
++        "detector": detector,
+         "horizons_days": base["horizons_days"],
+         "vol_ref_days": base["vol_ref_days"],
+         "vol_window_days": base["vol_window_days"],
+         "vol_smooth_days": base["vol_smooth_days"],
+         "gate_timeout_days": base["gate_timeout_days"],
+         "validate_min_segment_days": base["validate_min_segment_days"],
+-        **{k: round(float(v), 4) for k, v in cur.items()},
++        **tuned,
+     }
+     return {"truth_source": source, "regime_mode": mode, "timeframe": timeframe,
++            "detector": detector,
+             "total_days": round(d, 1), "symbols": list(histories.keys()),
+             "evals": done_evals,
+             "baseline": baseline["summary"], "best": best_eval["summary"],
+             "per_symbol": best_eval["per_symbol"],
+             "best_config": best_config,
++            "tuned_keys": list(grid.keys()),
++            "changes": config_changes(baseline_cur, tuned),
++            "improved": bool(best_eval["score"] > baseline["score"] + 1e-6),
+             "objective": ("balancierte Richtungs-Trefferquote vs. Referenz "
+                           "minus Wechsel-/Verzögerungs-/Verpasst-Strafen")}
+diff --git a/backend/tests/test_regime_lab_clarity.py b/backend/tests/test_regime_lab_clarity.py
+new file mode 100644
+index 0000000..42761f8
+--- /dev/null
++++ b/backend/tests/test_regime_lab_clarity.py
+@@ -0,0 +1,238 @@
++"""Regime-Lab Klarheit (Kalibrierung + Erkennungs-Qualität) – Regressionstests.
++
++Hintergrund: „Wissenschaftlich kalibrieren“ durchlief bisher IMMER den
++Suchraum des Regressions-Detektors. Mit den Standard-Detektoren reactive/ema/
++kombi änderte sich dadurch nichts an den Labels (wirkungslos), und die
++übernommene best_config verlor den gewählten Detektor. Diese Tests sichern:
++
++- Suchraum je Detektor enthält nur Parameter, die der Detektor nutzt
++  (eng.CONFIG_GROUPS), plus die gemeinsamen Wechsel-/Phasen-Parameter
++- Regressions-Detektor: Suchraum unverändert (Rückwärtskompatibilität)
++- best_config enthält den Detektor; Bericht enthält tuned_keys/changes/improved
++- Kalibrierung verbessert (oder hält) den Score bei reactive/ema/kombi
++- regime_quality: Pooling je Anlageklasse, Noten-Schwellen, Holdout-Basis
++- status-Fallback nach Neustart liefert Kalibrierungen/Läufe statt 404
++- GET /api/regime-lab/calibrations existiert und liegt VOR der {aid}-Route
++"""
++import asyncio
++
++import numpy as np
++import pytest
++
++from services import regime_engine as eng
++from services import regime_quality as rq
++from services import regime_truth as rt
++
++
++# ------------------------------ Helpers ---------------------------------------
++def make_candles(closes, ts0=1_700_000_000_000, step_ms=3_600_000, noise=0.004, seed=7):
++    rng = np.random.default_rng(seed)
++    out = []
++    for i, c in enumerate(closes):
++        c = float(c) * (1.0 + rng.normal(0, noise))
++        out.append({"timestamp": ts0 + i * step_ms, "open": c * 0.999,
++                    "high": c * 1.004, "low": c * 0.996, "close": c, "volume": 100.0})
++    return out
++
++
++def synth_closes(segments, start=100.0, bars_per_day=24):
++    closes = [start]
++    for days, drift in segments:
++        per_bar = (1.0 + drift / 100.0) ** (1.0 / bars_per_day)
++        for _ in range(int(days * bars_per_day)):
++            closes.append(closes[-1] * per_bar)
++    return closes
++
++
++SEGMENTS = [(20, 1.2), (15, 0.0), (20, -1.1), (10, 0.0), (25, 0.9),
++            (15, -0.8), (15, 0.0), (20, 1.0)]
++
++
++@pytest.fixture(scope="module")
++def histories():
++    return {"BTCUSDT": make_candles(synth_closes(SEGMENTS))}
++
++
++def _base(detector, n=3400):
++    return eng.resolve_config({"detector": detector, "regime_mode": 3}, "1h", n)
++
++
++COMMON = {"min_hold_days", "min_phase_days"}
++
++
++# ------------------------------ Suchraum je Detektor ---------------------------
++class TestCalibrationGrid:
++    @pytest.mark.parametrize("detector", ["reactive", "ema", "kombi", "regression"])
++    def test_grid_keys_belong_to_detector(self, detector):
++        grid = rt.calibration_grid(detector, _base(detector), 140.0)
++        assert grid, "Suchraum darf nicht leer sein"
++        for key in grid:
++            if key in COMMON:
++                continue
++            group = eng.CONFIG_GROUPS.get(key)
++            assert group is not None, f"{key} ist keine bekannte Engine-Einstellung"
++            assert group["detectors"] is None or detector in group["detectors"], \
++                f"{key} wirkt nicht im Detektor {detector}"
++
++    def test_regression_grid_unchanged(self):
++        grid = rt.calibration_grid("regression", _base("regression"), 140.0)
++        assert set(grid) == {"smooth_days", "trend_t", "hysteresis", "confirm_days",
++                             "min_hold_days", "adx_min", "confidence_min"}
++
++    def test_reactive_grid_has_no_regression_only_keys(self):
++        grid = rt.calibration_grid("reactive", _base("reactive"), 140.0)
++        assert not ({"trend_t", "adx_min", "hysteresis", "confirm_days",
++                     "confidence_min", "smooth_days"} & set(grid))
++        assert {"rev_atr_mult", "persist_candles"} <= set(grid)
++
++    def test_grid_values_sorted_unique_and_contain_base(self):
++        base = _base("ema")
++        grid = rt.calibration_grid("ema", base, 140.0)
++        for key, vals in grid.items():
++            assert vals == sorted(set(vals))
++            assert any(abs(v - float(base[key])) < 1e-6 or key == "min_hold_days" for v in vals)
++
++
++# ------------------------------ Kalibrierung End-to-End ------------------------
++class TestCalibrateDetectorAware:
++    @pytest.mark.parametrize("detector", ["reactive", "ema", "kombi"])
++    def test_calibrate_tunes_detector_and_keeps_it(self, histories, detector):
++        rep = rt.calibrate(histories, "1h", {"detector": detector, "regime_mode": 3}, "centered")
++        assert rep is not None
++        assert rep["detector"] == detector
++        assert rep["best_config"]["detector"] == detector, "Detektor darf beim Übernehmen nicht verloren gehen"
++        n = len(histories["BTCUSDT"])
++        assert set(rep["tuned_keys"]) == set(rt.calibration_grid(detector, _base(detector, n), n / 24.0))
++        assert isinstance(rep["changes"], list) and "improved" in rep
++        assert rep["best"]["score"] >= rep["baseline"]["score"] - 1e-6
++        for c in rep["changes"]:
++            assert c["key"] in rep["tuned_keys"]
++            assert rep["best_config"][c["key"]] == c["to"]
++
++    def test_calibrate_improves_reactive_on_clear_phases(self, histories):
++        # Vorher wirkungslos (identischer Score) – jetzt muss sich der Score
++        # mit klaren synthetischen Phasen spürbar verbessern.
++        rep = rt.calibrate(histories, "1h", {"detector": "reactive", "regime_mode": 3}, "centered")
++        assert rep["improved"] is True
++        assert rep["best"]["balanced_direction_pct"] > rep["baseline"]["balanced_direction_pct"]
++
++    def test_calibrate_regression_backward_compatible(self, histories):
++        rep = rt.calibrate(histories, "1h", {"detector": "regression", "regime_mode": 3}, "centered")
++        assert rep["detector"] == "regression"
++        assert {"trend_t", "adx_min", "hysteresis"} <= set(rep["best_config"])
++        n = len(histories["BTCUSDT"])
++        grid = rt.calibration_grid("regression", _base("regression", n), n / 24.0)
++        assert rep["evals"] == 2 * sum(len(v) for v in grid.values())
++
++    def test_best_config_resolves_cleanly(self, histories):
++        rep = rt.calibrate(histories, "1h", {"detector": "kombi", "regime_mode": 3}, "centered")
++        cfg = eng.resolve_config(rep["best_config"], "1h", 3400)
++        assert cfg["detector"] == "kombi"
++        assert cfg["auto_adapt"] is False
++
++    def test_cancel_returns_none(self, histories):
++        assert rt.calibrate(histories, "1h", {"detector": "ema"}, "centered", stop=lambda: True) is None
++
++
++class TestConfigChanges:
++    def test_only_changed_keys(self):
++        ch = rt.config_changes({"a": 1.0, "b": 2.0}, {"a": 1.0, "b": 3.0, "c": 4.0})
++        assert [c["key"] for c in ch] == ["b", "c"]
++        assert ch[0] == {"key": "b", "from": 2.0, "to": 3.0}
++
++
++# ------------------------------ Erkennungs-Qualität ----------------------------
++def _entry(hold, overall, trend=70.0, hbars=500, viol=3.0, seg=9.0, delay=1.2, passed=True):
++    return {"live_agreement": {"holdout_direction_pct": hold, "direction_pct": overall,
++                               "trend_hit_pct": trend, "holdout_bars": hbars},
++            "validation": {"violation_bars_pct": viol, "avg_segment_days": seg, "passed": passed},
++            "corrections": {"avg_delay_days": delay}}
++
++
++class TestRegimeQuality:
++    def test_grade_thresholds(self):
++        assert rq.grade_of(70.0, 60.0, 500)["grade"] == "gut"
++        assert rq.grade_of(55.0, 60.0, 500)["grade"] == "mittel"
++        assert rq.grade_of(40.0, 60.0, 500)["grade"] == "schwach"
++        assert rq.grade_of(None, None, 0)["grade"] == "unbewertet"
++
++    def test_without_holdout_falls_back_to_overall_with_warning(self):
++        g = rq.grade_of(None, 70.0, 0)
++        assert g["basis"] == "overall" and g["grade"] == "gut"
++        assert "kein belastbarer Holdout" in g["text"]
++
++    def test_thin_holdout_uses_overall(self):
++        g = rq.grade_of(90.0, 40.0, 50)
++        assert g["basis"] == "overall" and g["grade"] == "schwach"
++
++    def test_pooling_by_asset_class(self):
++        q = rq.summarize_scope({"BTCUSDT": _entry(70.0, 65.0), "ETHUSDT": _entry(60.0, 55.0),
++                                "EURUSD": _entry(40.0, 45.0)})
++        assert set(q["classes"]) == {"crypto", "forex"}
++        crypto = q["classes"]["crypto"]
++        assert crypto["label"] == "Krypto" and crypto["n_symbols"] == 2
++        assert crypto["holdout_direction_pct"] == 65.0 and crypto["grade"] == "gut"
++        assert q["classes"]["forex"]["grade"] == "schwach"
++        assert q["overall"]["n_symbols"] == 3
++        assert q["thresholds"]["good"] == rq.GRADE_GOOD
++
++    def test_summarize_doc_scopes(self):
++        doc = {"combined": {"per_symbol": {"BTCUSDT": _entry(66.0, 60.0)}},
++               "per_coin": {"BTCUSDT": {**_entry(50.0, 52.0), "model": {}},
++                            "SOLUSDT": {"error": "zu wenig Daten"}}}
++        q = rq.summarize(doc)
++        assert set(q) == {"combined", "per_coin:BTCUSDT"}
++        assert q["combined"]["overall"]["grade"] == "gut"
++        assert q["per_coin:BTCUSDT"]["overall"]["grade"] == "mittel"
++
++    def test_legacy_doc_without_metrics(self):
++        assert rq.summarize({"combined": {"per_symbol": {"BTCUSDT": {"segments": []}}}}) == {}
++        assert rq.summarize({}) == {}
++
++
++# ------------------------------ Router: Status-Fallback + Route-Reihenfolge -----
++class _Coll:
++    def __init__(self, doc=None):
++        self.doc = doc
++
++    async def find_one(self, *_a, **_k):
++        return self.doc
++
++
++class _DB:
++    def __init__(self, **colls):
++        self.regime_analyses = colls.get("regime_analyses", _Coll())
++        self.regime_calibrations = colls.get("regime_calibrations", _Coll())
++        self.regime_lab_runs = colls.get("regime_lab_runs", _Coll())
++
++
++class TestStatusFallback:
++    def _status(self, monkeypatch, db, job_id="j1"):
++        from core import state
++        from routers import regime_lab as router
++        monkeypatch.setattr(state, "db", db)
++        monkeypatch.setattr(router.lab, "JOBS", {})
++        return asyncio.run(router.job_status(job_id))
++
++    def test_calibration_found_after_restart(self, monkeypatch):
++        rep = {"best_config": {"detector": "ema"}}
++        out = self._status(monkeypatch, _DB(regime_calibrations=_Coll({"id": "j1", "report": rep})))
++        assert out["status"] == "done" and out["kind"] == "calibration"
++        assert out["result"]["report"] == rep
++
++    def test_lab_run_found_after_restart(self, monkeypatch):
++        res = {"kind": "ema_compare", "rows": []}
++        out = self._status(monkeypatch, _DB(regime_lab_runs=_Coll({"id": "j1", "result": res})))
++        assert out["status"] == "done" and out["result"] == res
++
++    def test_unknown_job_404(self, monkeypatch):
++        from fastapi import HTTPException
++        with pytest.raises(HTTPException) as ei:
++            self._status(monkeypatch, _DB())
++        assert ei.value.status_code == 404
++
++    def test_calibrations_route_before_aid_route(self):
++        from routers import regime_lab as router
++        paths = [r.path for r in router.router.routes]
++        assert "/api/regime-lab/calibrations" in paths
++        assert paths.index("/api/regime-lab/calibrations") < paths.index("/api/regime-lab/{aid}")
+diff --git a/frontend/src/components/RegimeCalibrationHistory.js b/frontend/src/components/RegimeCalibrationHistory.js
+new file mode 100644
+index 0000000..ca0a936
+--- /dev/null
++++ b/frontend/src/components/RegimeCalibrationHistory.js
+@@ -0,0 +1,63 @@
++import React, { useCallback, useEffect, useState } from 'react';
++import { ArrowClockwise } from '@phosphor-icons/react';
++import { fmtDateTime } from '../lib/time';
++
++const API_URL = process.env.REACT_APP_BACKEND_URL;
++const fmt = (v, d = 1) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
++
++/**
++ * Verlauf der gespeicherten Kalibrierungen (Cloud + lokaler Worker). Löst
++ * das "Ergebnis ist weg"-Problem: jede Kalibrierung bleibt hier sichtbar und
++ * kann jederzeit erneut in die Engine-Einstellungen übernommen werden.
++ */
++export default function RegimeCalibrationHistory({ onApply, refreshKey }) {
++  const [rows, setRows] = useState(null);
++  const [open, setOpen] = useState(false);
++
++  const load = useCallback(() => {
++    fetch(`${API_URL}/api/regime-lab/calibrations?limit=12`).then(r => r.json())
++      .then(d => setRows(d.calibrations || [])).catch(() => setRows([]));
++  }, []);
++
++  useEffect(() => { if (open) load(); }, [open, load, refreshKey]);
++
++  return (
++    <div data-testid="regime-calibration-history">
++      <button className="opt-chip" onClick={() => setOpen(!open)} data-testid="regime-calibration-history-toggle">
++        {open ? '▾' : '▸'} Kalibrierungs-Verlauf
++      </button>
++      {open && (
++        <div style={{ marginTop: 6 }}>
++          <div className="opt-small" style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
++            Gespeicherte Kalibrierungen (neueste zuerst) – „Übernehmen“ setzt die Werte in die Engine-Feineinstellungen.
++            <button className="opt-chip" style={{ fontSize: 10 }} onClick={load} data-testid="regime-calibration-history-refresh">
++              <ArrowClockwise size={11} />
++            </button>
++          </div>
++          {rows === null && <span className="opt-small">Lade…</span>}
++          {rows !== null && rows.length === 0 && (
++            <span className="opt-small" data-testid="regime-calibration-history-empty">Noch keine Kalibrierung gespeichert.</span>
++          )}
++          {(rows || []).map(r => {
++            const rep = r.report || {};
++            return (
++              <div key={r.id} className="rl-cal-row" data-testid={`regime-calibration-row-${r.id}`}>
++                <span className="opt-small">{fmtDateTime(r.created_at)}</span>
++                <b>{(r.symbols || []).map(s => s.replace('USDT', '')).join(', ')}</b>
++                <span className="opt-small">{r.timeframe} · {rep.total_days}d · Detektor <b>{rep.detector || 'regression (alt)'}</b></span>
++                <span className="opt-small" title="Richtungs-Treffer (balanciert) vorher → kalibriert">
++                  Treffer <b>{fmt(rep.baseline?.balanced_direction_pct)}%</b> → <b>{fmt(rep.best?.balanced_direction_pct)}%</b>
++                </span>
++                <span style={{ flex: 1 }} />
++                {rep.best_config && (
++                  <button className="opt-chip" onClick={() => onApply(rep.best_config)}
++                    data-testid={`regime-calibration-apply-${r.id}`}>Übernehmen</button>
++                )}
++              </div>
++            );
++          })}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/frontend/src/components/RegimeCalibrationResult.js b/frontend/src/components/RegimeCalibrationResult.js
+new file mode 100644
+index 0000000..b3482c1
+--- /dev/null
++++ b/frontend/src/components/RegimeCalibrationResult.js
+@@ -0,0 +1,69 @@
++import React from 'react';
++
++const fmt = (v, d = 1) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
++
++const DETECTOR_LABELS = {
++  reactive: 'Umkehrpunkte (reactive)', ema: 'EMA-Steigung (ema)',
++  kombi: 'Kombi (EMA + Umkehrpunkte)', regression: 'Regression',
++};
++
++const ROWS = [
++  ['balanced_direction_pct', 'Richtungs-Treffer (balanciert)', '%', 'Trefferquote je Richtung (Auf/Seitwärts/Ab) gemittelt – die Zielgröße'],
++  ['direction_pct', 'Richtungs-Treffer (roh)', '%', 'Anteil aller Kerzen mit gleicher Richtung wie die Referenz'],
++  ['mean_lag_days', 'Ø Erkennungs-Verzögerung', 'd', 'Wie viele Tage nach einem Referenz-Wechsel die Live-Erkennung folgt'],
++  ['missed_pct', 'Verpasste Phasen', '%', 'Referenz-Phasen, die live nie erkannt wurden'],
++  ['score', 'Score', '', 'Treffer minus Strafen (Wechsel, Verzögerung, verpasst) – darauf wird optimiert'],
++];
++
++/** Kompakte Vorher/Nachher-Darstellung eines Kalibrierungs-Berichts. */
++export default function RegimeCalibrationResult({ report, applied }) {
++  if (!report) return null;
++  const b = report.baseline || {};
++  const n = report.best || {};
++  const changes = report.changes || [];
++  return (
++    <div className="rl-cal-result" data-testid="regime-calibrate-report">
++      <div className="rl-cal-head">
++        <b>{report.improved === false ? 'Kalibrierung: keine bessere Einstellung gefunden'
++          : '✓ Kalibrierung abgeschlossen'}</b>
++        <span className="opt-small">
++          Detektor <b>{DETECTOR_LABELS[report.detector] || report.detector || '–'}</b>
++          {' '}· Referenz <b>{report.truth_source}</b> · {report.total_days} Tage · {report.evals} Kandidaten
++          {applied ? ' · Einstellungen übernommen' : ''}
++        </span>
++      </div>
++      <table className="rl-compare-table" style={{ borderCollapse: 'collapse', fontSize: 12 }}>
++        <thead>
++          <tr style={{ textAlign: 'left', opacity: 0.7 }}>
++            <th style={{ padding: '2px 10px 2px 0' }}>Kennzahl</th>
++            <th style={{ padding: '2px 10px' }}>vorher</th>
++            <th style={{ padding: '2px 10px' }}>kalibriert</th>
++          </tr>
++        </thead>
++        <tbody>
++          {ROWS.map(([k, label, unit, help]) => (
++            <tr key={k} title={help}>
++              <td style={{ padding: '2px 10px 2px 0' }}>{label}</td>
++              <td style={{ padding: '2px 10px' }}>{fmt(b[k])}{unit}</td>
++              <td style={{ padding: '2px 10px' }}><b>{fmt(n[k])}{unit}</b></td>
++            </tr>
++          ))}
++          <tr title="Anzahl Regime-Wechsel der Live-Erkennung / der Referenz">
++            <td style={{ padding: '2px 10px 2px 0' }}>Wechsel live / Referenz</td>
++            <td style={{ padding: '2px 10px' }}>{b.switches_live ?? '–'} / {b.switches_truth ?? '–'}</td>
++            <td style={{ padding: '2px 10px' }}><b>{n.switches_live ?? '–'} / {n.switches_truth ?? '–'}</b></td>
++          </tr>
++        </tbody>
++      </table>
++      <div className="opt-small rl-cal-changes" style={{ marginTop: 6 }} data-testid="regime-calibrate-changes">
++        {changes.length
++          ? <>Geänderte Parameter: {changes.map(c => (
++            <span key={c.key} className="opt-param-pill" style={{ whiteSpace: 'nowrap' }}>
++              {c.key}: {fmt(c.from, 3)} → <b>{fmt(c.to, 3)}</b>
++            </span>))}</>
++          : <>Keine Parameter geändert – die Ausgangswerte waren bereits die besten im Suchraum
++            ({(report.tuned_keys || []).join(', ')}).</>}
++      </div>
++    </div>
++  );
++}
+diff --git a/frontend/src/components/RegimeEngineSettings.js b/frontend/src/components/RegimeEngineSettings.js
+index f6d1f49..557882b 100644
+--- a/frontend/src/components/RegimeEngineSettings.js
++++ b/frontend/src/components/RegimeEngineSettings.js
+@@ -1,6 +1,8 @@
+ import React, { useEffect, useMemo, useRef, useState } from 'react';
+ import { CaretDown, CaretRight, ArrowCounterClockwise, Flask } from '@phosphor-icons/react';
+ import { authHeaders } from '../auth';
++import RegimeCalibrationResult from './RegimeCalibrationResult';
++import RegimeCalibrationHistory from './RegimeCalibrationHistory';
+ 
+ const API_URL = process.env.REACT_APP_BACKEND_URL;
+ 
+@@ -38,10 +40,15 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
+   const [calJob, setCalJob] = useState(null);      // {id, phase, progress}
+   const [calReport, setCalReport] = useState(null);
+   const [calErr, setCalErr] = useState(null);
++  const [calRuns, setCalRuns] = useState(0);       // Verlauf nach Abschluss neu laden
+   const calTimer = useRef(null);
+ 
+   useEffect(() => () => clearInterval(calTimer.current), []);
+ 
++  // Kalibrierte Werte ERGÄNZEN die bestehende Konfiguration (Detektor,
++  // Chart-EMAs, Bestätigungs-Schalter bleiben erhalten) statt sie zu ersetzen.
++  const applyConfig = (best) => setConfig({ ...(config || {}), ...(best || {}) });
++
+   const startCalibrate = async () => {
+     if (!calibrateCtx?.symbols?.length) { setCalErr('Mindestens 1 Coin auswählen'); return; }
+     setCalErr(null); setCalReport(null);
+@@ -56,18 +63,29 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
+       });
+       const d = await r.json();
+       if (!r.ok) throw new Error(d.detail || 'Start fehlgeschlagen');
+-      setCalJob({ id: d.job_id, phase: 'Startet', progress: 0 });
++      setCalJob({ id: d.job_id, phase: d.execution === 'local' ? 'Wartet auf lokalen Worker' : 'Startet', progress: 0 });
+       calTimer.current = setInterval(async () => {
+         try {
+-          const s = await fetch(`${API_URL}/api/regime-lab/status/${d.job_id}`).then(x => x.json());
++          const resp = await fetch(`${API_URL}/api/regime-lab/status/${d.job_id}`);
++          const s = await resp.json();
++          if (!resp.ok) {
++            // Job unbekannt (z.B. Server-Neustart): nicht still verschwinden
++            clearInterval(calTimer.current);
++            setCalJob(null);
++            setCalErr('Job auf dem Server nicht mehr bekannt (Neustart?) – Ergebnis ggf. im Kalibrierungs-Verlauf');
++            setCalRuns(n => n + 1);
++            return;
++          }
+           setCalJob({ id: d.job_id, phase: s.phase, progress: s.progress });
+           if (s.status !== 'running') {
+             clearInterval(calTimer.current);
+             setCalJob(null);
+             if (s.status === 'done' && s.result?.report) {
+               setCalReport(s.result.report);
+-              if (s.result.report.best_config) setConfig({ ...s.result.report.best_config });
+-            } else if (s.status === 'error') setCalErr(s.error || 'Kalibrierung fehlgeschlagen');
++              if (s.result.report.best_config) applyConfig(s.result.report.best_config);
++              setCalRuns(n => n + 1);
++            } else if (s.status === 'cancelled') setCalErr('Kalibrierung abgebrochen');
++            else setCalErr(s.error || 'Kalibrierung fehlgeschlagen');
+           }
+         } catch { /* nächster Poll */ }
+       }, 1500);
+@@ -237,7 +255,12 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
+         </div>
+       )}
+       {engine === 'v2' && calibrateCtx && (
+-        <div className="opt-setup" style={{ alignItems: 'center', marginTop: 6 }}>
++        <div className="opt-setup" style={{ alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
++          <span className="opt-small" style={{ width: '100%' }} data-testid="regime-calibrate-intro">
++            <b>Wissenschaftlich kalibrieren</b> = Einstellungen des gewählten Erkennungs-Prinzips
++            (<b>{detector}</b>) automatisch so wählen, dass die Live-Erkennung der Referenz am nächsten kommt.
++            Speichert KEINE Analyse – danach oben „Regime suchen &amp; speichern“ starten.
++          </span>
+           <label className="opt-field"
+             title="Referenz-Regime, an der die Einstellungen gemessen werden: zentriert = OLS-Regression mit Zukunftssicht (sieht was das Auge sieht) · HMM = Markov-Switching-Modell, lernt Regime selbst · Abstimmung = beide kombiniert">
+             Referenz
+@@ -262,17 +285,9 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
+           )}
+           {calErr && <span className="opt-small" style={{ color: '#e66' }}
+             data-testid="regime-calibrate-error">{calErr}</span>}
+-          {calReport && (
+-            <span className="opt-small" data-testid="regime-calibrate-report"
+-              title={`Referenz: ${calReport.truth_source} · ${calReport.evals} Kandidaten geprüft · Ziel: ${calReport.objective}`}>
+-              ✓ Kalibriert ({calReport.total_days} Tage): Richtungs-Treffer{' '}
+-              <b>{calReport.baseline?.balanced_direction_pct}%</b> → <b>{calReport.best?.balanced_direction_pct}%</b>
+-              {' '}· Wechsel {calReport.best?.switches_live}/{calReport.best?.switches_truth} (Referenz)
+-              {calReport.best?.mean_lag_days !== null && calReport.best?.mean_lag_days !== undefined
+-                ? <> · Ø Erkennungs-Verzögerung {calReport.best.mean_lag_days}d</> : null}
+-              {' '}– Einstellungen übernommen
+-            </span>
+-          )}
++          <RegimeCalibrationHistory refreshKey={calRuns}
++            onApply={(best) => { applyConfig(best); setCalReport(null); }} />
++          <RegimeCalibrationResult report={calReport} applied />
+         </div>
+       )}
+     </div>
+diff --git a/frontend/src/components/RegimeLab.css b/frontend/src/components/RegimeLab.css
+index b9bf1a8..b16a09d 100644
+--- a/frontend/src/components/RegimeLab.css
++++ b/frontend/src/components/RegimeLab.css
+@@ -63,3 +63,31 @@
+   background: rgba(255, 214, 10, 0.1); border: 1px solid rgba(255, 214, 10, 0.35);
+   color: #ffe27a; border-radius: 20px; padding: 1px 9px;
+ }
++
++/* ---- Wissenschaftliche Kalibrierung: Ergebnis + Verlauf ---- */
++.rl-cal-result { background: #12141d; border: 1px solid #262a38; border-radius: 10px; padding: 8px 10px; margin-top: 8px; width: 100%; font-size: 12px; color: #c9cddb; }
++.rl-cal-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
++.rl-cal-row {
++  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
++  background: #12141d; border: 1px solid #262a38; border-radius: 10px;
++  padding: 6px 10px; margin-bottom: 4px; font-size: 11.5px; color: #c9cddb;
++}
++
++/* ---- Erkennungs-Qualität (Live=Final im Holdout je Anlageklasse) ---- */
++.rl-quality { border-radius: 10px; padding: 10px 12px; margin: 6px 0 10px; font-size: 12px; color: #c9cddb; border: 1px solid #2a2e3f; background: #12141d; }
++.rl-quality.good { border-color: rgba(0, 229, 160, 0.4); }
++.rl-quality.mid { border-color: rgba(255, 165, 2, 0.45); }
++.rl-quality.bad { border-color: rgba(255, 71, 87, 0.45); }
++.rl-quality-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
++.rl-quality-grade { font-size: 10px; font-weight: 800; letter-spacing: 0.6px; padding: 2px 9px; border-radius: 20px; background: #2a2e3f; color: #e6e9f2; }
++.rl-quality.good .rl-quality-grade { background: rgba(0, 229, 160, 0.18); color: #7CFFB2; }
++.rl-quality.mid .rl-quality-grade { background: rgba(255, 165, 2, 0.18); color: #ffcc80; }
++.rl-quality.bad .rl-quality-grade { background: rgba(255, 71, 87, 0.18); color: #ff8a95; }
++.rl-quality-metrics { display: flex; flex-wrap: wrap; gap: 8px 18px; }
++.rl-quality-metric { display: inline-flex; flex-direction: column; gap: 1px; }
++.rl-quality-metric b { color: #e6e9f2; font-size: 13px; }
++.rl-quality-classes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
++.rl-quality-pill.good { border-color: rgba(0, 229, 160, 0.45); }
++.rl-quality-pill.mid { border-color: rgba(255, 165, 2, 0.45); }
++.rl-quality-pill.bad { border-color: rgba(255, 71, 87, 0.45); }
++.rl-cal-changes { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+diff --git a/frontend/src/components/RegimeLab.js b/frontend/src/components/RegimeLab.js
+index ebf03da..d255653 100644
+--- a/frontend/src/components/RegimeLab.js
++++ b/frontend/src/components/RegimeLab.js
+@@ -11,6 +11,7 @@ import RegimeChart from './RegimeChart';
+ import RegimeOptimizePanel from './RegimeOptimizePanel';
+ import RegimeEngineSettings from './RegimeEngineSettings';
+ import RegimeValidation from './RegimeValidation';
++import RegimeQualityCard from './RegimeQualityCard';
+ import DynamicPanel from './DynamicPanel';
+ import StrategyCopilot from './StrategyCopilot';
+ import { regimeColor } from '../lib/regimeColors';
+@@ -66,6 +67,7 @@ function AblationCompare({ selCoins, timeframe, days, trainPct, engineConfig, jo
+             setJob(null);
+             if (j.status === 'done' && j.result?.rows) setResult(j.result);
+             else if (j.status === 'error') toast.error(j.error || 'Ablation fehlgeschlagen');
++            else if (!j.status) toast.error('Job auf dem Server nicht mehr bekannt (Neustart?) – bitte erneut starten');
+           }
+         } catch { /* nächster Poll */ }
+       }, 1500);
+@@ -212,6 +214,7 @@ function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineConfig, s
+             setJob(null);
+             if (j.status === 'done' && j.result?.rows) setResult(j.result);
+             else if (j.status === 'error') toast.error(j.error || 'Vergleich fehlgeschlagen');
++            else if (!j.status) toast.error('Job auf dem Server nicht mehr bekannt (Neustart?) – bitte erneut starten');
+           }
+         } catch { /* nächster Poll */ }
+       }, 1500);
+@@ -346,6 +349,7 @@ function KombiAutoCalibrate({ selCoins, timeframe, days, trainPct, engineConfig,
+             setJob(null);
+             if (j.status === 'done' && j.result?.rows) setResult(j.result);
+             else if (j.status === 'error') toast.error(j.error || 'Kalibrierung fehlgeschlagen');
++            else if (!j.status) toast.error('Job auf dem Server nicht mehr bekannt (Neustart?) – bitte erneut starten');
+           }
+         } catch { /* nächster Poll */ }
+       }, 1500);
+@@ -959,6 +963,7 @@ function AnalysisDetail({ analysis, strategies, jobBlocked, execution, onChanged
+                 + ` · Trend-Schwelle t=${model?.config?.trend_t} · ADX≥${model?.config?.adx_min}`)
+           : ` Cluster-Modell · Lookback ${analysis.settings?.lookback_days}d · max. ${analysis.settings?.max_regimes} Regime · Cluster-Qualität ${fmt(model?.silhouette, 2)}`}
+       </div>
++      <RegimeQualityCard quality={(analysis.quality || {})[scopeKey(scope, symbol)]} />
+       {model?.adapt?.report?.candidates?.length > 0 && (
+         <div className="rl-sim" data-testid="regime-adapt-report">
+           <span className="opt-small" style={{ alignSelf: 'center' }}
+@@ -1166,7 +1171,8 @@ export default function RegimeLab({ onClose }) {
+ 
+   const loadDetail = useCallback((aid) => {
+     fetch(`${API_URL}/api/regime-lab/${aid}`).then(r => r.json())
+-      .then(d => setDetail(d.analysis)).catch(() => toast.error('Analyse konnte nicht geladen werden'));
++      .then(d => setDetail({ ...d.analysis, quality: d.quality || {} }))
++      .catch(() => toast.error('Analyse konnte nicht geladen werden'));
+   }, []);
+ 
+   useEffect(() => {
+@@ -1273,9 +1279,16 @@ export default function RegimeLab({ onClose }) {
+           </h2>
+           <button className="opt-close" onClick={onClose} data-testid="regime-lab-close"><X size={22} weight="bold" /></button>
+         </div>
+-        <div className="opt-small" style={{ marginBottom: 12 }}>
+-          Workflow: 1) Regime für eine Konfiguration suchen & speichern → 2) Regime am Chart prüfen,
+-          unsinnige verwerfen → 3) je Regime mit Discovery/Optimierer eine Strategie suchen & bestätigen →
++        <div className="opt-small" style={{ marginBottom: 12 }} data-testid="regime-lab-workflow">
++          <b>So funktioniert das Regime-Lab (2 Welten):</b><br />
++          <b>A · Regime erkennen &amp; speichern (Schritt 1):</b> regelbasiert auf den Kerzen (Umkehrpunkte / EMA / Kombi /
++          Regression) – deshalb in Sekunden fertig, kein Training. Ergebnis = gespeicherte Analyse mit Chart,
++          Regime-Karten und der <b>Erkennungs-Qualität</b> (Live=Final im Holdout) – dort siehst du, wie gut die
++          Erkennung z.B. für Krypto ist.<br />
++          <b>B · Erkennung verbessern (Schritt 1b + „Wissenschaftlich kalibrieren“):</b> testet verschiedene
++          Einstellungen gegeneinander, speichert KEINE Analyse. Ergebnis wird per „Übernehmen“ in die
++          Engine-Feineinstellungen geschrieben → danach Schritt A erneut starten und die Qualität vergleichen.<br />
++          Danach: 2) Regime am Chart prüfen, unsinnige verwerfen → 3) je Regime eine Strategie suchen &amp; bestätigen →
+           4) dynamische Strategie zusammenstellen und auf dem unangetasteten Holdout per Walk-Forward testen (kein Lookahead).
+         </div>
+ 
+@@ -1396,7 +1409,9 @@ export default function RegimeLab({ onClose }) {
+               <div className="opt-progress-bar"><div style={{ width: `${job.progress || 0}%`, height: '100%', background: '#b388ff' }} /></div>
+               <div className="opt-progress-row">
+                 <div className="opt-progress-text">
+-                  {job.kind === 'analysis' ? 'Analyse' : job.kind === 'regime_opt' ? 'Regime-Optimierung' : 'Walk-Forward'} ·
++                  {({ analysis: 'Analyse', regime_opt: 'Regime-Optimierung', walkforward: 'Walk-Forward',
++                    calibration: 'Kalibrierung', ema_compare: 'EMA-Vergleich', kombi_calibrate: 'Kombi-Kalibrierung',
++                    ablation: 'Ablation' })[job.kind] || 'Regime-Lab-Job'} ·
+                   {' '}{job.phase} · {job.progress || 0}%
+                 </div>
+                 {job.status === 'running' && (
+@@ -1410,14 +1425,15 @@ export default function RegimeLab({ onClose }) {
+         <div className="opt-row" data-testid="regime-research-intro">
+           <div className="opt-label">1b · DETEKTOR-FORSCHUNG (WELCHE REGIME-ERKENNUNG IST DIE BESTE?)</div>
+           <div className="opt-small">
+-            „Regime suchen &amp; speichern“ oben ist <b>regelbasiert</b> (Regression/ADX/EMA auf den Kerzen) – deshalb
+-            in Sekunden fertig, kein Training. Die drei Werkzeuge hier unten <b>testen verschiedene Erkennungs-Einstellungen
+-            gegeneinander</b> und speichern KEINE Analyse: Maßstab ist <b>Live=Final</b> = wie oft die Live-Sicht (ohne
+-            Blick in die Zukunft) dasselbe Regime sieht wie die finale Rückschau, geprüft auf dem unangetasteten Holdout.
+-            Ablauf: Vergleich/Kalibrierung laufen lassen → <b>„Übernehmen“</b> (landet in den Engine-Feineinstellungen) →
+-            oben <b>„Regime suchen &amp; speichern“ erneut</b> starten → die Analyse erscheint unter „2 · Gespeicherte
+-            Analysen“ und kann am Chart geprüft, behalten und für Strategie-Suche/Walk-Forward genutzt werden.
+-            Es läuft immer nur EIN Regime-Lab-Job gleichzeitig.
++            Die Werkzeuge hier testen <b>Erkennungs-Einstellungen gegeneinander</b> und speichern KEINE Analyse.
++            Maßstab ist immer <b>Live=Final</b>: wie oft sieht die Live-Sicht (ohne Blick in die Zukunft) dasselbe Regime
++            wie die finale Rückschau – geprüft auf dem unangetasteten Holdout.<br />
++            <b>Welches Werkzeug wofür?</b> „Wissenschaftlich kalibrieren“ (oben bei der Engine) = Feinwerte des gewählten
++            Detektors gegen eine Referenz optimieren · EMA-Vergleich = beste EMA-Periode für Detektor „ema“ ·
++            Auto-Kalibrierung = Schwelle + Fenster für Detektor „kombi“ · Ablation = welche Bestätigungs-Komponente wirklich hilft.<br />
++            Ablauf: Werkzeug laufen lassen → <b>„Übernehmen“</b> (landet in den Engine-Feineinstellungen) →
++            oben <b>„Regime suchen &amp; speichern“ erneut</b> starten → neue Analyse unter „2 · Gespeicherte Analysen“
++            öffnen und die <b>Erkennungs-Qualität</b> mit der alten Analyse vergleichen. Es läuft immer nur EIN Regime-Lab-Job gleichzeitig.
+           </div>
+         </div>
+ 
+diff --git a/frontend/src/components/RegimeQualityCard.js b/frontend/src/components/RegimeQualityCard.js
+new file mode 100644
+index 0000000..3fa1483
+--- /dev/null
++++ b/frontend/src/components/RegimeQualityCard.js
+@@ -0,0 +1,74 @@
++import React from 'react';
++
++const fmt = (v, d = 1) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
++const GRADE_CLS = { gut: 'good', mittel: 'mid', schwach: 'bad', unbewertet: 'none' };
++
++function Metric({ label, value, unit = '', help }) {
++  return (
++    <span className="rl-quality-metric" title={help}>
++      <span className="opt-small">{label}</span>
++      <b>{value === null || value === undefined ? '–' : `${value}${unit}`}</b>
++    </span>
++  );
++}
++
++/**
++ * "Wie gut ist die Regime-Erkennung?" – eine Übersicht je Anlageklasse für den
++ * gewählten Bereich der Analyse. Hauptkennzahl: Live=Final im Holdout.
++ */
++export default function RegimeQualityCard({ quality }) {
++  if (!quality) return null;
++  const classes = Object.values(quality.classes || {});
++  const focus = classes.length === 1 ? classes[0] : quality.overall;
++  const title = classes.length === 1 ? `Erkennungs-Qualität · ${focus.label}` : 'Erkennungs-Qualität · alle Klassen';
++  return (
++    <div className={`rl-quality ${GRADE_CLS[focus.grade] || 'none'}`} data-testid="regime-quality-card">
++      <div className="rl-quality-head">
++        <span className="rl-quality-grade" data-testid="regime-quality-grade">{focus.grade.toUpperCase()}</span>
++        <b>{title}</b>
++        <span className="opt-small">
++          Live=Final {focus.basis === 'holdout' ? 'im Holdout' : 'gesamt (kein Holdout)'}:
++          {' '}<b data-testid="regime-quality-pct">{fmt(focus.pct)}%</b>
++          {' '}· Schwellen: ≥{quality.thresholds?.good}% gut · ≥{quality.thresholds?.ok}% mittel
++        </span>
++      </div>
++      <div className="opt-small" style={{ margin: '4px 0 6px' }} data-testid="regime-quality-text">{focus.text}</div>
++      <div className="rl-quality-metrics">
++        <Metric label="Holdout Live=Final" value={fmt(focus.holdout_direction_pct)} unit="%"
++          help="Nur der unangetastete Testzeitraum nach der Trainings-Grenze – die ehrlichste Kennzahl" />
++        <Metric label="Gesamt Live=Final" value={fmt(focus.direction_pct)} unit="%"
++          help="Über den gesamten Zeitraum (inkl. Training)" />
++        <Metric label="Trend-Treffer" value={fmt(focus.trend_hit_pct)} unit="%"
++          help="Nur auf Trend-Kerzen (Auf/Ab) – wichtig fürs Daytrading mit dem Trend" />
++        <Metric label="Ø Phasendauer" value={fmt(focus.avg_segment_days)} unit="d"
++          help="Durchschnittliche Dauer einer finalen Phase – zu kurz = Flackern" />
++        <Metric label="Ø Erkennungs-Verzögerung" value={fmt(focus.avg_delay_days)} unit="d"
++          help="Wie viele Tage nach dem Umkehrpunkt die Live-Erkennung reagiert" />
++        <Metric label="Verstöße" value={fmt(focus.violation_bars_pct)} unit="%"
++          help="Anteil der Kerzen, die gegen ihr Regime-Label laufen (Plausibilitätsprüfung)" />
++        <Metric label="Holdout-Kerzen" value={focus.holdout_bars}
++          help={`Mindestens ${quality.thresholds?.min_holdout_bars} für eine belastbare Holdout-Note`} />
++      </div>
++      {classes.length > 1 && (
++        <div className="rl-quality-classes" data-testid="regime-quality-classes">
++          {classes.map(c => (
++            <span key={c.label} className={`opt-param-pill rl-quality-pill ${GRADE_CLS[c.grade] || ''}`}
++              title={c.text}>
++              {c.label}: <b>{c.grade}</b> · Holdout {fmt(c.holdout_direction_pct)}% ({c.n_symbols} Symbole)
++            </span>
++          ))}
++        </div>
++      )}
++      {(quality.symbols || []).length > 1 && (
++        <div className="rl-quality-classes" data-testid="regime-quality-symbols">
++          {quality.symbols.map(s => (
++            <span key={s.symbol} className="opt-param-pill" title="Holdout · gesamt · Trend">
++              {s.symbol.replace('USDT', '')} <b>{fmt(s.holdout_direction_pct, 0)}%</b>
++              <span style={{ opacity: 0.6 }}> · {fmt(s.direction_pct, 0)}% · T {fmt(s.trend_hit_pct, 0)}%</span>
++            </span>
++          ))}
++        </div>
++      )}
++    </div>
++  );
++}
+-- 
+2.39.5
+
