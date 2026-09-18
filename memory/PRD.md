@@ -151,3 +151,27 @@ ai_decisions, settings), `AI_TRADER_LOCAL_DISABLE=1`; KEINE Bitunix-/IBKR-/Teleg
 - P1 Kerzen-Archiv auch aus dem lokalen Worker befüllen (Upload) und Render-Env `CANDLE_ARCHIVE=0` zum Abschalten.
 - P2 Paper-Fill der KI-Limit-Orders auf Kerzen-Low/High statt 12-s-Tick-Preis (Paper/Live-Abweichung).
 - P2 Atlas M10 erst, wenn Retention + Auslagerung nicht mehr reichen.
+
+## Umgesetzt (18.09.2026 – Merge Basis `conflict_180926_1209` + Regime-Lab-Patch aus `conflict_180926_1455`)
+- Analyse: `_1455` war nur ein leeres Template + `kitrader-changes/regime-lab-clarity.patch` (+ Kopien der Dateien).
+  Der Patch passte konfliktfrei (`git apply --check`) auf den Basis-Branch → 1:1 eingepflegt, Basis hat Vorrang.
+- Eingepflegt (Regime-Lab-Klarheit, Doku `REGIME_LAB_KLARHEIT_UND_KALIBRIERUNG.md`):
+  `services/regime_truth.py` (detektor-spezifischer Kalibrier-Suchraum, `calibration_grid`, `config_changes`,
+  Bericht mit `detector/tuned_keys/changes/improved`), NEU `services/regime_quality.py` (Erkennungs-Qualität je
+  Anlageklasse), `routers/regime_lab.py` (Status-Fallback für Kalibrierung/Forschungs-Läufe nach Neustart,
+  `GET /api/regime-lab/calibrations`, `quality` in `GET /{aid}`), Frontend NEU `RegimeCalibrationResult.js`,
+  `RegimeCalibrationHistory.js`, `RegimeQualityCard.js`; `RegimeEngineSettings.js`, `RegimeLab.js/.css` erweitert.
+  Tests NEU `backend/tests/test_regime_lab_clarity.py` (25 unit, grün).
+- Zusätzlicher Fix (Befund im Prod-Atlas): `GET /api/regime-lab/list` lud `chart_emas` (~1,7 MB je Analyse) mit →
+  >60 s. Projektion um `chart_emas` ergänzt (→ ~1 s); Alt-Analysen-Bereinigung in `persist_analysis` lädt nur `id`.
+- Umgebung Preview: `backend/.env` = Render-Env des Users + `AI_TRADER_LOCAL_DISABLE=1` (kein Doppelbetrieb der
+  KI-Engine gegen Render/Atlas). Backend-Start dauert gegen Atlas ~70–100 s.
+- Tests: Testing-Agent Iteration 6 (Backend 14/14 lesend + 25 unit, Frontend alle Flows grün, `tests/test_regime_lab_regression.py`).
+- Bekannter Alt-Drift in der großen Unit-Suite (nicht durch den Merge verursacht, 1812 passed): `test_instruments_universe`
+  (IBKR-Routing/365-Tage-Deckel), `test_adaptive_modules` (Retention 30 statt 45 d), `test_playbook_backups_notify`
+  (echte MISTRAL_BACKUP-Keys in .env), `test_iter38_*` (braucht Mock-Server :8055).
+
+## Backlog (Stand 18.09.2026, nach Merge)
+- P1 Lokaler Worker: Paket neu herunterladen (enthält Kopie von `services/`), sonst alte Kalibrierung.
+- P2 Alt-Drift-Tests oben an den aktuellen Code angleichen (kein Produktionsrisiko).
+- P2 Admin-Only-Polling vor Login gaten (3 harmlose 401 in der Konsole).
