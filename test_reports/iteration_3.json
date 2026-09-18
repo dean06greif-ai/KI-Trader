@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 3 review: (1) Backend policy-report endpoint returns new fields version_no/is_current/changed correctly along with all legacy fields. (2) Frontend PolicyReportCard: collapsed by default, info icon toggles help without expanding, expand shows headline '15 Versionen', rows begin with 'Version ', row worlds toggle shows LIVE/PAPER/SAMMEL, days-select reloads, no horizontal overflow at 1920 and 390. (3) Backtester KI-Trader tab: 40 normal + 20 event rows, all event rows ordered AFTER normal rows. (4) Backtester stability: with route mocks (run + status running/cancelled) and admin login, clicking ai-seed-run keeps the table populated (40 normals + 20 events unchanged), ai-seed-progress appears and ai-seed-result-stale shows 'letzter Stand (neuer Lauf aktiv)'; after switching status to cancelled the table stays populated too. All acceptance criteria met.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_policy_report_api_iter3.py",
+    "/app/test_reports/pytest/iter3_policy_report.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "PolicyReportCard: subtitle format includes actual model slug (e.g. 'nvidia/nemotron-3-super-120b-a12b:free') instead of the abstract label 'Modell' shown in the spec example – this is more informative but slightly deviates from the wording used in the requirement description. Not a bug, just verify wording is intentional.",
+    "Backtester ai-seed-result stale hint prefix begins with ' · letzter Stand (neuer Lauf aktiv)' – ensure no leading dot separator when the preceding text is absent (looks fine in current UI, but worth guarding)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_policy_report_api_iter3.py"
+  ],
+  "success_rate": {"backend": "100% (3/3 API tests)", "frontend": "100% (all UI checks + stability mock passed)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (used successfully)",
+  "seed_data_creation": "None (used existing local Mongo seed: 48 trades → 14 versions + 1 legacy row, 40 normal setups + 20 event setups)",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend endpoint /api/analytics/policy-report is contractually stable with new fields. Frontend PolicyReportCard testids exist: policy-report-card, policy-report-subtitle, policy-report-info-btn, policy-report-help, policy-report-toggle, policy-report-body, policy-report-headline, policy-row-{i}, policy-row-title-{i}, policy-row-sub-{i}, policy-row-toggle-{i}, policy-row-worlds-{i}, policy-report-days-select. Backtester stability testids: ai-seed-table, ai-seed-row-<klasse>-<setup>, ai-seed-row-events-<...>, ai-seed-run, ai-seed-progress, ai-seed-result, ai-seed-result-stale. Admin login testids: admin-lock-button (header), admin-login-modal, admin-username, admin-password, admin-login-submit.",
+  "rca of the issue": "N/A – no bugs found in this iteration."
+}

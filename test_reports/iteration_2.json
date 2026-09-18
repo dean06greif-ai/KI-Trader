@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 2 review: Edge-Register backend endpoints and frontend integration. 11/11 backend API tests green (test_edges_api.py). Frontend flows verified: Backtester -> KI-Tab renders Edge-Register with 16 active/20 total edges, 'Verlauf anzeigen' toggle expands to 20 rows, admin login via header opens admin-login-modal, recover button visible for admin, edge-activate buttons appear on non-active edges after enabling history, clicking one activates the edge (toast 'Edge reaktiviert ... OOS-Trades wiederhergestellt' shown, row becomes 'aktiv' with 'manuell (Rollback)', previously active row becomes 'abgelöst'). Overview endpoint exposes rules.edge_stale_max/edge_replace_margin/edge_min_trades_ratio. No JS console errors on backtester (only a pre-existing hydration warning about <span> inside <option> in AITraderSeeding day-select, already reported in iteration 1).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Backtester -> AITraderSeeding day-select", "issues": ["Pre-existing React hydration warning: '<span> cannot be a child of <option>' emitted when Backtester opens. Not caused by Edge-Register work but still present. Same finding as iteration 1."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_edges_api.py",
+    "/app/test_reports/pytest/iter2_edges_api.xml"
+  ],
+  "action_items": [
+    "Optional (not new): fix legacy AITraderSeeding day-select to avoid <span> inside <option> to remove hydration warning."
+  ],
+  "critical_code_review_comments": [
+    "Edges router correctly excludes _id and oos_trades from GET responses; rules object mirrors constants from services.setup_backtest.edges.",
+    "Activate endpoint validates asset_class/setup/edge_id (400) and returns 404 for unknown edge_id; admin-guard via Depends(require_admin) confirmed by 403 without token.",
+    "Recover endpoint is idempotent (second call imported<=first, total edge count unchanged), matches contract.",
+    "Overview rules include edge_stale_max/edge_replace_margin/edge_min_trades_ratio in addition to existing keys.",
+    "EdgeRegister.js integration renders active count and total in header; show-all toggle correctly reveals candidate/retired rows; admin-only actions gated on token presence."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_edges_api.py"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (all Edge-Register flows verified end-to-end)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None; used existing state (16 active/20 total edges). The activate test intentionally rolled back crypto/squeeze_breakout from KI-Rev.23 to some other rev (state-changing as authorized in review request).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "State was modified by the activate happy-path test: for crypto/squeeze_breakout a non-active edge was activated (rollback). All edges still present; totals unchanged. If retesting rollback, pick another (class,setup) that still has both active and non-active edges. Do not call /api/ai/playbook/backtest/run or /reset per E1 instructions.",
+  "rca of the issue": "Not applicable – no bugs found."
+}
