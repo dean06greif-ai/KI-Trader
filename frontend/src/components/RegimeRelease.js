@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Eye, Lightning, ArrowCounterClockwise, ClockCounterClockwise, Stop } from '@phosphor-icons/react';
+import { Eye, Lightning, ArrowCounterClockwise, ClockCounterClockwise, Stop, CheckSquare } from '@phosphor-icons/react';
 import { toast } from '../lib/toast';
 import { authHeaders, isAdmin } from '../auth';
 import { fmtDateTime } from '../lib/time';
@@ -87,6 +87,23 @@ export function RegimeReleaseControls({ analysis, onChanged }) {
 
   useEffect(() => { loadChecks(); }, [loadChecks, analysis.release?.stage]);
 
+  const suggestKept = async () => {
+    if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
+    setBusy(true);
+    try {
+      const r = await fetch(`${API_URL}/api/regime-lab/${aid}/keep/suggest`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ scope: analysis.scope || 'combined' }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.detail || 'Vorschlag fehlgeschlagen');
+      toast.success(`${d.kept_count} Regime behalten, ${d.discarded_count} verworfen`);
+      onChanged?.();
+      loadChecks();
+    } catch (e) { toast.error(e.message); }
+    setBusy(false);
+  };
+
   const setStage = async (target, label) => {
     if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
     const reason = window.prompt(`${label} – kurzer Grund für die History (Pflicht):`, '');
@@ -127,6 +144,13 @@ export function RegimeReleaseControls({ analysis, onChanged }) {
         <RegimeReleaseBadge analysis={analysis} />
         {stage === 'none' && <span className="opt-small">keine Freigabe – reine Forschung</span>}
         <span style={{ flex: 1 }} />
+        {stage === 'none' && (
+          <button className="opt-chip rr-btn" disabled={busy} onClick={suggestKept}
+            title="Behalten-Vorschlag: Regime mit mindestens 5 Abschnitten werden als „behalten“ markiert, dünne verworfen – ohne Häkchen scheitert das Freigabe-Gate. Gesetzte Häkchen bleiben."
+            data-testid={`regime-release-suggest-kept-${aid}`}>
+            <CheckSquare size={12} weight="bold" /> Behalten vorschlagen
+          </button>
+        )}
         {btn('shadow', 'Beobachten (Shadow)', Eye, `regime-release-shadow-${aid}`)}
         {btn('active', 'Wirksam schalten', Lightning, `regime-release-active-${aid}`)}
         {stage !== 'none' && (

@@ -46,6 +46,20 @@ def kept_regime_ids(doc: Dict, scope: str, symbol: Optional[str] = None) -> List
                   if v and k.startswith(prefix) and k[len(prefix):].lstrip("-").isdigit())
 
 
+def suggest_kept(doc: Dict, scope: str, symbol: Optional[str] = None) -> Dict[str, bool]:
+    """Rein (18.09.): Behalten-Vorschlag – jedes Regime mit ≥ MIN_SEGMENTS_PER_REGIME
+    Abschnitten wird 'behalten', dünne Regime 'verworfen'. Bereits gesetzte Häkchen
+    bleiben unverändert (nur fehlende Keys werden ergänzt)."""
+    from services import regime_lab as lab
+    prefix = f"{lab.scope_key(scope, symbol)}:"
+    kept = dict(doc.get("kept") or {})
+    for rid, n in segments_per_regime(doc, scope, symbol).items():
+        key = f"{prefix}{rid}"
+        if key not in kept:
+            kept[key] = n >= MIN_SEGMENTS_PER_REGIME
+    return kept
+
+
 def segments_per_regime(doc: Dict, scope: str, symbol: Optional[str] = None) -> Dict[int, int]:
     """Anzahl unabhängiger Abschnitte je Regime (über alle Symbole des Scopes)."""
     out: Dict[int, int] = {}

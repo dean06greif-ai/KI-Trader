@@ -424,6 +424,18 @@ async def delete_analysis(aid: str, _: bool = Depends(require_admin)):
     return {"status": "deleted"}
 
 
+@router.post("/api/regime-lab/{aid}/keep/suggest")
+async def keep_suggest(aid: str, body: Dict, _: bool = Depends(require_admin)):
+    """Behalten-Vorschlag: Regime mit genug Abschnitten (≥ MIN_SEGMENTS_PER_REGIME)
+    als 'behalten' markieren, dünne verwerfen. Vorhandene Häkchen bleiben."""
+    from services import regime_release
+    doc = await _get_doc(aid)
+    kept = regime_release.suggest_kept(doc, body.get("scope") or "combined", body.get("symbol"))
+    await state.db.regime_analyses.update_one({"id": aid}, {"$set": {"kept": kept}})
+    n_keep = sum(1 for v in kept.values() if v)
+    return {"status": "success", "kept": kept, "kept_count": n_keep, "discarded_count": len(kept) - n_keep}
+
+
 @router.post("/api/regime-lab/{aid}/keep")
 async def keep_regime(aid: str, body: Dict, _: bool = Depends(require_admin)):
     """Regime behalten/verwerfen (nur Markierung – verworfene Regime werden bei
