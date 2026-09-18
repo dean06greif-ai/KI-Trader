@@ -22,6 +22,7 @@ import AIDiagnosisPanel from './AIDiagnosisPanel';
 import PolicyReportCard from './PolicyReportCard';
 import { LessonImpactBadge, LessonImpactSummary } from './LessonImpact';
 import { StructuralStagePanel, CLASS_LABELS } from './RegimeRelease';
+import RegimeCockpit from './RegimeCockpit';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -1501,6 +1502,8 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
         {showDiag && (
           <div className="ai-analysis-section" data-testid="ai-analysis-section">
             <AIDiagnosisPanel />
+            {/* Regime-Cockpit: beide Regime-Ebenen live + KI-Trades + Vorwärts-Trefferquote (PLAN_REGIME_COCKPIT) */}
+            <RegimeCockpit />
             {/* Belohnungssystem: Reward-Verlauf + Auswertung pro Markt-Regime */}
             <AIRewardPanel />
             {/* Policy-Versionen: Netto-Vergleich der Regelwerke (vom Dashboard hierher verschoben) */}
@@ -1704,6 +1707,13 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
               <select value={cfg.regime_block_enabled ? 'on' : 'off'} onChange={e => updateConfig({ regime_block_enabled: e.target.value === 'on' })} data-testid="ai-regime-block-select">
                 <option value="off">aus</option>
                 <option value="on">an</option>
+              </select>
+            </label>
+            <label title="Regime-Bilanz im Prompt: Die KI sieht Winrate/PnL je Kurzfrist- und Struktur-Regime (30 Tage), die Vorwärts-Trefferquote der Erkennung je Symbol (Label damals vs. Kurs 4 h später) und die Note der freigegebenen Lab-Analyse. Reine Information – mit der Regel, Regime-Labels bei Trefferquote unter 50 % nicht als Einstiegsbegründung zu nutzen. Dieselben Zahlen zeigt das Regime-Cockpit im Reiter Analyse.">
+              <span>Regime-Bilanz (Prompt)</span>
+              <select value={cfg.regime_context_enabled === false ? 'off' : 'on'} onChange={e => updateConfig({ regime_context_enabled: e.target.value === 'on' })} data-testid="ai-regime-context-select">
+                <option value="on">an</option>
+                <option value="off">aus</option>
               </select>
             </label>
             <label title="Regime-Brücke: Darf der KI-Trader (Forschungs-Analyst) den Wechsel einer freigegebenen Lab-Analyse von Shadow auf Wirksam selbst vorschlagen (suggest: du klickst im Vorschläge-Panel) oder vollziehen (auto: 24 h Karenz mit Stopp-Knopf, Widerruf jederzeit)? Die KI kann das Nachweis-Gate (≥ 30 Shadow-Trades, Reward-Unterschied ≥ 0,25 R) nie umgehen.">

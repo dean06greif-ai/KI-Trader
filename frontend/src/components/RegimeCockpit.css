@@ -1,0 +1,43 @@
+.rc-panel {
+  background: rgba(20, 23, 31, 0.85);
+  border: 1px solid rgba(100, 210, 255, 0.16);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+  color: #c9cddb;
+  font-size: 12px;
+}
+.rc-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.rc-head select {
+  background: #0f1218; color: #d7dbe6; border: 1px solid #2a2f3b; border-radius: 6px;
+  padding: 3px 6px; font-size: 11.5px;
+}
+.rc-head .icon-btn { background: transparent; border: 1px solid #2a2f3b; border-radius: 6px; color: #c9cddb; padding: 3px 6px; cursor: pointer; }
+.rc-head .icon-btn:hover { border-color: #64D2FF; }
+.rc-error { color: #FF9F0A; display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+.rc-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.rc-kpi {
+  display: flex; flex-direction: column; gap: 2px;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px; padding: 8px 10px;
+}
+.rc-kpi b { font-size: 14px; }
+.rc-chart { margin: 4px 0 10px; }
+.rc-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
+.rc-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.rc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.rc-hits { background: rgba(255, 255, 255, 0.025); border-radius: 8px; padding: 8px 10px; }
+.rc-hits-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.rc-hit-total { margin-left: auto; font-weight: 700; }
+.rc-table td, .rc-table th { padding: 2px 6px; font-size: 11.5px; }
+.rc-tooltip {
+  background: #0f1218; border: 1px solid #2a2f3b; border-radius: 6px; padding: 6px 8px; font-size: 11px; color: #d7dbe6;
+}
+.rc-foot { margin-top: 8px; color: #8a8f9c; }
+.rc-panel .pos { color: #1FB855; }
+.rc-panel .neg { color: #FF453A; }
+.rc-panel .spin { animation: rc-spin 1s linear infinite; }
+@keyframes rc-spin { to { transform: rotate(360deg); } }
+@media (max-width: 640px) {
+  .rc-kpis { grid-template-columns: 1fr 1fr; }
+}

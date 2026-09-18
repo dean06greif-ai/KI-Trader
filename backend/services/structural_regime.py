@@ -210,6 +210,9 @@ async def resolve(symbol: str) -> Dict:
         ctx["direction_changed"] = bool(prev.get("direction") and ctx.get("direction")
                                         and prev["direction"] != ctx["direction"])
         _cache[symbol] = {"_at": time.time(), "ctx": ctx}
+        # PLAN_REGIME_COCKPIT B1: Verlauf für das Cockpit (additiv, fail-soft)
+        from services import regime_cockpit
+        await regime_cockpit.record_structural(_db, symbol, ctx)
         return ctx
 
 

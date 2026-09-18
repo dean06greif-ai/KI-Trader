@@ -290,6 +290,11 @@ export default function DynamicPanel() {
                     <span className="opt-badge" data-testid={`dyn-release-${s.id}`}
                       title="Walkforward bestanden – Definition unverändert seit der Validierung">Validiert</span>
                   )}
+                  {s.orphaned && (
+                    <span className="opt-badge bad" data-testid={`dyn-orphan-${s.id}`} title={s.orphan_reason}>
+                      Analyse gelöscht – verwaist
+                    </span>
+                  )}
                   {s.release_status === 'approved' && (
                     <span className="opt-badge" data-testid={`dyn-release-${s.id}`}
                       title="Ausdrücklich freigegeben">Freigegeben</span>

@@ -22,7 +22,8 @@ export default function RegimeValidation({ summary, perSymbol, testId = 'regime-
       <div className="rl-valid-head" onClick={() => setOpen(!open)}>
         {open ? <CaretDown size={12} /> : <CaretRight size={12} />}
         {ok ? <CheckCircle size={13} weight="fill" /> : <Warning size={13} weight="fill" />}
-        <b>Regime-Prüfung {ok ? 'bestanden' : 'mit Auffälligkeiten'}</b>
+        <b>Plausibilitäts-Prüfung {ok ? 'bestanden' : 'mit Auffälligkeiten'}</b>
+        <span className="opt-small" title="Selbstkonsistenz: prüft die Labels gegen dieselben Kerzen, aus denen sie entstanden sind. 100 % ist hier normal und KEIN Beweis für Erkennungsqualität – dafür gelten Live=Final (Qualitäts-Karte) und die Vorwärts-Trefferquote im Regime-Cockpit.">(Selbstkonsistenz)</span>
         <span className="opt-small">
           Unplausible Bars <b>{fmt(s.violation_bars_pct, 2)}%</b> ·
           Richtung korrekt <b>{s.direction_accuracy_pct === null || s.direction_accuracy_pct === undefined
@@ -40,7 +41,9 @@ export default function RegimeValidation({ summary, perSymbol, testId = 'regime-
             Geprüft wird je Abschnitt: Richtung des Labels gegen die tatsächliche
             Kursbewegung (Abschnitt, Sichtfenster und langer Kontext) sowie die
             Volatilitätsstufe. Kurze Gegenbewegungen innerhalb eines Trends gelten
-            nicht als Fehler.
+            nicht als Fehler. <b>Achtung:</b> Das ist eine Selbstkonsistenz-Prüfung auf den
+            Trainingskerzen – sie sagt nichts darüber, ob die Erkennung <i>live und vorwärts</i>
+            trifft. Dafür: Qualitäts-Karte (Live=Final im Holdout) und Regime-Cockpit im KI-Trader.
           </div>
           {rows.map(([sym, v]) => {
             const val = v?.validation;

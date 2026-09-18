@@ -83,11 +83,19 @@ async def dynamic_save(body: Dict, _: bool = Depends(require_admin)):
 async def dynamic_list():
     rows = await state.db.dynamic_strategies.find(
         {"archived": {"$ne": True}}).sort("created_at", -1).to_list(100)
+    aids = {((r.get("settings") or {}).get("analysis_id")) for r in rows}
+    aids.discard(None)
+    existing = set()
+    if aids:
+        existing = {a["id"] for a in await state.db.regime_analyses.find(
+            {"id": {"$in": list(aids)}}, {"_id": 0, "id": 1}).to_list(len(aids))}
     out = []
     for r in rows:
         r = _clean(r)
         model = r.get("model") or {}
+        aid = (r.get("settings") or {}).get("analysis_id")
         out.append({**r, "release_status": strategy_release.effective_status(r),
+                    **dynamic_live.orphan_info(r, aid in existing),
                     "model": {"regimes": model.get("regimes") or [],
                               "silhouette": model.get("silhouette"),
                               "lookback_days": model.get("lookback_days")}})

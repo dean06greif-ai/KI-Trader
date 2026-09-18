@@ -72,6 +72,18 @@ async def detect_current(symbol: str, timeframe: str, days: int, max_regimes: in
 
 
 
+def orphan_info(doc: Dict, analysis_exists: bool) -> Dict:
+    """PLAN_REGIME_COCKPIT B0 (rein): Verweist die dynamische Strategie auf eine
+    Lab-Analyse, die es nicht mehr gibt (Retention hält nur wenige Analysen)?"""
+    aid = (doc.get("settings") or {}).get("analysis_id")
+    if not aid or analysis_exists:
+        return {"orphaned": False}
+    return {"orphaned": True,
+            "orphan_reason": (f"Regime-Analyse {aid} existiert nicht mehr (gelöscht/Retention) – "
+                              "Regime-Erkennung läuft mit dem eingefrorenen Modell weiter, "
+                              "Beweispaket/Chart der Analyse sind nicht mehr abrufbar.")}
+
+
 async def refresh_state(doc: Dict, days: int) -> Dict:
     """Aktuelles Regime je Coin bestimmen + Info-Vergleich aller Konfigurationen
     über die letzten Tage (nur Anzeige – die Umschaltung basiert auf der

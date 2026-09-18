@@ -71,6 +71,8 @@ DEFAULT_POLICY: List[Dict] = [
     {"coll": "pending_entry_orders", "ts": "created_at", "days": 14, "keep_last": None},
     # Lektions-Bilanz (PLAN_LEKTIONS_BILANZ B2): HOLD-Gegenproben
     {"coll": "ai_lesson_cf", "ts": "ts", "days": 60, "keep_last": None},
+    # Regime-Cockpit (PLAN_REGIME_COCKPIT B1): Struktur-Verlauf je Symbol
+    {"coll": "structural_regime_history", "ts": "at", "days": 90, "keep_last": None},
 ]
 # Harte Untergrenzen gegen Fehlkonfiguration (nie aggressiver löschen als das)
 MIN_DAYS = {"ai_market_snapshots": 130, "ai_decisions": 7, "ai_chat_archive": 14,

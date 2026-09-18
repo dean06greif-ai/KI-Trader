@@ -809,6 +809,15 @@ class AIEngineContextMixin:
                              + await self.learning.lessons_text())
         except Exception as e:
             logger.warning(f"AI learning blocks failed: {e}")
+        if not review and self.config.get("regime_context_enabled", True):
+            # PLAN_REGIME_COCKPIT B4: Regime-Bilanz + Vorwärts-Trefferquote + Lab-Note
+            try:
+                from services import regime_context
+                blk = await regime_context.prompt_block(self.db, list(self.symbols))
+                if blk:
+                    parts.append(blk)
+            except Exception as e:
+                logger.warning(f"AI regime context block failed: {e}")
         if not review:
             # Platzhalter: der Gruppen-Lauf (ai_engine.run_analysis) setzt hier den
             # Playbook-Block NUR seiner Anlageklassen ein (spart Tokens, zeigt nur

@@ -197,6 +197,9 @@ DEFAULT_AI_CONFIG = {
     # Sammel-Trades laufen bewusst weiter, damit die Statistik den Filter beweist.
     "regime_block_enabled": False,
     "regime_block_list": ["range_ruhig"],
+    # PLAN_REGIME_COCKPIT B4: Prompt-Block „Regime-Bilanz & Erkennungs-Qualität“
+    # (Winrate je Regime, Vorwärts-Trefferquote, Lab-Note). Reine Information.
+    "regime_context_enabled": True,
     # Max. gleichzeitig offene KI-Trader-Trades pro Coin (1–5). Default 1 =
     # bisheriges Verhalten (strikt ein Trade pro Coin). Nur der KI-Trader nutzt
     # dieses Limit; alle anderen Strategien bleiben bei strikt 1 Trade pro Coin.
@@ -876,6 +879,8 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                     pass
         if "regime_block_enabled" in updates:
             self.config["regime_block_enabled"] = bool(updates["regime_block_enabled"])
+        if "regime_context_enabled" in updates:
+            self.config["regime_context_enabled"] = bool(updates["regime_context_enabled"])
         if "regime_block_list" in updates and isinstance(updates["regime_block_list"], list):
             self.config["regime_block_list"] = [
                 str(x).strip()[:40] for x in updates["regime_block_list"] if str(x).strip()][:10]
