@@ -1,0 +1,141 @@
+{
+  "commit": "792ff0ac44861df447d3e619042ecef1704c37c5",
+  "created_at": "2026-09-15T13:14:23.103501+00:00",
+  "files": [
+    {
+      "path": "00_FORTSCHRITT.md",
+      "bytes": 6325,
+      "sha256": "e07587f73ea15a77e474b76d4876d9540c2846aa911b05620d8706068dafb6bf"
+    },
+    {
+      "path": "01_ARCHITEKTUR_UND_ISTBEWERTUNG.md",
+      "bytes": 11467,
+      "sha256": "e4257a0ecc802167d534a1ef76048597320434791cea015d2bcd780c88fdb6a6"
+    },
+    {
+      "path": "02_BEFUNDE_ARBEITSSTAND.md",
+      "bytes": 7872,
+      "sha256": "5269ff8e21999f1c0c9d4f09db5017bed8656efd21355b15cef6ffe87cef6d49"
+    },
+    {
+      "path": "02_BEFUNDE_FINAL.md",
+      "bytes": 27170,
+      "sha256": "0cfdd25f27254531c28c95a323ee423eab86e39ec1c9856153a01fa5883ffd48"
+    },
+    {
+      "path": "03_ZIELBILD_REGIME_LAB_UND_KI_TRADER.md",
+      "bytes": 18246,
+      "sha256": "7ebb6250acf24185ccf6f922f27edc75af9cee204e93585c8e90f43aee709cfb"
+    },
+    {
+      "path": "04_UMSETZUNGSPLAN_FUER_KI.md",
+      "bytes": 21871,
+      "sha256": "795845fe9e581590efa26b0fff9b271e3554ba5eac5728ee508e805dd0b983a2"
+    },
+    {
+      "path": "05_REGRESSION_ABNAHME_MIGRATION.md",
+      "bytes": 12476,
+      "sha256": "0eacd350386f9320a5a2bc7d5142c671de5c6edec2f5ee18c1f6542e06fecbc3"
+    },
+    {
+      "path": "06_KI_HANDOFF_STARTPROMPT.md",
+      "bytes": 6754,
+      "sha256": "767ec94d9c6bfc0fb9695dafac5ed8a1ed3c23a627d712d21bd7675fd008f039"
+    },
+    {
+      "path": "07_GRENZEN_ENTSCHEIDUNGEN_QUELLEN.md",
+      "bytes": 8840,
+      "sha256": "76b4171bfb0077ec53bab9d823062da8569fe507a95d5db020f19d3be667baa9"
+    },
+    {
+      "path": "08_TESTNACHWEISE.md",
+      "bytes": 9267,
+      "sha256": "101c956b49b2b65a21a4c953455b4db3c6dc5cf325ed640f53878cda642a2b0b"
+    },
+    {
+      "path": "09_ZWEITPRUEFUNG_EINORDNUNG.md",
+      "bytes": 2728,
+      "sha256": "ce11d22133673c96bad4c53e0b87ad61d010e98a00a0e82c428c150214ee4183"
+    },
+    {
+      "path": "10_CODE_LANDKARTE.json",
+      "bytes": 141841,
+      "sha256": "6d5ec2655b81caf78575bc2052b52527d4288a68a628bfbf153eff9992cdaa30"
+    },
+    {
+      "path": "GESAMTBERICHT.md",
+      "bytes": 126273,
+      "sha256": "6d9a214d738a32e2aca8ef83ebe8bd5fe99cd283e7df225c40e68f1091f032d6"
+    },
+    {
+      "path": "README.md",
+      "bytes": 6812,
+      "sha256": "2d1ad0ebbebed5924f7c82f991aa179822ebfbfd3d2a5835a50a5633b86fb376"
+    },
+    {
+      "path": "test_reports/FINAL_SUMMARY.json",
+      "bytes": 17013,
+      "sha256": "c6ee32aa9e7f6c7f9dd4696d825cb9dd3724d21b7771367f55e98c1f5ebdd747"
+    },
+    {
+      "path": "test_reports/baseline_additional.xml",
+      "bytes": 7343,
+      "sha256": "18db35b4c2da7f3b58e0aa680e2971aaa289ca4f4dc1544f30611c55f08b2aa7"
+    },
+    {
+      "path": "test_reports/final_offline.xml",
+      "bytes": 5299,
+      "sha256": "33f81a95294c83aaf8ef254f9302b6f3ba287ea07957e1798a18344b3e077cd0"
+    },
+    {
+      "path": "tests/baseline/test_policy_fingerprint.py",
+      "bytes": 4305,
+      "sha256": "6c34bfd07a029e33c62e4e94a043c8b13fe7daad28c8ab2300d15718ab46a19d"
+    },
+    {
+      "path": "tests/baseline/test_regime_engine.py",
+      "bytes": 13810,
+      "sha256": "7fc107c7a15857755fbdef979d82342de0890bca3c5e62f9c8f0170582bd606e"
+    },
+    {
+      "path": "tests/baseline/test_regime_gate.py",
+      "bytes": 4108,
+      "sha256": "346256403e7cbf86caac6f26238dfc2e8ca41e9997c545243b5161e673e65c8f"
+    },
+    {
+      "path": "tests/baseline/test_regime_v2_and_gate_domain.py",
+      "bytes": 6008,
+      "sha256": "61d09986a71aea5a8127d018b742333b56f23c4193c61fc5b0e2d82dee43b902"
+    },
+    {
+      "path": "tests/baseline/test_risk_budget.py",
+      "bytes": 2711,
+      "sha256": "65711019e8ac61a5a9516ae3dadb94aee4b37b50302e4f704d95c5d61bc00da5"
+    },
+    {
+      "path": "tests/conftest.py",
+      "bytes": 1964,
+      "sha256": "48d2691ed2ae53aa054808cdee1c3dddddf1bff5f8b8ebfa5a2a13695f6e30d4"
+    },
+    {
+      "path": "tests/test_offline_extended_findings.py",
+      "bytes": 20809,
+      "sha256": "7bb7ca89e88faeeec20f9e82ddb7c02c181db8d0b2040143f7f912039cb5d140"
+    },
+    {
+      "path": "tests/test_regime_dynamic_r01_r13_regressions.py",
+      "bytes": 16480,
+      "sha256": "2e01929ff64f362f49f1b48b3ae83cb48045c7e1841fadbf4f69198316e75ecd"
+    },
+    {
+      "path": "tools/build_bundle.py",
+      "bytes": 7062,
+      "sha256": "2d70ca65783faac7e27ceda27273358bf52b101a15a307a9ab2d5c6748b1d006"
+    },
+    {
+      "path": "tools/source_inventory.py",
+      "bytes": 3772,
+      "sha256": "feea36ba1c0599b45077fa1c7391e94fe2787690c978d4daa8065432b03911b2"
+    }
+  ]
+}
