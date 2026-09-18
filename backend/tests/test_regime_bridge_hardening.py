@@ -91,3 +91,30 @@ def test_snapshot_to_text_default_unchanged():
                                               "range_pos": 40}}
     assert snapshot_to_text(snap).startswith("BTCUSDT: range_ruhig | RSI 50")
     assert snapshot_to_text(snap, "range_ruhig (Trefferquote 60 %)").startswith("BTCUSDT: range_ruhig (Trefferquote 60 %) | RSI")
+
+
+# ------------------------------------------------------------- Kopplung + ML-Gate-Feature (18.09., Teil 2)
+def test_release_mismatch_only_when_coupled():
+    d_on = {"id": "d1", "name": "A", "settings": {"analysis_id": "ra_old", "follow_release_enabled": True, "auto_check_enabled": True}}
+    d_off = {"id": "d2", "name": "B", "settings": {"analysis_id": "ra_old", "auto_check_enabled": True}}
+    d_ok = {"id": "d3", "name": "C", "settings": {"analysis_id": "ra_new", "follow_release_enabled": True, "auto_check_enabled": True}}
+    now = datetime.now(timezone.utc).isoformat()
+    for d in (d_on, d_off, d_ok):
+        d["last_state"] = {"checked_at": now}
+    checks = {c["name"]: c for c in h.evaluate([d_on, d_off, d_ok], {"ra_old", "ra_new"}, 3, 1, [],
+                                               released_aid_by_dyn={"d1": "ra_new", "d2": "ra_new", "d3": "ra_new"})}
+    assert checks["release_mismatch"]["level"] == "warn"
+    assert [i["id"] for i in checks["release_mismatch"]["items"]] == ["d1"]
+    assert checks["release_mismatch"]["items"][0]["released_aid"] == "ra_new"
+
+
+def test_ml_gate_regime_hit_feature_default_and_value():
+    from services import ml_gate
+    assert "regime_hit_pct" in ml_gate.GATE_FEATURES
+    row = ml_gate.gate_feature_row("LONG", 70, 1.0, 2.0, None, {"regime": "range_ruhig"}, "decision")
+    assert row["regime_hit_pct"] == 50.0
+    row = ml_gate.gate_feature_row("LONG", 70, 1.0, 2.0, None, {"regime": "range_ruhig", "regime_hit_pct": 47.3}, "decision")
+    assert row["regime_hit_pct"] == 47.3
+    old = ml_gate.GATE_FEATURES[:-1]
+    assert ml_gate._to_matrix([row], old).shape == (1, len(old))
+    assert ml_gate._to_matrix([row]).shape == (1, len(ml_gate.GATE_FEATURES))

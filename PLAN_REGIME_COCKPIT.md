@@ -83,3 +83,19 @@ Leitlinien: additiv, hinter Flags, keine bestehende API/Collection verändern; r
   `ai-regime-reliability-select`): `regime_context.annotate_label()` (rein) hängt an jedes Kurzfrist-Label im Markt-Beobachter-Block
   die 14-d-Vorwärts-Trefferquote; < 52 % → „unzuverlässig, nicht als Begründung nutzen“. Nie blockierend (Cockpit-Cache).
 - Tests: `tests/test_regime_bridge_hardening.py` (10 unit). Bestehende Suiten `test_ai_lab`, `test_adaptive_modules`, `test_regime_cockpit` grün.
+
+## Nachtrag 18.09. (Teil 2) – ML-Gate-Feature, Kopplung, Freigabe-Vorbereitung
+- [x] **ML-Gate-Feature `regime_hit_pct`** (`services/ml_gate.py` GATE_FEATURES, `gate_feature_row`; 50 = neutral/unbekannt).
+  Quelle: `ai_market_observer` schreibt beim Snapshot `features.regime_hit_pct` (Cockpit-Cache, 14 d, je Symbol) → landet über
+  `entry_market_snapshot` in Decisions/Signals. `_to_matrix(rows, features)` + `predict_row` nutzen die Feature-Liste des geladenen
+  Modells → ältere Modelle laufen unverändert weiter; das nächtliche Retraining übernimmt das Feature, sobald genug Zeilen es tragen
+  (Plan: nach 4–6 Wochen Cockpit-Daten wirksam).
+- [x] **Kopplung Dyn-Strategie ↔ Lab-Freigabe** (`settings.follow_release_enabled`, Checkbox „An Lab-Freigabe koppeln“ im DynamicPanel,
+  `dyn-follow-release-<id>`, Endpoint `/api/dynamic/{id}/settings`): Health-Check `release_mismatch` warnt (Banner + 1×/Tag Telegram)
+  mit Ziel-Analyse, sobald die Basis-Analyse nicht mehr der Freigabe der Anlageklasse entspricht. Bewusst KEIN automatischer Umbau:
+  ein Neuaufbau braucht Optimierung je Regime + Walk-Forward (Lab-Job-Kette) – das bleibt Trader-Entscheidung.
+- [ ] **Lab-Freigabe Shadow – Trader-Aktion (nicht aus der Dev-Umgebung möglich, Prod nur lesend):** Bester Kandidat lt. Qualitäts-Karte
+  `ra_60fce9cc` („Regime-Analyse 5m · 360d“, 4 Symbole, Note **gut 67,2 %** Live=Final Holdout); Alternative `ra_8fe52dd6` (1h/90d, 1 Symbol,
+  76 %). Freigabe-Gate verlangt: Regime(s) auf „behalten“ setzen (aktuell bei ALLEN 12 Analysen kept=0!), Kalibrierung + Ablation mit
+  gleichen Symbolen/Timeframe gelaufen, dann Stufe Shadow.
+- Tests: `tests/test_regime_bridge_hardening.py` (12 unit), ML-Gate-Suiten grün.

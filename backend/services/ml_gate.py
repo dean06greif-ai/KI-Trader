@@ -35,6 +35,9 @@ GATE_FEATURES = [
     "volume_ratio", "range_pos", "change_60m_pct", "hour_utc", "weekday",
     "sl_pct", "tp1_pct", "crv", "regime_trend", "regime_vol", "regime_breakout",
     "has_market_state", "src_decision", "src_signal", "src_ghost",
+    # 18.09.2026: Vorwärts-Trefferquote der Kurzfrist-Erkennung (Regime-Cockpit,
+    # 14 d, je Symbol) zum Entry – 50 = neutral/unbekannt (Alt-Daten, kein Cache).
+    "regime_hit_pct",
 ]
 
 MIN_SAMPLES = 120
@@ -105,6 +108,7 @@ def gate_feature_row(side: str, confidence: float, sl_pct: float, tp1_pct: float
         "src_decision": 1.0 if source == "decision" else 0.0,
         "src_signal": 1.0 if source == "signal" else 0.0,
         "src_ghost": 1.0 if source == "ghost" else 0.0,
+        "regime_hit_pct": float(f.get("regime_hit_pct") if f.get("regime_hit_pct") is not None else 50.0),
     }
 
 
@@ -217,9 +221,10 @@ def purged_walk_forward(timestamps: List[datetime], n_folds: int = WF_FOLDS,
     return splits
 
 
-def _to_matrix(rows: List[Dict]):
+def _to_matrix(rows: List[Dict], features: Optional[List[str]] = None):
     import numpy as np
-    return np.array([[float(r.get(f, 0.0) or 0.0) for f in GATE_FEATURES] for r in rows],
+    feats = features or GATE_FEATURES
+    return np.array([[float(r.get(f, 0.0) or 0.0) for f in feats] for r in rows],
                     dtype="float32")
 
 
@@ -635,7 +640,9 @@ class MLGate:
         if self._booster is None:
             return None
         import xgboost as xgb
-        raw = float(self._booster.inplace_predict(_to_matrix([row]))[0])
+        # Feature-Liste des geladenen Modells (ältere Modelle kennen neue Features nicht)
+        feats = (self.model_meta or {}).get("features") or None
+        raw = float(self._booster.inplace_predict(_to_matrix([row], feats))[0])
         calib = (self.model_meta or {}).get("calibration")
         p = _apply_calib(raw, calib)
         return {"p_win": round(p, 4), "raw": round(raw, 4)}

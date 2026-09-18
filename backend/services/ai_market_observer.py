@@ -248,6 +248,9 @@ class MarketObserver:
             # Kurse – Flag macht Regime-/ML-Statistiken filterbar.
             if market_hours.is_weekend_closed(sym)[0]:
                 feats["market_closed"] = True
+            hit = self._hit_pct(sym)
+            if hit is not None:
+                feats["regime_hit_pct"] = hit
             snap = {"id": str(uuid.uuid4()), "symbol": sym, "ts": ts, "features": feats}
             self.snapshots[sym] = snap
             out.append(snap)
@@ -257,6 +260,19 @@ class MarketObserver:
             except Exception as e:
                 logger.warning(f"Markt-Snapshots speichern fehlgeschlagen: {e}")
         return out
+
+    def _hit_pct(self, symbol: str) -> Optional[float]:
+        """Vorwärts-Trefferquote (Cockpit-Cache, 14 d) fürs ML-Gate-Feature –
+        nur aus dem Cache, nie blockierend; None wenn (noch) nichts vorliegt."""
+        try:
+            from services import regime_cockpit
+            ent = regime_cockpit._overview_cache.get(f"{symbol}:14")
+            row = (ent or {}).get("row") or {}
+            if row.get("observer_reliable") and row.get("observer_hit_pct") is not None:
+                return float(row["observer_hit_pct"])
+        except Exception:  # noqa: BLE001
+            pass
+        return None
 
     def features_for(self, symbol: str) -> Dict:
         """Letzte Features eines Coins (für ML-Vorhersagen & Prompt-Blöcke)."""

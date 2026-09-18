@@ -41,8 +41,10 @@ def _age_days(iso: Optional[str], now: Optional[datetime] = None) -> Optional[fl
 
 
 def evaluate(dyn_docs: List[Dict], existing_aids: set, n_analyses: int, n_released: int,
-             cockpit_rows: List[Dict], now: Optional[datetime] = None) -> List[Dict]:
-    """Rein: Rohdaten -> Checks [{name, level, count, detail, items}]."""
+             cockpit_rows: List[Dict], now: Optional[datetime] = None,
+             released_aid_by_dyn: Optional[Dict[str, str]] = None) -> List[Dict]:
+    """Rein: Rohdaten -> Checks [{name, level, count, detail, items}].
+    released_aid_by_dyn: dyn-id -> freigegebene Analyse ihrer Anlageklasse (Kopplung)."""
     checks: List[Dict] = []
     active = [d for d in dyn_docs if not d.get("archived")]
 
@@ -78,6 +80,20 @@ def evaluate(dyn_docs: List[Dict], existing_aids: set, n_analyses: int, n_releas
                               "Reward-Split und Regime-Gate 'lab' bleiben ohne Wirkung. Erste Analyse als Shadow freigeben."
                               if no_rel else (f"{n_released} Lab-Freigabe(n) aktiv" if n_released
                                               else "Noch keine Lab-Analysen"))})
+
+    rel_map = released_aid_by_dyn or {}
+    mism = []
+    for d in active:
+        s = d.get("settings") or {}
+        target = rel_map.get(d.get("id"))
+        if s.get("follow_release_enabled") and target and target != s.get("analysis_id"):
+            mism.append({"id": d.get("id"), "name": d.get("name"),
+                         "analysis_id": s.get("analysis_id"), "released_aid": target})
+    checks.append({"name": "release_mismatch", "level": "warn" if mism else "ok", "count": len(mism), "items": mism,
+                   "detail": (f"{len(mism)} gekoppelte dynamische Strategie(n) basieren nicht auf der freigegebenen "
+                              "Lab-Analyse ihrer Anlageklasse – aus der freigegebenen Analyse neu aufbauen "
+                              "(Regime-Lab → Strategie zusammenstellen), alte danach archivieren."
+                              if mism else "Gekoppelte dynamische Strategien passen zur Lab-Freigabe")})
 
     low = [r for r in cockpit_rows if not r.get("error") and r.get("observer_reliable")
            and r.get("observer_hit_pct") is not None and float(r["observer_hit_pct"]) < LOW_HIT_PCT]
@@ -117,7 +133,7 @@ async def status(db, force: bool = False) -> Dict:
     if not force and _cache["data"] is not None and now_mono - _cache["ts"] < CACHE_TTL_S:
         return _cache["data"]
     from services import regime_cockpit
-    dyn = await db.dynamic_strategies.find({}, {"_id": 0, "id": 1, "name": 1, "archived": 1,
+    dyn = await db.dynamic_strategies.find({}, {"_id": 0, "id": 1, "name": 1, "archived": 1, "symbols": 1,
                                                 "settings": 1, "last_state.checked_at": 1}).to_list(100)
     aids = {(d.get("settings") or {}).get("analysis_id") for d in dyn}
     aids.discard(None)
@@ -127,7 +143,23 @@ async def status(db, force: bool = False) -> Dict:
     n_released = await db.regime_analyses.count_documents({"release.stage": {"$in": ["shadow", "active"]}})
     rows = [r for r in regime_cockpit._overview_cache.values() if r.get("row")]
     rows = [r["row"] for r in rows if r["row"].get("days") == 14]
-    checks = evaluate(dyn, existing, n_analyses, n_released, rows)
+    rel_by_dyn: Dict[str, str] = {}
+    try:
+        from services import regime_release
+        from services.setup_asset_class import asset_class_of
+        cache: Dict[str, Optional[str]] = {}
+        for d in dyn:
+            if d.get("archived") or not (d.get("settings") or {}).get("follow_release_enabled"):
+                continue
+            cls = asset_class_of((d.get("symbols") or ["BTCUSDT"])[0])
+            if cls not in cache:
+                doc = await regime_release.released_for_class(db, cls)
+                cache[cls] = doc.get("id") if doc else None
+            if cache[cls]:
+                rel_by_dyn[d["id"]] = cache[cls]
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"regime_bridge_health release map: {e}")
+    checks = evaluate(dyn, existing, n_analyses, n_released, rows, released_aid_by_dyn=rel_by_dyn)
     data = {"level": overall_level(checks), "checks": checks,
             "checked_at": datetime.now(timezone.utc).isoformat()}
     _cache.update(ts=now_mono, data=data)

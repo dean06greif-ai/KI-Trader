@@ -355,6 +355,13 @@ export default function DynamicPanel() {
                     Auto-Prüfung
                   </label>
                   <label style={{ display: 'flex', gap: 4, alignItems: 'center', cursor: 'pointer' }}
+                    title="An Lab-Freigabe koppeln: Sobald für diese Anlageklasse eine andere Regime-Analyse freigegeben ist (Shadow/Aktiv) als die Basis dieser Strategie, warnt das Regime-Cockpit (Banner + 1×/Tag Telegram) mit der Ziel-Analyse – die Strategie kann dann aus der freigegebenen Analyse neu aufgebaut werden und verwaist nie unbemerkt.">
+                    <input type="checkbox" checked={!!s.settings?.follow_release_enabled}
+                      onChange={e => saveSettings(s.id, { follow_release_enabled: e.target.checked })}
+                      data-testid={`dyn-follow-release-${s.id}`} />
+                    An Lab-Freigabe koppeln
+                  </label>
+                  <label style={{ display: 'flex', gap: 4, alignItems: 'center', cursor: 'pointer' }}
                     title="Wechsel werden nicht automatisch übernommen, sondern als Vorschlag angezeigt und müssen bestätigt werden">
                     <input type="checkbox" checked={!!s.settings?.require_confirmation}
                       onChange={e => saveSettings(s.id, { require_confirmation: e.target.checked })}

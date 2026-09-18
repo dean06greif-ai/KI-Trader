@@ -171,6 +171,8 @@ async def dynamic_settings(did: str, body: Dict, _: bool = Depends(require_admin
         s["auto_check_enabled"] = bool(body["auto_check_enabled"])
     if "auto_apply_enabled" in body:
         s["auto_apply_enabled"] = bool(body["auto_apply_enabled"])
+    if "follow_release_enabled" in body:
+        s["follow_release_enabled"] = bool(body["follow_release_enabled"])
     if "require_confirmation" in body:
         s["require_confirmation"] = bool(body["require_confirmation"])
     if body.get("check_interval_minutes") is not None:

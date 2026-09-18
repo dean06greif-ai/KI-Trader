@@ -194,7 +194,13 @@ ai_decisions, settings), `AI_TRADER_LOCAL_DISABLE=1`; KEINE Bitunix-/IBKR-/Teleg
   < 52 % als unzuverlässig markiert (`regime_context.annotate_label`, Hook in `ai_market_observer.context_text`).
 - Tests: `tests/test_regime_bridge_hardening.py` (10 unit). Prod-Befund (lesend) durch Health-Check bestätigt. Details: PLAN_REGIME_COCKPIT.md „Nachtrag“.
 
+## Umgesetzt (18.09.2026 – Teil 2: ML-Gate-Feature `regime_hit_pct`, Kopplung Dyn-Strategie ↔ Freigabe)
+- ML-Gate: neues Feature `regime_hit_pct` (Observer-Snapshot trägt Cockpit-Trefferquote), rückwärtskompatibel per Modell-Feature-Liste.
+- Dyn-Strategien: `follow_release_enabled` + Health-Check `release_mismatch` (kein Auto-Umbau, nur Warnung mit Ziel-Analyse).
+- Shadow-Freigabe = Trader-Aktion in Prod; Empfehlung `ra_60fce9cc` (Details PLAN_REGIME_COCKPIT.md Nachtrag Teil 2).
+
 ## Backlog (Stand 18.09.2026, nach PLAN_REGIME_COCKPIT)
+- P0 Trader: Regime „behalten“ markieren + Kalibrierung/Ablation + Shadow-Freigabe für `ra_60fce9cc`.
 - P0 Trader-Aktion: erste Lab-Freigabe (Shadow) – erst dann füllt sich die Struktur-Ebene im Cockpit und im Prompt.
 - P1 Lokaler Worker: Paket neu herunterladen (enthält Kopie von `services/`), sonst alte Kalibrierung.
 - P2 Vorwärts-Trefferquote als ML-Gate-Feature (Plan-Option).
