@@ -186,6 +186,14 @@ ai_decisions, settings), `AI_TRADER_LOCAL_DISABLE=1`; KEINE Bitunix-/IBKR-/Teleg
   Bitunix-/Telegram-/IBKR-Gateway-Keys bewusst NICHT gesetzt (kein Doppelbetrieb gegen Live-Börse). Für die UI-Prüfung
   wurden echte `ai_market_snapshots` (BTC/ETH, 15 d) und geschlossene KI-Trades lesend aus Prod in die lokale DB kopiert.
 
+## Umgesetzt (18.09.2026 – Härtung Regime-Brücke, P1/P2 aus Bewertung)
+- `services/retention.py`: Pinning – freigegebene Analysen + Basen aktiver Dyn-Strategien überleben `keep_last` (rein: `pinned_analysis_ids`).
+- `services/regime_bridge_health.py` (neu) + `GET /api/regime-cockpit/health` + Loop in `server.py` (6 h, Meldung 1×/Tag, Toggle
+  `regime_bridge`): verwaiste/inaktive Dyn-Strategien, keine Lab-Freigabe, Observer ≤ Zufall. UI-Banner `RegimeBridgeHealth.js` im Cockpit.
+- Flag `regime_label_reliability_enabled` (Default aus) + KI-Setup-Schalter: Kurzfrist-Labels im Prompt mit Trefferquote,
+  < 52 % als unzuverlässig markiert (`regime_context.annotate_label`, Hook in `ai_market_observer.context_text`).
+- Tests: `tests/test_regime_bridge_hardening.py` (10 unit). Prod-Befund (lesend) durch Health-Check bestätigt. Details: PLAN_REGIME_COCKPIT.md „Nachtrag“.
+
 ## Backlog (Stand 18.09.2026, nach PLAN_REGIME_COCKPIT)
 - P0 Trader-Aktion: erste Lab-Freigabe (Shadow) – erst dann füllt sich die Struktur-Ebene im Cockpit und im Prompt.
 - P1 Lokaler Worker: Paket neu herunterladen (enthält Kopie von `services/`), sonst alte Kalibrierung.

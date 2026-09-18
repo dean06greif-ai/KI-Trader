@@ -1716,6 +1716,13 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                 <option value="off">aus</option>
               </select>
             </label>
+            <label title="Label-Zuverlässigkeit: Im Markt-Beobachter-Block steht hinter jedem Kurzfrist-Regime-Label seine Vorwärts-Trefferquote (14 Tage, Cockpit). Unter 52 % wird das Label ausdrücklich als unzuverlässig markiert – die KI soll es dann nicht als Einstiegsbegründung nutzen. Keine Handelssperre, nur Gewichtung im Prompt.">
+              <span>Label-Zuverlässigkeit (Prompt)</span>
+              <select value={cfg.regime_label_reliability_enabled ? 'on' : 'off'} onChange={e => updateConfig({ regime_label_reliability_enabled: e.target.value === 'on' })} data-testid="ai-regime-reliability-select">
+                <option value="off">aus</option>
+                <option value="on">an</option>
+              </select>
+            </label>
             <label title="Regime-Brücke: Darf der KI-Trader (Forschungs-Analyst) den Wechsel einer freigegebenen Lab-Analyse von Shadow auf Wirksam selbst vorschlagen (suggest: du klickst im Vorschläge-Panel) oder vollziehen (auto: 24 h Karenz mit Stopp-Knopf, Widerruf jederzeit)? Die KI kann das Nachweis-Gate (≥ 30 Shadow-Trades, Reward-Unterschied ≥ 0,25 R) nie umgehen.">
               <span>Struktur-Freigabe (KI)</span>
               <select value={cfg.structural_regime_autonomy || 'suggest'} onChange={e => updateConfig({ structural_regime_autonomy: e.target.value })} data-testid="ai-structural-autonomy-select">

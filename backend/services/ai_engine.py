@@ -200,6 +200,9 @@ DEFAULT_AI_CONFIG = {
     # PLAN_REGIME_COCKPIT B4: Prompt-Block „Regime-Bilanz & Erkennungs-Qualität“
     # (Winrate je Regime, Vorwärts-Trefferquote, Lab-Note). Reine Information.
     "regime_context_enabled": True,
+    # P2-3 (18.09.): Kurzfrist-Label im Markt-Beobachter-Block um seine Vorwärts-
+    # Trefferquote ergänzen; < 52 % = ausdrücklich „unzuverlässig“. Default aus.
+    "regime_label_reliability_enabled": False,
     # Max. gleichzeitig offene KI-Trader-Trades pro Coin (1–5). Default 1 =
     # bisheriges Verhalten (strikt ein Trade pro Coin). Nur der KI-Trader nutzt
     # dieses Limit; alle anderen Strategien bleiben bei strikt 1 Trade pro Coin.
@@ -881,6 +884,8 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
             self.config["regime_block_enabled"] = bool(updates["regime_block_enabled"])
         if "regime_context_enabled" in updates:
             self.config["regime_context_enabled"] = bool(updates["regime_context_enabled"])
+        if "regime_label_reliability_enabled" in updates:
+            self.config["regime_label_reliability_enabled"] = bool(updates["regime_label_reliability_enabled"])
         if "regime_block_list" in updates and isinstance(updates["regime_block_list"], list):
             self.config["regime_block_list"] = [
                 str(x).strip()[:40] for x in updates["regime_block_list"] if str(x).strip()][:10]

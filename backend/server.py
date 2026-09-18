@@ -361,6 +361,9 @@ async def lifespan(app: FastAPI):
     from services import structural_regime
     structural_regime.setup(app.mongodb)
     asyncio.create_task(structural_regime.run_loop(lambda: list(ai_engine.symbols or [])))
+    # Regime-Brücken-Gesundheit: verwaiste/inaktive Dyn-Strategien, fehlende Freigabe (1×/Tag melden)
+    from services import regime_bridge_health
+    asyncio.create_task(regime_bridge_health.run_loop(app.mongodb, telegram))
     # Modell-Wächter: prüft wöchentlich alle konfigurierten Modell-Slugs live
     from services.ai_model_watch import model_watch
     await model_watch.load_discovered(state.db)  # entdeckte Modelle sofort freischalten

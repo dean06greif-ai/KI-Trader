@@ -6,6 +6,7 @@ import {
 import useInstruments from '../hooks/useInstruments';
 import { fmtDateTime, fmtShort } from '../lib/time';
 import RegimeCockpitOverview from './RegimeCockpitOverview';
+import RegimeBridgeHealth from './RegimeBridgeHealth';
 import './RegimeCockpit.css';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -124,6 +125,7 @@ export default function RegimeCockpit() {
       </div>
 
       {err && <div className="rc-error" data-testid="regime-cockpit-error"><Warning size={13} /> {err}</div>}
+      <RegimeBridgeHealth />
 
       {data && (
         <>

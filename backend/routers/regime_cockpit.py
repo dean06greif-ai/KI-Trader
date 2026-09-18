@@ -27,6 +27,14 @@ async def cockpit_overview(days: int = 14, symbols: Optional[str] = None):
     return {"days": days, "rows": await regime_cockpit.overview(state.db, syms, days)}
 
 
+@router.get("/api/regime-cockpit/health")
+async def cockpit_health(force: bool = False):
+    """Gesundheit der Regime-Brücke: verwaiste/inaktive dynamische Strategien,
+    fehlende Lab-Freigabe, Kurzfrist-Erkennung auf Zufallsniveau (nur lesend)."""
+    from services import regime_bridge_health
+    return await regime_bridge_health.status(state.db, force=force)
+
+
 @router.get("/api/regime-cockpit/{symbol}")
 async def cockpit_symbol(symbol: str, days: int = 14):
     """Komplettes Cockpit: Kurs, beide Regime-Ebenen, Trade-Marker, Trefferquoten."""

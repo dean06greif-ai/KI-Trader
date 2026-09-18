@@ -54,8 +54,12 @@ DEFAULT_POLICY: List[Dict] = [
     {"coll": "backtests", "ts": "created_at", "days": 45, "keep_last": 15},
     {"coll": "optimizer_trades", "ts": "created_at", "days": 21, "keep_last": None},
     {"coll": "optimizer_runs", "ts": "created_at", "days": 45, "keep_last": 15},
-    # Wenige, riesige Dokumente: Anzahl-Limit ist hier das wirksame Kriterium
-    {"coll": "regime_analyses", "ts": "created_at", "days": None, "keep_last": 8},
+    # Wenige, riesige Dokumente: Anzahl-Limit ist hier das wirksame Kriterium.
+    # protect: freigegebene Analysen (release.stage shadow/aktiv) und Analysen,
+    # auf die eine nicht archivierte dynamische Strategie zeigt, werden NIE gelöscht
+    # (sonst verwaist die Regime-Brücke stumm – Befund 18.09.2026).
+    {"coll": "regime_analyses", "ts": "created_at", "days": None, "keep_last": 8,
+     "protect": "regime_analyses"},
     {"coll": "ml_gate_models", "ts": "trained_at", "days": None, "keep_last": 12},
     # Ergänzung 06/2026 (Audit): bisher ungedeckelte Wachstums-Collections
     {"coll": "app_notifications", "ts": "created_at", "days": 30, "keep_last": None},
@@ -126,13 +130,32 @@ async def _sweep_rule(db, rule: Dict) -> Dict:
     if keep:
         total = await db[coll].count_documents({})
         if total > keep:
-            old = await db[coll].find({}, {"_id": 1}).sort(ts_field, -1) \
+            old = await db[coll].find({}, {"_id": 1, "id": 1}).sort(ts_field, -1) \
                 .skip(int(keep)).to_list(length=None)
-            ids = [o["_id"] for o in old]
+            protected = await protected_ids(db, rule.get("protect")) if rule.get("protect") else set()
+            ids = [o["_id"] for o in old if o.get("id") not in protected]
             if ids:
                 res = await db[coll].delete_many({"_id": {"$in": ids}})
                 deleted += int(res.deleted_count or 0)
     return {"coll": coll, "deleted": deleted}
+
+
+def pinned_analysis_ids(analyses: List[Dict], dyn_docs: List[Dict]) -> set:
+    """Rein: Analyse-IDs, die die Retention nie löschen darf – freigegeben
+    (Shadow/Aktiv) oder Basis einer nicht archivierten dynamischen Strategie."""
+    out = {a.get("id") for a in analyses
+           if (a.get("release") or {}).get("stage") in ("shadow", "active")}
+    out |= {(d.get("settings") or {}).get("analysis_id") for d in dyn_docs if not d.get("archived")}
+    out.discard(None)
+    return out
+
+
+async def protected_ids(db, kind: str) -> set:
+    if kind != "regime_analyses":
+        return set()
+    analyses = await db.regime_analyses.find({}, {"_id": 0, "id": 1, "release.stage": 1}).to_list(200)
+    dyn = await db.dynamic_strategies.find({}, {"_id": 0, "archived": 1, "settings.analysis_id": 1}).to_list(200)
+    return pinned_analysis_ids(analyses, dyn)
 
 
 async def run_sweep(db, trigger: str = "auto") -> Dict:

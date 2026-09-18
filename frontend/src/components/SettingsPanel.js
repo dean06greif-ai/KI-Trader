@@ -75,6 +75,7 @@ const SettingsPanel = ({ onClose, focusStrategy, mode = 'all', controlState, onC
     job_series: 'Nacht-Serie: Job fertig / Serie komplett',
     ibkr_gateway: 'IBKR-Gateway: ausgeloggt / readyz länger als 5 Min rot (Forex-Live)',
     website_ai_failure: 'KI-Ausfall zusätzlich als Website-Meldung',
+    regime_bridge: 'Regime-Brücke läuft ins Leere (verwaiste Dyn-Strategie, keine Lab-Freigabe) – max. 1×/Tag',
   };
 
   useEffect(() => {

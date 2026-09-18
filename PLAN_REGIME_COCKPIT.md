@@ -68,3 +68,18 @@ Leitlinien: additiv, hinter Flags, keine bestehende API/Collection verändern; r
 ## Offen / Nächstes (nach diesem Plan)
 - Trader-Aktion: erste Lab-Freigabe (Shadow) – erst dann füllt sich die Struktur-Ebene im Cockpit und im Prompt.
 - Optional: Vorwärts-Trefferquote als ML-Gate-Feature.
+
+---
+
+## Nachtrag 18.09. – Härtung der Brücke (P1/P2, additiv, hinter Flags)
+- [x] **Retention-Pinning** (`services/retention.py`): Regel `regime_analyses` hat `protect`; `pinned_analysis_ids()` (rein) schützt
+  freigegebene Analysen (Shadow/Aktiv) und Basen nicht archivierter dynamischer Strategien vor `keep_last`. Lokal verifiziert
+  (11 Analysen, keep 8 → nur die ungeschützte älteste gelöscht). In Prod aktuell geschützt: `ra_c96b100f` (Basis `dyn_a59ca705`).
+- [x] **Brücken-Gesundheit** (`services/regime_bridge_health.py`, neu): Checks `orphaned_dynamic`, `dynamic_idle` (Auto-Check aus /
+  Check > 7 d), `no_release`, `observer_low_hit`; `GET /api/regime-cockpit/health`; Loop alle 6 h, Warnung max. 1×/Tag als
+  Website-Glocke + Telegram (Toggle `regime_bridge` in Meldungen). UI: Banner `RegimeBridgeHealth.js` oben im Regime-Cockpit
+  (`regime-bridge-health`, je Check `regime-bridge-health-<name>`). Prod-Befund lesend bestätigt: 3 Warnungen (verwaist, inaktiv seit 50 d, 0 Freigaben).
+- [x] **Label-Zuverlässigkeit im Prompt** (Flag `regime_label_reliability_enabled`, Default AUS; KI-Setup „Label-Zuverlässigkeit (Prompt)“,
+  `ai-regime-reliability-select`): `regime_context.annotate_label()` (rein) hängt an jedes Kurzfrist-Label im Markt-Beobachter-Block
+  die 14-d-Vorwärts-Trefferquote; < 52 % → „unzuverlässig, nicht als Begründung nutzen“. Nie blockierend (Cockpit-Cache).
+- Tests: `tests/test_regime_bridge_hardening.py` (10 unit). Bestehende Suiten `test_ai_lab`, `test_adaptive_modules`, `test_regime_cockpit` grün.

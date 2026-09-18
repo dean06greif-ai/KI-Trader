@@ -189,7 +189,7 @@ def classify_regime_v2(trend_pct: float, vol_pct: float, range_pos: float, *,
     return f"drift_{base}"
 
 
-def snapshot_to_text(snap: Dict) -> str:
+def snapshot_to_text(snap: Dict, regime_text: Optional[str] = None) -> str:
     f = snap.get("features") or {}
     extra = ""
     if f.get("trend_1d_pct") is not None:
@@ -198,7 +198,7 @@ def snapshot_to_text(snap: Dict) -> str:
             extra += f" / 3d {f.get('trend_3d_pct'):+.2f}%"
         if f.get("daily_bias"):
             extra += f" (Tages-Bias: {f.get('daily_bias')})"
-    return (f"{snap.get('symbol')}: {f.get('regime')} | RSI {f.get('rsi')} | "
+    return (f"{snap.get('symbol')}: {regime_text or f.get('regime')} | RSI {f.get('rsi')} | "
             f"Trend {f.get('trend_pct'):+.2f}% | Vola {f.get('volatility_pct')}% | "
             f"ATR {f.get('atr_pct')}% | Vol x{f.get('volume_ratio')} | "
             f"Range-Pos {f.get('range_pos')}%" + extra)
@@ -340,12 +340,34 @@ class MarketObserver:
         if not self.snapshots:
             return ""
         lines = ["=== MARKT-BEOBACHTER (gemessener Marktzustand) ==="]
+        rows = self._reliability_rows(limit)
         for snap in list(self.snapshots.values())[:limit]:
-            lines.append("- " + snapshot_to_text(snap))
+            rt = None
+            if rows is not None:
+                from services.regime_context import annotate_label
+                rt = annotate_label((snap.get("features") or {}).get("regime"), rows.get(snap.get("symbol")))
+            lines.append("- " + snapshot_to_text(snap, rt))
+        if rows is not None:
+            lines.append("Hinweis: Trefferquote = wie oft das Label in den letzten 14 Tagen die Richtung der "
+                         "nächsten 4 h richtig vorhersagte (Regime-Cockpit). Unzuverlässige Labels ignorieren.")
         if self.last_summary:
             lines.append(f"Einschätzung ({self.last_summary.get('regime')}): "
                          f"{self.last_summary.get('summary')}")
         return "\n".join(lines)
+
+    def _reliability_rows(self, limit: int) -> Optional[Dict[str, Dict]]:
+        """Flag `regime_label_reliability_enabled` (KI-Setup): Cockpit-Trefferquote je
+        Symbol aus dem Cache (nie blockierend), sonst None = Verhalten wie bisher."""
+        cfg = getattr(self.engine, "config", None) or {}
+        if not cfg.get("regime_label_reliability_enabled") or self.db is None:
+            return None
+        try:
+            from services import regime_cockpit
+            syms = list(self.snapshots.keys())[:limit]
+            return {r["symbol"]: r for r in regime_cockpit.overview_cached(self.db, syms, 14)}
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"observer reliability rows: {e}")
+            return {}
 
     def status(self) -> Dict:
         cfg = self._cfg()

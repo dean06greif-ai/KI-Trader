@@ -45,6 +45,12 @@
 .rc-row { cursor: pointer; }
 .rc-row:hover td { background: rgba(100, 210, 255, 0.06); }
 .rc-row.sel td { background: rgba(100, 210, 255, 0.12); }
+.rc-health { border-radius: 8px; padding: 7px 10px; margin: 0 0 10px; font-size: 11.5px; display: flex; flex-direction: column; gap: 4px; }
+.rc-health.ok { background: rgba(31, 184, 85, 0.08); color: #8fd8a5; border: 1px solid rgba(31, 184, 85, 0.2); flex-direction: row; align-items: center; gap: 6px; }
+.rc-health.info { background: rgba(100, 210, 255, 0.06); color: #b5d9ea; border: 1px solid rgba(100, 210, 255, 0.18); }
+.rc-health.warn { background: rgba(255, 159, 10, 0.08); color: #f3c98b; border: 1px solid rgba(255, 159, 10, 0.3); }
+.rc-health-row { display: flex; align-items: flex-start; gap: 6px; }
+.rc-health-row svg { flex: none; margin-top: 1px; }
 @media (max-width: 640px) {
   .rc-kpis { grid-template-columns: 1fr 1fr; }
 }

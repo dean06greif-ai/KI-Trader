@@ -17,6 +17,20 @@ logger = logging.getLogger(__name__)
 MIN_TRADES_ROW = 3
 MAX_ROWS = 8
 LOW_HIT_PCT = 50.0
+UNRELIABLE_HIT_PCT = 52.0
+
+
+def annotate_label(label: Optional[str], row: Optional[Dict]) -> str:
+    """Rein: Kurzfrist-Label um seine Vorwärts-Trefferquote ergänzen (P2-3).
+    Unter UNRELIABLE_HIT_PCT wird das Label ausdrücklich als unzuverlässig
+    markiert – die KI soll es dann nicht als Einstiegsbegründung nutzen."""
+    lab = str(label or "–")
+    if not row or row.get("error") or not row.get("observer_reliable") or row.get("observer_hit_pct") is None:
+        return lab
+    hit = float(row["observer_hit_pct"])
+    if hit < UNRELIABLE_HIT_PCT:
+        return f"{lab} (⚠ Trefferquote {hit:.0f} % – unzuverlässig, nicht als Begründung nutzen)"
+    return f"{lab} (Trefferquote {hit:.0f} %)"
 
 
 def _pct(v) -> str:
