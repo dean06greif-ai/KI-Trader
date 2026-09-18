@@ -171,7 +171,24 @@ ai_decisions, settings), `AI_TRADER_LOCAL_DISABLE=1`; KEINE Bitunix-/IBKR-/Teleg
   (IBKR-Routing/365-Tage-Deckel), `test_adaptive_modules` (Retention 30 statt 45 d), `test_playbook_backups_notify`
   (echte MISTRAL_BACKUP-Keys in .env), `test_iter38_*` (braucht Mock-Server :8055).
 
-## Backlog (Stand 18.09.2026, nach Merge)
+## Umgesetzt (18.09.2026 – PLAN_REGIME_COCKPIT abgeschlossen; Branch conflict_180926_1723)
+- Ausgangslage: Backend-Bausteine B0/B1/B2/B4 sowie die UI-Bausteine (Orphan-Badge, RegimeValidation-Text,
+  `RegimeCockpit.js` + Einbau in `AITradingPanel` Analyse-Sektion, Schalter `ai-regime-context-select`) waren im Branch
+  bereits vorhanden, im Plan aber nicht abgehakt. Häkchen nachgezogen, Fortschritts-Log ergänzt.
+- Neu: `frontend/src/components/RegimeCockpitOverview.js` – einklappbare Karte „Übersicht alle Symbole“ unter dem
+  Detail-Cockpit (`GET /api/regime-cockpit/overview`, Klick auf Zeile wählt das Symbol; Styles in `RegimeCockpit.css`).
+- Abnahme (B5): 20 unit `test_regime_cockpit.py` grün; Live-Check lesend gegen Prod-Atlas (`scripts/live_check_regime_context.py`
+  mit PROD_MONGO_URL): Prompt-Block gefüllt (BTC 51 %/998 Punkte, ETH 48 % Vorwärts-Trefferquote; `structural_regime_history`
+  in Prod = 0, erwartet ohne Lab-Freigabe). Testing-Agent Iteration 7: Backend 10/10, Frontend alle Flows grün
+  (`backend/tests/test_regime_cockpit_api.py` als Live-Regressionstest übernommen).
+- Alt-Drift-Tests `test_adaptive_modules` (Retention 30/14 statt 45/21 d) auf DEFAULT_POLICY-Referenz umgestellt (17/17 grün).
+- Umgebung Preview: lokale Mongo (`MONGO_URL`), Prod-Atlas nur als `PROD_MONGO_URL` (lesend), `AI_TRADER_LOCAL_DISABLE=1`,
+  Bitunix-/Telegram-/IBKR-Gateway-Keys bewusst NICHT gesetzt (kein Doppelbetrieb gegen Live-Börse). Für die UI-Prüfung
+  wurden echte `ai_market_snapshots` (BTC/ETH, 15 d) und geschlossene KI-Trades lesend aus Prod in die lokale DB kopiert.
+
+## Backlog (Stand 18.09.2026, nach PLAN_REGIME_COCKPIT)
+- P0 Trader-Aktion: erste Lab-Freigabe (Shadow) – erst dann füllt sich die Struktur-Ebene im Cockpit und im Prompt.
 - P1 Lokaler Worker: Paket neu herunterladen (enthält Kopie von `services/`), sonst alte Kalibrierung.
-- P2 Alt-Drift-Tests oben an den aktuellen Code angleichen (kein Produktionsrisiko).
+- P2 Vorwärts-Trefferquote als ML-Gate-Feature (Plan-Option).
+- P2 Restliche Alt-Drift-Tests (`test_instruments_universe`, `test_playbook_backups_notify`, `test_iter38_*`) angleichen.
 - P2 Admin-Only-Polling vor Login gaten (3 harmlose 401 in der Konsole).

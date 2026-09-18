@@ -33,12 +33,14 @@ def test_retention_override_days_and_floors():
     assert pol["ai_market_snapshots"]["days"] == retention.MIN_DAYS["ai_market_snapshots"]
     assert pol["ml_gate_models"]["keep_last"] == retention.MIN_KEEP
     # Nicht überschriebene Regeln bleiben Default
-    assert pol["ai_chat_archive"]["days"] == 45
+    default_chat = next(p for p in retention.DEFAULT_POLICY if p["coll"] == "ai_chat_archive")["days"]
+    assert pol["ai_chat_archive"]["days"] == default_chat
 
 
 def test_retention_override_invalid_values_ignored():
     pol = {p["coll"]: p for p in retention.merged_policy({"ai_decisions": {"days": "quatsch"}})}
-    assert pol["ai_decisions"]["days"] == 21
+    default_dec = next(p for p in retention.DEFAULT_POLICY if p["coll"] == "ai_decisions")["days"]
+    assert pol["ai_decisions"]["days"] == default_dec
 
 
 # ------------------------------------------------------- Aktivitäts-Wächter
