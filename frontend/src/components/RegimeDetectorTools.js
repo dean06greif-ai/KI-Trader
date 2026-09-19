@@ -1,0 +1,341 @@
+import React, { useState } from 'react';
+import { Play } from '@phosphor-icons/react';
+import { toast } from '../lib/toast';
+import { useLabJob, JobProgress, EdgeBanner } from './RegimeJobProgress';
+
+const fmt = (v, d = 2) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
+const th = (extra = {}) => ({ padding: '3px 10px', ...extra });
+const BEST_BG = { background: 'rgba(80,200,120,0.12)' };
+
+const SelectionNote = ({ result, testId, children }) => (
+  <div className="opt-small" style={{ marginTop: 4 }} data-testid={testId}>
+    ★ = beste INNERE Validierung (der Holdout ist finaler Test, keine Auswahlbasis
+    {result.selection_basis === 'train_only' ? ' · Auswahl hier: nur Training, kein inneres Fenster' : ''}).
+    {result.attempt_no ? ` Versuch #${result.attempt_no} auf diesem Holdout.` : ''}
+    {result.evidence === 'insufficient_evidence' ? ' ⚠ Zu wenig Holdout-Daten – Ergebnis nicht belastbar.' : ''}
+    {' '}{children}
+  </div>
+);
+
+// ---------------- Indikator-Ablation (AP13) ----------------
+const ABLATION_VERDICT = {
+  traegt_bei: { text: 'trägt bei', cls: 'pos' },
+  redundant: { text: 'redundant', cls: '' },
+  schadet: { text: 'schadet', cls: 'neg' },
+  unbewertet: { text: 'unbewertet', cls: '' },
+};
+
+export function AblationCompare({ selCoins, timeframe, days, trainPct, engineConfig, jobBlocked }) {
+  const [result, setResult] = useState(null);
+  const { job, start, cancel, running } = useLabJob({
+    errorLabel: 'Ablation fehlgeschlagen',
+    onDone: (res) => { if (res?.rows) setResult(res); },
+  });
+  const run = () => {
+    setResult(null);
+    start('/api/regime-lab/ablation', { symbols: selCoins, timeframe, days, train_pct: trainPct,
+      engine_config: engineConfig || {} }, { requireCoins: true });
+  };
+  const verdictOf = (key) => ABLATION_VERDICT[result?.verdicts?.[key]?.verdict] || null;
+
+  return (
+    <div className="opt-row rl-tool" data-testid="ablation-section">
+      <div className="opt-label">C · INDIKATOR-ABLATION – WELCHE BESTÄTIGUNG HILFT WIRKLICH?</div>
+      <div className="opt-small" style={{ marginBottom: 6 }}>
+        <b>Wann?</b> Nach der Kalibrierung, wenn du wissen willst, ob eine Bestätigungs-Komponente
+        (ADX, Effizienz, Volumen, EMA …) etwas bringt oder nur bremst. Derselbe Datensatz: Detektor
+        voll vs. ohne je eine Komponente vs. einfache Alternative. Ergebnis ist eine Bewertung
+        („trägt bei / redundant / schadet“) – <b>kein</b> automatisches Übernehmen.
+      </div>
+      <div className="opt-setup" style={{ alignItems: 'center' }}>
+        <button className="opt-chip" onClick={run} disabled={running || jobBlocked} data-testid="ablation-run">
+          <Play size={11} weight="fill" /> Ablation starten
+        </button>
+      </div>
+      <JobProgress job={job} onCancel={cancel} color="#64d2ff" testId="ablation-status" label="Ablation" />
+      {result && (
+        <div style={{ overflowX: 'auto', marginTop: 6 }}>
+          <table className="rl-compare-table" data-testid="ablation-table"
+            style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 640 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', opacity: 0.7 }}>
+                <th style={th({ paddingLeft: 0 })}>Variante</th>
+                <th style={th()} title="Anteil der Kerzen, bei denen die Live-Sicht dieselbe Richtung sieht wie die finale Sicht">Live=Final</th>
+                <th style={th()} title="Innere Validierung (letzter Teil des Trainingsfensters) – Bewertungsbasis">Innere Val.</th>
+                <th style={th()} title="Holdout = unangetasteter FINALER Test (keine Auswahlbasis)">Holdout (finaler Test)</th>
+                <th style={th()} title="Nur auf Trend-Kerzen (Auf/Ab)">Trend-Treffer</th>
+                <th style={th()}>Wechsel (final/live)</th>
+                <th style={th()} title="Beitrag der entfernten Komponente: volle Konfiguration minus diese Variante (innere Validierung)">Beitrag</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.rows.map(r => (
+                <tr key={r.variant_key} data-testid={`ablation-row-${r.variant_key}`}
+                  style={r.variant_key === result.best_variant ? BEST_BG : undefined}>
+                  <td style={th({ paddingLeft: 0 })}><b>{r.name}</b>{r.variant_key === result.best_variant ? ' ★' : ''}</td>
+                  {r.error ? <td colSpan={6} className="neg">{r.error}</td> : (
+                    <>
+                      <td style={th()}>{fmt(r.direction_pct, 1)}%</td>
+                      <td style={th()}><b>{fmt(r.inner_direction_pct, 1)}%</b></td>
+                      <td style={th()}>{fmt(r.holdout_direction_pct, 1)}%</td>
+                      <td style={th()}>{fmt(r.trend_hit_pct, 1)}%</td>
+                      <td style={th()}>{r.switches_final} / {r.switches_live}</td>
+                      <td style={th()} className={verdictOf(r.variant_key)?.cls || ''}>
+                        {r.variant_key === 'full' ? '–'
+                          : `${verdictOf(r.variant_key)?.text || '–'}${
+                            result.verdicts?.[r.variant_key]?.delta_pp !== null
+                            && result.verdicts?.[r.variant_key]?.delta_pp !== undefined
+                              ? ` (${result.verdicts[r.variant_key].delta_pp > 0 ? '+' : ''}${result.verdicts[r.variant_key].delta_pp}pp)` : ''}`}
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {(() => {
+            const pool = result.rows.find(r => r.variant_key === result.best_variant)?.pooling;
+            const classes = pool?.classes ? Object.values(pool.classes) : [];
+            if (classes.length < 1) return null;
+            return (
+              <div className="opt-small" style={{ marginTop: 4 }} data-testid="ablation-pooling">
+                Pooling (★-Variante, {pool.basis === 'bars_weighted' ? 'kerzen-gewichtet' : pool.basis}):{' '}
+                {classes.map(c => `${c.label} ${fmt(c.direction_pct, 1)}% (${c.n_symbols} Symbole${
+                  Object.keys(c.deviation || {}).length > 1
+                    ? `, Abweichung ${Object.entries(c.deviation).map(([s, d]) => `${s} ${d > 0 ? '+' : ''}${d}pp`).join(', ')}` : ''})`).join(' · ')}
+              </div>
+            );
+          })()}
+          <SelectionNote result={result} testId="ablation-selection-note" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- EMA-Perioden-Vergleich (Detektor 'ema') ----------------
+export function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineConfig, setEngineConfig, jobBlocked }) {
+  const [periods, setPeriods] = useState('5, 9, 14');
+  const [result, setResult] = useState(null);
+  const [banner, setBanner] = useState(null);
+
+  // Sieger-Periode direkt in die Engine-Feineinstellungen (Detektor 'ema') –
+  // danach „Regime suchen & speichern“ neu starten.
+  const applyBest = (res) => {
+    if (!res?.best_period || !setEngineConfig) return;
+    const prev = engineConfig?.ema_regime_days;
+    const bestRow = res.rows.find(r => r.period === res.best_period) || {};
+    const prevRow = res.rows.find(r => r.period === prev);
+    setEngineConfig({ ...(engineConfig || {}), detector: 'ema', ema_regime_days: res.best_period });
+    const same = prev === res.best_period;
+    setBanner({
+      improved: !same,
+      title: same
+        ? `Deine EMA-Periode (${prev}d) ist bereits die beste im Vergleich`
+        : `Besserer Edge gefunden & übernommen: EMA ${prev ? `${prev}d → ` : ''}${res.best_period}d`,
+      detail: `Innere Validierung ${prevRow ? `${fmt(prevRow.inner_direction_pct, 1)}% → ` : ''}${fmt(bestRow.inner_direction_pct, 1)}%`
+        + ` · Holdout ${fmt(bestRow.holdout_direction_pct, 1)}% · Detektor auf 'ema' gestellt – jetzt oben „Regime suchen & speichern“ starten`,
+    });
+  };
+
+  const { job, start, cancel, running } = useLabJob({
+    errorLabel: 'Vergleich fehlgeschlagen',
+    onDone: (res) => { if (res?.rows) { setResult(res); applyBest(res); } },
+  });
+
+  const run = () => {
+    const ps = periods.split(',').map(x => parseFloat(x.trim())).filter(x => x >= 2 && x <= 100);
+    if (!ps.length) { toast.error('Perioden 2-100 Tage angeben, z.B. 5, 9, 14'); return; }
+    setResult(null); setBanner(null);
+    start('/api/regime-lab/ema-compare', { symbols: selCoins, timeframe, days, train_pct: trainPct,
+      periods: ps, engine_config: engineConfig || {} }, { requireCoins: true });
+  };
+
+  return (
+    <div className="opt-row rl-tool" data-testid="ema-compare-section">
+      <div className="opt-label">A · EMA-PERIODEN-VERGLEICH – NUR FÜR GRUNDGERÜST „EMA-STEIGUNG“</div>
+      <div className="opt-small" style={{ marginBottom: 6 }}>
+        <b>Wann?</b> Wenn du das Grundgerüst „EMA-Steigung“ nutzt und die beste Glättungs-Periode suchst.
+        Gleiche Coins/Zeitraum wie oben, mehrere Perioden im direkten Vergleich. Die Sieger-Periode
+        wird <b>automatisch übernommen</b> (Detektor wird auf „ema“ gestellt).
+      </div>
+      <div className="opt-setup" style={{ alignItems: 'center' }}>
+        <label className="opt-field" title="Kommagetrennte EMA-Perioden in Tagen (2-100), max. 8">
+          Perioden (Tage)
+          <input value={periods} onChange={e => setPeriods(e.target.value)}
+            placeholder="5, 9, 14" style={{ width: 110 }} data-testid="ema-compare-periods" />
+        </label>
+        <button className="opt-chip" onClick={run} disabled={running || jobBlocked} data-testid="ema-compare-run">
+          <Play size={11} weight="fill" /> Vergleich starten
+        </button>
+      </div>
+      <JobProgress job={job} onCancel={cancel} color="#ffa502" testId="ema-compare-status" label="EMA-Vergleich" />
+      {banner && <EdgeBanner {...banner} testId="ema-compare-banner" />}
+      {result && (
+        <div style={{ overflowX: 'auto', marginTop: 6 }}>
+          <table className="rl-compare-table" data-testid="ema-compare-table"
+            style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 620 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', opacity: 0.7 }}>
+                <th style={th({ paddingLeft: 0 })}>EMA</th>
+                <th style={th()} title="Anteil der Kerzen, bei denen die Live-Sicht dieselbe Richtung sieht wie die finale Sicht">Live=Final</th>
+                <th style={th()} title="Innere Validierung (letzter Teil des Trainingsfensters) – DARAUF wird die beste Periode gewählt">Innere Val.</th>
+                <th style={th()} title="Holdout = unangetasteter FINALER Test (keine Auswahlbasis)">Holdout (finaler Test)</th>
+                <th style={th()} title="Nur auf Trend-Kerzen (Auf/Ab)">Trend-Treffer</th>
+                <th style={th()} title="Durchschnittliche Phasendauer der finalen Sicht">Ø Phase final</th>
+                <th style={th()} title="Durchschnittliche Phasendauer der Live-Sicht (kürzer = mehr Flackern)">Ø Phase live</th>
+                <th style={th()}>Wechsel (final/live)</th>
+                <th style={th()} title="Anteil der Kerzen, die gegen ihr Regime-Label laufen">Verstöße</th>
+                <th style={th()}>Prüfung</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.rows.map(r => (
+                <tr key={r.period} data-testid={`ema-compare-row-${r.period}`}
+                  style={r.period === result.best_period ? BEST_BG : undefined}>
+                  <td style={th({ paddingLeft: 0 })}><b>{r.period}d</b>{r.period === result.best_period ? ' ★' : ''}</td>
+                  {r.error ? <td colSpan={9} className="neg">{r.error}</td> : (
+                    <>
+                      <td style={th()}>{fmt(r.direction_pct, 1)}%</td>
+                      <td style={th()}><b>{fmt(r.inner_direction_pct, 1)}%</b></td>
+                      <td style={th()}>{fmt(r.holdout_direction_pct, 1)}%</td>
+                      <td style={th()}>{fmt(r.trend_hit_pct, 1)}%</td>
+                      <td style={th()}>{fmt(r.avg_final_segment_days, 1)}d</td>
+                      <td style={th()}>{fmt(r.avg_live_segment_days, 1)}d</td>
+                      <td style={th()}>{r.switches_final} / {r.switches_live}</td>
+                      <td style={th()}>{fmt(r.violation_pct, 1)}%</td>
+                      <td style={th()} className={r.passed ? 'pos' : 'neg'}>{r.passed ? '✓' : '✗'}</td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <SelectionNote result={result} testId="ema-compare-selection-note">
+            {result.best_period && setEngineConfig && (
+              <button className="opt-chip" onClick={() => applyBest(result)} data-testid="ema-compare-apply">
+                Beste Periode ({result.best_period}d) erneut übernehmen
+              </button>
+            )}
+          </SelectionNote>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Kombi-Detektor: Auto-Kalibrierung ----------------
+export function KombiAutoCalibrate({ selCoins, timeframe, days, trainPct, engineConfig,
+  setEngineConfig, jobBlocked }) {
+  const [result, setResult] = useState(null);
+  const [banner, setBanner] = useState(null);
+
+  const applyBest = (res) => {
+    if (!res?.best_config || !res.best) return;
+    const prevThr = engineConfig?.kombi_thr;
+    const prevSlope = engineConfig?.kombi_slope_days;
+    const same = prevThr === res.best.thr && prevSlope === res.best.slope_days;
+    setEngineConfig({ ...(engineConfig || {}), ...res.best_config });
+    setBanner({
+      improved: !same,
+      title: same
+        ? 'Deine Kombi-Einstellung ist bereits die beste der geprüften Kombinationen'
+        : `Besserer Edge gefunden & übernommen: Schwelle ${res.best.thr} · Fenster ${res.best.slope_days}d`,
+      detail: `Holdout-Trefferquote ${fmt(res.best.holdout_direction_pct, 1)}% · Ø Phase ${fmt(res.best.avg_final_segment_days, 1)}d`
+        + `${res.best.in_target ? ' (im 5–15d-Zielband)' : ' (⚠ außerhalb 5–15d)'} · ${res.combos} Kombinationen geprüft`
+        + ' · Detektor auf \'kombi\' gestellt – jetzt oben „Regime suchen & speichern“ starten',
+    });
+  };
+
+  const { job, start, cancel, running } = useLabJob({
+    errorLabel: 'Kalibrierung fehlgeschlagen',
+    onDone: (res) => { if (res?.rows) { setResult(res); applyBest(res); } },
+  });
+
+  const run = () => {
+    setResult(null); setBanner(null);
+    start('/api/regime-lab/kombi-calibrate', { symbols: selCoins, timeframe, days, train_pct: trainPct,
+      engine_config: engineConfig || {} }, { requireCoins: true });
+  };
+
+  const isBest = (r) => result?.best && r.thr === result.best.thr && r.slope_days === result.best.slope_days;
+
+  return (
+    <div className="opt-row rl-tool" data-testid="kombi-calibrate-section">
+      <div className="opt-label">B · AUTO-KALIBRIERUNG – NUR FÜR GRUNDGERÜST „KOMBI“</div>
+      <div className="opt-small" style={{ marginBottom: 6 }}>
+        <b>Was ist das?</b> Eine Raster-Suche über Trend-Schwelle × Steigungs-Fenster des Kombi-Detektors
+        (alle Kombinationen, feste Anzahl Runden – kein „bis es gut ist“). Bewertet wird die Holdout-Trefferquote
+        (Live=Final, ohne Zukunftswissen) minus Strafe, wenn die Ø Phasendauer das 5–15-Tage-Zielband verlässt.
+        <b> Das beste Ergebnis wird automatisch übernommen.</b> Unterschied zu „Wissenschaftlich kalibrieren“:
+        dort wird gegen eine Referenz (Rückblick/HMM) gemessen, hier gegen die eigene Live=Final-Kennzahl.
+      </div>
+      <div className="opt-setup" style={{ alignItems: 'center' }}>
+        <button className="opt-chip" onClick={run} disabled={running || jobBlocked} data-testid="kombi-calibrate-run">
+          <Play size={11} weight="fill" /> Auto-Kalibrierung starten
+        </button>
+      </div>
+      <JobProgress job={job} onCancel={cancel} color="#00e5a0" testId="kombi-calibrate-status" label="Auto-Kalibrierung" />
+      {banner && <EdgeBanner {...banner} testId="kombi-calibrate-banner" />}
+      {result && (
+        <div style={{ overflowX: 'auto', marginTop: 6 }}>
+          <div className="opt-setup" style={{ alignItems: 'center', marginBottom: 4 }}>
+            {result.best ? (
+              <>
+                <span className="opt-small" data-testid="kombi-calibrate-best">
+                  Bestes Ergebnis: Schwelle <b>{result.best.thr}</b> · Fenster <b>{result.best.slope_days}d</b> ·
+                  Ø Phase <b>{fmt(result.best.avg_final_segment_days, 1)}d</b>
+                  {result.best.in_target ? ' ✓ im Zielband' : ' ⚠ außerhalb 5–15d'} ·
+                  Holdout <b>{fmt(result.best.holdout_direction_pct, 1)}%</b>
+                </span>
+                <button className="opt-chip" onClick={() => applyBest(result)} data-testid="kombi-calibrate-apply">
+                  Beste Werte erneut übernehmen
+                </button>
+              </>
+            ) : <span className="opt-small">Kein bewertbares Ergebnis</span>}
+          </div>
+          <table className="rl-compare-table" data-testid="kombi-calibrate-table"
+            style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 640 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', opacity: 0.7 }}>
+                <th style={th({ paddingLeft: 0 })}>Schwelle</th>
+                <th style={th()}>Fenster</th>
+                <th style={th()} title="Durchschnittliche Phasendauer der finalen Sicht – Ziel: 5-15 Tage">Ø Phase final</th>
+                <th style={th()} title="Liegt die Phasendauer im 5-15-Tage-Zielband?">Zielband</th>
+                <th style={th()} title="Nur im Holdout (Walk-Forward-Zeitraum) – die ehrlichste Kennzahl">Holdout</th>
+                <th style={th()} title="Anteil der Kerzen, bei denen die Live-Sicht dieselbe Richtung sieht wie die finale Sicht">Live=Final</th>
+                <th style={th()} title="Nur auf Trend-Kerzen (Auf/Ab)">Trend-Treffer</th>
+                <th style={th()}>Wechsel (final/live)</th>
+                <th style={th()} title="Holdout-Trefferquote minus 4 Punkte je Tag außerhalb des Zielbands">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {result.rows.slice(0, 12).map((r, idx) => (
+                <tr key={`${r.thr}-${r.slope_days}`} data-testid={`kombi-calibrate-row-${idx}`}
+                  style={isBest(r) ? BEST_BG : undefined}>
+                  <td style={th({ paddingLeft: 0 })}><b>{r.thr}</b>{isBest(r) ? ' ★' : ''}</td>
+                  {r.error ? <td colSpan={8} className="neg">{r.error}</td> : (
+                    <>
+                      <td style={th()}>{r.slope_days}d</td>
+                      <td style={th()}><b>{fmt(r.avg_final_segment_days, 1)}d</b></td>
+                      <td style={th()} className={r.in_target ? 'pos' : 'neg'}>{r.in_target ? '✓' : '✗'}</td>
+                      <td style={th()}><b>{fmt(r.holdout_direction_pct, 1)}%</b></td>
+                      <td style={th()}>{fmt(r.direction_pct, 1)}%</td>
+                      <td style={th()}>{fmt(r.trend_hit_pct, 1)}%</td>
+                      <td style={th()}>{r.switches_final} / {r.switches_live}</td>
+                      <td style={th()}>{fmt(r.score, 2)}</td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="opt-small" style={{ marginTop: 4 }}>
+            ★ = bester Score ({result.combos} Kombinationen geprüft, Top 12 angezeigt) – bereits in den
+            Engine-Einstellungen (Detektor „kombi“). Danach die Analyse oben neu starten.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
