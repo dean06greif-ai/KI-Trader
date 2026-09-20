@@ -18,6 +18,11 @@ Benutzerordner gemerkt – auch ein frisch entpacktes Paket verbindet sich ohne
 Nachfrage), robuste Fortschritts-Meldungen (Thread stirbt nie still, Bestes
 wird nach Reconnect erneut gemeldet, Server-Fehler werden geloggt) und der
 Regime-Autopilot (fn="autopilot").
+Neu in 1.13.0: Absturzsicher (die Poll-Schleife fängt JEDEN Fehler ab statt
+mit Traceback zu enden), Ergebnisse werden vor dem Upload auf Platte gesichert
+(`<data_dir>/pending_results/`) und nach einem Neustart/Reconnect automatisch
+nachgeliefert; Upload-Wiederholung 6 h (wie die Server-Toleranz); sanfter
+Backoff bei Verbindungsfehlern.
 """
 import argparse
 import asyncio
@@ -30,7 +35,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "1.12.0"
+VERSION = "1.13.0"
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = SCRIPT_DIR / "worker_config.json"
 # Zweiter Speicherort im Benutzerordner: überlebt das Neu-Entpacken des Pakets
@@ -38,7 +43,8 @@ USER_CONFIG_PATH = Path.home() / ".ki_trader_worker" / "worker_config.json"
 POLL_INTERVAL = 2.0
 HTTP_TIMEOUT = 30          # Render braucht nach Neustart/Deploy oft > 10 s
 RESULT_RETRY_S = 5
-RESULT_RETRY_MAX = 1440    # 1440 * 5 s = 2 h Reconnect-Toleranz für Ergebnisse
+RESULT_RETRY_MAX = 4320    # 4320 * 5 s = 6 h Reconnect-Toleranz für Ergebnisse
+POLL_BACKOFF_MAX = 30      # Sekunden zwischen Polls, solange der Server nicht erreichbar ist
 
 sys.path.insert(0, str(SCRIPT_DIR))
 
@@ -272,27 +278,70 @@ def progress_reporter(job_id, jobd, stop_evt):
         stop_evt.wait(2.0)
 
 
+def _pending_dir():
+    d = Path(CONFIG["data_dir"]) / "pending_results"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _try_upload(job_id, raw):
+    """Ein Upload-Versuch. Rückgabe: True = erledigt (200/404 = Server hat es
+    bzw. kennt den Job nicht mehr), False = später erneut versuchen."""
+    r = requests.post(api(f"/api/worker/job/{job_id}/result"),
+                      headers={**hdrs(), "Content-Type": "application/json",
+                               "Content-Encoding": "gzip"},
+                      data=raw, timeout=120)
+    if r.status_code in (200, 404):
+        return True
+    raise requests.RequestException(f"HTTP {r.status_code} ({r.text[:80]})")
+
+
 def upload_result(job_id, payload):
     raw = gzip.compress(json.dumps(payload, default=str).encode())
-    for attempt in range(RESULT_RETRY_MAX):  # bis ~2 h Reconnect-Toleranz
+    # Erst auf Platte sichern: ein Absturz/Neustart des Workers während der
+    # Wiederholungen verliert das (teuer berechnete) Ergebnis nicht mehr.
+    pending = None
+    try:
+        pending = _pending_dir() / f"{job_id}.json.gz"
+        pending.write_bytes(raw)
+    except OSError:
+        pending = None
+    for attempt in range(RESULT_RETRY_MAX):  # bis ~6 h Reconnect-Toleranz
         try:
-            r = requests.post(api(f"/api/worker/job/{job_id}/result"),
-                              headers={**hdrs(), "Content-Type": "application/json",
-                                       "Content-Encoding": "gzip"},
-                              data=raw, timeout=120)
-            if r.status_code in (200, 404):
+            if _try_upload(job_id, raw):
                 if attempt:
                     log(f"Ergebnis für {job_id} nach {attempt} Versuchen hochgeladen")
+                if pending is not None:
+                    pending.unlink(missing_ok=True)
                 return
-            if attempt in (0, 12, 120):
-                log(f"Ergebnis-Upload {job_id}: Server antwortet HTTP {r.status_code} "
-                    f"({r.text[:80]}) – wiederhole alle 5 s")
         except requests.RequestException as e:
-            if attempt in (0, 12, 120):
+            if attempt in (0, 12, 120, 720):
                 log(f"Ergebnis-Upload {job_id} noch nicht möglich ({str(e)[:80]}) – "
                     "wiederhole alle 5 s")
+        except Exception as e:  # noqa: BLE001
+            if attempt in (0, 12, 120, 720):
+                log(f"Ergebnis-Upload {job_id} fehlgeschlagen ({str(e)[:80]}) – wiederhole")
         time.sleep(RESULT_RETRY_S)
-    log(f"Ergebnis-Upload für {job_id} endgültig fehlgeschlagen")
+    log(f"Ergebnis-Upload für {job_id} vorerst fehlgeschlagen – bleibt in "
+        f"{_pending_dir()} und wird beim nächsten Verbindungsaufbau nachgeliefert")
+
+
+def flush_pending_results():
+    """Gesicherte, noch nicht hochgeladene Ergebnisse nachliefern (nach
+    Neustart des Workers oder Wiederverbindung). Fehler werden geloggt."""
+    try:
+        files = sorted(_pending_dir().glob("*.json.gz"))
+    except OSError:
+        return
+    for f in files:
+        job_id = f.name[:-len(".json.gz")]
+        try:
+            if _try_upload(job_id, f.read_bytes()):
+                f.unlink(missing_ok=True)
+                log(f"Gesichertes Ergebnis für {job_id} nachgeliefert")
+        except Exception as e:  # noqa: BLE001
+            log(f"Nachlieferung {job_id} noch nicht möglich ({str(e)[:80]})")
+            return
 
 
 # ---------------- Rechen-Jobs ----------------
@@ -535,12 +584,13 @@ def main():
     log(f"Lokaler Worker v{VERSION} · Server: {CONFIG['server_url']}")
     log(f"Daten-Ordner: {CONFIG['data_dir']}")
     offline_since = None
+    backoff = 5
     while True:
-        cleanup_finished()
-        max_jobs = int(SETTINGS.get("max_parallel_jobs") or 1)
-        compute_running = sum(1 for r in RUNNING.values()
-                              if not r["kind"].startswith("data_"))
         try:
+            cleanup_finished()
+            max_jobs = int(SETTINGS.get("max_parallel_jobs") or 1)
+            compute_running = sum(1 for r in RUNNING.values()
+                                  if not r["kind"].startswith("data_"))
             r = requests.post(api("/api/worker/poll"), headers=hdrs(), json={
                 "worker_id": CONFIG["worker_id"], "name": CONFIG["name"],
                 "version": VERSION, "resources": resources(), "gpu": gpu_info(),
@@ -559,6 +609,8 @@ def main():
             if offline_since is not None:
                 log(f"Verbindung zum Server wiederhergestellt (nach {int(time.time() - offline_since)} s)")
                 offline_since = None
+                flush_pending_results()
+            backoff = 5
             apply_settings(resp.get("settings"))
             for jid in resp.get("cancel_ids") or []:
                 jd = find_job_dict(jid)
@@ -574,15 +626,23 @@ def main():
                 if RUNNING:
                     log("Laufende Jobs rechnen weiter – Ergebnisse werden nach der "
                         "Wiederverbindung hochgeladen")
-            time.sleep(5)
+            time.sleep(backoff)
+            backoff = min(backoff * 2, POLL_BACKOFF_MAX)
         except KeyboardInterrupt:
             log("Beendet")
             return
+        except Exception as e:  # noqa: BLE001
+            # Vorher beendete JEDER unerwartete Fehler (z.B. ungültige Server-
+            # Antwort während eines Render-Deploys) den Worker mit Traceback –
+            # er blieb dann bis zum manuellen Neustart offline.
+            log(f"Unerwarteter Fehler in der Poll-Schleife ({str(e)[:120]}) – weiter")
+            time.sleep(5)
         time.sleep(POLL_INTERVAL)
 
 
 if __name__ == "__main__":
     try:
+        flush_pending_results()
         main()
     except KeyboardInterrupt:
         log("Beendet")

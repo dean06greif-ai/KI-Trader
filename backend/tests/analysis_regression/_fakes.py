@@ -73,6 +73,10 @@ class FakeCursor:
     async def to_list(self, n=None):
         return list(self.rows if n is None else self.rows[:n])
 
+    def limit(self, n):
+        self.rows = self.rows[:n]
+        return self
+
     def __aiter__(self):
         self._i = iter(list(self.rows))
         return self
@@ -157,6 +161,9 @@ class FakeCollection:
                 r.update(update.get("$set") or {})
                 n += 1
         return SimpleNamespace(modified_count=n)
+
+    async def count_documents(self, query=None):
+        return sum(1 for r in self.rows if _match(r, query))
 
 
 class FakeDB:

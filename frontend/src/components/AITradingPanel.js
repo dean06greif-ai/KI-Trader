@@ -22,6 +22,7 @@ import AIDiagnosisPanel from './AIDiagnosisPanel';
 import PolicyReportCard from './PolicyReportCard';
 import { LessonImpactBadge, LessonImpactSummary } from './LessonImpact';
 import { StructuralStagePanel, CLASS_LABELS } from './RegimeRelease';
+import { GuardShadowPanel } from './GuardShadowPanel';
 import RegimeCockpit from './RegimeCockpit';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -1740,6 +1741,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                   : '—'}
               </span>
             </label>
+            <GuardShadowPanel cfg={cfg} updateConfig={updateConfig} />
             <label title="Datensammel-Modus (Phase 4): Entscheidungen unter der Live-Schwelle (aber über der Sammel-Schwelle) werden als PAPER-Trades ausgeführt und mit data_collection=true markiert – nie live, kein Kapital, kein Telegram. Liefert dem ML-Training deutlich mehr gelabelte Trades.">
               <span>Datensammlung (Paper)</span>
               <select value={cfg.collection_enabled === false ? 'off' : 'on'} onChange={e => updateConfig({ collection_enabled: e.target.value === 'on' })} data-testid="ai-collection-enabled-select">

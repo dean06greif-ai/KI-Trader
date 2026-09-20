@@ -30,6 +30,7 @@ INDEX_SPECS = [
     ("trade_stats", [("date", -1)], "trade_stats_date"),
     ("audit_log", [("ts", -1)], "audit_ts"),
     ("fee_guard_blocks", [("ts", -1)], "fee_guard_ts"),
+    ("guard_shadow_reviews", [("ts", -1)], "guard_shadow_reviews_ts"),
     # Bewegungs-Scanner (services/ai_move_scanner.py) + Retention-Sweeps
     ("ai_move_events", [("ts", -1)], "move_events_ts"),
     ("ai_chat_archive", [("ts", 1)], "chat_archive_ts"),

@@ -17,8 +17,11 @@ router = APIRouter(tags=["general"])
 
 
 @router.api_route("/", methods=["GET", "HEAD"])
+@router.api_route("/api", methods=["GET", "HEAD"], include_in_schema=False)
+@router.api_route("/api/", methods=["GET", "HEAD"], include_in_schema=False)
 async def root():
-    # HEAD erlaubt: Render-Healthchecks pingen HEAD / (vorher 405-Log-Spam)
+    # HEAD erlaubt: Render-Healthchecks pingen HEAD / (vorher 405-Log-Spam);
+    # /api/ zusätzlich für Proxy-/Preview-Healthchecks (vorher 404)
     return {"app": "Crypto Scalping Scanner", "status": "running"}
 
 

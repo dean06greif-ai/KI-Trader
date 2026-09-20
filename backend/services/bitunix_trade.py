@@ -1914,11 +1914,21 @@ class AutoTradeManager:
         # Stufe-1-Bündel über den zentralen Entry-Guard (Audit 2.1):
         # Kill-Switch + Lernpflicht + Übergangsschutz + Anti-Stacking
         # (trade_guard) sowie Marktphasen-Filter (regime_gate, fail-open).
+        shadow_bypass = set(signal.get("_shadow_bypass") or [])
         guard_ok, guard_reason = await entry_guard.check_entry(
-            self.db, signal, cfg, guard_mode, tf, checks, collection=collection)
+            self.db, signal, cfg, guard_mode, tf, checks, collection=collection,
+            skip=shadow_bypass)
         if not guard_ok:
             logger.info(f"AutoTrade blockiert {symbol} {side}: {guard_reason}")
             signal["_reject_reason"] = guard_reason
+            # Wächter-Schattentrade: geblockten LIVE-Einstieg als Paper-Trade
+            # nachspielen, damit der Block später bewertet werden kann.
+            if strategy_id == "ai_trader" and not collection and guard_mode == "live":
+                from services import guard_shadow
+                failed = next((c["name"] for c in reversed(checks.items) if not c["ok"]), None)
+                if failed:
+                    await guard_shadow.maybe_open_shadow(
+                        self, signal, candles, failed, guard_reason, blocked_mode=guard_mode)
             return None
         sl, tp1, tpf, risk, atr = self._levels(cfg, side, entry, candles, signal)
 
@@ -1939,8 +1949,9 @@ class AutoTradeManager:
         # Der finale SL steht erst HIER fest (Coin-Config oder use_ai_levels) –
         # deshalb sitzt der Wächter an dieser Stelle und deckt alle Pfade ab
         # (Live-Signale, Sammel-Trades, KI-Panel-Trades). Abschaltbar im Setup.
-        if strategy_id == "ai_trader":
-            # Funding-Projektion über die erwartete Haltedauer (Horizont) in
+        if strategy_id == "ai_trader" and "fee_guard" in shadow_bypass:
+            checks.record("fee_guard", True, "übersprungen (Wächter-Schattentrade)")
+        elif strategy_id == "ai_trader":
             # den Fee-Wächter einbeziehen – fail-open bei API-Fehlern (0.0).
             funding_pct = 0.0
             try:
@@ -1988,6 +1999,15 @@ class AutoTradeManager:
                             "ts": datetime.now(timezone.utc).isoformat()})
                     except Exception:
                         pass
+                    if guard_mode == "live":
+                        from services import guard_shadow
+                        await guard_shadow.maybe_open_shadow(
+                            self, signal, candles, "fee_guard", fg_reason,
+                            snapshot={"sl_dist_pct": round(abs(entry - sl) / entry * 100, 4),
+                                      "limiting": guard_shadow.limiting_factor(fg_reason),
+                                      "fee_guard_mult": ai_cfg.get("fee_guard_mult"),
+                                      "fee_guard_atr_mult": ai_cfg.get("fee_guard_atr_mult")},
+                            blocked_mode=guard_mode)
                 return None
 
         # Auto-Leverage: Hebel so setzen, dass die Liquidation den konfigurierten
@@ -2825,6 +2845,8 @@ class AutoTradeManager:
             trade["data_collection"] = True
             if signal.get("collection_reason"):
                 trade["collection_reason"] = signal["collection_reason"]
+            if isinstance(signal.get("guard_shadow"), dict):
+                trade["guard_shadow"] = dict(signal["guard_shadow"])
         await self.db.auto_trades.insert_one(dict(trade))
         if mode == "live" and trade.get("bitunix_order_id"):
             # Trade lokal verbucht -> Registry-Eintrag auflösen
@@ -3708,6 +3730,13 @@ class AutoTradeManager:
             await trade_guard.on_trade_closed(self.db, self.telegram, t)
         except Exception as e:
             logger.warning(f"after_close hook failed: {e}")
+        # Wächter-Schattentrade: Urteil (Block richtig/falsch) + Autotune
+        try:
+            if t.get("guard_shadow"):
+                from services import guard_shadow
+                await guard_shadow.on_trade_closed(self.db, t)
+        except Exception as e:
+            logger.warning(f"guard_shadow hook failed: {e}")
 
     # ------------------------------------------------------------------
     # Live-Ausführung: eine gemeinsame, VERIFIZIERTE Quelle für alle

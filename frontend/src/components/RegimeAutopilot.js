@@ -12,6 +12,7 @@ const DET = { reactive: 'Umkehrpunkte (reactive)', ema: 'EMA-Steigung (ema)', ko
 const STOP = { stopped_by_user: 'per „Suche beenden“ gestoppt', time_limit: 'Zeitlimit erreicht',
   target_reached: 'Ziel-Trefferquote erreicht', rounds_limit: 'Runden-Limit erreicht' };
 const SETTINGS_KEY = 'regime_autopilot_v1';
+const APPLIED_KEY = 'regime_autopilot_applied_v1';
 const loadSettings = () => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { return {}; } };
 
 /** Kompakte Kennzahlen-Zeile einer Autopilot-Konfiguration. */
@@ -42,18 +43,37 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [maxRounds, setMaxRounds] = useState(saved.maxRounds ?? 0);
   const [minPhase, setMinPhase] = useState(saved.minPhase ?? 3);
   const [searchDet, setSearchDet] = useState(saved.searchDet ?? true);
+  const [autoChain, setAutoChain] = useState(saved.autoChain ?? true);
   const [banner, setBanner] = useState(null);
   const [runs, setRuns] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [appliedId, setAppliedId] = useState(null);
 
   useEffect(() => {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, minPhase, searchDet })); } catch { /* quota */ }
-  }, [maxMin, targetPct, maxRounds, minPhase, searchDet]);
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, minPhase, searchDet, autoChain })); } catch { /* quota */ }
+  }, [maxMin, targetPct, maxRounds, minPhase, searchDet, autoChain]);
 
   const loadRuns = () => fetch(`${API_URL}/api/regime-lab/autopilot/runs`).then(r => r.json())
     .then(d => setRuns(d.runs || [])).catch(() => {});
   useEffect(() => { loadRuns(); }, [lastResult]);
+
+  // Lauf über Nacht fertig geworden (Browser war zu): beste Erkennung beim
+  // nächsten Öffnen automatisch übernehmen – genau einmal pro Lauf.
+  useEffect(() => {
+    if (!runs.length) return;
+    const newest = runs[0];
+    const res = newest?.result || {};
+    if (!res.improved || !res.best?.engine_config) return;
+    let seen = [];
+    try { seen = JSON.parse(localStorage.getItem(APPLIED_KEY)) || []; } catch { seen = []; }
+    if (seen.includes(newest.id)) return;
+    if (applyBest(res, newest.id, 'Regime-Autopilot (automatisch)')) {
+      try { localStorage.setItem(APPLIED_KEY, JSON.stringify([newest.id, ...seen].slice(0, 20))); } catch { /* quota */ }
+      toast.success(`Autopilot-Ergebnis übernommen (${DET[res.best.detector] || res.best.detector})`
+        + (res.followup ? ' – Analyse wurde automatisch eingereiht' : ''));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runs]);
 
   const applyBest = (res, id, source) => {
     const best = res?.best;
@@ -73,9 +93,16 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   useEffect(() => {
     if (!lastResult?.best) return;
     const improved = !!lastResult.improved;
-    if (improved) applyBest(lastResult, lastResult.job_id, 'Regime-Autopilot');
+    if (improved) {
+      applyBest(lastResult, lastResult.job_id, 'Regime-Autopilot');
+      try {
+        const seen = JSON.parse(localStorage.getItem(APPLIED_KEY)) || [];
+        localStorage.setItem(APPLIED_KEY, JSON.stringify([lastResult.job_id, ...seen].slice(0, 20)));
+      } catch { /* quota */ }
+    }
     const m = lastResult.best.metrics || {};
     const b = lastResult.baseline?.metrics || {};
+    const chained = !!lastResult.followup;
     setBanner({
       improved,
       title: improved
@@ -85,7 +112,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
         + ` · Holdout ${fmt(b.holdout_direction_pct)}% → ${fmt(m.holdout_direction_pct)}% · Ø Phase ${fmt(m.avg_live_phase_days)}d`
         + ` · Ende: ${STOP[lastResult.stop_reason] || lastResult.stop_reason || '–'}`
         + (lastResult.evidence === 'insufficient_evidence' ? ' · ⚠ zu wenig Holdout-Daten' : '')
-        + (improved ? ' – jetzt oben „Regime suchen & speichern“ starten' : ''),
+        + (improved && chained ? ' – „Regime suchen & speichern“ wurde automatisch in die Warteschlange gestellt' : '')
+        + (improved && !chained ? ' – jetzt oben „Regime suchen & speichern“ starten' : ''),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastResult]);
@@ -94,6 +122,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
     symbols: selCoins, timeframe, days, train_pct: trainPct, engine_config: engineConfig || {},
     max_minutes: maxMin, target_pct: targetPct, max_rounds: maxRounds,
     min_phase_days_target: minPhase, search_detectors: searchDet, execution,
+    auto_chain: autoChain,
   });
 
   const validate = () => {
@@ -145,7 +174,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
         Runde für Runde (Schwellen, Fenster, Bestätigungen – optional auch das Grundgerüst), bewertet jede Variante mit der
         Live=Final-Kennzahl und behält die beste. Auswahl auf <b>innerer Validierung + Trainingsfenster</b>, der Holdout bleibt unangetasteter finaler Test.
         <b> Wirtschaftlich:</b> zu kurze Live-Phasen (nicht handelbar) werden bestraft. Läuft im Hintergrund (Cloud oder lokaler
-        Worker, auch über Nacht) – <b>das Beste wird automatisch übernommen</b>, danach „Regime suchen &amp; speichern“ starten.
+        Worker, auch über Nacht) – <b>das Beste wird automatisch übernommen</b>; mit <b>Vollautomatik</b> wird danach auch
+        „Regime suchen &amp; speichern“ automatisch ausgeführt (Job-Warteschlange), sonst oben manuell starten.
       </div>
       <div className="opt-setup" style={{ alignItems: 'center' }}>
         <label className="opt-field" title="Sicherheits-Zeitlimit in Minuten. 0 = unbegrenzt (bis Ziel/Runden oder „Suche beenden“)">
@@ -172,6 +202,11 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
           <input type="checkbox" checked={searchDet} onChange={e => setSearchDet(e.target.checked)}
             data-testid="autopilot-search-detectors" />
           {' '}Grundgerüste mitsuchen
+        </label>
+        <label className="opt-check" title="Vollautomatik: nach einer gefundenen Verbesserung wird „Regime suchen & speichern“ mit der besten Erkennung automatisch in die Job-Warteschlange gestellt – auch nachts ohne offenen Browser">
+          <input type="checkbox" checked={autoChain} onChange={e => setAutoChain(e.target.checked)}
+            data-testid="autopilot-auto-chain" />
+          {' '}Vollautomatik (Analyse danach automatisch)
         </label>
         {!running ? (
           <button className="opt-run" onClick={start} disabled={jobBlocked} data-testid="autopilot-start"
@@ -224,7 +259,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
                       <td>{fmt(m.inner_direction_pct)}%</td>
                       <td>{fmt(m.holdout_direction_pct)}%</td>
                       <td>{fmt(m.avg_live_phase_days)}d</td>
-                      <td>{res.tested} · {res.improvements} ↑</td>
+                      <td>{res.tested} · {res.improvements} ↑{res.followup ? ' · ⛓' : ''}</td>
                       <td>
                         <button className="opt-chip" data-testid={`autopilot-run-apply-${r.id}`}
                           onClick={() => applyBest(res, r.id, 'Autopilot-Verlauf') && toast.success('Erkennung aus dem Verlauf übernommen')}>

@@ -92,7 +92,7 @@ def test_revive_sets_kind_so_job_is_found_again():
 
 
 def test_required_version_and_autopilot_support():
-    assert local_exec.REQUIRED_WORKER_VERSION_STR == "1.12.0"
+    assert local_exec.REQUIRED_WORKER_VERSION_STR == "1.13.0"
     local_exec.WORKERS["old"] = {"last_seen": time.time(), "version": "1.11.0"}
     assert local_exec.worker_supports_autopilot() is False
     local_exec.WORKERS["new"] = {"last_seen": time.time(), "version": "1.12.0"}

@@ -46,6 +46,8 @@ DEFAULT_POLICY: List[Dict] = [
     {"coll": "ai_news_events", "ts": "ts", "days": 30, "keep_last": None},
     {"coll": "ai_trade_actions", "ts": "ts", "days": 60, "keep_last": None},
     {"coll": "fee_guard_blocks", "ts": "ts", "days": 45, "keep_last": None},
+    {"coll": "guard_shadow_reviews", "ts": "ts", "days": 90, "keep_last": None},
+    {"coll": "guard_calibration_log", "ts": "ts", "days": 365, "keep_last": 50},
     {"coll": "audit_log", "ts": "ts", "days": 90, "keep_last": None},
     {"coll": "ai_move_events", "ts": "ts", "days": 30, "keep_last": None},
     # Strategie-Backtests/Optimizer: Ergebnisse altern, Läufe bleiben begrenzt

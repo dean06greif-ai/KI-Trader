@@ -92,8 +92,11 @@ def payload_input_hash(payload: Dict) -> str:
 
 
 # ---------------- Worker-Registry ----------------
-REQUIRED_WORKER_VERSION = (1, 12, 0)
-REQUIRED_WORKER_VERSION_STR = "1.12.0"
+REQUIRED_WORKER_VERSION = (1, 13, 0)
+REQUIRED_WORKER_VERSION_STR = "1.13.0"
+LOST_JOB_GRACE = 20        # Sekunden nach dem Claim, bevor ein vom Worker nicht mehr
+                           # gemeldeter Job als verloren gilt (Worker-Neustart)
+LOST_JOB_POLLS = 3         # ... und so viele Heartbeats in Folge ohne den Job
 
 
 def _ver(v) -> tuple:
@@ -170,15 +173,62 @@ def heartbeat(worker_id: str, body: Dict):
         meta = LOCAL_JOBS.get(str(jid))
         if meta and meta.get("state") == "claimed":
             meta["worker_alive_at"] = _now()
+            meta["missing_polls"] = 0
             if not meta.get("worker_id"):
                 meta["worker_id"] = worker_id  # nach Server-Neustart wiederhergestellt
             if meta.get("offline_hint"):
                 job = _get_job(str(jid), meta["kind"])
                 if job is not None:
                     _clear_offline_hint(meta, job)
+    if "running_jobs" in body:
+        _detect_lost_jobs(worker_id, {str(j) for j in (body.get("running_jobs") or [])})
     if len(WORKERS) > 5:  # alte Worker-Einträge aufräumen
         for wid in sorted(WORKERS, key=lambda x: WORKERS[x].get("last_seen", 0))[:-5]:
             WORKERS.pop(wid, None)
+
+
+def _detect_lost_jobs(worker_id: str, running: set):
+    """Worker-Neustart erkennen: derselbe Worker meldet sich, listet aber einen
+    ihm zugeteilten Job nicht mehr als laufend -> der Job ist im Worker-RAM
+    verloren. Vorher blieb der Balken bis zu 6 h stehen („hing bei 10 %“).
+    Liegt der Auftrag noch vor, wird er automatisch neu eingereiht; sonst
+    endet er mit klarer Fehlermeldung statt endlosem Warten."""
+    for jid, meta in list(LOCAL_JOBS.items()):
+        if meta.get("state") != "claimed":
+            continue
+        owner = meta.get("worker_id")
+        if owner is None:
+            # nach Server-Neustart wiederhergestellt, kein Worker hat den Job
+            # bisher als laufend gemeldet: nur eindeutig, wenn genau ein Worker online ist
+            online = [w for w, v in WORKERS.items() if _now() - v.get("last_seen", 0) < WORKER_TIMEOUT]
+            if online != [worker_id]:
+                continue
+        elif owner != worker_id:
+            continue
+        if jid in running or _now() - meta.get("claimed_at", meta.get("enqueued_at", 0)) < LOST_JOB_GRACE:
+            continue
+        meta["missing_polls"] = int(meta.get("missing_polls") or 0) + 1
+        if meta["missing_polls"] < LOST_JOB_POLLS:
+            continue
+        job = _get_job(jid, meta["kind"])
+        if job is None or job.get("status") not in ("running", "queued"):
+            LOCAL_JOBS.pop(jid, None)
+            continue
+        item = meta.get("item")
+        if item is not None and not meta.get("requeued"):
+            meta.update({"state": "queued", "worker_id": None, "enqueued_at": _now(),
+                         "last_update": _now(), "missing_polls": 0, "requeued": True})
+            meta.pop("claimed_at", None)
+            COMPUTE_QUEUE.append(item)
+            job["phase"] = "Worker wurde neu gestartet – Job wird erneut ausgeführt..."
+            job["progress"] = 0
+            logger.warning(f"local_exec: Job {jid} auf Worker {worker_id} verloren "
+                           "(Neustart) – automatisch neu eingereiht")
+        else:
+            _mark_error(job, "Der lokale Worker wurde neu gestartet, während dieser Job lief – "
+                             "die Berechnung ist verloren. Bitte den Job neu starten.")
+            LOCAL_JOBS.pop(jid, None)
+            logger.warning(f"local_exec: Job {jid} auf Worker {worker_id} verloren – Fehler")
 
 
 def workers_public() -> List[Dict]:
@@ -361,6 +411,23 @@ def _persist_meta_bg(job_id: str, kind: str, params: Optional[Dict]):
     _bg_task(_write())
 
 
+def _persist_worker_bg(job_id: str, worker_id: str):
+    """Zuständigen Worker in Mongo merken: nach einem Server-Neustart weiß der
+    wiederhergestellte Job, welcher Worker ihn rechnet (Verlust-Erkennung)."""
+    from core import state
+    db = state.db
+    if db is None:
+        return
+
+    async def _write():
+        try:
+            await db.local_jobs.update_one({"_id": job_id},
+                                           {"$set": {"worker_id": worker_id}})
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"local_jobs worker persist failed {job_id}: {e}")
+    _bg_task(_write())
+
+
 def _delete_meta_bg(job_id: str):
     from core import state
     db = state.db
@@ -526,7 +593,9 @@ def claim(worker_id: str, want_compute: bool = True, want_data: bool = True) -> 
                 continue
             meta = LOCAL_JOBS.setdefault(item["job_id"],
                                          {"kind": item["kind"], "enqueued_at": _now()})
-            meta.update({"state": "claimed", "worker_id": worker_id, "last_update": _now()})
+            meta.update({"state": "claimed", "worker_id": worker_id, "last_update": _now(),
+                         "claimed_at": _now(), "missing_polls": 0, "item": item})
+            _persist_worker_bg(item["job_id"], worker_id)
             job["phase"] = "Vom lokalen Worker übernommen..."
             COMPUTE_QUEUE[:0] = skipped
             return item

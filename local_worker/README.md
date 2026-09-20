@@ -1,4 +1,4 @@
-# Lokaler Worker (v1.12.0)
+# Lokaler Worker (v1.13.0)
 
 Führt Backtests, Optimierungen (inkl. Endlos-Suche), Regime-Lab-Jobs (inkl.
 Regime-Autopilot) und Daten-Downloads auf deinem eigenen Rechner aus. Der
@@ -48,4 +48,18 @@ automatisch übernommen. Kerzendaten liegen standardmäßig in `./worker_data`.
   enthält den EXAKT gleichen Berechnungs-Code wie die Website
   (`core/`, `services/`, `strategies/`, `models/`) – identische Ergebnisse.
 - Bei einer Versionswarnung auf der Website: Paket neu herunterladen und den
-  Worker neu starten.
+  Worker neu starten. Beim Neu-Entpacken nur `worker.py`, `core/`, `services/`,
+  `strategies/`, `models/` ersetzen – `worker_data/` (Kerzendaten) und
+  `worker_config.json` bleiben erhalten; die Verbindung (Server-URL + Token)
+  liegt zusätzlich in `~/.ki_trader_worker/worker_config.json`.
+
+## Neu in 1.13.0 (Dauerbetrieb)
+
+- Der Worker beendet sich bei unerwarteten Fehlern in der Verbindungsschleife
+  nicht mehr, sondern loggt und verbindet sich weiter (sanfter Backoff 5–30 s).
+- Fertige Ergebnisse werden vor dem Upload in `worker_data/pending_results/`
+  gesichert und nach einem Neustart/Reconnect automatisch nachgeliefert
+  (Upload-Wiederholung bis 6 h).
+- Wird der Worker neu gestartet, während ein Job lief, erkennt der Server das
+  am nächsten Heartbeat und reiht den Job automatisch neu ein (statt bis zu 6 h
+  „hängen bei 10 %“).

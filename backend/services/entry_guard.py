@@ -41,13 +41,21 @@ class EntryChecks:
 
 
 async def check_entry(db, signal: Dict, cfg: Dict, mode: str, timeframe: str,
-                      checks: EntryChecks, collection: bool = False) -> Tuple[bool, str]:
+                      checks: EntryChecks, collection: bool = False,
+                      skip: Optional[set] = None) -> Tuple[bool, str]:
     """Stufe-1-Bündel vor der Level-Berechnung: Kill-Switch, Lernpflicht,
     Übergangsschutz und Anti-Stacking (trade_guard.check_open_allowed) plus
-    Marktphasen-Filter (regime_gate). Fail-open beim Regime-Gate wie bisher."""
+    Marktphasen-Filter (regime_gate). Fail-open beim Regime-Gate wie bisher.
+    `skip`: Wächter, die ein Schattentrade (services/guard_shadow.py) bewusst
+    überspringt – der Block wird dann nur protokolliert, nicht angewendet."""
     from services import trade_guard
+    skip = skip or set()
     ok, reason = await trade_guard.check_open_allowed(db, signal, timeframe, mode=mode)
-    checks.record("trade_guard", ok, reason, mode=mode)
+    if not ok and "trade_guard" in skip:
+        checks.record("trade_guard", True, f"übersprungen (Schattentrade): {reason}", mode=mode)
+        ok = True
+    else:
+        checks.record("trade_guard", ok, reason, mode=mode)
     if not ok:
         return False, reason
     # Sicherheitsstatus (Audit 2.4): kritischer Betriebszustand (SL fehlt an

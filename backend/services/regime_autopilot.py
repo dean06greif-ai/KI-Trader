@@ -219,6 +219,70 @@ def _public_best(entry: Dict, baseline: Dict) -> Dict:
                                    entry["engine_config"])}
 
 
+# ---------------- Vollautomatik: Autopilot -> Regime-Analyse ----------------
+def followup_analysis_body(result: Dict, params: Dict) -> Optional[Dict]:
+    """Request-Body für die automatische „Regime suchen & speichern“-Analyse
+    mit der besten Autopilot-Erkennung (rein). None, wenn nichts zu tun ist
+    (keine Verbesserung, Vollautomatik aus oder keine Konfiguration)."""
+    params = params or {}
+    if params.get("auto_chain") is False or not result.get("improved"):
+        return None
+    cfg = dict(result.get("best_engine_config") or (result.get("best") or {}).get("engine_config") or {})
+    if not cfg:
+        return None
+    symbols = list(result.get("symbols") or params.get("symbols") or [])
+    if not symbols:
+        return None
+    try:
+        min_hold = float(cfg.get("min_phase_days") or 0)
+    except (TypeError, ValueError):
+        min_hold = 0.0
+    min_hold = min(max(min_hold, 0.25), 60.0)
+    try:
+        conf = float(cfg.get("confidence_min") or 0.55) * 100.0
+    except (TypeError, ValueError):
+        conf = 55.0
+    det = detector_of(cfg)
+    stamp = datetime.now(timezone.utc).strftime("%d.%m. %H:%M")
+    return {"symbols": symbols,
+            "timeframe": result.get("timeframe") or params.get("timeframe") or "15m",
+            "days": int(result.get("days") or params.get("days") or 360),
+            "train_pct": float(result.get("train_pct") or params.get("train_pct") or 75),
+            "scope": "both", "engine": "v2",
+            "engine_config": {**cfg, "min_phase_days": min_hold},
+            "confidence_min": min(max(conf, 50.0), 95.0), "min_hold_days": min_hold,
+            "name": f"Autopilot · {det} · {stamp}",
+            "execution": params.get("execution") or "cloud",
+            "autopilot_job_id": result.get("job_id")}
+
+
+async def schedule_followup(db, job_id: str, result: Dict, params: Dict) -> Optional[Dict]:
+    """Nach einem verbesserten Autopilot-Lauf die Analyse mit der besten
+    Erkennung automatisch in die Job-Warteschlange stellen (services/job_series):
+    die Regime werden damit ohne Klick gesucht & gespeichert – auch nachts,
+    ohne offenen Browser. Läuft für Cloud- und Worker-Ergebnisse."""
+    if db is None:
+        return None
+    body = followup_analysis_body({**result, "job_id": job_id}, params)
+    if not body:
+        return None
+    try:
+        from services import job_series
+        item = await job_series.add_item(
+            db, "regime_analysis", body,
+            label=f"Autopilot-Analyse ({detector_of(body['engine_config'])}, "
+                  f"{', '.join(s.replace('USDT', '') for s in body['symbols'][:4])})")
+        await db.regime_lab_runs.update_one(
+            {"id": job_id}, {"$set": {"result.followup": {"series_item_id": item["id"],
+                                                          "kind": "regime_analysis",
+                                                          "name": body["name"]}}})
+        logger.info(f"autopilot {job_id}: Folge-Analyse eingereiht ({item['id']})")
+        return item
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"autopilot {job_id}: Folge-Analyse konnte nicht eingereiht werden: {e}")
+        return None
+
+
 # ---------------- Job ----------------
 async def run_autopilot(job_id: str, body: Dict, db):
     job = lab.JOBS[job_id]
@@ -365,6 +429,10 @@ async def run_autopilot(job_id: str, body: Dict, db):
                                      "created_at": result["created_at"]}, upsert=True)
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"autopilot persist failed: {e}")
+            followup = await schedule_followup(db, job_id, result, job.get("params") or body)
+            if followup:
+                result["followup"] = {"series_item_id": followup["id"],
+                                      "kind": "regime_analysis", "name": followup.get("label")}
         job["result"] = result
         job["status"] = "done"
         job["progress"] = 100

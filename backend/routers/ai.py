@@ -108,6 +108,14 @@ async def ai_fee_guard_stats(days: int = 7):
             "recent": rows[:10]}
 
 
+@router.get("/api/ai/guard-shadow/stats")
+async def ai_guard_shadow_stats(days: int = 14):
+    """Wächter-Schattentrades: Urteile je Wächter (Block richtig/falsch),
+    Netto-PnL der Schatten und die autonomen Fee-Wächter-Anpassungen."""
+    from services import guard_shadow
+    return await guard_shadow.stats(ai_engine.db, days)
+
+
 @router.get("/api/ai/maker-stats")
 async def ai_maker_stats():
     """Maker-Sparstatistik: real gesparte Entry-Gebühren (Taker- minus

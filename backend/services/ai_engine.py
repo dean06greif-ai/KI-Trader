@@ -176,6 +176,12 @@ DEFAULT_AI_CONFIG = {
     # V3: bei hohem CRV (>=2 / >=3) darf das Fee-Minimum um 15% / 25%
     # unterschritten werden – knappe, aber fette Setups werden fair bewertet.
     "fee_guard_crv_relax": True,
+    # Wächter-Schattentrades (services/guard_shadow.py): geblockte LIVE-Einstiege
+    # werden als Paper-Sammel-Trade nachgespielt; der Fee-Wächter kalibriert
+    # seine Faktoren aus den Urteilen autonom (Leitplanken ±1.5 um die Baseline).
+    "guard_shadow_enabled": True,
+    "guard_autotune_enabled": True,
+    "guard_autotune_min_samples": 12,
     # Stale-Price-Guard: Entry ablehnen, wenn die letzte Kerze älter ist (min; 0=aus).
     # RCA 17.08.: EURUSD-Doppel-Trade nutzte einen ~45 min alten Preis (Feed hing).
     "stale_price_max_min": 10,
@@ -855,6 +861,15 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                 pass
         if "fee_guard_crv_relax" in updates:
             self.config["fee_guard_crv_relax"] = bool(updates["fee_guard_crv_relax"])
+        if "guard_shadow_enabled" in updates:
+            self.config["guard_shadow_enabled"] = bool(updates["guard_shadow_enabled"])
+        if "guard_autotune_enabled" in updates:
+            self.config["guard_autotune_enabled"] = bool(updates["guard_autotune_enabled"])
+        if "guard_autotune_min_samples" in updates:
+            try:
+                self.config["guard_autotune_min_samples"] = max(5, min(200, int(updates["guard_autotune_min_samples"])))
+            except (TypeError, ValueError):
+                pass
         if "stale_price_max_min" in updates:
             try:
                 self.config["stale_price_max_min"] = max(0.0, min(120.0, float(updates["stale_price_max_min"])))

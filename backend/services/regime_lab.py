@@ -1122,6 +1122,14 @@ async def persist_worker_result(db, job_id: str, job: Dict):
         await db.regime_lab_runs.replace_one(
             {"id": job_id}, {"id": job_id, "result": res,
                              "created_at": res.get("created_at")}, upsert=True)
+        if kind == "autopilot":
+            # Vollautomatik: beste Erkennung -> Analyse automatisch einreihen
+            from services import regime_autopilot
+            followup = await regime_autopilot.schedule_followup(
+                db, job_id, res, job.get("params") or {})
+            if followup:
+                res["followup"] = {"series_item_id": followup["id"],
+                                   "kind": "regime_analysis", "name": followup.get("label")}
     elif kind == "walkforward":
         key = scope_key(res.get("scope") or "combined", res.get("symbol"))
         await db.regime_analyses.update_one(

@@ -1,4 +1,54 @@
-# KI-Trader – PRD (Stand 19.09.2026)
+# KI-Trader – PRD (Stand 20.09.2026)
+
+## Original-Problemstellung (aktuelle Iteration, 20.09.2026)
+Repo `dean06greif-ai/KI-Trader`, Branch `conflict_190926_2356`, Render-Deploy (Ordnerstruktur 1:1 erhalten).
+1. Fee-Wächter blockt Live-Trades des KI-Traders → statt Block einen Datensammel-„Schattentrade“ machen,
+   den Block später bewerten und die Wächter autonom kalibrieren (Nutzerwahl: vollautonom mit Leitplanken).
+2. Lokaler Worker: Dauerbetrieb (Endlos-Suche) – „connection error“ im Terminal, Balken hing bei 10 %;
+   Auto-Reconnect nach Verbindungsabbruch / Neustart der Datei. Bedienung sonst unverändert lassen.
+3. Regime-Lab Autopilot soll alles vollautomatisch machen.
+
+## Umgesetzt (20.09.2026)
+### A) Wächter-Schattentrades + autonome Kalibrierung – NEU `services/guard_shadow.py`
+- Hook in `bitunix_trade._on_signal_impl`: blockt Fee-Wächter oder Einstiegs-Wächter (trade_guard, regime_gate,
+  safety_status) einen **LIVE**-Einstieg des KI-Traders, wird das Signal als Paper-Sammel-Trade
+  (`data_collection=True`, `guard_shadow={guard, reason, snapshot}`) nachgespielt; nur der blockende Wächter wird
+  für diesen Schatten übersprungen (`_shadow_bypass`, `entry_guard.check_entry(skip=)`).
+  Schutz: Cooldown 15 min je Coin/Seite/Wächter, max. 8 offene Schatten, nie für Sammel-Trades.
+- Hook in `_after_close`: Urteil (`block_right` = Schatten verlor, `block_wrong` = gewann netto inkl. Fees) →
+  `guard_shadow_reviews`; danach `calibrate()`.
+- Autotune (nur Fee-Wächter): ≥12 unverbrauchte Urteile je Teilgrund (Fee-/ATR-Minimum); Fehlblock-Quote ≥60 % &
+  Netto-PnL > 0 → Faktor −0.25; ≤35 % & Netto < 0 → +0.25 zurück Richtung Baseline. Leitplanken: harte Bounds,
+  max. ±1.5 um Baseline, max. 1 Schritt / 12 h. Log `guard_calibration_log` + Governance-Eintrag im KI-Chat.
+  Config-Keys `guard_shadow_enabled`, `guard_autotune_enabled`, `guard_autotune_min_samples`.
+- API `GET /api/ai/guard-shadow/stats`; UI `components/GuardShadowPanel.js` im KI-Trader-Setup.
+- Tests: `tests/test_guard_shadow.py`.
+
+### B) Lokaler Worker 1.13.0 (`local_worker/worker.py`, `services/local_exec.py`)
+- Poll-Schleife absturzsicher (Catch-all), Backoff 5→30 s, Reconnect-Log, Nachlieferung gesicherter Ergebnisse.
+- Ergebnisse vor Upload auf Platte (`<data_dir>/pending_results/`), Upload-Wiederholung 6 h.
+- Server: Worker-Neustart erkennen (Heartbeat listet zugeteilten Job nicht mehr; 20 s Karenz, 3 Polls) → Job
+  automatisch neu einreihen (Payload beim Claim gemerkt) bzw. klare Fehlermeldung statt bis zu 6 h Hängen.
+  `worker_id` in `local_jobs` persistiert. REQUIRED_WORKER_VERSION 1.13.0 (alte Worker laufen weiter).
+- Tests: `tests/test_worker_restart_and_autopilot_chain.py`.
+
+### C) Regime-Autopilot Vollautomatik (`services/regime_autopilot.py`, `regime_lab.py`, `RegimeAutopilot.js`)
+- Nach verbessertem Lauf (Cloud oder Worker) wird „Regime suchen & speichern“ mit der besten Erkennung automatisch
+  in die Job-Warteschlange (`job_series`, kind `regime_analysis`) gestellt; Param `auto_chain` (UI „Vollautomatik“, default an).
+- UI übernimmt das beste Ergebnis eines über Nacht fertig gewordenen Laufs beim nächsten Öffnen automatisch (einmalig je Lauf).
+
+### D) Sonstiges
+- `GET /api` und `/api/` liefern 200 (Proxy-/Preview-Healthcheck, vorher 404).
+- `backend/.env` mit Nutzer-Env + `AI_TRADER_LOCAL_DISABLE=1` (Vorschau tradet nicht live).
+
+## Backlog
+- P1: Autotune für weitere Wächter (regime_gate) – aktuell nur Statistik.
+- P1: Schatten-Badge in der Trade-Liste (`collection_reason` „guard_shadow:…“).
+- P2: Worker-Setting „Daten-Ordner“ plattformabhängig validieren.
+- Bekannt (vorbestehend): 16 Tests schlagen ohne Dev-Server :8055 bzw. wegen IBKR-Routing fehl.
+
+---
+# Vorherige Iteration (19.09.2026)
 
 ## Original-Problemstellung
 Produktive Daytrading-Website (Repo dean06greif-ai/KI-Trader, Branch conflict_180926_2323, React + FastAPI + MongoDB, extern auf Render deployt – Ordnerstruktur 1:1 beibehalten). Verbesserungen sauber/modular in die bestehende Architektur:

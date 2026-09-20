@@ -251,7 +251,7 @@ async def cancel_job(job_id: str, _: bool = Depends(require_admin)):
 # ---------------- Regime-Autopilot (Endlos-Suche der Regime-Erkennung) ----------------
 AUTOPILOT_PARAM_KEYS = ("symbols", "timeframe", "days", "train_pct", "engine_config",
                         "max_minutes", "target_pct", "search_detectors",
-                        "min_phase_days_target", "max_rounds")
+                        "min_phase_days_target", "max_rounds", "auto_chain")
 
 
 @router.post("/api/regime-lab/autopilot")

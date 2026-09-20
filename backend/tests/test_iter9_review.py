@@ -81,14 +81,14 @@ def test_admin_login_ok(sess):
 def test_localworker_required_version(admin):
     r = admin.get(f"{BASE}/api/localworker/status", timeout=15)
     assert r.status_code == 200
-    assert r.json().get("required_version") == "1.12.0"
+    assert r.json().get("required_version") == "1.13.0"
 
 
 def test_localworker_manifest_has_autopilot(admin):
     r = admin.get(f"{BASE}/api/localworker/package/manifest", timeout=15)
     assert r.status_code == 200
     j = r.json()
-    assert j.get("required_version") == "1.12.0"
+    assert j.get("required_version") == "1.13.0"
     fh = j.get("file_hashes") or {}
     assert "services/regime_autopilot.py" in fh, list(fh.keys())[:20]
 
@@ -101,7 +101,7 @@ def test_localworker_package_zip_worker_version(admin):
     wp = next((n for n in names if n.endswith("worker.py")), None)
     assert wp, names[:20]
     txt = zf.read(wp).decode("utf-8", "ignore")
-    assert 'VERSION = "1.12.0"' in txt
+    assert 'VERSION = "1.13.0"' in txt
 
 
 # ----------------- 3) worker reconnect bugfix -----------------
