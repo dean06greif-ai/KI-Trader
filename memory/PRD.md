@@ -131,3 +131,32 @@ Nutzer versteht Autopilot-95 %, Ablation-Ergebnis und Shadow-Freigabe nicht.
 - P2: Ablation für Grundgerüst „ema“ hat nur Alternative „regression“ ohne Live-Kennzahlen → serverseitig bewertbare
   Alternative (z.B. reactive) ergänzen.
 - P2: Kalibrierungs-Vergleich über verschiedene Referenzen (centered/hmm) methodisch normieren.
+
+---
+
+# Session 21.09.2026 (2) – Regime-Lab: Autopilot im Kalibrierungs-Verlauf, „nie schlechter“, Asset-Knöpfe, Shadow-Backfill
+
+## Problemstellung (Kurzfassung)
+Branch `conflict_210926_1807`. (1) Autopilot-Kalibrierungen wurden nicht als Kalibrierung gespeichert; einmal
+überschrieben war der alte Stand weg; Anzeige „96,4 → 95,7“ (Autopilot senkte den Holdout). (2) Asset-Knopf „Öl“ fehlte
+in der Analyse-Ansicht. (3) Shadow-Phase (30 Trades je Regime) beschleunigen ohne Qualitätsverlust. (4) Sicherheitsabfrage
+beim Löschen (Regime-Analysen, Strategien). (5) Analysen nachträglich umbenennen. Nutzer-Entscheide: Verlauf als
+Übernahme-Quelle; Autopilot nur automatisch übernehmen, wenn nicht schlechter, manuell weiterhin erlaubt; einfacher
+Bestätigungsdialog.
+
+## Umgesetzt (Details: PROGRESS.md, Abschnitt „Iteration 21.09.2026“)
+- Backend: `services/regime_calibration_history.py` (vereinter Verlauf + Snapshots), `services/regime_shadow_backfill.py`,
+  `regime_autopilot.holdout_regressed/adopt_recommended`, `fetch_histories(skipped=)`, Analyse-Felder
+  `symbols_requested`/`symbols_skipped`, Routen `GET/POST /api/regime-lab/engine/snapshots`,
+  `POST /api/regime-lab/shadow/backfill`, `POST /api/regime-lab/{aid}/rename`, Backfill-Trigger nach Freigabe.
+- Frontend: `lib/regimeCalibration.js` (Metrik-bewusst, `autopilotDecision`), `lib/regimeSnapshots.js`,
+  `RegimeCalibrationHistory.js` (Quelle-Badge, Snapshots „Zurückholen“), `RegimeAutopilot.js` (Regel + „Trotzdem
+  übernehmen“), `RegimeLab.js` (Snapshot vor Übernahme, confirm beim Löschen, fehlende Asset-Knöpfe mit Grund,
+  Umbenennen), `AnalysisRename.js`, `DynamicPanel.js` (confirm), `RegimeRelease.js` (Backfill-Knopf).
+- Tests: `backend/tests/test_regime_calibration_history_and_shadow.py` (12), Frontend-Helpers (+6),
+  E2E `test_reports/iteration_14.json` – alles grün.
+
+## Backlog
+- P1: Shadow-Backfill periodisch (z.B. täglich) statt nur nach Freigabe/manuell.
+- P2: Snapshots auch für den lokalen Worker-Pfad (Kalibrierung, die am Worker endet, wird erst beim Übernehmen gesichert).
+- P2: Regime-Labels (nicht nur Analysename) editierbar – erfordert Schutz vor der Label-Migration `relabel_regimes`.

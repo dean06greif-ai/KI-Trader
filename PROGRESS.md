@@ -650,6 +650,39 @@ Befund aus der Prod-DB (nur lesend):
 - Tests: `tests/test_revision_backtest_lift.py` (9 grün); Gesamtsuite offline
   identisch zu vorher (API-Tests brauchen laufendes Backend).
 
+## Iteration 21.09.2026 – Regime-Lab: Kalibrierungs-Verlauf, Autopilot-Regel, Asset-Knöpfe, Shadow-Backfill
+Branch-Basis: `conflict_210926_1807`. Originalstruktur unverändert (Render-deploybar).
+- **Kalibrierungs-Verlauf vereint** (`services/regime_calibration_history.py`,
+  `GET /api/regime-lab/calibrations`): wissenschaftliche Kalibrierungen UND
+  Autopilot-Läufe in EINEM Zeilenformat (`source`, `report.metric`,
+  `report.best_config`) – Autopilot-Erkennungen sind damit jederzeit wieder
+  übernehmbar. Metriken werden nie vermischt (Referenz-Treffer vs. Holdout
+  Live=Final, Label in UI/Summary).
+- **Einstellungs-Snapshots** (`regime_engine_snapshots`,
+  `GET/POST /api/regime-lab/engine/snapshots`): vor JEDER Übernahme sichert das
+  Frontend (`lib/regimeSnapshots.js`, `RegimeLab.setCalibApplied`) den alten
+  Stand (engine_config + aktive Kalibrierung); „Zurückholen“ im Verlauf.
+- **Autopilot: nie ein schlechteres Ergebnis** (`regime_autopilot.holdout_regressed/
+  adopt_recommended`, `lib/regimeCalibration.autopilotDecision`): automatische
+  Übernahme nur bei Score-Verbesserung UND Holdout ≥ Ausgangslage UND nicht
+  unter der aktiven Kalibrierung gleicher Metrik. Sonst Banner + „Trotzdem
+  übernehmen“ (manuell). Vollautomatik-Kette folgt derselben Regel
+  (`adopt_recommended`, rückwärtskompatibel zu `improved`).
+- **Asset-Knöpfe**: `fetch_histories(..., skipped=)` meldet übersprungene
+  Symbole (≤100 Kerzen); Analyse speichert `symbols_requested`/`symbols_skipped`.
+  UI zeigt fehlende Coin-Modelle als deaktivierten Knopf MIT Grund (z.B. „OIL ·
+  kein Modell – zu wenig Daten: 80 Kerzen“) statt sie still wegzulassen.
+- **Shadow-Phase beschleunigen** (`services/regime_shadow_backfill.py`,
+  `POST /api/regime-lab/shadow/backfill`, automatisch nach jeder Freigabe):
+  Struktur-Regime für bereits geschlossene KI-Trades (90 Tage) aus demselben
+  Modell und nur Kerzen VOR dem Entry nachtragen (kein Lookahead, Zeilen als
+  `structural_source=backfill` markiert). Knopf im Shadow-„Was jetzt?“.
+- **Sicherheitsabfragen** beim Löschen (Regime-Analyse, dynamische Strategien).
+- **Analyse umbenennen** (`POST /api/regime-lab/{aid}/rename`, `AnalysisRename.js`).
+- Tests: `tests/test_regime_calibration_history_and_shadow.py` (12 grün),
+  Frontend `__tests__/regimeLabHelpers.test.js` (+6), E2E-Report
+  `test_reports/iteration_14.json` (alles grün).
+
 ## Nächste zulässige Schritte (laut Plan, noch NICHT umgesetzt)
 1. **AP12 (operativ, Nutzer/Betrieb):** Shadow-/Paper-Beobachtungszeit auf
    Render laufen lassen; danach menschliche Freigabe für engen Live-Scope –
