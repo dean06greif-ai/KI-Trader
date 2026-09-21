@@ -1,0 +1,31 @@
+{
+  "summary": "E2E verification of Regime-Lab enhancements (Iter 13). Backend copilot tests all pass: /api/copilot/status ready, POST /api/copilot/chat/start with panel=regime_lab returns a scoped German reply (job status 'done'), no optimizer search-mode terms leaked (discovery/deep-test/iterationen/objective/strategien-optimier/suchmod). GET /api/copilot/history?panel=regime_lab contains the new message; ?panel=optimizer does NOT. Existing unit suite backend/tests/test_regime_lab_copilot_isolation.py (5) still green. Frontend: Admin-Login via admin-lock-button + admin-login-modal succeeds. Regime-Lab modal contains sections ema-compare-section, kombi-calibrate-section, ablation-section and regime-calibrate-box, but NO individual progress bars (ema-compare-status, kombi-calibrate-status, ablation-status, regime-calibrate-status are all absent). Two live 1h/60d calibrations executed with real Bitunix data: (1) truth_source=centered -> ran ~1.5min, main bar regime-job-progress appeared immediately in section 1 with phase='Kalibrierung · Läuft...' then 'Kalibrierung · Lade Daten: BTCUSDT (6->91%)', control buttons (pause/cancel/reset) all present, layout heights static across 6 x 2s polls (phase constant 30px, stats constant 15px – no jumping), regime-calibrate-running hint visible in box, at end regime-calibrate-banner appeared with regime-calibrate-report, main bar vanished within 6s, summary updated 38.0% -> 49.9%. (2) truth_source=hmm -> result 43.8% -> 51.4%, better than baseline, so regime-calibrate-banner (applied) shown, regime-calibrate-force-apply NOT present – correct branch per calibrationDecision(). Copilot in Regime-Lab: title 'REGIME-LAB-COPILOT', all 5 new quick prompts present, legacy optimizer prompts absent. Clicking 'Was jetzt?' produced a German reply (1015 chars) referencing Kalibrierung/Analyse/Detektor with NO optimizer terms. Regression: Strategie-Optimizer copilot still titled 'STRATEGIE-COPILOT' with legacy quick prompts (einstellungen-prüfen, für-mich-einstellen, ergebnis-bewerten, strategien-check, welche-suche). Help panel (regime-lab-help-toggle) contains 'Regime-Autopilot', 'Übernahme-Regel', 'Freigabe: Shadow' and 'höchstens 95'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Regime-Lab copilot empty state", "issues": ["copilot-empty text does not include the substring 'regime' (case-insensitive) – purely cosmetic wording; title and quick prompts already scope the panel correctly. Optional to align copy."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_regime_lab_copilot_live.py",
+    "/app/backend/tests/test_regime_lab_copilot_isolation.py",
+    "/app/test_reports/pytest/iter13_copilot.xml"
+  ],
+  "action_items": [
+    "None – all acceptance criteria met. Optional: refine copilot-empty text in Regime-Lab to explicitly mention 'Regime-Lab' for stronger user affordance."
+  ],
+  "critical_code_review_comments": [
+    "calibrationDecision() correctly gated the auto-apply on same-detector improvement; verified live with two runs (both improved -> both applied banners, kept-banner path not exercised in this environment because both HMM and centered runs beat baseline). If E1 wants full coverage, seed a deliberately weaker calibration first or lower the acceptance threshold to force the kept-banner branch.",
+    "Static layout of RegimeJobProgress.rl-job-meta confirmed: phase height 30px, stats height 15px stable over 12s of live polling."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter13_regime_lab_copilot_live.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (per /app/memory/test_credentials.md)",
+  "seed_data_creation": "Two live calibrations were persisted via POST /api/regime-lab/calibrate (Umkehrpunkte reactive, 1h, 60d, BTC/ETH/BNB/SOL – truth_source centered then hmm). Active analysis list remains empty (no analyze run executed).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend URL https://strategy-optimize-1.preview.emergentagent.com. Admin trigger data-testid is 'admin-lock-button' (NOT 'header-admin-btn'). Regime-Lab progress bar always renders in section 1 as data-testid='regime-job-progress' with children -phase/-stats/-pause/-cancel/-reset. Copilot inside Regime-Lab has data-testid copilot-title='REGIME-LAB-COPILOT' and new quick prompts copilot-quick-{stand-bewerten, was-jetzt-, ablation-erkl-ren, kalibrierung-pr-fen, shadow---freigabe}. calibrationDecision path: with both centered and hmm runs on BTC/ETH/BNB/SOL 1h/60d the reactive detector currently beats the baseline, so the applied-banner branch is exercised; to hit kept-banner, run a second calibration on the SAME detector with a truth source that produces a lower balanced_direction_pct (e.g. rerun centered right after hmm). The Regime-Lab-Copilot 'Was jetzt?' takes 10-40s to complete; occasional OpenRouter overloads may need a single retry.",
+  "rca of the issue": "N/A – no functional bug detected; all acceptance criteria pass. Kept-banner branch not observable in the current data set because HMM calibration improved balanced_direction_pct from 43.8% to 51.4%, satisfying the auto-apply condition."
+}

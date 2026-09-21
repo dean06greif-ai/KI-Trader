@@ -100,3 +100,34 @@ modular, rückwärtskompatibel, mit Regressionstests:
 ## Backlog / offen
 - P1: Bitunix-Ablehnungen mit `qty` im Telegram-Text ausweisen (bessere Diagnose).
 - P2: Optimizer-/Backtester-Steuerknöpfe auf die gemeinsamen `JobControls` umziehen (nur Frontend-DRY).
+
+---
+
+# Session 21.09.2026 – Regime-Lab: Haupt-Balken, Übernahme-Regel, Copilot-Isolation, „Was jetzt?“
+
+## Problemstellung (Kurzfassung)
+Branch `conflict_210926_1222`. Einzel-Fortschrittsbalken der Werkzeuge (EMA-Vergleich, Auto-Kalibrierung, Ablation,
+Kalibrierung) entfernen – nur Haupt-Balken; Text unter dem Balken springt (Restzeit) → statisch; Bug: schlechtere
+Kalibrierung („HMM probieren“) wurde trotzdem übernommen; Regime-Lab-Copilot dachte, er sei im Strategie-Optimizer;
+Nutzer versteht Autopilot-95 %, Ablation-Ergebnis und Shadow-Freigabe nicht.
+
+## Umgesetzt
+1. **Ein Haupt-Balken** – `useLabJob(onStarted)` meldet Werkzeug-Starts sofort an `attachPoll`; eigene `JobProgress`
+   in RegimeDetectorTools + RegimeEngineSettings entfernt (Hinweis „läuft – Haupt-Balken oben“).
+2. **Statisches Layout** – `.rl-job-meta` Grid (Phase links fix 2 Zeilen, Prozent+Restzeit rechts feste Spalte),
+   `roundEta`/`useSmoothedEta` (grob gerundet, Wechsel max. alle 5 s), Endlos-Autopilot-Hinweis „≤95 % bis Suche beenden“.
+3. **Übernahme-Regel** – `frontend/src/lib/regimeCalibration.js::calibrationDecision`: nur übernehmen, wenn ≥ aktive
+   Kalibrierung desselben Grundgerüsts; sonst Banner „NICHT übernommen“ + „Trotzdem übernehmen“ (Verlauf bleibt).
+4. **Regime-Lab-Copilot** – Backend `REGIME_LAB_SYSTEM_PROMPT` + `_regime_lab_context_block` (kein Optimizer-Prompt,
+   keine Strategie-Übersicht/Min-Trades/Digests); Frontend `PANEL_UI.regime_lab` (Titel, Quick-Prompts, Leertext);
+   Kontext um Autopilot-, Ablations-, Freigabe-/Shadow-Stand erweitert.
+5. **„Was jetzt?“** – Autopilot-Ergebnis, Ablations-Interpretation (`ablationInterpretation`, erklärt „–%/unbewertet“),
+   Freigabe (fehlende Nachweise sichtbar + Handlungshinweise, Shadow erklärt), Glossar/Workflow-Text erweitert.
+6. **Tests** – `backend/tests/test_regime_lab_copilot_isolation.py` (5 unit), `frontend/src/__tests__/regimeLabHelpers.test.js`
+   (14), E2E Testing-Agent `test_reports/iteration_13.json` – alles grün.
+
+## Backlog
+- P1: Walk-Forward-/Strategie-Suche-Balken in Abschnitt 3 ebenfalls nur über Haupt-Balken (bewusst unangetastet).
+- P2: Ablation für Grundgerüst „ema“ hat nur Alternative „regression“ ohne Live-Kennzahlen → serverseitig bewertbare
+  Alternative (z.B. reactive) ergänzen.
+- P2: Kalibrierungs-Vergleich über verschiedene Referenzen (centered/hmm) methodisch normieren.
