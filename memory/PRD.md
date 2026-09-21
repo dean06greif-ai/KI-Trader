@@ -49,3 +49,54 @@ modular, rückwärtskompatibel, mit Regressionstests:
 - P1: Signal-Liste im Frontend könnte `trade_reject_reason` anzeigen (Daten liegen jetzt vor).
 - P2: Regime-Lab Detail weiter verschlanken (live_segments ~40 KB je Asset).
 - P2: TF2 5m-Signal wiederholt sich je 1m-Kerze bis zur nächsten 5m-Kerze (Signals-Spam in DB).
+
+---
+
+# Session 21.09.2026 – Regime-Lab Job-Steuerung + Bitunix 10002 (Branch `conflict_200926_2227`)
+
+## Problemstellung
+1. Regime-Lab: die Strategie-Suche (und alle anderen Lab-Jobs) hatten nur „Abbrechen“ –
+   Pausieren/Fortsetzen, „Suche beenden & Beste behalten“ und Notfall-Reset wie im
+   Strategie-Optimizer fehlten.
+2. Telegram „ORDER ABGEBROCHEN – Bitunix hat die Order abgelehnt: code 10002: Parameter error“
+   (POLUSDT SHORT).
+
+## Ursachen
+- (2) `bitunix_trade._precision_to_step(0)` lieferte 0.0 statt 1.0 (`basePrecision=0` = ganze
+  Einheiten bei POL/AVAX/…). Menge ging ungerundet („928.37“) an die Börse. Zusätzlich lieferte
+  `_round_step(x, 1.0)` „928.0“ statt „928“.
+- (Nebenbefund, blockierte die Suche komplett) R06-Manifest: `fetch_histories` behielt den ersten
+  (angeschnittenen) und den letzten (noch laufenden) Bucket -> Checksum kippte Minuten nach der
+  Analyse -> „Datensatz nicht reproduzierbar“ bei jeder Regime-Suche/Walk-Forward.
+
+## Umgesetzt
+- `services/job_control.py`: `request_stop()`, `stop_requested()`, `reset_running()` (eine Quelle,
+  von Optimizer-Semantik übernommen).
+- `routers/regime_lab.py`: `POST /api/regime-lab/pause|resume|stop/{job_id}`, `POST /api/regime-lab/reset`
+  (Admin). `autopilot/stop` nutzt denselben Helfer (bleibt kompatibel).
+- `services/regime_opt.py`: Pause-fähiger should_stop (`job_control.stop_check`), Pause-Checkpoints,
+  sanfter Stop in Discovery/Parameter-Phase, `result.stopped_early`, Phase „Fertig (Suche vorzeitig beendet …)“.
+- `services/dynamic_strategy.discover_regime_strategy(..., soft_stop=)`: Greedy + Deep-Test beenden
+  sanft und liefern das bis dahin Beste.
+- `services/regime_lab.fetch_histories` + `services/history_sources._check_cancel` (async): Pause greift
+  auch während des Daten-Downloads (alle Lab-Jobs, Backtester, Optimizer).
+- `services/regime_lab.fetch_histories`: nur vollständige Buckets (Anfang + Ende) -> Manifest stabil.
+- `services/bitunix_trade.py`: `_precision_to_step(0) == 1.0`, `_round_step` ohne „.0“-Rest.
+- Frontend `RegimeJobProgress.js`: `labJobAction`, `useLabJobControls`, `JobControls`, `JobStateTags`;
+  `JobProgress` bekommt `onPause/onStop/onReset`. Genutzt in `RegimeOptimizePanel`, `RegimeLab`
+  (Haupt-Balken), `RegimeDetectorTools`, `RegimeEngineSettings`, `RegimeAutopilot`.
+- Tests: `tests/test_bitunix_qty_whole_units.py`, `tests/test_regime_lab_job_controls.py`
+  (Unit + Live), `tests/test_regime_lab_closed_buckets.py`; `backend/test_bitunix_precision_fix.py`
+  repariert (veralteter Import). Gesamtsuite: 203 grün.
+- Skripte: `scripts/check_regime_lab_controls.sh` (E2E Pause/Resume/Stop gegen laufendes Backend),
+  `scripts/diag_dataset_manifest.py`.
+
+## Hinweise
+- Lokaler Worker: Paket enthält die aktuellen `services/*` erst nach erneutem Download; ältere Worker
+  (>= 1.10) pausieren weiterhin, kennen den sanften Stop der Regime-Suche aber noch nicht.
+- Deep-Test: nach „Suche beenden“ werden keine weiteren Kandidaten mehr bewertet, die Phasen laufen
+  mit dem bis dahin Besten durch.
+
+## Backlog / offen
+- P1: Bitunix-Ablehnungen mit `qty` im Telegram-Text ausweisen (bessere Diagnose).
+- P2: Optimizer-/Backtester-Steuerknöpfe auf die gemeinsamen `JobControls` umziehen (nur Frontend-DRY).

@@ -1,0 +1,35 @@
+{
+  "summary": "Full e2e verification of the Regime-Lab job controls (pause/resume/stop/cancel/reset) and Bitunix precision fix. Backend: 28/28 unit tests pass across /app/tests/test_bitunix_qty_whole_units.py, test_regime_lab_job_controls.py, test_regime_lab_closed_buckets.py and /app/backend/test_bitunix_precision_fix.py (with test_get_mark_price_live deselected). Live-API checks: all 4 control endpoints return 401 without token and 404 with admin token on unknown job ids; POST /api/regime-lab/reset returns {status:'reset', cleared:int}. Real regime-opt run against existing analysis ra_f64533ae (ctrl-test3), regime 2 (Seitwärtsmarkt, share 37.3%), mode=combo, deep_test=true: pause -> paused=true, phase prefixed '⏸ Pausiert', progress frozen (22->22), paused_total_s grew 0->5.2->9.3; resume -> paused=false, progress advanced (22->38); stop -> status=done, phase='Fertig (Suche vorzeitig beendet – Bestes behalten)', result.stopped_early=true, no 'Datensatz nicht reproduzierbar' error. Notfall-Reset: started separate job, active endpoint showed it running, POST /reset cleared=1, active=null, job status became cancelled. Frontend: Admin-Login -> Tools -> Regime-Lab overlay; clicked existing analysis ctrl-test3, opened regime-optimize-toggle-combined-2 panel, ticked combo+deep and launched: regime-opt-progress-2 rendered with all 4 buttons (pause/stop/cancel/reset), Pause -> resume+paused-tag visible, Resume -> pause back, Stop -> regime-opt-result-2 with regime-opt-stopped-early-2 tag. Top-level bar: starting regime-analyze-btn with 90 Tage created regime-job-progress with pause/cancel/reset (no stop as expected for analyze kind), Pause showed '⏸ pausiert (2s)', Notfall-Reset removed the bar and toast 'Regime-Lab zurückgesetzt (1 Job(s) freigegeben)' appeared.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/regime-lab/reset", "issue": "Job status after reset shows phase='Abgebrochen' instead of 'Zurückgesetzt (Notfall-Reset)'. reset_running() writes the expected phase, but the still-running worker task overwrites it to 'Abgebrochen' at the next cancel checkpoint. Minor cosmetic label divergence from the acceptance text; status transitions (cancelled, cancel=true) and active=null still work correctly."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/test_bitunix_qty_whole_units.py",
+    "/app/tests/test_regime_lab_job_controls.py",
+    "/app/tests/test_regime_lab_closed_buckets.py",
+    "/app/backend/test_bitunix_precision_fix.py",
+    "/tmp/e2e_regime_lab.sh"
+  ],
+  "action_items": [
+    "Optional cosmetic: after emergency reset, protect the 'Zurückgesetzt (Notfall-Reset)' phase from being overwritten by the worker's subsequent cancel-checkpoint (e.g. only set 'Abgebrochen' if not already labelled as reset)."
+  ],
+  "critical_code_review_comments": [
+    "job_control.reset_running writes phase='Zurückgesetzt (Notfall-Reset)' but run_regime_optimizer's cancel checkpoint overrides it with 'Abgebrochen'. Consider guarding the phase overwrite when job.get('phase','').startswith('Zurückgesetzt')."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Reused existing analysis ra_f64533ae (ctrl-test3). All started regime-opt jobs were stopped or reset before finishing; final Notfall-Reset left the Regime-Lab slot empty (active=null).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: https://regime-lab-enhance.preview.emergentagent.com. Admin login uses 'username' field (not email). Three saved analyses exist: ra_f64533ae (ctrl-test3), ra_e4f46d67 (ctrl-test2), ra_62d94ea6 (ctrl-test) – all BTCUSDT 15m 90d combined with 4 regimes; regime id 2 (Seitwärtsmarkt) is the largest and best for pause/stop testing (~2-3min with deep_test). Selectors: [data-testid='regime-optimize-toggle-combined-2'], [data-testid='regime-opt-panel-2'], [data-testid='regime-opt-progress-2'], [data-testid='regime-opt-progress-2-{pause|resume|stop|cancel|reset}'], [data-testid='regime-opt-progress-2-paused-tag'], [data-testid='regime-opt-result-2'], [data-testid='regime-opt-stopped-early-2']. Top bar: [data-testid='regime-job-progress'] with -pause/-cancel/-reset (and -stop only for regime_opt/autopilot jobs). Only ONE Regime-Lab job can run at a time (409 otherwise). Use POST /api/regime-lab/reset before/after runs to keep slot clean.",
+  "rca of the issue": "Not a bug – acceptance criteria met. Only the 'Abgebrochen' vs 'Zurückgesetzt (Notfall-Reset)' phase label is overwritten by the worker's cancel checkpoint after reset_running() set it. Root cause: run_regime_optimizer detects cancel==True at its next checkpoint and unconditionally sets phase='Abgebrochen', racing with reset_running(). Mitigation: in the optimizer's cancel handler, skip the phase update when the current phase already indicates a reset (starts with 'Zurückgesetzt')."
+}
