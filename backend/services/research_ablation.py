@@ -46,8 +46,10 @@ def ablation_variants(engine_config: Optional[Dict]) -> List[Dict]:
         add("alt_ema", "einfache Alternative: Detektor 'ema'",
             "detector:kombi", detector="ema")
     elif det == "ema":
-        add("alt_regression", "einfache Alternative: Detektor 'regression'",
-            "detector:ema", detector="regression")
+        # 'regression' liefert keine Live-Sicht (Zeile bliebe „unbewertet“) –
+        # bewertbare Alternative ist der reaktive Umkehrpunkt-Detektor.
+        add("alt_reactive", "einfache Alternative: Detektor 'reactive'",
+            "detector:ema", detector="reactive")
     else:  # regression
         add("alt_ema", "einfache Alternative: Detektor 'ema'",
             "detector:regression", detector="ema")
