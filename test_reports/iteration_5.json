@@ -1,0 +1,25 @@
+{
+  "summary": "Iter 5 - Backup (Supabase), Entry-Modus & UI layout verification. Backend (13/13 PASS via pytest /app/backend/tests/test_iter5_backup_entry_mode_api.py): GET /api/maintenance/backup returns configured=true, bucket='mongo-backups', retention_days=30, collections incl. settings/auto_trades, last_run dict; /backup/list contains backup_*.json.gz entries; POST /backup/run without token -> 401/403, with admin -> status='ok' file backup_20260918_012014.json.gz, docs>=0, errors empty, file appears in list; POST /backup/config admin {retention_days:14} -> 14, resettable to 30; {} -> 400; {collections:[]} -> 400; POST /backup/restore admin {file:name} -> status='dry_run' with counts; {..,apply:true,collections:['custom_strategies']} -> status='restored'; {file:'../evil'} -> 400; GET /maintenance/retention: ai_decisions.days=14, ai_chat_archive.days=30, job_series.days=60; POST /ai/config entry_mode toggles conservative/aggressive/invalid->ai/reset to ai all persisted (verified via /api/ai/status). Frontend (all criteria PASS): admin token injection ok; strategy-tab-ai_trader -> edit-strategy-params-btn -> ai-trading-panel opens; measured .ai-panel-header height=75.5px and ai-status-row height=53px, IDENTICAL across baseline / Setup open / Analyse open / Verlauf open (delta 0.00px) -> shrink bug fixed; ai-analysis-section present, policy-report-card present INSIDE analyse tab and 0 instances outside AI panel (dashboard clean); ai-entry-mode-select present with options [ai, aggressive, conservative]; selecting 'conservative' via UI persists (GET /api/ai/status returned entry_mode=conservative); reset to ai after test; ai-lab-toggle -> ai-lab-tab-storage renders backup-card with backup-last-run text 'letztes Backup 18.09., 03:20 (457 Dok., 0 MB, 27 Collections)', backup-run-btn clickable (admin), backup-restore-select lists 2 files, dry-run click shows backup-restore-preview containing 'Trockenlauf · Dump vom 18.09., 03:20 · settings: 18 · auto_trades: 0 ...'. Entry_mode reset to 'ai' at end.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter5_backup_entry_mode_api.py",
+    "/app/test_reports/pytest/iter5.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backup docs count reported by /maintenance/backup shows 457 documents but individual collection counts in dry-run preview are mostly 0 (settings:18, ai_knowledge:1, custom_strategies:1, performance:437, strategy_coin_toggles:437 etc). This is expected for the mostly empty local DB but the discrepancy between 'total docs' displayed in backup-last-run and per-collection counts might confuse users; consider a tooltip.",
+    "backup-restore dry-run preview text is long and unwrapped in the modal (spans multiple lines with '·' separators). Consider a scrollable region or grouped display for readability when many collections are present.",
+    "Restore endpoint accepts apply:true and returns status='restored' even for a collection with 0 documents (custom_strategies) which is fine, but consider surfacing 'replaced'/'inserted' counters explicitly in the UI preview after apply=true (currently only dry_run preview is shown by BackupCard)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter5_backup_entry_mode_api.py"
+  ],
+  "success_rate": {"backend": "100% (13/13 API tests)", "frontend": "100% (shrink-fix, policy-report-card relocation, entry-mode select persistence, backup-card storage tab)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "One new Supabase backup file created via /backup/run: backup_20260918_012014.json.gz (0 MB). custom_strategies collection restored (apply=true) from same-day dump - no destructive impact (matches source).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login: POST /api/auth/login {username:'Admin',password:'Dean06Greif!/Admin'} -> {token}; localStorage keys admin_token + admin_token_ts (String(Date.now())). Backup endpoints: /api/maintenance/backup (GET status), /backup/list (files array of {name,...}), /backup/run (admin POST), /backup/config (admin POST {retention_days,collections,enabled}), /backup/restore (admin POST {file, collections?, apply?}). AI entry_mode via POST /api/ai/config {entry_mode:ai|aggressive|conservative|<other -> falls back ai>}, exposed via GET /api/ai/status config.entry_mode. Frontend testids used: strategy-tab-ai_trader, edit-strategy-params-btn, ai-trading-panel, ai-panel-header CSS class + ai-status-row testid (heights must match within 2px), ai-setup-toggle, ai-diagnosis-toggle, ai-equity-toggle, ai-analysis-section, policy-report-card, ai-entry-mode-select, ai-lab-toggle, ai-lab-tab-storage, backup-card, backup-last-run, backup-run-btn, backup-restore-select, backup-restore-dry-btn, backup-restore-preview. AI trader was left OFF (ai-enable-toggle untouched).",
+  "rca of the issue": "N/A - all features working as designed."
+}

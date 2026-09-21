@@ -1,0 +1,14 @@
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [ 35%]
+.......................................................s................ [ 70%]
+............................................................             [100%]
+=============================== warnings summary ===============================
+tests/test_ai_equity_curve.py::test_main
+tests/test_guard_cockpit.py::test_main
+  /root/.venv/lib/python3.11/site-packages/starlette/formparsers.py:12: PendingDeprecationWarning: Please use `import python_multipart` instead.
+    import multipart
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+203 passed, 1 skipped, 2 warnings in 13.20s
