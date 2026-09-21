@@ -4,6 +4,7 @@ import { toast } from '../lib/toast';
 import { authHeaders, isAdmin } from '../auth';
 import { addToSeries } from '../lib/series';
 import { EdgeBanner, labJobAction } from './RegimeJobProgress';
+import { WhatNow } from './RegimeDetectorTools';
 import NumInput from './NumInput';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -171,6 +172,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
         <b> Wirtschaftlich:</b> zu kurze Live-Phasen (nicht handelbar) werden bestraft. Läuft im Hintergrund (Cloud oder lokaler
         Worker, auch über Nacht) – <b>das Beste wird automatisch übernommen</b>; mit <b>Vollautomatik</b> wird danach auch
         „Regime suchen &amp; speichern“ automatisch ausgeführt (Job-Warteschlange), sonst oben manuell starten.
+        <b> Fortschritt:</b> ohne Zeit-/Runden-Limit ist das eine Endlos-Suche – der Haupt-Balken oben bleibt
+        bei höchstens 95 %, bis du „Suche beenden (Bestes behalten)“ drückst. Das ist normal und kein Hänger.
       </div>
       <div className="opt-setup" style={{ alignItems: 'center' }}>
         <label className="opt-field" title="Sicherheits-Zeitlimit in Minuten. 0 = unbegrenzt (bis Ziel/Runden oder „Suche beenden“)">
@@ -225,6 +228,20 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
         </div>
       )}
       {banner && <EdgeBanner {...banner} testId="autopilot-banner" />}
+      {lastResult?.best && (
+        <WhatNow testId="autopilot-whatnow">
+          <ol>
+            <li>{lastResult.improved
+              ? 'Die beste Erkennung ist bereits in den Engine-Einstellungen oben übernommen.'
+              : 'Keine Verbesserung – deine Einstellungen sind unverändert.'}</li>
+            <li>{lastResult.followup
+              ? '„Regime suchen & speichern“ wurde automatisch eingereiht (Warteschlange oben) – warten, bis die Analyse unter „2 · Gespeicherte Analysen“ erscheint.'
+              : 'Oben „Regime suchen & speichern“ starten – erst dadurch entsteht die Analyse mit Note.'}</li>
+            <li>Analyse öffnen → Note lesen → „Behalten vorschlagen“. Für die Freigabe (Shadow) fehlen danach
+              noch: eine wissenschaftliche Kalibrierung und eine Ablation mit denselben Coins/Timeframe.</li>
+          </ol>
+        </WhatNow>
+      )}
       {lastResult?.best && (
         <div className="opt-setup" style={{ alignItems: 'center', marginTop: 4 }}>
           <BestLine best={lastResult.best} testId="autopilot-result-best" />

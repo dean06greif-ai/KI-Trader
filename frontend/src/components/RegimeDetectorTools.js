@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Play, MoonStars } from '@phosphor-icons/react';
 import { toast } from '../lib/toast';
 import { addToSeries } from '../lib/series';
-import { useLabJob, JobProgress, EdgeBanner } from './RegimeJobProgress';
+import { useLabJob, EdgeBanner } from './RegimeJobProgress';
 
 // „+ Warteschlange“: Werkzeug in die Regime-Lab-Warteschlange einreihen –
 // läuft automatisch nacheinander und erscheint im Haupt-Balken.
@@ -16,6 +16,18 @@ const QueueButton = ({ kind, body, onQueued, testId }) => (
     }}>
     <MoonStars size={11} /> + Warteschlange
   </button>
+);
+
+/** Hinweis statt eigenem Ladebalken: alle Werkzeuge laufen sichtbar im Haupt-Balken (Abschnitt 1). */
+const RunningHint = ({ running, testId }) => (running ? (
+  <div className="opt-small" data-testid={testId} style={{ marginTop: 6 }}>
+    ⏳ Läuft – Fortschritt, Restzeit, Pause und Abbruch im Haupt-Balken oben (Abschnitt 1).
+  </div>
+) : null);
+
+/** Kompakter „Was jetzt?“-Kasten unter einem Ergebnis. */
+export const WhatNow = ({ testId, children }) => (
+  <div className="rl-whatnow" data-testid={testId}><b>Was jetzt?</b><div style={{ flex: 1, minWidth: 220 }}>{children}</div></div>
 );
 
 const fmt = (v, d = 2) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
@@ -40,18 +52,61 @@ const ABLATION_VERDICT = {
   unbewertet: { text: 'unbewertet', cls: '' },
 };
 
-export function AblationCompare({ selCoins, timeframe, days, trainPct, engineConfig, jobBlocked, onQueued }) {
+/**
+ * Ablation in Klartext (rein): Was sagt die Tabelle, was fehlt, was ist der
+ * nächste Schritt? Berücksichtigt auch den Fall „einfache Alternative ohne
+ * Live-Kennzahlen“ (–% / unbewertet) – dann ist die Zeile ohne Aussage.
+ */
+export function ablationInterpretation(result) {
+  const rows = result?.rows || [];
+  const full = rows.find(r => r.variant_key === 'full');
+  const verdicts = result?.verdicts || {};
+  const parts = rows.filter(r => r.variant_key !== 'full' && !String(r.variant_key).startsWith('alt_'));
+  const alts = rows.filter(r => String(r.variant_key).startsWith('alt_'));
+  const helps = parts.filter(r => verdicts[r.variant_key]?.verdict === 'traegt_bei');
+  const hurts = parts.filter(r => verdicts[r.variant_key]?.verdict === 'schadet');
+  const redundant = parts.filter(r => verdicts[r.variant_key]?.verdict === 'redundant');
+  const altRated = alts.filter(r => r.holdout_direction_pct != null && r.inner_direction_pct != null);
+  const altUnrated = alts.filter(r => r.holdout_direction_pct == null || r.inner_direction_pct == null);
+  const bestAlt = altRated.length
+    ? altRated.reduce((a, b) => ((b.holdout_direction_pct || 0) > (a.holdout_direction_pct || 0) ? b : a)) : null;
+  const gateDelta = full && bestAlt
+    ? Number(full.holdout_direction_pct || 0) - Number(bestAlt.holdout_direction_pct || 0) : null;
+  const lines = [];
+  if (!parts.length) {
+    lines.push('Dein Grundgerüst hat keine abschaltbaren Bestätigungs-Komponenten – es gab nur „voll“ und die einfache Alternative zu vergleichen.');
+  } else {
+    if (helps.length) lines.push(`Behalten: ${helps.map(r => r.name.replace(/^ohne /, '')).join(', ')} (trägt bei).`);
+    if (hurts.length) lines.push(`Kandidat zum Abschalten: ${hurts.map(r => r.name.replace(/^ohne /, '')).join(', ')} (schadet) – in den Engine-Feineinstellungen deaktivieren, dann neu „Regime suchen & speichern“ und die Note vergleichen.`);
+    if (redundant.length) lines.push(`Ohne Wirkung: ${redundant.map(r => r.name.replace(/^ohne /, '')).join(', ')} (redundant) – kann bleiben, bringt aber nichts.`);
+  }
+  if (altUnrated.length) {
+    lines.push(`„–% / unbewertet“ bei ${altUnrated.map(r => r.name).join(', ')}: diese Alternative liefert keine Live-Kennzahlen (keine Live-Sicht) – die Zeile hat keine Aussage. Das ist kein Fehler von dir.`);
+  }
+  if (gateDelta !== null) {
+    lines.push(gateDelta >= 0
+      ? `Freigabe-Nachweis: volle Konfiguration ${gateDelta >= 0 ? '+' : ''}${gateDelta.toFixed(1)}pp vs. einfache Alternative im Holdout – Regime-Umschaltung verliert nicht ✓.`
+      : `Freigabe-Nachweis: volle Konfiguration ${gateDelta.toFixed(1)}pp SCHLECHTER als die einfache Alternative im Holdout – so wird die Freigabe blockiert.`);
+  }
+  const next = full && (full.holdout_direction_pct ?? 0) >= 65
+    ? 'Nächster Schritt: Analyse unter „3 · Analyse“ öffnen → „Behalten vorschlagen“ → „Beobachten (Shadow)“ (die Knöpfe zeigen an, welcher Nachweis noch fehlt).'
+    : 'Nächster Schritt: Erkennung verbessern (Autopilot oder anderes Grundgerüst), dann neu „Regime suchen & speichern“.';
+  return { lines, next, fullHoldout: full?.holdout_direction_pct ?? null, gateDelta };
+}
+
+export function AblationCompare({ selCoins, timeframe, days, trainPct, engineConfig, jobBlocked, onQueued, onStarted, onResult }) {
   const body = { symbols: selCoins, timeframe, days, train_pct: trainPct, engine_config: engineConfig || {} };
   const [result, setResult] = useState(null);
-  const { job, start, cancel, running, controls } = useLabJob({
-    errorLabel: 'Ablation fehlgeschlagen',
-    onDone: (res) => { if (res?.rows) setResult(res); },
+  const { start, running } = useLabJob({
+    errorLabel: 'Ablation fehlgeschlagen', onStarted,
+    onDone: (res) => { if (res?.rows) { setResult(res); onResult?.(res); } },
   });
   const run = () => {
     setResult(null);
-    start('/api/regime-lab/ablation', body, { requireCoins: true });
+    start('/api/regime-lab/ablation', body, { requireCoins: true, kind: 'ablation' });
   };
   const verdictOf = (key) => ABLATION_VERDICT[result?.verdicts?.[key]?.verdict] || null;
+  const interpretation = result ? ablationInterpretation(result) : null;
 
   return (
     <div className="opt-row rl-tool" data-testid="ablation-section">
@@ -60,7 +115,8 @@ export function AblationCompare({ selCoins, timeframe, days, trainPct, engineCon
         <b>Wann?</b> Nach der Kalibrierung, wenn du wissen willst, ob eine Bestätigungs-Komponente
         (ADX, Effizienz, Volumen, EMA …) etwas bringt oder nur bremst. Derselbe Datensatz: Detektor
         voll vs. ohne je eine Komponente vs. einfache Alternative. Ergebnis ist eine Bewertung
-        („trägt bei / redundant / schadet“) – <b>kein</b> automatisches Übernehmen.
+        („trägt bei / redundant / schadet“) – <b>kein</b> automatisches Übernehmen. Außerdem ist die
+        Ablation ein <b>Nachweis für die Freigabe</b> (Shadow) – gleiche Coins/Timeframe wie die Analyse wählen.
       </div>
       <div className="opt-setup" style={{ alignItems: 'center' }}>
         <button className="opt-chip" onClick={run} disabled={running || jobBlocked} data-testid="ablation-run">
@@ -68,7 +124,7 @@ export function AblationCompare({ selCoins, timeframe, days, trainPct, engineCon
         </button>
         <QueueButton kind="regime_ablation" body={body} onQueued={onQueued} testId="ablation-queue" />
       </div>
-      <JobProgress job={job} onCancel={cancel} onPause={controls.togglePause} onReset={controls.reset} color="#64d2ff" testId="ablation-status" label="Ablation" />
+      <RunningHint running={running} testId="ablation-running" />
       {result && (
         <div style={{ overflowX: 'auto', marginTop: 6 }}>
           <table className="rl-compare-table" data-testid="ablation-table"
@@ -123,6 +179,12 @@ export function AblationCompare({ selCoins, timeframe, days, trainPct, engineCon
             );
           })()}
           <SelectionNote result={result} testId="ablation-selection-note" />
+          {interpretation && (
+            <WhatNow testId="ablation-whatnow">
+              <ul>{interpretation.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+              <div style={{ marginTop: 4 }}><b style={{ color: 'inherit' }}>{interpretation.next}</b></div>
+            </WhatNow>
+          )}
         </div>
       )}
     </div>
@@ -130,7 +192,7 @@ export function AblationCompare({ selCoins, timeframe, days, trainPct, engineCon
 }
 
 // ---------------- EMA-Perioden-Vergleich (Detektor 'ema') ----------------
-export function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineConfig, setEngineConfig, jobBlocked, onQueued }) {
+export function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineConfig, setEngineConfig, jobBlocked, onQueued, onStarted, onResult }) {
   const [periods, setPeriods] = useState('5, 9, 14');
   const [result, setResult] = useState(null);
   const [banner, setBanner] = useState(null);
@@ -154,9 +216,9 @@ export function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineCo
     });
   };
 
-  const { job, start, cancel, running, controls } = useLabJob({
-    errorLabel: 'Vergleich fehlgeschlagen',
-    onDone: (res) => { if (res?.rows) { setResult(res); applyBest(res); } },
+  const { start, running } = useLabJob({
+    errorLabel: 'Vergleich fehlgeschlagen', onStarted,
+    onDone: (res) => { if (res?.rows) { setResult(res); applyBest(res); onResult?.(res); } },
   });
 
   const parsePeriods = () => periods.split(',').map(x => parseFloat(x.trim())).filter(x => x >= 2 && x <= 100);
@@ -165,7 +227,7 @@ export function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineCo
   const run = () => {
     if (!parsePeriods().length) { toast.error('Perioden 2-100 Tage angeben, z.B. 5, 9, 14'); return; }
     setResult(null); setBanner(null);
-    start('/api/regime-lab/ema-compare', emaBody(), { requireCoins: true });
+    start('/api/regime-lab/ema-compare', emaBody(), { requireCoins: true, kind: 'ema_compare' });
   };
 
   return (
@@ -187,7 +249,7 @@ export function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineCo
         </button>
         <QueueButton kind="regime_ema_compare" body={emaBody()} onQueued={onQueued} testId="ema-compare-queue" />
       </div>
-      <JobProgress job={job} onCancel={cancel} onPause={controls.togglePause} onReset={controls.reset} color="#ffa502" testId="ema-compare-status" label="EMA-Vergleich" />
+      <RunningHint running={running} testId="ema-compare-running" />
       {banner && <EdgeBanner {...banner} testId="ema-compare-banner" />}
       {result && (
         <div style={{ overflowX: 'auto', marginTop: 6 }}>
@@ -244,7 +306,7 @@ export function EmaPeriodCompare({ selCoins, timeframe, days, trainPct, engineCo
 
 // ---------------- Kombi-Detektor: Auto-Kalibrierung ----------------
 export function KombiAutoCalibrate({ selCoins, timeframe, days, trainPct, engineConfig,
-  setEngineConfig, jobBlocked, onQueued }) {
+  setEngineConfig, jobBlocked, onQueued, onStarted, onResult }) {
   const body = { symbols: selCoins, timeframe, days, train_pct: trainPct, engine_config: engineConfig || {} };
   const [result, setResult] = useState(null);
   const [banner, setBanner] = useState(null);
@@ -266,14 +328,14 @@ export function KombiAutoCalibrate({ selCoins, timeframe, days, trainPct, engine
     });
   };
 
-  const { job, start, cancel, running, controls } = useLabJob({
-    errorLabel: 'Kalibrierung fehlgeschlagen',
-    onDone: (res) => { if (res?.rows) { setResult(res); applyBest(res); } },
+  const { start, running } = useLabJob({
+    errorLabel: 'Kalibrierung fehlgeschlagen', onStarted,
+    onDone: (res) => { if (res?.rows) { setResult(res); applyBest(res); onResult?.(res); } },
   });
 
   const run = () => {
     setResult(null); setBanner(null);
-    start('/api/regime-lab/kombi-calibrate', body, { requireCoins: true });
+    start('/api/regime-lab/kombi-calibrate', body, { requireCoins: true, kind: 'kombi_calibrate' });
   };
 
   const isBest = (r) => result?.best && r.thr === result.best.thr && r.slope_days === result.best.slope_days;
@@ -294,7 +356,7 @@ export function KombiAutoCalibrate({ selCoins, timeframe, days, trainPct, engine
         </button>
         <QueueButton kind="regime_kombi" body={body} onQueued={onQueued} testId="kombi-calibrate-queue" />
       </div>
-      <JobProgress job={job} onCancel={cancel} onPause={controls.togglePause} onReset={controls.reset} color="#00e5a0" testId="kombi-calibrate-status" label="Auto-Kalibrierung" />
+      <RunningHint running={running} testId="kombi-calibrate-running" />
       {banner && <EdgeBanner {...banner} testId="kombi-calibrate-banner" />}
       {result && (
         <div style={{ overflowX: 'auto', marginTop: 6 }}>

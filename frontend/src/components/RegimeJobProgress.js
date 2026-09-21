@@ -11,6 +11,36 @@ const fmtEta = (s) => {
   return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 };
 
+/**
+ * Restzeit fürs Auge glätten: die Server-ETA schwankt von Poll zu Poll (Phasen
+ * unterschiedlich lang) – daher grob runden (unter 1 min → „< 1 min“, bis 10 min
+ * auf 30 s, darüber auf ganze Minuten) und die Anzeige höchstens alle 5 s ändern.
+ */
+export const roundEta = (s) => {
+  if (s === null || s === undefined) return null;
+  if (s < 60) return '< 1 min';
+  if (s < 600) return `~${Math.round(s / 30) * 30 / 60} min`.replace('.5', '½');
+  if (s < 3600) return `~${Math.round(s / 60)} min`;
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  return `~${h}h ${String(m).padStart(2, '0')}m`;
+};
+
+export function useSmoothedEta(job) {
+  const [shown, setShown] = useState(null);
+  const lastChange = useRef(0);
+  const eta = job?.status === 'running' && !job?.paused ? job?.eta_seconds : null;
+  useEffect(() => {
+    const next = roundEta(eta);
+    const now = Date.now();
+    if (next === shown) return;
+    if (next === null || shown === null || now - lastChange.current > 5000) {
+      lastChange.current = now;
+      setShown(next);
+    }
+  }, [eta, shown]);
+  return shown;
+}
+
 /** Job-Arten, bei denen „Suche beenden & Beste behalten“ (sanfter Stop) sinnvoll ist. */
 export const SOFT_STOP_KINDS = ['regime_opt', 'autopilot'];
 
@@ -65,14 +95,14 @@ export function useLabJobControls(job, { setJob, onReset } = {}) {
  * EMA-Vergleich, Kombi-Auto-Kalibrierung, Ablation): starten, pollen,
  * abbrechen, Server-Neustart erkennen. onDone(result) nur bei status=done.
  */
-export function useLabJob({ onDone, errorLabel = 'Job fehlgeschlagen', onError } = {}) {
+export function useLabJob({ onDone, errorLabel = 'Job fehlgeschlagen', onError, onStarted } = {}) {
   const [job, setJob] = useState(null);
   const timer = useRef(null);
   useEffect(() => () => clearInterval(timer.current), []);
 
   const fail = (msg) => { if (onError) onError(msg); else toast.error(msg); };
 
-  const start = async (path, body, { requireCoins } = {}) => {
+  const start = async (path, body, { requireCoins, kind } = {}) => {
     if (!isAdmin()) { fail('Admin-Login erforderlich'); return false; }
     if (requireCoins && !(body.symbols || []).length) { fail('Mindestens 1 Coin wählen'); return false; }
     try {
@@ -84,6 +114,8 @@ export function useLabJob({ onDone, errorLabel = 'Job fehlgeschlagen', onError }
       if (!r.ok) { fail(d.detail || 'Start fehlgeschlagen'); return false; }
       setJob({ id: d.job_id, phase: d.execution === 'local' ? 'Wartet auf lokalen Worker' : 'Startet',
         progress: 0, status: 'running' });
+      // Haupt-Balken im Regime-Lab sofort anhängen (kein Warten auf den /active-Poll)
+      onStarted?.(d.job_id, kind);
       timer.current = setInterval(async () => {
         try {
           const resp = await fetch(`${API_URL}/api/regime-lab/status/${d.job_id}`);
@@ -115,8 +147,9 @@ export function useLabJob({ onDone, errorLabel = 'Job fehlgeschlagen', onError }
 }
 
 /** Pause-/Restzeit-Hinweise hinter dem Phasentext (wie im Optimizer). */
-export function JobStateTags({ job, testId = 'job' }) {
+export function JobStateTags({ job, testId = 'job', eta }) {
   if (!job) return null;
+  const etaTxt = eta !== undefined ? eta : (job.eta_seconds != null ? fmtEta(job.eta_seconds) : null);
   return (
     <>
       {job.pause && !job.paused && <span className="opt-eta" data-testid={`${testId}-pausing-hint`}> · Pause angefordert…</span>}
@@ -125,8 +158,8 @@ export function JobStateTags({ job, testId = 'job' }) {
           {' '}· ⏸ pausiert{job.paused_total_s > 0 ? ` (${fmtEta(job.paused_total_s)})` : ''}
         </span>
       )}
-      {job.eta_seconds != null && !job.paused && job.status === 'running' && (
-        <span className="opt-eta"> · Restzeit {fmtEta(job.eta_seconds)}</span>
+      {etaTxt != null && !job.paused && job.status === 'running' && (
+        <span className="opt-eta" data-testid={`${testId}-eta`}> · Restzeit {etaTxt}</span>
       )}
     </>
   );
@@ -170,20 +203,40 @@ export function JobControls({ job, onPause, onStop, onCancel, onReset, testId = 
   );
 }
 
-/** Einheitlicher Ladebalken direkt unter dem jeweiligen Werkzeug (volle Breite). */
+/**
+ * Haupt-Ladebalken des Regime-Labs (volle Breite). Layout bewusst STATISCH:
+ * Kennzahlen (Prozent, Restzeit) stehen in einer festen Spalte rechts, der
+ * Phasentext links hat eine feste Mindesthöhe (2 Zeilen) – so springt der
+ * Text nicht, wenn Phase oder Restzeit von Poll zu Poll wechseln.
+ * `endless` = Endlos-Suche ohne Limit: der Balken bleibt bei ≤95 %, bis
+ * „Suche beenden & Beste behalten“ gedrückt wird.
+ */
 export function JobProgress({ job, onCancel, onPause, onStop, onReset,
   color = '#b388ff', testId = 'job-progress', label }) {
+  const eta = useSmoothedEta(job);
   if (!job) return null;
+  const p = job.params || {};
+  const endless = job.kind === 'autopilot' && job.status === 'running'
+    && !Number(p.max_minutes || 0) && !Number(p.max_rounds || 0);
   return (
     <div className="opt-progress rl-job-progress" data-testid={testId}>
       <div className="opt-progress-bar">
         <div style={{ width: `${Math.max(2, job.progress || 0)}%`, background: color }} />
       </div>
-      <div className="opt-progress-row">
-        <div className="opt-progress-text">
-          {label ? <b>{label} · </b> : null}{job.phase || 'Läuft'} · {job.progress ?? 0}%
-          <JobStateTags job={job} testId={testId} />
+      <div className="rl-job-meta">
+        <div className="opt-progress-text rl-job-phase" data-testid={`${testId}-phase`}
+          title={job.phase || ''}>
+          {label ? <b>{label} · </b> : null}{job.phase || 'Läuft'}
         </div>
+        <div className="opt-progress-text rl-job-stats" data-testid={`${testId}-stats`}>
+          <b>{job.progress ?? 0}%</b>
+          {endless
+            ? <span className="opt-eta" data-testid={`${testId}-endless`}> · Endlos-Suche: bleibt bei ≤95 % bis „Suche beenden“</span>
+            : <JobStateTags job={job} testId={testId} eta={eta} />}
+        </div>
+      </div>
+      <div className="opt-progress-row" style={{ marginTop: 4 }}>
+        <span />
         <JobControls job={job} onPause={onPause} onStop={onStop} onCancel={onCancel} onReset={onReset}
           testId={testId} />
       </div>

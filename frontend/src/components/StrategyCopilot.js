@@ -15,6 +15,38 @@ const QUICK_PROMPTS = [
   { label: 'Welche Suche?', text: 'Welcher Such-Modus (Discovery, Deep-Test, Endlos-Suche, Parameter-Optimierung, Dynamisch) ist für mein Ziel am besten?' },
 ];
 
+// Reiter-spezifische Oberfläche: der Regime-Lab-Copilot kennt NUR Regime-Lab-Daten
+// (Kalibrierung, Autopilot, Ablation, Analyse-Note, Freigabe/Shadow) – keine
+// Strategie-Suche, keine Strategien-Übersicht.
+const PANEL_UI = {
+  regime_lab: {
+    title: 'REGIME-LAB-COPILOT',
+    hint: 'kennt nur Regime-Lab-Daten (Kalibrierung, Autopilot, Ablation, Note, Freigabe) – ändert nichts ohne Bestätigung',
+    placeholder: 'Frage zu Kalibrierung, Autopilot, Ablation, Note oder Freigabe (Shadow)…',
+    empty: 'Ich bin dein Regime-Lab-Copilot: Ich sehe deine Regime-Lab-Einstellungen, die aktive Kalibrierung, '
+      + 'das letzte Autopilot- und Ablations-Ergebnis, die Note der geöffneten Analyse und ihren Freigabe-Stand '
+      + '(Shadow/Wirksam). Ich erkläre jeden Schritt und sage dir, was als Nächstes sinnvoll ist. '
+      + 'Strategie-Suche und Strategien gehören nicht zu diesem Reiter.',
+    quick: [
+      { label: 'Stand bewerten', text: 'Bewerte meinen aktuellen Regime-Lab-Stand (Kalibrierung, Autopilot, Analyse-Note). Was ist gut, was schwach?' },
+      { label: 'Was jetzt?', text: 'Was ist mein nächster sinnvoller Schritt im Regime-Lab-Workflow – und warum?' },
+      { label: 'Ablation erklären', text: 'Erkläre mir das letzte Ablations-Ergebnis in einfachen Worten: Was bedeuten die Zeilen, was heißt „unbewertet“, und was folgt daraus?' },
+      { label: 'Kalibrierung prüfen', text: 'Ist meine aktive Kalibrierung sinnvoll? Sollte ich eine andere Referenz (Rückblick / HMM) oder ein anderes Grundgerüst probieren?' },
+      { label: 'Shadow / Freigabe', text: 'Erkläre mir die Freigabe an den KI-Trader: Was passiert im Shadow, was muss ich tun, wann wird „Wirksam“ möglich?' },
+    ],
+  },
+};
+const DEFAULT_UI = {
+  title: 'STRATEGIE-COPILOT',
+  hint: 'berät, prüft & ändert Einstellungen nur nach Bestätigung – eigener Verlauf & Spezialwissen je Reiter',
+  placeholder: 'Frage zu Einstellungen, Strategien oder Ergebnissen…',
+  empty: 'Ich bin dein Strategie-Copilot: Ich sehe deine aktuellen Einstellungen und alle vorhandenen Strategien '
+    + '(Indikatoren + echte Ergebnisse), erkläre jede Funktion, bewerte Ergebnisse und ändere Einstellungen auf Wunsch '
+    + '– immer erst nach deiner Bestätigung. Ich entwickle keine Strategien auf eigene Faust. Dieser Verlauf gehört nur '
+    + 'zu diesem Reiter – jeder Reiter hat seinen eigenen Copilot-Verlauf mit passendem Spezialwissen.',
+  quick: QUICK_PROMPTS,
+};
+
 const PROPOSAL_META = {
   definition: '📐 Strategie-Vorschlag',
   params: '🎛 Parameter-Vorschlag',
@@ -217,13 +249,14 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
 
   const keyLabel = status?.key_source === 'copilot' ? 'eigene Copilot-Keys'
     : status?.key_source === 'shared' ? 'OpenRouter-Keys (geteilt)' : 'keine Keys';
+  const ui = PANEL_UI[panel] || DEFAULT_UI;
 
   return (
     <div className="cp-wrap" data-testid="strategy-copilot">
       <button className="cp-toggle" onClick={() => setOpen(o => !o)} data-testid="copilot-toggle">
         <Robot size={16} weight="bold" />
-        <span>STRATEGIE-COPILOT</span>
-        <span className="cp-toggle-hint">berät, prüft & ändert Einstellungen nur nach Bestätigung – eigener Verlauf & Spezialwissen je Reiter</span>
+        <span data-testid="copilot-title">{ui.title}</span>
+        <span className="cp-toggle-hint">{ui.hint}</span>
         {open ? <CaretUp size={14} /> : <CaretDown size={14} />}
       </button>
       {open && (
@@ -295,21 +328,14 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
             </div>
           )}
           <div className="cp-quick">
-            {QUICK_PROMPTS.map(q => (
+            {ui.quick.map(q => (
               <button key={q.label} onClick={() => send(q.text)} disabled={busy}
                 data-testid={`copilot-quick-${q.label.replace(/[^a-z]/gi, '-').toLowerCase()}`}>{q.label}</button>
             ))}
           </div>
           <div className="cp-body" ref={bodyRef} data-testid="copilot-messages">
             {messages.length === 0 && !busy && (
-              <div className="cp-empty">
-                Ich bin dein Strategie-Copilot: Ich sehe deine aktuellen Einstellungen und alle
-                vorhandenen Strategien (Indikatoren + echte Ergebnisse), erkläre jede Funktion,
-                bewerte Ergebnisse und ändere Einstellungen auf Wunsch – immer erst nach deiner
-                Bestätigung. Ich entwickle keine Strategien auf eigene Faust. Dieser Verlauf
-                gehört nur zu diesem Reiter – jeder Reiter hat seinen eigenen Copilot-Verlauf
-                mit passendem Spezialwissen.
-              </div>
+              <div className="cp-empty" data-testid="copilot-empty">{ui.empty}</div>
             )}
             {messages.map((m, i) => (
               <div key={m.id || i} className={`cp-msg ${m.role}`}>
@@ -332,7 +358,7 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
           <div className="cp-inputrow">
             <input value={input} onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && send()}
-              placeholder="Frage zu Einstellungen, Strategien oder Ergebnissen…"
+              placeholder={ui.placeholder}
               disabled={busy} data-testid="copilot-input" />
             <button className="cp-send" onClick={() => send()} disabled={busy || !input.trim()} data-testid="copilot-send-btn">
               <PaperPlaneRight size={16} weight="bold" />

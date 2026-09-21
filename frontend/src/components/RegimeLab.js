@@ -767,6 +767,9 @@ export default function RegimeLab({ onClose }) {
     setDetail(null);
   }, []);
   const [autopilotResult, setAutopilotResult] = useState(null);
+  // Ergebnisse der Forschungs-Werkzeuge (für „Was jetzt?“ und den Regime-Lab-Copilot)
+  const [toolResults, setToolResults] = useState({});
+  const setToolResult = useCallback((k, v) => setToolResults(prev => ({ ...prev, [k]: v })), []);
   const [queueRefresh, setQueueRefresh] = useState(0);
   const pollRef = useRef(null);
   const jobRef = useRef(null);
@@ -948,9 +951,10 @@ export default function RegimeLab({ onClose }) {
         <div className="opt-small" style={{ marginBottom: 8 }} data-testid="regime-lab-workflow">
           <b>Ziel:</b> für deine Coins die Marktphasen (Auf / Seitwärts / Ab) so erkennen, dass die Live-Erkennung
           (ohne Zukunftswissen) möglichst oft richtig liegt – gemessen auf dem unangetasteten Holdout (Out-of-Sample).
-          <b> Ablauf:</b> 1 Grundgerüst wählen → 2 kalibrieren (Bestes wird automatisch übernommen) →
-          3 „Regime suchen &amp; speichern“ → 4 Analyse öffnen, Note &amp; Regime-Insights lesen →
-          danach Strategien je Regime suchen und final per Walk-Forward auf dem Holdout testen.
+          <b> Ablauf:</b> 1 Grundgerüst wählen → 2 kalibrieren (Kalibrierung / Autopilot – Bestes wird übernommen, aber nie ein schlechteres Ergebnis) →
+          3 „Regime suchen &amp; speichern“ → 4 Analyse öffnen, Note lesen, „Behalten vorschlagen“ → 5 Ablation (C) →
+          6 „Beobachten (Shadow)“, KI-Trader laufen lassen → ab 30 Shadow-Trades je Regime „Wirksam“. Jeder Abschnitt zeigt
+          unter dem Ergebnis einen Kasten <b>„Was jetzt?“</b>. Alle laufenden Jobs erscheinen nur im Haupt-Balken (Abschnitt 1).
         </div>
         <RegimeLabSummary engine={engine} engineConfig={engineConfig} calibApplied={calibApplied}
           analysesCount={analyses?.length} detail={detail} trainPct={trainPct}
@@ -1019,6 +1023,7 @@ export default function RegimeLab({ onClose }) {
           <RegimeEngineSettings engine={engine} setEngine={setEngine}
             config={engineConfig} setConfig={setEngineConfig}
             calibApplied={calibApplied} setCalibApplied={setCalibApplied}
+            onJobStarted={(id, kind) => attachPoll(id, kind)}
             calibrateCtx={{ symbols: selCoins, timeframe, days, execution }} />
           <div className="opt-setup">
             <label className="opt-field">Name (optional)
@@ -1119,21 +1124,25 @@ export default function RegimeLab({ onClose }) {
             Maßstab ist immer <b>Live=Final</b> auf dem Holdout. Das jeweils beste Ergebnis wird
             <b> automatisch übernommen</b> und hier angezeigt – danach oben „Regime suchen &amp; speichern“ erneut starten
             und die Note der neuen Analyse mit der alten vergleichen. Es läuft immer nur EIN Regime-Lab-Job gleichzeitig –
-            jedes Werkzeug lässt sich über „+ Warteschlange“ einreihen und erscheint dann im Haupt-Balken oben.
+            <b> Fortschritt, Restzeit, Pause und Abbruch aller Werkzeuge erscheinen ausschließlich im Haupt-Balken oben</b>;
+            jedes Werkzeug lässt sich über „+ Warteschlange“ einreihen.
           </div>
         </div>
 
         <EmaPeriodCompare selCoins={selCoins} timeframe={timeframe} days={days}
           trainPct={trainPct} engineConfig={engineConfig} setEngineConfig={setEngineConfig} jobBlocked={jobBlocked}
+          onStarted={attachPoll} onResult={(r) => setToolResult('ema_compare', r)}
           onQueued={() => setQueueRefresh(k => k + 1)} />
 
         <KombiAutoCalibrate selCoins={selCoins} timeframe={timeframe} days={days}
           trainPct={trainPct} engineConfig={engineConfig}
           setEngineConfig={setEngineConfig} jobBlocked={jobBlocked}
+          onStarted={attachPoll} onResult={(r) => setToolResult('kombi_calibrate', r)}
           onQueued={() => setQueueRefresh(k => k + 1)} />
 
         <AblationCompare selCoins={selCoins} timeframe={timeframe} days={days}
           trainPct={trainPct} engineConfig={engineConfig} jobBlocked={jobBlocked}
+          onStarted={attachPoll} onResult={(r) => setToolResult('ablation', r)}
           onQueued={() => setQueueRefresh(k => k + 1)} />
 
         <RegimeAutopilot selCoins={selCoins} timeframe={timeframe} days={days} trainPct={trainPct}
@@ -1214,7 +1223,8 @@ export default function RegimeLab({ onClose }) {
           )}
           {selected && detail && (
             <>
-              <RegimeReleaseControls analysis={detail} onChanged={() => { loadDetail(selected); loadList(); }} />
+              <RegimeReleaseControls analysis={detail} shadowTrades={shadowTrades}
+                onChanged={() => { loadDetail(selected); loadList(); }} />
               <AnalysisDetail analysis={detail} strategies={strategies}
                 jobBlocked={jobBlocked} execution={execution} onChanged={() => loadDetail(selected)} />
             </>
@@ -1249,20 +1259,37 @@ export default function RegimeLab({ onClose }) {
             const focus = q ? (Object.values(q.classes || {}).length === 1 ? Object.values(q.classes)[0] : q.overall) : null;
             const wf = detail?.walkforward ? Object.values(detail.walkforward)[0] : null;
             const regs = detail?.combined?.model?.regimes || Object.values(detail?.per_coin || {})[0]?.model?.regimes || [];
+            const slimRow = (r) => ({ variant: r.name, live_final_pct: r.direction_pct, inner_val_pct: r.inner_direction_pct,
+              holdout_pct: r.holdout_direction_pct, switches_final: r.switches_final, switches_live: r.switches_live });
+            const abl = toolResults.ablation;
+            const ap = autopilotResult;
+            const rel = detail?.release;
             return {
               settings: { coins: selCoins, timeframe, days, scope, train_pct: trainPct },
               regime: {
                 detector: engine === 'kmeans' ? 'kmeans' : (engineConfig?.detector || 'reactive'),
                 regime_mode: engineConfig?.regime_mode || 5,
+                job_running: job?.status === 'running' ? { kind: job.kind, progress: job.progress, phase: job.phase } : null,
                 calibration: calibApplied ? { detector: calibApplied.detector, before_pct: calibApplied.baseline_pct,
-                  after_pct: calibApplied.best_pct, source: calibApplied.source } : null,
+                  after_pct: calibApplied.best_pct, source: calibApplied.source, truth_source: calibApplied.truth_source,
+                  rule: 'neue Kalibrierung wird nur übernommen, wenn besser als die aktive' } : null,
+                autopilot_last: ap?.best ? { detector: ap.best.detector, score: ap.best.score, improved: !!ap.improved,
+                  tested: ap.tested, improvements: ap.improvements, stop_reason: ap.stop_reason,
+                  inner_val_pct: ap.best.metrics?.inner_direction_pct, holdout_pct: ap.best.metrics?.holdout_direction_pct,
+                  avg_live_phase_days: ap.best.metrics?.avg_live_phase_days, analysis_chained: !!ap.followup } : null,
+                ablation_last: abl?.rows ? { rows: abl.rows.slice(0, 8).map(slimRow), best_variant: abl.best_variant,
+                  verdicts: abl.verdicts, evidence: abl.evidence, symbols: abl.symbols, timeframe: abl.timeframe } : null,
                 analyses_saved: analyses?.length ?? 0,
                 analysis: detail ? {
-                  name: detail.name, grade: focus?.grade, holdout_live_final_pct: focus?.pct,
+                  name: detail.name, symbols: detail.symbols, timeframe: detail.timeframe, days: detail.days,
+                  grade: focus?.grade, holdout_live_final_pct: focus?.pct,
                   trend_hit_pct: focus?.trend_hit_pct, avg_segment_days: focus?.avg_segment_days,
                   avg_delay_days: focus?.avg_delay_days, holdout_bars: focus?.holdout_bars,
                   regimes: regs.slice(0, 9).map(r => ({ label: r.label, share_pct: Math.round(r.share_pct || 0) })),
+                  kept_regimes: Object.values(detail.kept || {}).filter(Boolean).length,
                   assignments: Object.keys(detail.assignments || {}).length,
+                  release: { stage: rel?.stage || 'none', since: rel?.since, asset_classes: rel?.asset_classes,
+                    shadow_trades: shadowTrades, active_needs: 'mind. 30 Shadow-Trades je Struktur-Regime + Ø-Reward-Unterschied ≥ 0.25 R' },
                   walkforward: wf ? { dynamic_pnl: wf.dynamic_test?.pnl, dynamic_trades: wf.dynamic_test?.trades,
                     benchmark_pnl: wf.best_single?.metrics?.pnl, passed: !!wf.verdict?.dynamic_better } : null,
                 } : null,

@@ -102,6 +102,76 @@ PANEL_SHARED = (
 def normalize_panel(panel: Optional[str]) -> str:
     return panel if panel in PANELS else DEFAULT_PANEL
 
+
+# ---- Regime-Lab: EIGENER System-Prompt + eigener Kontext -------------------
+# Der Regime-Lab-Copilot bekommt NICHTS aus dem Strategie-Optimizer (keine
+# Suchmodi, keine Strategie-Übersicht, keine Min-Trades-Regel, keine Verläufe
+# anderer Reiter). Er sieht ausschließlich den Regime-Lab-Stand aus dem Kontext.
+REGIME_LAB_SYSTEM_PROMPT = """Du bist der REGIME-LAB-COPILOT einer Trading-Plattform.
+Deine einzige Aufgabe: den Nutzer im REGIME-LAB beraten – Marktphasen-Erkennung
+(Auf / Seitwärts / Ab, ohne Lookahead), Kalibrierung, Autopilot, Ablation,
+Qualitätsnote der gespeicherten Analysen und die Freigabe (Shadow / Wirksam)
+an den KI-Trader. Du bist NICHT der Strategie-Optimizer: Suchmodi, Strategien,
+Indikator-Regeln, Iterationen, Objective oder PnL-Optimierung gehören NICHT
+zu deinem Reiter – gehe darauf nicht ein und erfinde dazu nichts.
+
+WORKFLOW IM REGIME-LAB (in dieser Reihenfolge):
+1 Grundgerüst (Detektor) wählen: reactive = Umkehrpunkte (Standard), ema =
+  EMA-Steigung (glatt, wenige Wechsel), kombi = beides, regression = alt.
+2 Erkennung kalibrieren – eines davon reicht:
+  - „Wissenschaftlich kalibrieren“: Feinwerte gegen eine Referenz (centered =
+    Rückblick-Regression, hmm = Markov-Modell, vote = beide). Kennzahl:
+    Richtungs-Treffer balanciert. Ein neues Ergebnis wird NUR übernommen, wenn
+    es besser als die aktive Kalibrierung ist – sonst landet es nur im Verlauf.
+    Ergebnisse mit verschiedener Referenz sind nur grob vergleichbar.
+  - Regime-Autopilot: Endlos-Suche über Feinwerte (optional Grundgerüste).
+    Auswahl auf innerer Validierung + Trainingsfenster, Holdout bleibt Test.
+    Ohne Zeit-/Runden-Limit bleibt der Fortschrittsbalken bei max. 95 % –
+    das ist normal, der Lauf endet erst per „Suche beenden & Beste behalten“.
+    Das Beste wird automatisch übernommen (Vollautomatik reiht danach die
+    Analyse ein).
+  - EMA-Vergleich nur für ema, Auto-Kalibrierung nur für kombi.
+3 „Regime suchen & speichern“ → Analyse entsteht. Note auf dem Holdout
+  (Live=Final): ≥65 % gut, ≥50 % mittel, sonst schwach. Ø Phasendauer 5–15
+  Tage = handelbar, kürzer = Flackern. <200 Holdout-Kerzen = nicht belastbar.
+4 Analyse öffnen: „Behalten vorschlagen“ (Regime mit ≥5 Abschnitten bleiben),
+  Regime-Insights lesen.
+5 Ablation (Diagnose, KEIN Übernehmen): volle Konfiguration vs. ohne je eine
+  Bestätigungs-Komponente vs. einfache Alternative. Beitrag = innere Val.
+  voll minus Variante: ≥+1pp „trägt bei“, ≤-1pp „schadet“, sonst „redundant“.
+  „unbewertet / –%“ = die Variante lieferte keine Live-Kennzahlen (z.B. die
+  einfache Alternative 'regression' hat keine Live-Sicht) – dann ist die
+  Ablation für diese Zeile ohne Aussage, das ist kein Fehler des Nutzers.
+  Für die Freigabe zählt: volle Konfiguration darf im Holdout nicht schlechter
+  sein als die beste einfache Alternative.
+6 Freigabe an den KI-Trader (zweistufig, nachweisgebunden):
+  - Shadow („Beobachten“): braucht Kalibrierung + Ablation mit gleichen
+    Coins/Timeframe, behaltene Regime mit ≥5 Abschnitten. Im Shadow schreibt
+    der KI-Trader je Trade das Struktur-Regime mit – KEINE Wirkung auf Prompt
+    oder Gate. Der Nutzer muss nichts weiter tun außer den KI-Trader (Paper/
+    Live) laufen lassen; die Shadow-Trades sammeln sich von selbst.
+  - Wirksam: zusätzlich ≥30 Shadow-Trades je Struktur-Regime und ein
+    Ø-Reward-Unterschied ≥0.25 R zwischen bestem und schlechtestem Regime.
+    Erst dann sieht der KI-Trader das Regime im Prompt.
+7 Danach optional: Strategien je Regime suchen, finaler Walk-Forward auf dem
+  Holdout, dynamische Strategie zusammenstellen.
+
+ANTWORTSTIL: deutsch, sehr knapp (max. ~120 Wörter), Struktur
+„Bewertung“ → „Nächster Schritt“ → ggf. „Warum“. Beziehe dich konkret auf
+die Zahlen im Block REGIME-LAB-STAND. Erfinde keine Daten; fehlt etwas, sage
+kurz, welcher Schritt es liefert.
+
+ANTWORTFORMAT – antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
+{
+  "reply": "deine Antwort (deutsch, kompakt)",
+  "proposal": null ODER {"type": "settings", "summary": "1 Satz",
+                         "settings": {"coins": ["BTCUSDT"], "timeframe": "15m",
+                                      "days": 360, "scope": "both|combined|per_coin"}},
+  "checks": ["optionale konkrete Prüf-/Warnhinweise"]
+}
+Ein proposal nur, wenn der Nutzer ausdrücklich eine Änderung der Regime-Lab-
+Einstellungen wünscht; nur die Felder angeben, die sich ändern sollen."""
+
 # Antwort-Budget: Render/Ingress kappt HTTP-Requests nach ~60s. Der Copilot
 # probiert deshalb SCHNELLE Free-Modelle zuerst und bricht langsame Modelle
 # hart ab, statt (wie der KI-Trader im Hintergrund) minutenlang zu warten.
@@ -657,7 +727,23 @@ class StrategyCopilot:
                 break
         return "\n".join(lines)
 
+    async def _regime_lab_context_block(self, ctx: Dict) -> str:
+        """Kontext NUR für den Regime-Lab-Reiter: Einstellungen + Regime-Stand
+        (Kalibrierung, Autopilot, Ablation, Analyse, Freigabe). Keine
+        Strategie-Übersicht, keine Min-Trades-Regel, kein Optimizer-Wissen."""
+        parts: List[str] = ["AKTUELLES PANEL: regime_lab (Regime-Lab-Copilot)",
+                            "ERLAUBTE TIMEFRAMES: " + ", ".join(TIMEFRAMES)]
+        if (ctx or {}).get("settings"):
+            parts.append("REGIME-LAB-EINSTELLUNGEN (Coins, Timeframe, Zeitraum, Training %): "
+                         + _dumps(ctx["settings"], 900))
+        if (ctx or {}).get("regime"):
+            parts.append("REGIME-LAB-STAND (darauf beziehen): "
+                         + _dumps(ctx["regime"], 3200))
+        return "\n\n".join(parts)
+
     async def _context_block(self, ctx: Dict) -> str:  # noqa: C901
+        if normalize_panel((ctx or {}).get("panel")) == "regime_lab":
+            return await self._regime_lab_context_block(ctx or {})
         from core.state import scanner
         from strategies.registry import registry
         from strategies.custom_strategy import INDICATORS, OPERATORS
@@ -828,13 +914,18 @@ class StrategyCopilot:
                 f"oder {SHARED_KEY_ENV} in der .env setzen")
 
         panel = normalize_panel((ctx or {}).get("panel"))
-        system = "\n\n".join([SYSTEM_PROMPT, PANEL_PROMPTS.get(panel, ""), PANEL_SHARED])
+        if panel == "regime_lab":
+            # Eigener Copilot: nur Regime-Lab-Wissen, kein Optimizer-Prompt,
+            # keine Verläufe anderer Reiter.
+            system = REGIME_LAB_SYSTEM_PROMPT
+        else:
+            system = "\n\n".join([SYSTEM_PROMPT, PANEL_PROMPTS.get(panel, ""), PANEL_SHARED])
         history = await self.history(HISTORY_FOR_PROMPT, panel=panel)
         hist_txt = "\n".join(
             f"{'NUTZER' if m['role'] == 'user' else 'COPILOT'}: {m['content'][:400]}"
             for m in history) or "(kein Verlauf)"
         context = await self._context_block(ctx or {})
-        digest = await self._other_panels_digest(panel)
+        digest = "" if panel == "regime_lab" else await self._other_panels_digest(panel)
         prompt = (f"KONTEXT:\n{context}\n\n"
                   + (f"{digest}\n\n" if digest else "")
                   + f"BISHERIGER CHAT ({PANEL_LABELS.get(panel, panel)}):\n{hist_txt}\n\n"

@@ -70,7 +70,7 @@ function ReleaseHistory({ analysis }) {
 }
 
 /** Knöpfe „Beobachten (Shadow)“ / „Wirksam schalten“ / Widerruf + History (in der Analyse-Ansicht). */
-export function RegimeReleaseControls({ analysis, onChanged }) {
+export function RegimeReleaseControls({ analysis, onChanged, shadowTrades }) {
   const [checks, setChecks] = useState({});
   const [showHist, setShowHist] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -170,9 +170,70 @@ export function RegimeReleaseControls({ analysis, onChanged }) {
         Wirksam = zusätzlich Prompt-Block; Gate-Quelle „Lab“ wählbar. Knöpfe bleiben grau, bis
         Kalibrierung + Ablation gelaufen sind (Wirksam: zusätzlich ≥ 30 Shadow-Trades je Struktur-Regime).
       </div>
+      <ReleaseWhatNow stage={stage} checks={checks} aid={aid} shadowTrades={shadowTrades} />
       {showHist && <ReleaseHistory analysis={analysis} />}
     </div>
   );
+}
+
+/** „Was jetzt?“ je Freigabe-Stufe: fehlende Nachweise sichtbar (nicht nur im Tooltip) + Shadow erklärt. */
+function ReleaseWhatNow({ stage, checks, aid, shadowTrades }) {
+  const sh = checks.shadow, ac = checks.active;
+  if (stage === 'none') {
+    if (!sh) return null;
+    return (
+      <div className="rl-whatnow" data-testid={`regime-release-whatnow-${aid}`}>
+        <b>Was jetzt?</b>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          {sh.ok ? (
+            <>Alle Nachweise für <b style={{ color: 'inherit' }}>Beobachten (Shadow)</b> sind da – Knopf drücken, kurzen Grund eintragen.
+              Danach musst du nichts weiter tun: der KI-Trader (Paper/Live) sammelt die Shadow-Trades von selbst.</>
+          ) : (
+            <>Für „Beobachten (Shadow)“ fehlt noch:
+              <ul>{(sh.reasons || []).map((r, i) => <li key={i} data-testid={`regime-release-missing-${aid}-${i}`}>{reasonHint(r)}</li>)}</ul>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+  if (stage === 'shadow') {
+    return (
+      <div className="rl-whatnow" data-testid={`regime-release-whatnow-${aid}`}>
+        <b>Was jetzt?</b>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          Shadow läuft: jeder KI-Trade bekommt das Struktur-Regime mitgeschrieben – ohne Wirkung auf Entscheidungen.
+          Du musst nichts tun außer den KI-Trader laufen lassen. Stand: <b style={{ color: 'inherit' }}>{shadowTrades ?? 0}</b> Shadow-Trades.
+          „Wirksam schalten“ wird frei, wenn je Struktur-Regime ≥ 30 Trades vorliegen und sich die Ø-Rewards
+          der Regime um ≥ 0,25 R unterscheiden.
+          {ac && !ac.ok && (ac.reasons || []).length > 0 && (
+            <ul>{ac.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+          )}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="rl-whatnow" data-testid={`regime-release-whatnow-${aid}`}>
+      <b>Was jetzt?</b>
+      <div style={{ flex: 1, minWidth: 220 }}>
+        Wirksam: der KI-Trader sieht das Struktur-Regime im Prompt; im KI-Trader-Panel kann die Gate-Quelle „Lab“
+        gewählt werden. Bei Zweifeln jederzeit „Widerruf“ – dann ist alles wie ohne Freigabe.
+      </div>
+    </div>
+  );
+}
+
+/** Fehlende Nachweise in Handlungs-Sprache übersetzen (Server-Text bleibt als Basis erhalten). */
+function reasonHint(r) {
+  const t = String(r || '');
+  if (t.startsWith('Kalibrierung fehlt')) return `${t} → oben unter „1“ mit denselben Coins/Timeframe „Wissenschaftlich kalibrieren“ starten.`;
+  if (t.startsWith('Ablation fehlt')) return `${t} → oben unter „1b · C“ die Ablation mit denselben Coins/Timeframe starten.`;
+  if (t.startsWith('Ablation ohne auswertbare')) return `${t} → Ablation liefert für dieses Grundgerüst keine Holdout-Zahlen der Alternative; Ablation mit Grundgerüst „Umkehrpunkte“ oder „Kombi“ wiederholen.`;
+  if (t.startsWith('Ablation:')) return `${t} → die einfache Alternative war im Holdout besser; Erkennung verbessern (Autopilot) und neu analysieren.`;
+  if (t.startsWith("kein Regime als 'behalten'")) return `${t} → „Behalten vorschlagen“ klicken.`;
+  if (t.startsWith('Regime ') && t.includes('Abschnitte')) return `${t} → dieses Regime bei „behalten“ abhaken (verwerfen) oder längeren Zeitraum analysieren.`;
+  return t;
 }
 
 /**

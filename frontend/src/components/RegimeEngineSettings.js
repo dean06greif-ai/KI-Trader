@@ -5,8 +5,9 @@ import { toast } from '../lib/toast';
 import { addToSeries } from '../lib/series';
 import RegimeCalibrationResult from './RegimeCalibrationResult';
 import RegimeCalibrationHistory from './RegimeCalibrationHistory';
-import { JobProgress, EdgeBanner, useLabJobControls } from './RegimeJobProgress';
+import { EdgeBanner } from './RegimeJobProgress';
 import { DETECTOR_LABELS } from './RegimeLabSummary';
+import { calibrationDecision } from '../lib/regimeCalibration';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -38,12 +39,13 @@ const ADAPTED_KEYS = ['horizons_days', 'min_hold_days', 'confirm_days', 'smooth_
  * (/api/regime-lab/engine/defaults), damit UI und Engine nie auseinanderlaufen.
  */
 export default function RegimeEngineSettings({ engine, setEngine, config, setConfig, calibrateCtx,
-  calibApplied, setCalibApplied }) {
+  calibApplied, setCalibApplied, onJobStarted }) {
   const [defaults, setDefaults] = useState(null);
   const [open, setOpen] = useState(false);
   const [truthSource, setTruthSource] = useState('centered');
-  const [calJob, setCalJob] = useState(null);      // {id, phase, progress}
+  const [calJob, setCalJob] = useState(null);      // {id, status} – Anzeige läuft im Haupt-Balken
   const [calReport, setCalReport] = useState(null);
+  const [calDecision, setCalDecision] = useState(null); // Übernahme-Entscheid des letzten Laufs
   const [calErr, setCalErr] = useState(null);
   const [calRuns, setCalRuns] = useState(0);       // Verlauf nach Abschluss neu laden
   const calTimer = useRef(null);
@@ -67,9 +69,17 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
     return true;
   };
 
+  // Frisches Ergebnis: nur übernehmen, wenn besser als die aktive Kalibrierung
+  // desselben Grundgerüsts – sonst bleibt die aktive stehen (Verlauf hat es trotzdem).
+  const finishCalibration = (report, id) => {
+    const decision = calibrationDecision(calibApplied, report, detector);
+    setCalDecision({ ...decision, report, id });
+    if (decision.adopt) applyCalibration(report, id, 'Wissenschaftlich kalibrieren');
+  };
+
   const startCalibrate = async () => {
     if (!calibrateCtx?.symbols?.length) { setCalErr('Mindestens 1 Coin auswählen'); return; }
-    setCalErr(null); setCalReport(null);
+    setCalErr(null); setCalReport(null); setCalDecision(null);
     try {
       const r = await fetch(`${API_URL}/api/regime-lab/calibrate`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -81,7 +91,8 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || 'Start fehlgeschlagen');
-      setCalJob({ id: d.job_id, phase: d.execution === 'local' ? 'Wartet auf lokalen Worker' : 'Startet', progress: 0, status: 'running' });
+      setCalJob({ id: d.job_id, status: 'running' });
+      onJobStarted?.(d.job_id, 'calibration');
       calTimer.current = setInterval(async () => {
         try {
           const resp = await fetch(`${API_URL}/api/regime-lab/status/${d.job_id}`);
@@ -94,14 +105,12 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
             setCalRuns(n => n + 1);
             return;
           }
-          setCalJob({ id: d.job_id, phase: s.phase, progress: s.progress, status: s.status,
-            pause: s.pause, paused: s.paused, paused_total_s: s.paused_total_s });
           if (s.status !== 'running') {
             clearInterval(calTimer.current);
             setCalJob(null);
             if (s.status === 'done' && s.result?.report) {
               setCalReport(s.result.report);
-              applyCalibration(s.result.report, d.job_id, 'Wissenschaftlich kalibrieren');
+              finishCalibration(s.result.report, d.job_id);
               setCalRuns(n => n + 1);
             } else if (s.status === 'cancelled') setCalErr('Kalibrierung abgebrochen');
             else setCalErr(s.error || 'Kalibrierung fehlgeschlagen');
@@ -119,16 +128,6 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
       execution: calibrateCtx.execution, truth_source: truthSource, engine_config: config || {},
     });
   };
-
-  const cancelCalibrate = async () => {
-    if (!calJob?.id) return;
-    await fetch(`${API_URL}/api/regime-lab/cancel/${calJob.id}`,
-      { method: 'POST', headers: authHeaders() }).catch(() => {});
-  };
-
-  const calControls = useLabJobControls(calJob, {
-    setJob: setCalJob, onReset: () => { clearInterval(calTimer.current); setCalJob(null); },
-  });
 
   useEffect(() => {
     fetch(`${API_URL}/api/regime-lab/engine/defaults`).then(r => r.json())
@@ -304,8 +303,10 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
           <div className="opt-setup" style={{ alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
             <span className="opt-small" style={{ width: '100%' }} data-testid="regime-calibrate-intro">
               <b>Wissenschaftlich kalibrieren</b> = Feinwerte des Grundgerüsts automatisch so wählen, dass die
-              Live-Erkennung der Referenz am nächsten kommt. Feste Anzahl Kandidaten (2 Durchläufe) – das beste Ergebnis
-              wird <b>automatisch übernommen</b>. Speichert KEINE Analyse – danach „Regime suchen &amp; speichern“ starten.
+              Live-Erkennung der Referenz am nächsten kommt. Feste Anzahl Kandidaten (2 Durchläufe). Übernommen wird
+              das Ergebnis <b>nur, wenn es besser ist als die aktive Kalibrierung</b> desselben Grundgerüsts –
+              sonst bleibt die aktive stehen und das Ergebnis liegt im Verlauf. Speichert KEINE Analyse – danach
+              „Regime suchen &amp; speichern“ starten. Der Fortschritt erscheint im Haupt-Balken oben.
             </span>
             <label className="opt-field"
               title="Referenz-Regime, an der die Einstellungen gemessen werden: zentriert = OLS-Regression mit Zukunftssicht (sieht was das Auge sieht) · HMM = Markov-Switching-Modell, lernt Regime selbst · Abstimmung = beide kombiniert">
@@ -329,10 +330,12 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
             {calErr && <span className="opt-small" style={{ color: '#e66' }}
               data-testid="regime-calibrate-error">{calErr}</span>}
           </div>
-          <JobProgress job={calJob} onCancel={cancelCalibrate} onPause={calControls.togglePause}
-            onReset={calControls.reset} testId="regime-calibrate-status"
-            label={`Kalibrierung · ${DETECTOR_LABELS[detector] || detector}`} />
-          {calReport && (
+          {calJob && (
+            <div className="opt-small" data-testid="regime-calibrate-running" style={{ marginTop: 6 }}>
+              ⏳ Kalibrierung läuft – Fortschritt, Pause und Abbruch im Haupt-Balken oben.
+            </div>
+          )}
+          {calReport && calDecision?.adopt && (
             <EdgeBanner improved={calReport.improved !== false} testId="regime-calibrate-banner"
               title={calReport.improved === false
                 ? 'Keine bessere Einstellung gefunden – deine Ausgangswerte bleiben'
@@ -340,11 +343,29 @@ export default function RegimeEngineSettings({ engine, setEngine, config, setCon
               detail={calReport.improved === false ? undefined
                 : `${(calReport.changes || []).length} Parameter geändert · jetzt „Regime suchen & speichern“ starten und die Note vergleichen`} />
           )}
-          <RegimeCalibrationResult report={calReport} applied />
+          {calReport && calDecision && !calDecision.adopt && calDecision.reason === 'worse' && (
+            <div className="rl-edge-banner neutral" data-testid="regime-calibrate-kept-banner">
+              <b>• Ergebnis NICHT übernommen: {Number(calDecision.newPct).toFixed(1)}% liegt unter der aktiven
+                Kalibrierung ({Number(calDecision.curPct).toFixed(1)}%)</b>
+              <span className="opt-small" style={{ color: 'inherit', opacity: 0.85 }}>
+                Die aktive Kalibrierung bleibt. Das neue Ergebnis steht im Kalibrierungs-Verlauf.
+                {!calDecision.sameTruth ? ` Hinweis: andere Referenz (${calibApplied?.truth_source} vs. ${calReport.truth_source}) – Werte nur grob vergleichbar.` : ''}
+              </span>
+              <button className="opt-chip" data-testid="regime-calibrate-force-apply"
+                onClick={() => {
+                  applyCalibration(calReport, calDecision.id, 'Wissenschaftlich kalibrieren (manuell)');
+                  setCalDecision({ ...calDecision, adopt: true, reason: 'forced' });
+                  toast.success('Kalibrierung trotzdem übernommen');
+                }}>
+                Trotzdem übernehmen
+              </button>
+            </div>
+          )}
+          <RegimeCalibrationResult report={calReport} applied={!!calDecision?.adopt} />
           <RegimeCalibrationHistory refreshKey={calRuns} activeId={calibApplied?.id} detector={detector}
             onApply={(row) => {
               if (applyCalibration(row.report, row.id, 'Kalibrierungs-Verlauf')) {
-                setCalReport(null);
+                setCalReport(null); setCalDecision(null);
                 toast.success(`Kalibrierung vom ${new Date(row.created_at).toLocaleString('de-DE')} übernommen – jetzt „Regime suchen & speichern“ starten`);
               } else toast.error('Diese Kalibrierung enthält keine übernehmbaren Werte');
             }} />
