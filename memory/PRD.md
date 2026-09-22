@@ -160,3 +160,27 @@ Bestätigungsdialog.
 - P1: Shadow-Backfill periodisch (z.B. täglich) statt nur nach Freigabe/manuell.
 - P2: Snapshots auch für den lokalen Worker-Pfad (Kalibrierung, die am Worker endet, wird erst beim Übernehmen gesichert).
 - P2: Regime-Labels (nicht nur Analysename) editierbar – erfordert Schutz vor der Label-Migration `relabel_regimes`.
+
+
+## Umgesetzt (22.09.2026 – Fork-Session)
+- **Repo in /app**: Branch `conflict_220926_1600` enthielt nur die Emergent-Vorlage (Render-Build: npm ERESOLVE
+  react-day-picker@8 vs date-fns@4, pip emergentintegrations). /app enthält jetzt das echte Repo (Basis
+  `conflict_220926_1431`) + alle Fixes → nächster „Save to GitHub“-Push ist deploybar. Lokale Preview läuft
+  (ADMIN_USER/ADMIN_PASSWORD in backend/.env, siehe test_credentials.md).
+- **Shadow-Backfill „0 Trades“**: `structural_regime.tf_seconds()` (24h → 86400 s statt 3600 s Fallback);
+  `regime_shadow_backfill.py` nutzt sie.
+- **Autopilot-Balken**: Endlos-Suche zeigt Bestwert-Score (0–100) statt 95 %-Deckel; Tie-Break
+  `robustness_key` (Holdout → Ø Phase → weniger Umschaltungen). Hilfetexte (RegimeAutopilot.js,
+  RegimeLabHelp.js, RegimeJobProgress.js) angepasst.
+- **Autopilot „Ausgangs-Konfiguration liefert kein Modell“ (OIL/QQQ, lokaler Worker)**: Fallback auf
+  Standard-Feinwerte (`fallback_start_config`), `result.start_fallback`; erklärende Fehlermeldung
+  (`no_model_reason`: Kerzen/Training/nötig + Tipp). UI zeigt `Fehler: <Text>` rot im Job-Balken.
+  Tests: tests/test_autopilot_no_model_fallback.py (5). Testing-Agent iteration_15: alles grün.
+  HINWEIS: Der lokale Worker rechnet mit dem ZIP-Paket → nach Deploy Worker-Paket neu herunterladen.
+  Bitunix-Historie OIL/QQQ beginnt erst 03/2026 (~180 Tageskerzen; Dukascopy-Backup bis 365 d).
+
+## Offen / Backlog
+- P0: Order-Abbruch/Telegram + Minimal-Trade-Fallback (≤10$→1$, 20$→2$, ≥50$→5$; Börsen-Minimals prüfen).
+- P1: Gespeicherte Analysen erscheinen „eins versetzt“ (Repro nötig).
+- P1: Empfehlung Regime-Scope kombiniert vs. je Asset (Beratung).
+- P2: Setup-Review/Scalping-Setup (Analyse-Notizen im Chat 22.09.).
