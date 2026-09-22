@@ -1,0 +1,147 @@
+diff --git a/backend/services/regime_autopilot.py b/backend/services/regime_autopilot.py
+index a2cdffc..70e0368 100644
+--- a/backend/services/regime_autopilot.py
++++ b/backend/services/regime_autopilot.py
+@@ -163,6 +163,21 @@ def score_metrics(m: Optional[Dict], target_min_days: float) -> Optional[float]:
+     return round(float(base) - penalty, 3)
+ 
+ 
++def robustness_key(m: Optional[Dict]) -> tuple:
++    """Robustheits-Rang bei praktisch gleichem Score (Score-Gleichstand, z.B.
++    beide ~100): zuerst der Holdout (finaler Test auf UNANGETASTETEN Daten),
++    dann längere – also handelbarere – Live-Phasen, dann weniger Umschaltungen
++    (stabiler). Höher = robuster."""
++    if not m:
++        return (-1e9, -1e9, -1e9)
++    hold = m.get("holdout_direction_pct")
++    phase = m.get("avg_live_phase_days")
++    switches = m.get("switches_live")
++    return (float(hold) if hold is not None else -1.0,
++            float(phase) if phase is not None else -1.0,
++            -float(switches) if switches is not None else 0.0)
++
++
+ def _mean(xs: List[float]) -> Optional[float]:
+     return round(sum(xs) / len(xs), 1) if xs else None
+ 
+@@ -372,15 +387,22 @@ async def run_autopilot(job_id: str, body: Dict, db):
+                 return min(10 + (time.time() - t0) / (max_minutes * 60) * 85, 95)
+             if max_rounds:
+                 return min(10 + tested / max_rounds * 85, 95)
+-            return min(10 + tested * 0.5, 95)
++            # Endlos-Suche: der Balken spiegelt den aktuellen Bestwert-Score
++            # (0..100) wider – so zeigt er die tatsächliche Güte statt einer
++            # künstlichen 95%-Deckelung. Bei 100 läuft die Suche weiter und
++            # feilt nur noch an der Robustheit (Holdout / Ø Phase).
++            s = best.get("score")
++            return min(max(float(s), 0.0), 100.0) if s is not None else 10.0
+ 
+         def phase_txt(extra=""):
+             m = best["metrics"]
++            maxed = (best.get("score") or 0) >= 100 - MIN_GAIN and not max_minutes and not max_rounds
++            robust = " · Bestwert erreicht – suche robustere Varianten" if maxed else ""
+             return (f"Autopilot · {tested} Varianten · {improved} Verbesserungen · "
+                     f"Best {best['score']:.1f} ({detector_of(best['engine_config'])} · "
+                     f"innere Val. {m.get('inner_direction_pct')}% · "
+                     f"Holdout {m.get('holdout_direction_pct')}% · "
+-                    f"Ø Phase {m.get('avg_live_phase_days')}d)" + extra)
++                    f"Ø Phase {m.get('avg_live_phase_days')}d)" + robust + extra)
+ 
+         while True:
+             stop_reason = stopping()
+@@ -413,6 +435,15 @@ async def run_autopilot(job_id: str, body: Dict, db):
+                 improved += 1
+                 stale = 0
+                 job["best"] = _public_best(best, baseline)
++            elif abs(sc - (best.get("score") if best.get("score") is not None else -1e9)) <= MIN_GAIN \
++                    and robustness_key(m) > robustness_key(best.get("metrics")):
++                # Score-Gleichstand (z.B. beide ~100): robustere Variante
++                # übernehmen – so wird die Endlos-Suche bei 100 sinnvoll
++                # (besserer Holdout / längere Phasen / weniger Umschaltungen).
++                best = {"engine_config": cand, "metrics": m, "score": sc}
++                improved += 1
++                stale = 0
++                job["best"] = _public_best(best, baseline)
+             else:
+                 stale += 1
+ 
+diff --git a/backend/services/regime_shadow_backfill.py b/backend/services/regime_shadow_backfill.py
+index b046507..d2aadc6 100644
+--- a/backend/services/regime_shadow_backfill.py
++++ b/backend/services/regime_shadow_backfill.py
+@@ -120,7 +120,7 @@ async def backfill_structural(db, days: int = WINDOW_DAYS, only_aid: Optional[st
+                 summary["skipped_no_release"] += len(rows)
+                 continue
+             tf = str(doc.get("timeframe") or "1h")
+-            tf_sec = sr.TF_SECONDS.get(tf, 3600)
++            tf_sec = sr.tf_seconds(tf)
+             try:
+                 oldest = min(_parse_ts(r.get("ts")) or 0 for r in rows)
+                 span_days = int((datetime.now(timezone.utc).timestamp() * 1000 - oldest) / 86400000) + HISTORY_MARGIN_DAYS
+diff --git a/backend/services/structural_regime.py b/backend/services/structural_regime.py
+index b621f28..f059493 100644
+--- a/backend/services/structural_regime.py
++++ b/backend/services/structural_regime.py
+@@ -27,6 +27,20 @@ MAX_GAP_CANDLES = 3
+ CACHE_DOC_ID = "structural_regime_cache"
+ TF_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400}
+ KURZFRIST_WORDS = ("trend_up", "trend_down", "range_ruhig", "range", "breakout", "drift")
++
++
++def tf_seconds(timeframe: Optional[str]) -> int:
++    """Timeframe -> Sekunden, robust für ALLE Timeframe-Schreibweisen (auch
++    '24h', '2h', '12h' ...). Quelle ist die kanonische Timeframe-Tabelle
++    (services.timeframes), damit aliasierte/neue Timeframes nicht still auf den
++    1h-Default zurückfallen. Genau dieser Default (3600 statt 86400 bei '24h')
++    ließ die Kerzen-Lücken-Prüfung bei Tages-Analysen scheitern -> 0 Labels."""
++    tf = str(timeframe or "1h")
++    if tf in TF_SECONDS:
++        return TF_SECONDS[tf]
++    from services.timeframes import tf_minutes
++    mins = tf_minutes(tf)
++    return mins * 60 if mins > 0 else 3600
+ DIRECTION_WORDS = {"down": "BÄR", "up": "BULLE", "sideways": "SEITWÄRTS"}
+ 
+ _cache: Dict[str, Dict] = {}
+@@ -54,7 +68,7 @@ def invalidate():
+ def freshness_ttl_sec(symbol: str, timeframe: str, now: Optional[datetime] = None) -> Dict:
+     """TTL aus Timeframe + Marktkalender (rein). market_closed=True: Stand der
+     letzten Sitzung gilt bis zur Eröffnung (kein 'stale' am Wochenende)."""
+-    tf_s = TF_SECONDS.get(str(timeframe or "1h"), 3600)
++    tf_s = tf_seconds(timeframe)
+     ttl = 2 * tf_s
+     closed = False
+     if setup_asset_class.asset_class_of(symbol) != setup_asset_class.CRYPTO:
+diff --git a/frontend/src/components/RegimeAutopilot.js b/frontend/src/components/RegimeAutopilot.js
+index 6c69679..64fb283 100644
+--- a/frontend/src/components/RegimeAutopilot.js
++++ b/frontend/src/components/RegimeAutopilot.js
+@@ -188,8 +188,10 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
+         (Regel: Score verbessert UND Holdout nicht gefallen UND nicht unter der aktiven Kalibrierung; sonst bleibt alles
+         und das Ergebnis liegt im Kalibrierungs-Verlauf zum manuellen Übernehmen); mit <b>Vollautomatik</b> wird danach auch
+         „Regime suchen &amp; speichern“ automatisch ausgeführt (Job-Warteschlange), sonst oben manuell starten.
+-        <b> Fortschritt:</b> ohne Zeit-/Runden-Limit ist das eine Endlos-Suche – der Haupt-Balken oben bleibt
+-        bei höchstens 95 %, bis du „Suche beenden (Bestes behalten)“ drückst. Das ist normal und kein Hänger.
++        <b> Fortschritt:</b> ohne Zeit-/Runden-Limit ist das eine Endlos-Suche – der Haupt-Balken oben spiegelt
++        den aktuellen <b>Bestwert-Score (0–100 %)</b> wider. Erreicht er 100 %, läuft die Suche weiter und feilt nur
++        noch an der Robustheit (besserer Holdout / längere Ø Phase), bis du „Suche beenden (Bestes behalten)“ drückst.
++        Das ist normal und kein Hänger.
+       </div>
+       <div className="opt-setup" style={{ alignItems: 'center' }}>
+         <label className="opt-field" title="Sicherheits-Zeitlimit in Minuten. 0 = unbegrenzt (bis Ziel/Runden oder „Suche beenden“)">
+diff --git a/frontend/src/components/RegimeLabHelp.js b/frontend/src/components/RegimeLabHelp.js
+index dd41575..1d050ba 100644
+--- a/frontend/src/components/RegimeLabHelp.js
++++ b/frontend/src/components/RegimeLabHelp.js
+@@ -15,8 +15,9 @@ const TOPICS = [
+     + 'welche ist redundant oder schadet. Sinnvoll NACH der Kalibrierung, um die Erkennung zu entschlacken. Zeilen mit „–% / unbewertet“ '
+     + 'haben keine Live-Kennzahlen (z.B. Alternative „regression“) und damit keine Aussage. Zusätzlich ist die Ablation ein Pflicht-Nachweis '
+     + 'für die Freigabe (Shadow): gleiche Coins/Timeframe wie die Analyse.'],
+-  ['Regime-Autopilot (D)', 'Endlos-Suche über die Feinwerte (optional Grundgerüste). Ohne Zeit-/Runden-Limit bleibt der Haupt-Balken bei '
+-    + 'höchstens 95 % – der Lauf endet erst per „Suche beenden (Bestes behalten)“. Das Beste wird automatisch in die Engine-Einstellungen '
++  ['Regime-Autopilot (D)', 'Endlos-Suche über die Feinwerte (optional Grundgerüste). Ohne Zeit-/Runden-Limit zeigt der Haupt-Balken den '
++    + 'aktuellen Bestwert-Score (0–100 %); bei 100 % läuft die Suche weiter und feilt an der Robustheit (Holdout / Ø Phase) – '
++    + 'der Lauf endet erst per „Suche beenden (Bestes behalten)“. Das Beste wird automatisch in die Engine-Einstellungen '
+     + 'übernommen; danach „Regime suchen & speichern“ (mit Vollautomatik passiert das von selbst).'],
+   ['Übernahme-Regel', 'Wissenschaftliche Kalibrierung: ein neues Ergebnis wird nur übernommen, wenn es für dasselbe Grundgerüst besser ist '
+     + 'als die aktive Kalibrierung. Schlechtere Ergebnisse bleiben im Verlauf und können dort bewusst übernommen werden.'],
