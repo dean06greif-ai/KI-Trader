@@ -78,14 +78,28 @@ agenthub/agents/youtube/db
 
 memory/test_credentials.md
 
+# Lokaler Worker: Paket MUSS committet bleiben (Server liefert es als ZIP aus)
+!local_worker/
+!local_worker/**
+local_worker/worker_config.json
+local_worker/worker_data/
+
 # Mobile development
 android-sdk/
 
 # overlay black-box crash/user-report dumps — session data, never history
 **/.emergent/recordings/
+frontend/node_modules/.cache/default-development/1.pack
+frontend/node_modules/.cache/default-development/0.pack
 .env
 .env.*
 *.env
 credentials.json
 *.key
 .credentials
+frontend/node_modules/.cache/default-development/2.pack
+frontend/node_modules/.cache/default-development/3.pack
+frontend/node_modules/.cache/default-development/5.pack
+frontend/node_modules/.cache/default-development/4.pack
+frontend/node_modules/.cache/default-development/6.pack
+frontend/node_modules/.cache/default-development/9.pack
