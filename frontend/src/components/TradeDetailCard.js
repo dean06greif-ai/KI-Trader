@@ -114,7 +114,7 @@ const TradeDetailCard = ({ t, stratName, getCoinName, onChanged, onShowChart }) 
     <span className="tdc-coin-wrap">
       <span className="mono text-secondary tdc-coin">{getCoinName(t.symbol)}</span>
       {t.horizon === 'swing' && <sup className="tdc-sup tag-swing" title={`Swing-Trade${t.runner ? ' · Runner' : ''}`} data-testid={`trade-swing-badge-${t.id}`}>S{t.runner ? '·R' : ''}</sup>}
-      {t.data_collection && <sup className="tdc-sup tag-daten" title="Datensammel-Modus: reiner Paper-Trade zum ML-Datensammeln (zählt nicht zur Live-Performance)" data-testid={`trade-collection-badge-${t.id}`}>D</sup>}
+      {t.data_collection && <sup className="tdc-sup tag-daten" title="Datensammel-Modus: reiner Paper-Trade zum ML-Datensammeln – wird NICHT in PnL/Statistik mitberechnet" data-testid={`trade-collection-badge-${t.id}`}>D</sup>}
     </span>
     <span className="tdc-pnl-group">
       <span className={`mono tdc-pnl ${pnl >= 0 ? 'text-long' : 'text-short'}`}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}</span>

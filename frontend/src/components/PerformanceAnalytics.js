@@ -170,11 +170,19 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
   })();
   const closedTrades = mergedClosedRaw.filter(filterFn);
 
+  // VERLAUF (Listen): bei 'Alle' werden Sammel-Trades MIT angezeigt (D-Badge),
+  // sie fließen aber weiterhin NICHT in PnL/Statistik ein (filterFn oben).
+  // Bei 'Live'/'Paper' bleiben sie ausgeblendet, 'Sammlung' zeigt nur sie.
+  const showInList = (t) => !t.stale_strategy
+    && (pnlFilter === 'all' ? true : filterFn(t));
+  const openAll = trades.filter(t => t.status === 'open' && showInList(t));
+  const closedAll = mergedClosedRaw.filter(showInList);
+
   // Listen-Filter: optional nur der ausgewählte Coin + optional nur EINE Strategie
   const listFilterFn = (t) => (!tradeOnlyCoin || t.symbol === selectedCoin)
     && (!stratFilter || (t.strategy_id || 'external') === stratFilter);
-  const openList = openTrades.filter(listFilterFn);
-  const closedList = closedTrades.filter(listFilterFn);
+  const openList = openAll.filter(listFilterFn);
+  const closedList = closedAll.filter(listFilterFn);
 
   // Strategie-Optionen aus den vorhandenen Trades (inkl. „Manuell/Extern“)
   const stratOptions = (() => {
@@ -491,14 +499,7 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
           {showSlippage && <SlippageStatsCard />}
 
           <div className="analytics-section">
-            <div className="section-title">OFFENE TRADES <span className="sec-count">{openList.length}{openList.length !== openTrades.length ? `/${openTrades.length}` : ''}</span>
-              {pnlFilter !== 'collection' && trades.some(t => t.status === 'open' && t.data_collection && !t.stale_strategy) && (
-                <button className="pnl-filter-btn collection" style={{ marginLeft: 8 }}
-                  onClick={() => setPnlFilter('collection')} data-testid="open-collection-hint"
-                  title="Daten-Sammel-Trades des KI-Traders (Setup-Reifung) – zählen nicht als Paper-Performance, daher hier ausgeblendet. Klick zeigt sie an.">
-                  +{trades.filter(t => t.status === 'open' && t.data_collection && !t.stale_strategy).length} in Sammlung
-                </button>
-              )}
+            <div className="section-title">OFFENE TRADES <span className="sec-count">{openList.length}{openList.length !== openAll.length ? `/${openAll.length}` : ''}</span>
               <TradeListControls
                 tradeOnlyCoin={tradeOnlyCoin}
                 onToggleCoin={() => setTradeOnlyCoin(v => !v)}
@@ -521,7 +522,7 @@ const PerformanceAnalytics = ({ performance, strategies = [], enabledIds = [], s
           </div>
 
           <div className="analytics-section">
-            <div className="section-title">GESCHLOSSENE TRADES <span className="sec-count">{closedList.length}{closedList.length !== closedTrades.length ? `/${closedTrades.length}` : ''}</span></div>
+            <div className="section-title">GESCHLOSSENE TRADES <span className="sec-count">{closedList.length}{closedList.length !== closedAll.length ? `/${closedAll.length}` : ''}</span></div>
             {closedList.length === 0 && <div className="no-data">Keine{tradeOnlyCoin ? ' (Coin-Filter aktiv)' : ''}</div>}
             {closedList.slice(0, shownClosed).map(t => (
               <TradeDetailCard key={t.id} t={t} stratName={stratName} getCoinName={getCoinName} onShowChart={onShowChart} />
