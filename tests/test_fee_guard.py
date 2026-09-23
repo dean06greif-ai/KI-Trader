@@ -73,6 +73,7 @@ async def main():
     await db.settings.update_one(
         {"_id": "ai_trader_config"},
         {"$set": {"fee_guard_enabled": True, "fee_guard_mult": 4.0,
+                  "min_sl_rule_enabled": False,  # isoliert den Fee-Wächter (Mindest-SL eigener Test)
                   "fee_guard_atr_mult": 0.0,  # V2-ATR-Floor aus: Tests prüfen den reinen Fee-Floor
                   "max_trades_per_coin": 1, "collection_max_per_coin": 2}}, upsert=True)
     candles = make_candles()

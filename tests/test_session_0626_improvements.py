@@ -264,3 +264,29 @@ def test_regime_advice_flags_user_settings_and_missing_reference():
     w = ra.result_warnings({"direction_pct": 98.7, "avg_live_phase_days": 29.4}, 3.0, 15.0)
     assert any("Referenz" in x for x in w) and any("über der Obergrenze" in x for x in w)
     assert ra.result_warnings({"direction_pct": 70, "reference_pct": 55, "avg_live_phase_days": 8}, 4, 14) == []
+
+
+# ---------------- Mindest-SL je Anlageklasse ----------------
+def test_min_sl_rule_blocks_tight_stops_per_class():
+    from services import min_sl_rule as ms
+    ok, why = ms.check({}, "BTCUSDT", 100.0, 99.7)          # 0,30 % < 0,40 % Krypto
+    assert not ok and "Mindest-SL" in why and "Krypto" in why
+    assert ms.check({}, "BTCUSDT", 100.0, 99.5)[0]           # 0,50 % ok
+    assert ms.check({"min_sl_rule_enabled": False}, "BTCUSDT", 100, 99.9)[0]
+    assert ms.check({"min_sl_apply_collection": False}, "BTCUSDT", 100, 99.9, collection=True)[0]
+    assert not ms.check({}, "BTCUSDT", 100, 99.9, collection=True)[0]
+    cfg = {"min_sl_pct_by_class": {"crypto": 0.25, "bogus": 9}}
+    assert ms.check(cfg, "BTCUSDT", 100, 99.7)[0]
+    assert "bogus" not in ms.config_values(cfg)
+    assert ms.normalize({"crypto": 99})["crypto"] == 5.0
+    assert "Krypto 0.4%" in ms.prompt_line({})
+    assert ms.prompt_line({"min_sl_rule_enabled": False}) is None
+
+
+def test_min_sl_rule_wired_before_signal_and_order():
+    import inspect
+    from services.ai_engine import AIEngine
+    from services.bitunix_trade import AutoTradeManager
+    assert "min_sl_rule.check(self.config, sym, entry, sl, collection)" in inspect.getsource(AIEngine._emit_signal)
+    src = inspect.getsource(AutoTradeManager._on_signal_impl)
+    assert src.index("min_sl_rule.check(ai_cfg") < src.index("fee_guard_check(ai_cfg")

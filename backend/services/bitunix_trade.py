@@ -2065,6 +2065,14 @@ class AutoTradeManager:
                         f_info["interval_h"])
             except Exception as e:
                 logger.debug(f"{symbol}: Funding-Projektion übersprungen: {e}")
+            from services import min_sl_rule
+            ms_ok, ms_why = min_sl_rule.check(ai_cfg, symbol, entry, sl, collection)
+            checks.record("min_sl_rule", ms_ok, ms_why)
+            if not ms_ok:
+                # Sicherheitsnetz (KI-Engine blockt bereits vor dem Signal)
+                logger.info(f"AutoTrade blockiert {symbol} {side}: {ms_why}")
+                signal["_reject_reason"] = ms_why
+                return None
             fg_ok, fg_reason = fee_guard_check(ai_cfg, cfg, entry, sl, atr,
                                                tp=tp1, funding_pct=funding_pct,
                                                symbol=symbol)

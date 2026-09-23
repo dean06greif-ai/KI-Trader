@@ -27,6 +27,8 @@ POLICY_CONFIG_KEYS = (
     "min_confidence", "collection_min_confidence", "fee_guard_enabled",
     "fee_guard_mult", "fee_guard_atr_mult", "fee_guard_crv_relax",
     "live_gate_bypass_enabled",
+    "min_sl_rule_enabled", "min_sl_pct_by_class", "min_sl_apply_collection",
+    "crv_min", "max_same_direction",
 )
 
 # Einzelteile des Fingerprints (Reihenfolge = Anzeige-/Hash-Reihenfolge)

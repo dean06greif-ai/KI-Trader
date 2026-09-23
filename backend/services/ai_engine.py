@@ -40,6 +40,7 @@ from services.timeframes import aggregate_candles
 from services import session_levels
 from services import range_analysis
 from services import vwap_context
+from services import min_sl_rule
 from services import runner_policy
 from services.technical_indicators import TechnicalIndicators
 from services.news_feed import news_feed
@@ -182,6 +183,10 @@ DEFAULT_AI_CONFIG = {
     # V3: bei hohem CRV (>=2 / >=3) darf das Fee-Minimum um 15% / 25%
     # unterschritten werden – knappe, aber fette Setups werden fair bewertet.
     "fee_guard_crv_relax": True,
+    # Mindest-SL je Anlageklasse (services/min_sl_rule.py) – feste Regel
+    "min_sl_rule_enabled": True,
+    "min_sl_pct_by_class": dict(min_sl_rule.DEFAULT_MIN_SL_PCT),
+    "min_sl_apply_collection": True,
     # Wächter-Schattentrades (services/guard_shadow.py): geblockte LIVE-Einstiege
     # werden als Paper-Sammel-Trade nachgespielt; der Fee-Wächter kalibriert
     # seine Faktoren aus den Urteilen autonom (Leitplanken ±1.5 um die Baseline).
@@ -874,6 +879,13 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                 pass
         if "fee_guard_crv_relax" in updates:
             self.config["fee_guard_crv_relax"] = bool(updates["fee_guard_crv_relax"])
+        if "min_sl_rule_enabled" in updates:
+            self.config["min_sl_rule_enabled"] = bool(updates["min_sl_rule_enabled"])
+        if "min_sl_apply_collection" in updates:
+            self.config["min_sl_apply_collection"] = bool(updates["min_sl_apply_collection"])
+        if isinstance(updates.get("min_sl_pct_by_class"), dict):
+            self.config["min_sl_pct_by_class"] = min_sl_rule.normalize(
+                {**(self.config.get("min_sl_pct_by_class") or {}), **updates["min_sl_pct_by_class"]})
         if "guard_shadow_enabled" in updates:
             self.config["guard_shadow_enabled"] = bool(updates["guard_shadow_enabled"])
         if "guard_autotune_enabled" in updates:
@@ -1612,6 +1624,9 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                         f"Range-Grenze), NIEMALS pauschal auf das Minimum. Liegt dein "
                         f"Struktur-SL unter dem Minimum, gib HOLD statt den SL künstlich zu "
                         f"schrumpfen oder aufzuweiten – solche Trades stoppt das Rauschen aus.")
+            ms_line = min_sl_rule.prompt_line(self.config)
+            if ms_line:
+                frame_lines.append(ms_line)
             if self.config.get("lowvol_tf_switch", True):
                 frame_lines.append(
                     "NIEDRIG-VOLATILITÄTS-MODUS: Fällt die 1m-ATR eines Assets unter "
@@ -2440,6 +2455,12 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
         tp1 = entry * (1 + sign * tp1_pct)
         tpf = entry * (1 + sign * tpf_pct)
         crv = round(abs(tp1 - entry) / abs(entry - sl), 2) if entry != sl else 0
+        # Feste Regel: Mindest-SL je Anlageklasse – zu enge Stops gar nicht erst senden
+        ms_ok, ms_why = min_sl_rule.check(self.config, sym, entry, sl, collection)
+        if not ms_ok:
+            dec["blocked_by"] = ms_why
+            logger.info(f"AI-Signal {sym} blockiert: {ms_why}")
+            return False
         # ---- Strategie-Labor: Kandidaten erst nach Ghost-Phase + Freigabe live ----
         cand_id = dec.get("strategy_candidate_id")
         stage = strategy_lab.execution_stage(cand_id) if cand_id else None
