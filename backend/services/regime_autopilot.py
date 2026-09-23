@@ -25,6 +25,7 @@ from services import job_control
 from services import regime as rg
 from services import regime_engine as eng
 from services import regime_lab as lab
+from services import regime_advice
 from services import research_validation
 from services.backtester import JobCancelled
 
@@ -583,6 +584,12 @@ async def run_autopilot(job_id: str, body: Dict, db):
                                "max_phase_days_target": target_max_days},
                   "symbols": list(histories.keys()), "timeframe": timeframe,
                   "days": days, "train_pct": train_pct,
+                  # Plausibilität (services/regime_advice.py): fehlende Referenz,
+                  # gesättigter Score, Phase außerhalb des Sweet Spots, Eingaben
+                  "warnings": regime_advice.result_warnings(
+                      best["metrics"], target_min_days, target_max_days),
+                  "settings_advice": regime_advice.settings_advice(
+                      timeframe, days, len(histories), target_min_days, target_max_days),
                   "created_at": datetime.now(timezone.utc).isoformat()}
         if job.get("start_fallback"):
             result["start_fallback"] = job["start_fallback"]

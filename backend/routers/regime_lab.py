@@ -340,6 +340,16 @@ AUTOPILOT_PARAM_KEYS = ("symbols", "timeframe", "days", "train_pct", "engine_con
                         "auto_chain")
 
 
+@router.get("/api/regime-lab/autopilot/advice")
+async def autopilot_advice(timeframe: str = "1h", days: int = 720, n_symbols: int = 3,
+                           min_days: float = 4.0, max_days: float = 14.0):
+    """Plausibilitäts-Hinweise zu den Autopilot-Eingaben (leer = passt)."""
+    from services import regime_advice
+    return {"advice": regime_advice.settings_advice(timeframe, days, n_symbols, min_days, max_days),
+            "recommended_band": list(regime_advice.RECOMMENDED_BAND),
+            "recommended_min_days_history": regime_advice.MIN_DAYS_FOR_PHASES}
+
+
 @router.post("/api/regime-lab/autopilot")
 async def start_autopilot(body: Dict, _: bool = Depends(require_admin)):
     """Regime-Autopilot: verändert die Detektor-Einstellungen Runde für Runde,

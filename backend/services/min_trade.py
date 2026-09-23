@@ -141,3 +141,39 @@ async def open_count(db) -> int:
             {"status": "open", "mode": "live", "min_trade": True})
     except Exception:  # noqa: BLE001
         return 0
+
+
+def summarize(rows: List[Dict]) -> Dict:
+    """Kennzahlen einer Trade-Liste (rein): n, offen, Winrate, PnL, Fees, Ø PnL."""
+    closed = [r for r in rows if r.get("status") == "closed"]
+    n = len(closed)
+    wins = sum(1 for r in closed if float(r.get("realized_pnl") or 0) > 0)
+    pnl = sum(float(r.get("realized_pnl") or 0) for r in closed)
+    fees = sum(float(r.get("fees_paid") or 0) for r in closed)
+    risk = sum(float(r.get("risk_usdt") or 0) for r in closed)
+    return {"trades": n, "open": len(rows) - n, "wins": wins,
+            "winrate": round(wins / n * 100, 1) if n else 0.0,
+            "pnl": round(pnl, 4), "fees": round(fees, 4),
+            "avg_pnl": round(pnl / n, 4) if n else 0.0,
+            # Ergebnis in R (PnL / eingesetztes Risiko) – vergleichbar trotz Mini-Größe
+            "r_multiple": round(pnl / risk, 2) if risk > 0 else None}
+
+
+async def stats(db, days: int = 90) -> Dict:
+    """Mindest-Trades (live) vs. normale Live-Trades im selben Zeitraum."""
+    from datetime import datetime, timedelta, timezone
+    days = max(1, min(365, int(days or 90)))
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    proj = {"_id": 0, "id": 1, "symbol": 1, "side": 1, "strategy_id": 1, "strategy_name": 1,
+            "status": 1, "opened_at": 1, "closed_at": 1, "realized_pnl": 1, "fees_paid": 1,
+            "risk_usdt": 1, "result": 1, "leverage": 1, "qty": 1, "entry": 1, "min_trade_note": 1,
+            "setup": 1, "min_trade": 1}
+    rows = await db.auto_trades.find(
+        {"mode": "live", "opened_at": {"$gte": since}, "data_collection": {"$ne": True}},
+        proj).sort("opened_at", -1).to_list(5000)
+    mins = [r for r in rows if r.get("min_trade")]
+    normal = [r for r in rows if not r.get("min_trade")]
+    for r in mins:
+        r["note"] = str(r.pop("min_trade_note", "") or "")[:220]
+    return {"days": days, "min_trades": summarize(mins), "normal": summarize(normal),
+            "rows": mins[:200]}

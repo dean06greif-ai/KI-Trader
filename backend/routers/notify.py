@@ -104,6 +104,13 @@ async def get_min_trade_config(_: bool = Depends(require_admin)):
             "open_live_min_trades": await min_trade.open_count(state.db)}
 
 
+@router.get("/api/min-trade/stats")
+async def get_min_trade_stats(days: int = 90):
+    """Mindest-Trades (live) mit eigenem Ergebnis vs. normale Live-Trades."""
+    from services import min_trade
+    return await min_trade.stats(state.db, days)
+
+
 @router.post("/api/min-trade/config")
 async def set_min_trade_config(body: Dict, _: bool = Depends(require_admin)):
     from services import min_trade

@@ -1057,3 +1057,23 @@
 .setup-usage-reasons { white-space: normal !important; font-size: 11px; opacity: 0.85; }
 .setup-usage-ki { margin-left: 5px; font-size: 9.5px; padding: 1px 4px; border-radius: 3px; background: #2A2F45; color: #8FB3FF; }
 .setup-usage-empty { font-size: 12px; opacity: 0.7; }
+
+/* Mindest-Trade-Übersicht (MinTradeOverview) */
+.mt-overview { margin-top: 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(250, 204, 21, 0.3); background: rgba(250, 204, 21, 0.04); }
+.mt-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mt-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.mt-stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-left: 3px solid var(--mt); }
+.mt-stat-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--mt); font-weight: 700; }
+.mt-stat-pnl { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mt-stat-meta { font-size: 11px; opacity: 0.7; }
+.mt-verdict { margin: 8px 0 4px; font-size: 12px; padding: 5px 9px; border-radius: 6px; }
+.mt-verdict.good { background: rgba(0, 224, 138, 0.12); color: #00E08A; }
+.mt-verdict.bad { background: rgba(255, 51, 102, 0.12); color: #FF6688; }
+.mt-verdict.wait { background: rgba(255,255,255,0.05); color: #C9CDD6; }
+.mt-table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 6px; }
+.mt-table th { text-align: left; opacity: 0.55; font-weight: 500; padding: 3px 6px; }
+.mt-table td { padding: 4px 6px; border-top: 1px solid #22252F; white-space: nowrap; }
+.mt-table td.pos { color: #00FF66; }
+.mt-table td.neg { color: #FF3366; }
+.mt-note { white-space: normal !important; font-size: 10.5px; opacity: 0.75; max-width: 360px; }
+.mt-empty { font-size: 12px; opacity: 0.7; margin-top: 6px; }

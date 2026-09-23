@@ -1,6 +1,7 @@
 import { SetupMaturityTable, SetupClassTabs } from './SetupMaturityTable';
 import { AssetCapitalLog } from './AssetCapitalLog';
 import { SetupUsagePanel } from './SetupUsagePanel';
+import { MinTradeOverview } from './MinTradeOverview';
 import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowsClockwise, ChartLineUp, ShieldCheck } from '@phosphor-icons/react';
 
@@ -167,6 +168,8 @@ export const AIEquityPanel = () => {
           </div>
         </>
       )}
+
+      <MinTradeOverview />
 
       {/* Setup-Reife: welche Setups sind live-freigeschaltet, welche sammeln noch Daten */}
       <div className="ai-learn-title" style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>

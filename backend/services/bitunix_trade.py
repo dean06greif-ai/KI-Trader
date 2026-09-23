@@ -2965,6 +2965,7 @@ class AutoTradeManager:
                        + ([signal["_risk_budget_note"]] if signal.get("_risk_budget_note") else [])
                        + ([signal["_min_trade_note"]] if signal.get("_min_trade") else [])),
             "min_trade": bool(signal.get("_min_trade")) and mode == "live",
+            "min_trade_note": signal.get("_min_trade_note") if signal.get("_min_trade") else None,
             **trade_extra,
         }
 

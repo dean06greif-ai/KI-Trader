@@ -241,3 +241,26 @@ def test_win_rate_objective_never_prefers_losers():
     loser = _score({"trades": 50, "win_rate": 60, "pnl": -500}, "win_rate", 10)
     winner = _score({"trades": 50, "win_rate": 55, "pnl": 1000}, "win_rate", 10)
     assert winner > loser
+
+
+# ---------------- Mindest-Trade-Übersicht ----------------
+def test_min_trade_summary_r_multiple():
+    rows = [{"status": "closed", "realized_pnl": 0.3, "fees_paid": 0.01, "risk_usdt": 0.2},
+            {"status": "closed", "realized_pnl": -0.2, "fees_paid": 0.01, "risk_usdt": 0.2},
+            {"status": "open"}]
+    s = min_trade.summarize(rows)
+    assert s["trades"] == 2 and s["open"] == 1 and s["winrate"] == 50.0
+    assert s["pnl"] == 0.1 and s["r_multiple"] == 0.25
+    assert min_trade.summarize([])["r_multiple"] is None
+
+
+# ---------------- Regime-Lab-Hinweise ----------------
+def test_regime_advice_flags_user_settings_and_missing_reference():
+    from services import regime_advice as ra
+    adv = ra.settings_advice("15m", 1080, 11, 1.0, 0.0)
+    assert any("Obergrenze" in a for a in adv) and any("flackert" in a for a in adv)
+    assert any("Timeframe 15m" in a for a in adv)
+    assert ra.settings_advice("1h", 720, 5, 4.0, 14.0) == []
+    w = ra.result_warnings({"direction_pct": 98.7, "avg_live_phase_days": 29.4}, 3.0, 15.0)
+    assert any("Referenz" in x for x in w) and any("über der Obergrenze" in x for x in w)
+    assert ra.result_warnings({"direction_pct": 70, "reference_pct": 55, "avg_live_phase_days": 8}, 4, 14) == []

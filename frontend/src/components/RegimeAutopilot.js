@@ -7,6 +7,7 @@ import { autopilotDecision, autopilotReport, calibAppliedFromReport } from '../l
 import { EdgeBanner, labJobAction } from './RegimeJobProgress';
 import { WhatNow } from './RegimeDetectorTools';
 import NumInput from './NumInput';
+import RegimeAutopilotAdvice from './RegimeAutopilotAdvice';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const fmt = (v, d = 1) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
@@ -49,8 +50,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [maxMin, setMaxMin] = useState(saved.maxMin ?? 0);
   const [targetPct, setTargetPct] = useState(saved.targetPct ?? 0);
   const [maxRounds, setMaxRounds] = useState(saved.maxRounds ?? 0);
-  const [minPhase, setMinPhase] = useState(saved.minPhase ?? 5);
-  const [maxPhase, setMaxPhase] = useState(saved.maxPhase ?? 15);
+  const [minPhase, setMinPhase] = useState(saved.minPhase ?? 4);
+  const [maxPhase, setMaxPhase] = useState(saved.maxPhase ?? 14);
   const [searchDet, setSearchDet] = useState(saved.searchDet ?? true);
   const [autoChain, setAutoChain] = useState(saved.autoChain ?? true);
   const [banner, setBanner] = useState(null);
@@ -255,7 +256,15 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
           Aktuell Bestes: <BestLine best={activeJob.best} testId="autopilot-live-best-line" />
         </div>
       )}
+      <RegimeAutopilotAdvice timeframe={timeframe} days={days} nSymbols={(selCoins || []).length}
+        minPhase={minPhase} maxPhase={maxPhase}
+        onApplyBand={([lo, hi]) => { setMinPhase(lo); setMaxPhase(hi); }} />
       {banner && <EdgeBanner {...banner} testId="autopilot-banner" />}
+      {(lastResult?.warnings || []).length > 0 && (
+        <ul className="regime-advice-list warn" data-testid="autopilot-result-warnings">
+          {lastResult.warnings.map(w => <li key={w}>{w}</li>)}
+        </ul>
+      )}
       {lastResult?.best && (
         <WhatNow testId="autopilot-whatnow">
           <ol>
