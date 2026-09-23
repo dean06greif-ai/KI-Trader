@@ -449,7 +449,7 @@ async def list_releases():
     rows = await regime_release.all_releases(state.db)
     rewards = await ai_rewards.by_structural_regime(state.db, 90)
     min_trades = regime_release.ACTIVATION_MIN_TRADES
-    shadow_ids = [r["id"] for r in rows if (r.get("release") or {}).get("stage") == "shadow"]
+    shadow_ids = [r.get("id") for r in rows if r.get("id") and (r.get("release") or {}).get("stage") == "shadow"]
     if shadow_ids:
         docs = await state.db.regime_analyses.find(
             {"id": {"$in": shadow_ids}}, {"_id": 0, "chart": 0, "chart_emas": 0}).to_list(10)
