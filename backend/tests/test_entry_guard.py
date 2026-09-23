@@ -42,7 +42,7 @@ def test_check_entry_regime_gate_blocks_and_collection_skips(monkeypatch):
     async def ok_guard(db, signal, tf, mode=None):
         return True, ""
 
-    async def block_regime(cfg, symbol):
+    async def block_regime(cfg, symbol, horizon=None):
         return False, "Regime: Seitwärtsmarkt"
 
     monkeypatch.setattr(trade_guard, "check_open_allowed", ok_guard)

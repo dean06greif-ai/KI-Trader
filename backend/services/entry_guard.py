@@ -69,7 +69,8 @@ async def check_entry(db, signal: Dict, cfg: Dict, mode: str, timeframe: str,
             return False, reason
     if cfg.get("regime_filter_enabled") and not collection:
         from services import regime_gate
-        ok, reason = await regime_gate.check_signal_allowed(cfg, signal.get("symbol"))
+        ok, reason = await regime_gate.check_signal_allowed(cfg, signal.get("symbol"),
+                                                            signal.get("ai_horizon"))
         checks.record("regime_gate", ok, reason)
         if not ok:
             return False, reason

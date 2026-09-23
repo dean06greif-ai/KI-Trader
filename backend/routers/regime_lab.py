@@ -478,7 +478,7 @@ async def _release_gate(doc: Dict, stage: str, body: Dict):
         if (doc.get("release") or {}).get("stage") not in ("shadow", "active"):
             reasons.append("erst Stufe Shadow (Beobachten) freigeben")
         a_ok, a_reasons, _ = regime_release.validate_activation(
-            await ai_rewards.by_structural_regime(state.db, 90), min_trades)
+            await ai_rewards.by_structural_regime(state.db, 90, aid=doc.get("id")), min_trades)
         reasons += a_reasons
         ok = ok and a_ok and not reasons
     return ok, reasons, evidence, grade, min_trades

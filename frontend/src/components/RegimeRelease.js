@@ -181,6 +181,9 @@ export function RegimeReleaseControls({ analysis, onChanged, shadowTrades }) {
         dynamisch nach Erkennungs-Note: sehr gut 10 · gut 15 · mittel 25 · sonst 30; aktuell
         <b data-testid={`regime-release-min-trades-${aid}`}> {checks.active?.activation_min_trades ?? '…'}</b>).
         Mit „… manuell“ entscheidest du selbst (protokolliert; Wirksam erst ab Note „mittel“).
+        {' '}Horizont-Band dieser Analyse: <b data-testid={`regime-release-band-${aid}`}>
+          {/^(1m|3m|5m|15m|30m|1h|60m)$/.test(String(analysis.timeframe || '')) ? 'Intraday (Scalps)' : 'Swing (Swing-Trades)'}</b>
+        {' '}– je Klasse ist eine Intraday- UND eine Swing-Freigabe möglich; eine neue Freigabe löst nur die des gleichen Bands ab.
       </div>
       <ReleaseWhatNow stage={stage} checks={checks} aid={aid} shadowTrades={shadowTrades} onChanged={onChanged} />
       {showHist && <ReleaseHistory analysis={analysis} />}
@@ -300,24 +303,35 @@ export function StructuralStagePanel({ refreshKey }) {
   };
 
   if (!data) return null;
+  const BAND_TXT = { intraday: 'Intraday', swing: 'Swing' };
   const byClass = {};
-  (data.releases || []).forEach(r => (r.release?.asset_classes || []).forEach(c => { byClass[c] = r; }));
+  (data.releases || []).forEach(r => (r.release?.asset_classes || []).forEach(c => {
+    (byClass[c] = byClass[c] || []).push(r);
+  }));
   const act = data.activation || {};
   const rewards = (data.rewards_by_structural || []).filter(r => r.regime !== 'unbekannt');
+  const allRel = Object.values(byClass).flat();
 
   return (
     <div className="rr-stage-panel" data-testid="ai-structural-stage-panel">
       <div className="rr-stage-title">STRUKTUR-REGIME (LAB-BRÜCKE)</div>
       <div className="rr-stage-row">
         {Object.keys(CLASS_LABELS).map(cls => {
-          const rel = byClass[cls]?.release;
-          const st = rel?.stage || 'none';
-          return (
-            <span key={cls} className={`rr-badge ${st}`} data-testid={`ai-structural-stage-${cls}`}
-              title={rel ? `${byClass[cls].name} · ${byClass[cls].timeframe} · seit ${fmtDateTime(rel.since)}` : 'keine freigegebene Lab-Analyse'}>
-              {CLASS_LABELS[cls]}: {st === 'none' ? 'keine' : STAGE_LABEL[st]}
+          const rels = byClass[cls] || [];
+          if (!rels.length) {
+            return (
+              <span key={cls} className="rr-badge none" data-testid={`ai-structural-stage-${cls}`}
+                title="keine freigegebene Lab-Analyse">{CLASS_LABELS[cls]}: keine</span>
+            );
+          }
+          return rels.map(r => (
+            <span key={`${cls}-${r.id}`} className={`rr-badge ${r.release.stage}`}
+              data-testid={`ai-structural-stage-${cls}${rels.length > 1 ? `-${r.band}` : ''}`}
+              title={`${r.name} · ${r.timeframe} · seit ${fmtDateTime(r.release.since)}`}>
+              {CLASS_LABELS[cls]}{rels.length > 1 ? ` ${BAND_TXT[r.band] || ''}` : ''}: {STAGE_LABEL[r.release.stage]}
+              {' '}<span className="opt-small">({r.timeframe})</span>
             </span>
-          );
+          ));
         })}
       </div>
       <div className="opt-small" data-testid="ai-structural-activation">
@@ -326,10 +340,11 @@ export function StructuralStagePanel({ refreshKey }) {
         {' · '}{act.ok ? 'Wirksam-Gate grün' : `Wirksam noch nicht möglich: ${(act.reasons || []).join('; ')}`}
       </div>
       <div className="opt-small" data-testid="ai-structural-timeframe-note">
-        Ein Struktur-Regime je Anlageklasse – berechnet im Timeframe der freigegebenen Analyse
-        {Object.values(byClass).length ? ` (${[...new Set(Object.values(byClass).map(r => r.timeframe))].join(' / ')})` : ''}
-        und gleich für alle Trades der Klasse, egal ob 5m-, 15m- oder 4h-Setup. Shadow = nur mitschreiben;
-        Wirksam = Kontext im Prompt, Sperre nur bei Gate-Quelle „Lab“. Normale Backtests bleiben davon unberührt.
+        Je Anlageklasse bis zu zwei Freigaben: <b>Intraday</b> (Analyse ≤ 1h) für Scalps und <b>Swing</b> (≥ 2h)
+        für Swing-Trades – die KI nutzt die zum Trade-Horizont passende. Gibt es nur eine Freigabe, gilt sie für
+        alle Trades der Klasse{allRel.length ? ` (aktuell: ${[...new Set(allRel.map(r => `${BAND_TXT[r.band] || r.band} ${r.timeframe}`))].join(' / ')})` : ''}.
+        Shadow = nur mitschreiben; Wirksam = Kontext im Prompt, Sperre nur bei Gate-Quelle „Lab“. Normale Backtests bleiben davon unberührt.
+        Ist das Shadow-Ziel erreicht, kommt eine Telegram-Meldung.
       </div>
       {(data.proposals || []).map(p => (
         <div key={p.id} className="rr-proposal" data-testid={`ai-structural-proposal-${p.id}`}>

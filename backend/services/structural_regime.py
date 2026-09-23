@@ -162,21 +162,29 @@ def artifact_of(release: Optional[Dict], aid: Optional[str]) -> Optional[str]:
 # --------------------------------------------------------------------------
 # Runtime (Cache + Kerzen)
 # --------------------------------------------------------------------------
-async def _release_for(asset_class: str) -> Optional[Dict]:
+async def _release_for(asset_class: str, band: Optional[str] = None) -> Optional[Dict]:
+    """Freigabe der Klasse; mit `band` (intraday|swing) die des Horizont-Bands
+    (Fallback auf die einzige Freigabe – Alt-Verhalten bleibt identisch)."""
     global _release_ts
     if _db is None:
         return None
     if time.time() - _release_ts > CACHE_TTL_S:
         _release_cache.clear()
         _release_ts = time.time()
-    if asset_class not in _release_cache:
+    key = asset_class if not band else f"{asset_class}|{band}"
+    if key not in _release_cache:
         from services import regime_release
         try:
-            _release_cache[asset_class] = await regime_release.released_for_class(_db, asset_class)
+            _release_cache[key] = await regime_release.released_for_class(_db, asset_class, band=band)
         except Exception as e:  # noqa: BLE001
-            logger.debug(f"structural_regime release lookup {asset_class}: {e}")
+            logger.debug(f"structural_regime release lookup {key}: {e}")
             return None
-    return _release_cache.get(asset_class)
+    return _release_cache.get(key)
+
+
+async def _rel(asset_class: str, band: Optional[str] = None) -> Optional[Dict]:
+    # ohne Band exakt der Alt-Aufruf (Signatur-kompatibel für Aufrufer/Mocks)
+    return await _release_for(asset_class) if not band else await _release_for(asset_class, band)
 
 
 def stage_of_class_cached(asset_class: str) -> str:
@@ -184,9 +192,15 @@ def stage_of_class_cached(asset_class: str) -> str:
     return str(((doc or {}).get("release") or {}).get("stage") or "none")
 
 
-async def stage_of(symbol: str) -> str:
-    doc = await _release_for(setup_asset_class.asset_class_of(symbol))
+async def stage_of(symbol: str, band: Optional[str] = None) -> str:
+    doc = await _rel(setup_asset_class.asset_class_of(symbol), band)
     return str(((doc or {}).get("release") or {}).get("stage") or "none")
+
+
+async def _cache_key(symbol: str, doc: Dict) -> str:
+    """Cache je Symbol UND Freigabe: dieselbe Analyse für beide Bänder = ein Eintrag."""
+    default = await _release_for(setup_asset_class.asset_class_of(symbol))
+    return symbol if not default or default.get("id") == doc.get("id") else f"{symbol}|{doc.get('id')}"
 
 
 async def _compute(symbol: str, doc: Dict) -> Dict:
@@ -217,17 +231,18 @@ async def _compute(symbol: str, doc: Dict) -> Dict:
     return ctx
 
 
-async def resolve(symbol: str) -> Dict:
-    """MarketContext(structural) für ein Symbol – gecacht, fail-open."""
-    ent = _cache.get(symbol)
-    if ent and time.time() - ent["_at"] < CACHE_TTL_S:
-        return ent["ctx"]
-    doc = await _release_for(setup_asset_class.asset_class_of(symbol))
+async def resolve(symbol: str, band: Optional[str] = None) -> Dict:
+    """MarketContext(structural) für ein Symbol (optional je Horizont-Band) – gecacht, fail-open."""
+    doc = await _rel(setup_asset_class.asset_class_of(symbol), band)
     if not doc:
         return unknown_context()
-    lock = _locks.setdefault(symbol, asyncio.Lock())
+    key = await _cache_key(symbol, doc)
+    ent = _cache.get(key)
+    if ent and time.time() - ent["_at"] < CACHE_TTL_S:
+        return ent["ctx"]
+    lock = _locks.setdefault(key, asyncio.Lock())
     async with lock:
-        ent = _cache.get(symbol)
+        ent = _cache.get(key)
         if ent and time.time() - ent["_at"] < CACHE_TTL_S:
             return ent["ctx"]
         try:
@@ -242,42 +257,71 @@ async def resolve(symbol: str) -> Dict:
         prev = (ent or {}).get("ctx") or {}
         ctx["direction_changed"] = bool(prev.get("direction") and ctx.get("direction")
                                         and prev["direction"] != ctx["direction"])
-        _cache[symbol] = {"_at": time.time(), "ctx": ctx}
-        # PLAN_REGIME_COCKPIT B1: Verlauf für das Cockpit (additiv, fail-soft)
-        from services import regime_cockpit
-        await regime_cockpit.record_structural(_db, symbol, ctx)
+        ctx["band"] = regime_band(doc)
+        _cache[key] = {"_at": time.time(), "ctx": ctx}
+        if key == symbol:
+            # PLAN_REGIME_COCKPIT B1: Verlauf für das Cockpit (additiv, fail-soft)
+            from services import regime_cockpit
+            await regime_cockpit.record_structural(_db, symbol, ctx)
         return ctx
 
 
-async def resolve_if_released(symbol: str) -> Optional[Dict]:
+def regime_band(doc: Optional[Dict]) -> str:
+    from services import regime_release
+    return regime_release.release_band(doc)
+
+
+async def resolve_if_released(symbol: str, band: Optional[str] = None) -> Optional[Dict]:
     """Nur ab Stufe shadow (für Snapshot/Fingerprint) – sonst None (Schema wie heute)."""
-    if await stage_of(symbol) == "none":
+    if await stage_of(symbol, band) == "none":
         return None
-    return await resolve(symbol)
+    return await resolve(symbol, band)
 
 
-async def artifact(symbol: str) -> Optional[str]:
-    doc = await _release_for(setup_asset_class.asset_class_of(symbol))
+async def artifact(symbol: str, band: Optional[str] = None) -> Optional[str]:
+    doc = await _rel(setup_asset_class.asset_class_of(symbol), band)
     return artifact_of((doc or {}).get("release"), (doc or {}).get("id")) if doc else None
 
 
-async def phase(symbol: str) -> Optional[str]:
+async def phase(symbol: str, band: Optional[str] = None) -> Optional[str]:
     """Gate-Quelle `lab`: Phase nur bei Stufe active und Zustand ok."""
-    if await stage_of(symbol) != "active":
+    if await stage_of(symbol, band) != "active":
         return None
-    ctx = await resolve(symbol)
+    ctx = await resolve(symbol, band)
     return ctx.get("phase") if ctx.get("state") == "ok" else None
 
 
+async def _active_band_docs(symbol: str) -> List[tuple]:
+    """[(band, doc)] der wirksamen Freigaben je Band – dieselbe Analyse nur einmal."""
+    from services import regime_release
+    cls = setup_asset_class.asset_class_of(symbol)
+    out, seen = [], set()
+    for b in regime_release.BANDS:
+        doc = await _rel(cls, b)
+        if doc and doc.get("id") not in seen and ((doc.get("release") or {}).get("stage") == "active"):
+            seen.add(doc.get("id"))
+            out.append((b, doc))
+    return out
+
+
 async def prompt_block(symbols: List[str]) -> str:
-    """Prompt-Block für Klassen mit Stufe `active` (leer sonst)."""
-    lines = []
+    """Prompt-Block für Klassen mit Stufe `active` (leer sonst). Zwei Freigaben
+    (Intraday + Swing) -> je Band eine Zeile, die KI nimmt die zum Trade-Horizont."""
+    from services import regime_release
+    lines, multi = [], False
     for s in symbols:
-        if await stage_of(s) != "active":
-            continue
-        lines.append(f"{s}: {prompt_line(await resolve(s))}")
+        bands = await _active_band_docs(s)
+        if len(bands) > 1:
+            multi = True
+            for b, _doc in bands:
+                lines.append(f"{s} [{regime_release.BAND_LABELS[b]}]: {prompt_line(await resolve(s, b))}")
+        elif bands:
+            lines.append(f"{s}: {prompt_line(await resolve(s, bands[0][0]))}")
     if not lines:
         return ""
+    if multi:
+        lines.append("Intraday-Struktur gilt für Scalps (horizon=scalp), Swing-Struktur für "
+                     "Swing-Trades (horizon=swing).")
     return ("=== STRUKTURELLES MARKTREGIME (freigegebenes Lab-Modell – NICHT das "
             "Kurzfrist-Regime der Symbolzeilen) ===\n" + "\n".join(lines) + "\n"
             "Struktur = Großwetterlage über Wochen (Lab), Kurzfrist-Regime = Zustand der "
@@ -286,7 +330,7 @@ async def prompt_block(symbols: List[str]) -> str:
 
 
 async def snapshot_all() -> Dict[str, Dict]:
-    return {s: e["ctx"] for s, e in _cache.items()}
+    return {s: e["ctx"] for s, e in _cache.items() if "|" not in s}
 
 
 async def _persist_cache():
@@ -295,7 +339,7 @@ async def _persist_cache():
     try:
         await _db.settings.update_one(
             {"_id": CACHE_DOC_ID},
-            {"$set": {"symbols": {s: e["ctx"] for s, e in _cache.items()},
+            {"$set": {"symbols": {s: e["ctx"] for s, e in _cache.items() if "|" not in s},
                       "updated_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"structural_regime cache persist: {e}")
@@ -322,13 +366,15 @@ async def run_loop(symbols_fn):
     while True:
         try:
             if not local_engine_disabled():
+                from services import regime_release
                 for s in list(symbols_fn() or []):
-                    if await stage_of(s) != "none":
-                        await resolve(s)
+                    for b in regime_release.BANDS:
+                        if await stage_of(s, b) != "none":
+                            await resolve(s, b)
                 await _persist_cache()
                 if _db is not None:
-                    from services import regime_release
                     await regime_release.apply_due_auto_proposals(_db)
+                    await regime_release.notify_activation_ready(_db)
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001

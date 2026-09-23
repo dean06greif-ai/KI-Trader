@@ -33,6 +33,43 @@ AUTO_GRACE_HOURS = 24
 PROPOSAL_COOLDOWN_DAYS = 7
 PROPOSAL_SCOPE = "regime_release"
 CONFIG_KEY_AUTONOMY = "structural_regime_autonomy"      # off | suggest | auto (Default suggest)
+# Horizont-Bänder: je Assetklasse darf es EINE Freigabe je Band geben. Scalps
+# nutzen die Intraday-Struktur, Swing-Trades die Swing-Struktur. Gibt es nur
+# eine Freigabe (Alt-Verhalten), gilt sie für beide Bänder (Fallback).
+BANDS = ("intraday", "swing")
+BAND_LABELS = {"intraday": "Intraday (≤ 1h)", "swing": "Swing (≥ 2h)"}
+INTRADAY_MAX_MINUTES = 60
+
+
+def band_of_timeframe(timeframe: Optional[str]) -> str:
+    """Analyse-Timeframe -> Band (rein): ≤ 1h intraday, sonst swing."""
+    from services.timeframes import tf_minutes
+    mins = tf_minutes(str(timeframe or "1h"))
+    return "intraday" if 0 < mins <= INTRADAY_MAX_MINUTES else "swing"
+
+
+def band_of_horizon(horizon: Optional[str]) -> str:
+    """Trade-Horizont der KI (scalp|swing) -> Band (rein)."""
+    return "swing" if str(horizon or "").lower() == "swing" else "intraday"
+
+
+def release_band(doc: Optional[Dict]) -> str:
+    rel = (doc or {}).get("release") or {}
+    return rel.get("band") or band_of_timeframe((doc or {}).get("timeframe"))
+
+
+def pick_release(docs: List[Dict], band: Optional[str] = None) -> Optional[Dict]:
+    """Freigabe fürs Band wählen (rein): exaktes Band bevorzugt, sonst Fallback
+    (wirksam vor shadow, dann jüngste) – so bleibt eine Einzel-Freigabe für alle gültig."""
+    if not docs:
+        return None
+    if band:
+        exact = [d for d in docs if release_band(d) == band]
+        if exact:
+            docs = exact
+    return sorted(docs, key=lambda d: (((d.get("release") or {}).get("stage") == "active"),
+                                       str((d.get("release") or {}).get("since") or "")),
+                  reverse=True)[0]
 
 
 def _now_iso() -> str:
@@ -248,6 +285,7 @@ def apply_stage(doc: Dict, stage: str, evidence: Dict, by: str, reason: str,
             "symbols": (ev or {}).get("symbols") or rel.get("symbols") or doc.get("symbols") or [],
             "asset_classes": (ev or {}).get("asset_classes") or rel.get("asset_classes") or [],
             "model_fingerprint": (ev or {}).get("model_fingerprint") or rel.get("model_fingerprint"),
+            "band": band_of_timeframe(doc.get("timeframe")) if doc.get("timeframe") else rel.get("band"),
             "evidence": ev or {}, "history": history,
             "since": (entry["at"] if stage != "none" else None)}
 
@@ -305,18 +343,23 @@ async def jobs_for(db, doc: Dict) -> Dict:
     return {"calibrations": calibs, "ablations": runs}
 
 
-async def released_for_class(db, asset_class: str, min_stage: str = "shadow") -> Optional[Dict]:
-    """Die (einzige) Analyse der Klasse mit Stufe >= min_stage (ohne Chart-Daten)."""
+async def released_for_class(db, asset_class: str, min_stage: str = "shadow",
+                             band: Optional[str] = None) -> Optional[Dict]:
+    """Die Analyse der Klasse mit Stufe >= min_stage (ohne Chart-Daten); mit
+    `band` die Freigabe dieses Horizont-Bands (Fallback: die einzige/beste)."""
     stages = ["shadow", "active"] if min_stage == "shadow" else ["active"]
-    return await db.regime_analyses.find_one(
+    docs = await db.regime_analyses.find(
         {"release.stage": {"$in": stages}, "release.asset_classes": asset_class},
-        {"_id": 0, "chart": 0, "chart_emas": 0})
+        {"_id": 0, "chart": 0, "chart_emas": 0}).to_list(10)
+    return pick_release(docs, band)
 
 
 async def all_releases(db) -> List[Dict]:
     rows = await db.regime_analyses.find(
         {"release.stage": {"$in": ["shadow", "active"]}},
         {"_id": 0, "id": 1, "name": 1, "symbols": 1, "timeframe": 1, "release": 1}).to_list(50)
+    for r in rows:
+        r["band"] = release_band(r)
     return rows
 
 
@@ -328,9 +371,15 @@ async def set_stage(db, aid: str, stage: str, evidence: Dict, by: str, reason: s
         raise ValueError("Analyse nicht gefunden")
     rel = apply_stage(doc, stage, evidence, by, reason, proposal_id, override)
     if stage != "none":
+        band = release_band({**doc, "release": rel})
         for cls in rel.get("asset_classes") or []:
-            other = await released_for_class(db, cls)
-            if other and other.get("id") != aid:
+            others = await db.regime_analyses.find(
+                {"release.stage": {"$in": ["shadow", "active"]}, "release.asset_classes": cls},
+                {"_id": 0, "chart": 0, "chart_emas": 0}).to_list(10)
+            for other in others:
+                # je Klasse UND Horizont-Band nur eine Freigabe
+                if other.get("id") == aid or release_band(other) != band:
+                    continue
                 demoted = apply_stage(other, "none", {}, by, f"abgelöst durch {aid}", proposal_id)
                 await db.regime_analyses.update_one({"id": other["id"]}, {"$set": {"release": demoted}})
     await db.regime_analyses.update_one({"id": aid}, {"$set": {"release": rel}})
@@ -366,8 +415,9 @@ async def handle_recommendation(db, engine, rec: Dict) -> Optional[Dict]:
     gate_ok, reasons = True, []
     if verdict == "activate":
         from services import ai_rewards
-        gate_ok, reasons, _ = validate_activation(await ai_rewards.by_structural_regime(db, 90),
-                                                  activation_min_trades(quality_grade(doc)))
+        gate_ok, reasons, _ = validate_activation(
+            await ai_rewards.by_structural_regime(db, 90, aid=doc["id"]),
+            activation_min_trades(quality_grade(doc)))
     elif verdict == "revoke" and (doc.get("release") or {}).get("stage") != "active":
         return None
     prop = proposal_for(rec, gate_ok, reasons, autonomy)
@@ -405,3 +455,44 @@ async def apply_due_auto_proposals(db) -> int:
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Regime-Release Auto-Vollzug {p.get('id')}: {e}")
     return n
+
+
+def activation_ready_text(doc: Dict, info: Dict, grade: Optional[str]) -> str:
+    """Telegram-Text „Shadow-Ziel erreicht“ (rein)."""
+    rel = doc.get("release") or {}
+    classes = ", ".join(setup_asset_class.LABELS.get(c, c) for c in rel.get("asset_classes") or []) or "?"
+    regs = " · ".join(f"{r.get('regime')}: {r.get('trades')} T / Ø {r.get('avg_reward')} R"
+                      for r in (info.get("regimes") or [])[:4])
+    return (f"🧭✅ *Regime bereit für „Wirksam“*\n{doc.get('name') or doc.get('id')} "
+            f"({classes}, {doc.get('timeframe')}, {BAND_LABELS.get(release_band(doc), '')})\n"
+            f"Shadow-Ziel {info.get('min_trades')} Trades je Regime erreicht "
+            f"(Erkennung „{grade or 'unbewertet'}“, Δ {info.get('reward_delta_r')} R).\n"
+            f"{regs}\nIm Regime-Lab jetzt „Wirksam schalten“ prüfen.")
+
+
+async def notify_activation_ready(db) -> int:
+    """Shadow-Freigaben, deren Stichproben-Gate grün ist -> einmalig Telegram +
+    Website-Glocke (Flag `activation_notified_at`; neue Stufe setzt es zurück)."""
+    from services import ai_rewards, notifications
+    from core import state
+    docs = await db.regime_analyses.find(
+        {"release.stage": "shadow", "release.activation_notified_at": {"$exists": False}},
+        {"_id": 0, "chart": 0, "chart_emas": 0}).to_list(10)
+    sent = 0
+    for doc in docs:
+        grade = quality_grade(doc)
+        ok, _r, info = validate_activation(
+            await ai_rewards.by_structural_regime(db, 90, aid=doc["id"]), activation_min_trades(grade))
+        if not ok:
+            continue
+        text = activation_ready_text(doc, info, grade)
+        await notifications.website_notify(db, "regime_release_ready", "Regime bereit für „Wirksam“",
+                                           text.replace("*", ""), cooldown_min=0,
+                                           dedupe_key=f"web:regime_ready:{doc['id']}",
+                                           source="Regime-Brücke", meta={"aid": doc["id"]})
+        await notifications.telegram_notify(db, getattr(state, "telegram", None),
+                                            "regime_release_ready", text)
+        await db.regime_analyses.update_one(
+            {"id": doc["id"]}, {"$set": {"release.activation_notified_at": _now_iso()}})
+        sent += 1
+    return sent

@@ -150,3 +150,67 @@ def test_local_regime_result_done_only_after_persist(monkeypatch):
     finally:
         rlab.JOBS.pop(jid, None)
         local_exec.LOCAL_JOBS.pop(jid, None)
+
+
+# ---------------- Horizont-Bänder + Telegram-Hinweis ----------------
+def test_band_mapping():
+    assert rr.band_of_timeframe("15m") == "intraday" and rr.band_of_timeframe("1h") == "intraday"
+    assert rr.band_of_timeframe("4h") == "swing" and rr.band_of_timeframe("1d") == "swing"
+    assert rr.band_of_horizon("swing") == "swing" and rr.band_of_horizon("scalp") == "intraday"
+    assert rr.band_of_horizon(None) == "intraday"
+
+
+def test_pick_release_prefers_band_and_falls_back():
+    intra = {"id": "a", "timeframe": "15m", "release": {"stage": "shadow", "since": "2026-09-20"}}
+    swing = {"id": "b", "timeframe": "4h", "release": {"stage": "active", "since": "2026-09-10"}}
+    assert rr.pick_release([intra, swing], "intraday")["id"] == "a"
+    assert rr.pick_release([intra, swing], "swing")["id"] == "b"
+    assert rr.pick_release([intra, swing])["id"] == "b"          # ohne Band: wirksam zuerst
+    assert rr.pick_release([intra], "swing")["id"] == "a"        # Einzel-Freigabe gilt für alle
+    assert rr.pick_release([], "swing") is None
+
+
+def test_set_stage_replaces_only_same_band():
+    class _C:
+        def __init__(self, docs): self.docs = docs
+        def _m(self, d, q):
+            if "id" in q: return d.get("id") == q["id"]
+            rel = d.get("release") or {}
+            return rel.get("stage") in q["release.stage"]["$in"] and q["release.asset_classes"] in (rel.get("asset_classes") or [])
+        async def find_one(self, q, *_): return next((d for d in self.docs if self._m(d, q)), None)
+        def find(self, q, *_):
+            docs = [d for d in self.docs if self._m(d, q)]
+            class _Cur:
+                async def to_list(self, *_): return docs
+            return _Cur()
+        async def update_one(self, q, u, upsert=False):
+            for d in self.docs:
+                if self._m(d, q): d.update(u["$set"])
+    ev = {"asset_classes": ["crypto"], "scope": "combined"}
+    swing_old = {"id": "s1", "timeframe": "4h", "release": {"stage": "shadow", "asset_classes": ["crypto"]}}
+    intra = {"id": "i1", "timeframe": "15m", "release": {}}
+    swing_new = {"id": "s2", "timeframe": "1d", "release": {}}
+
+    class _DB:
+        regime_analyses = _C([swing_old, intra, swing_new])
+    asyncio.run(rr.set_stage(_DB(), "i1", "shadow", ev, "Admin", "intraday"))
+    assert swing_old["release"]["stage"] == "shadow" and intra["release"]["band"] == "intraday"
+    asyncio.run(rr.set_stage(_DB(), "s2", "shadow", ev, "Admin", "swing neu"))
+    assert swing_old["release"]["stage"] == "none" and intra["release"]["stage"] == "shadow"
+
+
+def test_activation_ready_text():
+    doc = {"id": "x", "name": "BTC 15m", "timeframe": "15m", "release": {"asset_classes": ["crypto"]}}
+    t = rr.activation_ready_text(doc, {"min_trades": 10, "reward_delta_r": 0.4,
+                                       "regimes": [{"regime": "strukturell bär", "trades": 11, "avg_reward": -0.2}]}, "sehr gut")
+    assert "Wirksam" in t and "10 Trades" in t and "Intraday" in t and "sehr gut" in t
+
+
+# ---------------- Break-Even deckt Exit-Slippage ----------------
+def test_breakeven_price_slippage_buffer():
+    from services.bitunix_trade import breakeven_price
+    base_l, base_s = breakeven_price(100.0, "LONG", 0.06), breakeven_price(100.0, "SHORT", 0.06)
+    assert breakeven_price(100.0, "LONG", 0.06, 0.05) > base_l
+    assert breakeven_price(100.0, "SHORT", 0.06, 0.05) < base_s
+    assert breakeven_price(100.0, "LONG", 0.06, 5.0) == breakeven_price(100.0, "LONG", 0.06, 0.2)  # Deckel
+    assert breakeven_price(100.0, "LONG", 0.06, None) == base_l                                      # Alt-Verhalten

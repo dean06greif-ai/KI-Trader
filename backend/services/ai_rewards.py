@@ -128,10 +128,13 @@ def structural_regime_of(trade: Dict) -> Optional[str]:
     return f"strukturell {st['phase']}"
 
 
-async def by_structural_regime(db, days: int = 30) -> List[Dict]:
+async def by_structural_regime(db, days: int = 30, aid: Optional[str] = None) -> List[Dict]:
     """Reward-Auswertung nach Struktur-Regime (Regime-Brücke 3.2, rein wie by_regime).
-    Trades ohne Struktur-Kontext (Stufe none / stale) laufen unter 'unbekannt'."""
+    Trades ohne Struktur-Kontext (Stufe none / stale) laufen unter 'unbekannt'.
+    Mit `aid`: nur Trades dieser Freigabe (Alt-Rewards ohne structural_aid zählen mit)."""
     rows = await db.ai_rewards.find({"ts": {"$gte": _cutoff(days)}}).to_list(3000)
+    if aid:
+        rows = [r for r in rows if r.get("structural_aid") in (None, aid)]
     agg: Dict[str, Dict] = {}
     for r in rows:
         k = str(r.get("structural_regime") or "unbekannt")
@@ -214,6 +217,8 @@ async def on_trade_closed(db, trade: Dict) -> Optional[Dict]:
                "regime": await _regime_for(db, trade.get("symbol"), trade),
                # Regime-Brücke 3.2: strukturelles Lab-Regime zum Entry (ab Stufe shadow)
                "structural_regime": structural_regime_of(trade),
+               "structural_aid": (((trade.get("entry_market_snapshot") or {}).get("structural") or {})
+                                  .get("aid")),
                "pnl": float(trade.get("realized_pnl") or 0),
                **r, "ts": trade.get("closed_at") or _now_iso()}
         await db.ai_rewards.insert_one(dict(doc))

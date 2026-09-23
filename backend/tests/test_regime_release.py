@@ -182,7 +182,7 @@ def test_handle_recommendation_cooldown_and_needs_data(monkeypatch):
         ai_proposals = _Coll([])
 
     from services import ai_rewards
-    async def _by(db, days):
+    async def _by(db, days, aid=None):
         return [{"regime": "strukturell bär", "trades": 5, "avg_reward": 0.1}]
     monkeypatch.setattr(ai_rewards, "by_structural_regime", _by)
     db = _DB()

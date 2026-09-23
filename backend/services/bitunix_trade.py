@@ -951,13 +951,21 @@ def parse_ticker_prices(payload) -> Dict[str, float]:
     return out
 
 
-def breakeven_price(entry: float, side: str, fee_percent: float) -> float:
+BE_SLIP_BUFFER_MAX_PCT = 0.2   # Deckel für den Slippage-Puffer am Break-Even
+
+
+def breakeven_price(entry: float, side: str, fee_percent: float,
+                    slip_pct: float = 0.0) -> float:
     """ECHTES Break-Even inkl. Gebühren (rein): Entry-Fee UND Exit-Fee gedeckt.
     LONG:  be*(1-fee) = entry*(1+fee)  ->  be = entry*(1+fee)/(1-fee)
-    SHORT: entry*(1-fee) = be*(1+fee)  ->  be = entry*(1-fee)/(1+fee)"""
+    SHORT: entry*(1-fee) = be*(1+fee)  ->  be = entry*(1-fee)/(1+fee)
+    `slip_pct` (optional, %) puffert zusätzlich die Exit-Slippage: sonst endeten
+    BE-Stops trotz Kurs im Plus mit ~-Slippage als „Verlust“ (Analyse 23.09:
+    30 von 410 KI-Trades) und drückten Winrate/Setup-Urteile."""
     fee = float(fee_percent or 0.06) / 100
-    be = entry * (1 + fee) / (1 - fee) if str(side).upper() == "LONG" \
-        else entry * (1 - fee) / (1 + fee)
+    slip = min(max(float(slip_pct or 0), 0.0), BE_SLIP_BUFFER_MAX_PCT) / 100
+    be = entry * (1 + fee) / (1 - fee) * (1 + slip) if str(side).upper() == "LONG" \
+        else entry * (1 - fee) / (1 + fee) * (1 - slip)
     return round(be, 6)
 
 
@@ -3294,7 +3302,8 @@ class AutoTradeManager:
                         ("tp1" if local.get("breakeven_enabled") else "off")
                     if be_mode != "off" and not local.get("breakeven_moved"):
                         be = breakeven_price(entry, local["side"],
-                                             local.get("fee_percent", 0.06))
+                                             local.get("fee_percent", 0.06),
+                                             local.get("slippage_pct") or 0)
                         cur_sl = float(local.get("sl") or 0)
                         improved = (local["side"] == "LONG" and be > cur_sl) or \
                                    (local["side"] == "SHORT" and (cur_sl <= 0 or be < cur_sl))
@@ -3455,7 +3464,8 @@ class AutoTradeManager:
 
         def _be_price():
             # ECHTES Break-Even inkl. Gebühren (siehe breakeven_price)
-            return breakeven_price(t["entry"], side, t.get("fee_percent", 0.06))
+            return breakeven_price(t["entry"], side, t.get("fee_percent", 0.06),
+                                   t.get("slippage_pct") or 0)
 
         # TP1 partial + break-even
         if not t.get("tp1_hit") and hit_tp1 and not hit_tpf:

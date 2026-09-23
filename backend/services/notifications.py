@@ -38,6 +38,7 @@ DEFAULT_CONFIG = {
     "ibkr_gateway": True,         # IBKR-Gateway: ausgeloggt / readyz > 5 Min rot
     "website_ai_failure": True,   # Meldung auf der Website bei KI-Ausfall
     "regime_bridge": True,        # Regime-Brücke läuft ins Leere (verwaist/keine Freigabe), 1×/Tag
+    "regime_release_ready": True,  # Shadow-Ziel erreicht -> Regime kann „Wirksam“ geschaltet werden
 }
 
 # Deutsche Rollen-Namen (identisch zum KI-Team im Frontend) für Meldungstexte

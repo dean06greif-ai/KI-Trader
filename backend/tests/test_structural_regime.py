@@ -71,7 +71,7 @@ def test_prompt_line_snapshots_no_short_term_words():
 def test_resolve_without_release_unknown_and_error_stale(monkeypatch):
     sr.invalidate()
 
-    async def _none(cls):
+    async def _none(cls, band=None):
         return None
     monkeypatch.setattr(sr, "_release_for", _none)
     ctx = asyncio.run(sr.resolve("BTCUSDT"))
@@ -83,7 +83,7 @@ def test_resolve_without_release_unknown_and_error_stale(monkeypatch):
     doc = {"id": "ra_9", "timeframe": "1h", "scope": "combined",
            "release": {"stage": "active", "asset_classes": ["crypto"], "model_fingerprint": "abcdef123456"}}
 
-    async def _doc(cls):
+    async def _doc(cls, band=None):
         return doc
     monkeypatch.setattr(sr, "_release_for", _doc)
 

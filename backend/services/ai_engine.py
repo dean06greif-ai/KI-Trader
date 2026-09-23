@@ -1701,12 +1701,18 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                 except Exception as se:
                     logger.warning(f"Struktur-Block ({g_label}) fehlgeschlagen: {se}")
                 # Regime-Brücke 3.2/4.1: Snapshot + Artefakt ab Stufe `shadow`
-                g_struct_ctx: Dict[str, Optional[Dict]] = {}
-                g_struct_art: Dict[str, Optional[str]] = {}
+                g_struct_ctx: Dict = {}
+                g_struct_art: Dict = {}
                 for _s in g_syms:
                     try:
                         g_struct_ctx[_s] = await structural_regime.resolve_if_released(_s)
                         g_struct_art[_s] = await structural_regime.artifact(_s) if g_struct_ctx[_s] else None
+                        # Horizont-Bänder: Scalp -> Intraday-, Swing -> Swing-Freigabe
+                        # (ohne zweite Freigabe identisch zum Klassen-Kontext)
+                        for _b in ("intraday", "swing"):
+                            _bc = await structural_regime.resolve_if_released(_s, _b) if g_struct_ctx[_s] else None
+                            g_struct_ctx[(_s, _b)] = _bc
+                            g_struct_art[(_s, _b)] = await structural_regime.artifact(_s, _b) if _bc else None
                     except Exception:
                         g_struct_ctx[_s], g_struct_art[_s] = None, None
                 g_prompt = (
@@ -1793,9 +1799,12 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                             playbook_version=_pol_playbook, model=model_used,
                             gate_version=_pol_gate_v, sizing_h=_pol_sizing,
                             policy_config_h=_pol_cfg,
-                            regime_artifact=g_struct_art.get(sym)),
+                            regime_artifact=(g_struct_art.get((sym, "swing" if horizon == "swing" else "intraday"))
+                                             or g_struct_art.get(sym))),
                         "entry_market_snapshot": _with_structural(
-                            _observer.entry_snapshot(sym), g_struct_ctx.get(sym)),
+                            _observer.entry_snapshot(sym),
+                            g_struct_ctx.get((sym, "swing" if horizon == "swing" else "intraday"))
+                            or g_struct_ctx.get(sym)),
                         # Lektions-Bilanz Baustein A: additiv, leer wenn KI nichts liefert
                         **(lesson_attribution.attribution_fields(
                             d, _attr_lessons, setup_asset_class.asset_class_of(sym),

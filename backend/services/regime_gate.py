@@ -114,9 +114,10 @@ def gate_source(cfg: Dict) -> str:
     return "lab" if str(cfg.get("regime_gate_source") or "own").lower() == "lab" else "own"
 
 
-async def check_signal_allowed(cfg: Dict, symbol: str) -> Tuple[bool, str]:
+async def check_signal_allowed(cfg: Dict, symbol: str, horizon: Optional[str] = None) -> Tuple[bool, str]:
     """True = Trade erlaubt. Fail-open bei Fehlern (bestehendes Verhalten
-    darf durch den Filter nie durch einen Datenfehler ausgehebelt werden)."""
+    darf durch den Filter nie durch einen Datenfehler ausgehebelt werden).
+    `horizon` (scalp|swing) wählt bei Quelle Lab die Freigabe des Horizont-Bands."""
     if not cfg.get("regime_filter_enabled"):
         return True, ""
     blocked = blocked_phases(cfg)
@@ -126,8 +127,9 @@ async def check_signal_allowed(cfg: Dict, symbol: str) -> Tuple[bool, str]:
         # PLAN_REGIME_BRUECKE 2.2: Quelle = freigegebene Lab-Analyse (Stufe active).
         # unknown/stale/keine Freigabe -> fail-open wie heute.
         try:
-            from services import structural_regime
-            ph = await structural_regime.phase(symbol)
+            from services import structural_regime, regime_release
+            ph = (await structural_regime.phase(symbol, regime_release.band_of_horizon(horizon))
+                  if horizon else await structural_regime.phase(symbol))
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Regime-Gate {symbol}: Lab-Quelle fehlgeschlagen ({e}) – Trade erlaubt")
             return True, ""
