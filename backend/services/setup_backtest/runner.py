@@ -49,7 +49,7 @@ MAX_DAYS = 365
 SETUP_FREQ_30D: Dict[str, float] = {
     "breakout": 2.0, "squeeze_breakout": 1.5, "range_fade": 2.0, "mean_reversion": 2.5,
     "htf_range": 1.5, "session_open": 3.0, "trend_follow": 2.0, "trend_follow2": 2.0,
-    "pullback": 2.0, "divergence": 2.0,
+    "pullback": 2.0, "divergence": 2.0, "vwap_reclaim": 3.0,
 }
 MIN_TRADES_SHARE = 0.4
 MIN_TRADES_CAP = (60, 40)    # (IS, OOS)

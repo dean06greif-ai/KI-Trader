@@ -136,6 +136,9 @@ INSTRUMENTS: List[Instrument] = [
     _crypto("AVAXUSDT", "Avalanche"),
     _crypto("DOTUSDT", "Polkadot"),
     _crypto("POLUSDT", "Polygon"),
+    # Zusätzliche Coins 09/2026 (liquide Binance-Spot-/Bitunix-Perps)
+    _crypto("LINKUSDT", "Chainlink"),
+    _crypto("SUIUSDT", "Sui"),
     # Hyperliquid: nicht auf Binance-Spot gelistet -> Kurse & Historie von Bitunix
     Instrument(symbol="HYPEUSDT", name="Hyperliquid", group=GROUP_CRYPTO,
                bitunix="HYPEUSDT", live_source="bitunix", live_ref="HYPEUSDT",

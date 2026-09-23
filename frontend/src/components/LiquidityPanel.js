@@ -111,7 +111,7 @@ const LiquidityPanel = ({ symbol = 'BTCUSDT', onClose }) => {
         <div className="liq-controls">
           <select value={sym} onChange={e => setSym(e.target.value)} data-testid="liquidity-symbol-select">
             {['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT',
-              'DOGEUSDT', 'AVAXUSDT', 'DOTUSDT', 'POLUSDT'].map(s => (
+              'DOGEUSDT', 'AVAXUSDT', 'DOTUSDT', 'POLUSDT', 'LINKUSDT', 'SUIUSDT'].map(s => (
               <option key={s} value={s}>{s.replace('USDT', '')}</option>
             ))}
           </select>

@@ -91,7 +91,7 @@ export const SetupMaturityTable = ({ rows, showAssets, diagnosis, mode = 'live' 
         <th style={{ padding: '3px 6px' }}>Urteil</th>
         {showAssets && <th style={{ padding: '3px 6px' }} title="Backtest-Seeding (Out-of-Sample): Trades · Winrate · gewichteter Anteil fürs Reife-Gate">BT</th>}
         <th style={{ padding: '3px 6px' }} title="Aktives Parameter-Profil (Version · SL % · TP-Ratio · TF · max. Hebel)">Profil</th>
-        {showAssets && <th style={{ padding: '3px 6px' }} title="Kapital-Zuweisung je Asset: ×0.5 = reduziert, ⏸ = Live ausgesetzt (nur Paper)">Assets</th>}
+        {showAssets && <th style={{ padding: '3px 6px' }} title="Kapital-Zuweisung je Asset (schrittweise): ×0.75 / ×0.5 / ×0.25 = gedrosselt, ⏸ = Live ausgesetzt (nur Paper)">Assets</th>}
         <th style={{ padding: '3px 0 3px 6px' }}>Phase</th>
       </tr>
     </thead>

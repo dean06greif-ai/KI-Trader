@@ -81,6 +81,9 @@ SETUPS: Dict[str, str] = {
     "funding_fade": "Funding-Fade: extreme Funding (FUNDING-FADE-RADAR) GEGEN die Crowd, Entry erst nach 15m-Strukturbruch, SL hinter Extrem, konservativ.",
     "session_open": "Session-Open: Opening-Range London/US (SESSION-OPEN-Block) – Vol hoch: Range-BREAKOUT (SL Range-Mitte), Vol niedrig: FADE des Fehlausbruchs.",
     "divergence": "Divergenz: RSI/Preis-Divergenz am Extrem, Entry nach Bestätigungskerze gegen den erschöpften Move, SL hinter Extrem, enges Ziel.",
+    "vwap_reclaim": ("VWAP-Reclaim-Scalp (5m): Kurs rückerobert (verliert) den Tages-VWAP nach mehreren Kerzen "
+                     "auf der Gegenseite, mit Volumen; Entry nahe VWAP, nie gegen den 1h-Trend, SL unter "
+                     "Swing-Tief/VWAP, Ziel 2R."),
     # FOMC-Event (services/fomc_event.py): nur im Event-Fenster handelbar,
     # Live-Freischaltung per Backtest-Validierung + Trader-Opt-in.
     "fomc_event": ("FOMC-Event (nur im Event-Fenster um den Zinsentscheid): Whipsaw-FADE des "
@@ -116,6 +119,7 @@ _ALIASES = (
     ("funding", "funding_fade"), ("session", "session_open"),
     ("opening", "session_open"), ("orb", "session_open"),
     ("diverg", "divergence"),
+    ("vwap", "vwap_reclaim"), ("reclaim", "vwap_reclaim"),
     ("hedge", "hedge"), ("sweep", "liquidity_sweep"), ("ict", "liquidity_sweep"),
     ("order_block", "order_block"), ("orderblock", "order_block"), ("block", "order_block"),
     ("fvg", "fvg_fill"), ("imbalance", "fvg_fill"), ("fair_value", "fvg_fill"), ("gap", "fvg_fill"),
@@ -1038,7 +1042,15 @@ async def _refresh_scope(db, scope: Dict, library: Dict[str, str], cls: str) -> 
                                "pnl": st.get("pnl", 0), "verdict": st.get("verdict")})
             logger.info(f"Playbook[{label}]: Setup '{sid}' live-freigeschaltet "
                         f"({st.get('trades', 0)} Trades, WR {wr}%)")
+    asset_state, asset_events = setup_capital.track_asset_changes(
+        scope.get("asset_state"), per_symbol, scope.get("asset_events"), now.isoformat())
+    if asset_state != (scope.get("asset_state") or {}):
+        changed = True
+        for ev in asset_events[-3:]:
+            if ev["at"] == now.isoformat() and ev["to"] <= 0:
+                logger.info(f"Playbook[{label}]: {ev['setup']} × {ev['symbol']} live ausgesetzt – {ev['note']}")
     new_scope = {**scope, "live_blocked": live_blocked, "live_ready": ready_now,
+                 "asset_state": asset_state, "asset_events": asset_events,
                  "live_since": live_since, "eval_since": eval_since,
                  "bt_validated": bt_validated,
                  "inactive": inactive, "first_seen": first_seen,
@@ -1563,6 +1575,7 @@ async def _status_uncached(db) -> Dict:
             "lifecycle": cd.get(lifecycle.STATE_KEY) or {},
             "backtest": cd.get("backtest") or {},
             "bt_promoted": cd.get("bt_promoted") or {},
+            "asset_events": list(reversed(cd.get("asset_events") or []))[:30],
             "maturity": maturity_overview(
                 cd["stats"], {}, cd["live_blocked"], cd["live_stats"],
                 cd.get(lifecycle.STATE_KEY), cd["judge_stats"], asset_class=cls,

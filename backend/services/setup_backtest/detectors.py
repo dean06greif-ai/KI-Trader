@@ -54,6 +54,29 @@ def _shift(arr: np.ndarray, k: int) -> np.ndarray:
     return out
 
 
+def session_vwap(c: CandleArray):
+    """Tages-VWAP (Reset 00:00 UTC) und Kerzen-Nr. seit Tagesbeginn (rein, ohne Look-Ahead:
+    nur Kerzen bis einschließlich der aktuellen). Ohne Volumen (Forex/Yahoo) -> NaN."""
+    n = len(c)
+    if not n:
+        return np.full(0, np.nan), np.zeros(0, dtype=int)
+    day = (np.asarray(c.ts, dtype=np.int64) // 86_400_000)
+    brk = np.r_[True, day[1:] != day[:-1]]
+    starts = np.flatnonzero(brk)
+    seg = np.cumsum(brk) - 1
+    vol = np.nan_to_num(np.asarray(c.vol, dtype=float))
+    cpv = np.cumsum((c.hi + c.lo + c.cl) / 3.0 * vol)
+    cv = np.cumsum(vol)
+    base_pv = np.r_[0.0, cpv][starts][seg]
+    base_v = np.r_[0.0, cv][starts][seg]
+    den = cv - base_v
+    with np.errstate(invalid="ignore", divide="ignore"):
+        vw = np.where(den > 0, (cpv - base_pv) / den, np.nan)
+    if int(c.ts[0]) % 86_400_000 >= 5 * 60_000:
+        vw[seg == 0] = np.nan   # erster Tag nur angeschnitten -> VWAP nicht tagesverankert
+    return vw, np.arange(n) - starts[seg]
+
+
 class Features:
     """Indikatoren auf 5m + zugeordnete GESCHLOSSENE 15m/1h-Kerzen.
 
@@ -91,6 +114,7 @@ class Features:
         self.i15 = np.searchsorted(self.c15.ts, close_ts - M15, side="right") - 1
         self.i60 = np.searchsorted(self.c60.ts, close_ts - H1, side="right") - 1
         self._berlin: Optional[List[datetime]] = None
+        self.vwap, self.session_bar = session_vwap(c)
         atr_med = _roll(np.nanmedian, np.nan_to_num(self.atr, nan=0.0), 288)
         self.active = (~np.isnan(self.atr)) & (self.atr > 0) \
             & (np.isnan(atr_med) | (self.atr >= ATR_FLOOR * atr_med))
@@ -452,6 +476,38 @@ def detect_divergence(f: Features, p: Dict) -> List[Signal]:
     return out
 
 
+def detect_vwap_reclaim(f: Features, p: Dict) -> List[Signal]:
+    """VWAP-Reclaim-Scalp: mind. `below_bars` Schlusskurse unter (über) dem Tages-VWAP,
+    dann Rückeroberung (Verlust) mit Körper >= body_atr·ATR und Volumen >= vol_mult·Ø20,
+    nicht weiter als max_ext_atr·ATR vom VWAP (kein Hinterherlaufen), nie gegen den
+    1h-Trend. SL unter dem Tief der letzten sl_lookback Kerzen bzw. dem VWAP."""
+    c, vw, k = f.c5, f.vwap, int(p["below_bars"])
+    min_bars, sl_n = int(p.get("min_session_bars", 12)), int(p["sl_lookback"])
+    out = []
+    for i in range(max(k, sl_n) + 1, f.n):
+        if not f.ok(i) or np.isnan(vw[i]) or np.isnan(f.vol_avg[i]) or f.session_bar[i] < min_bars:
+            continue
+        atr = float(f.atr[i])
+        if abs(c.cl[i] - c.op[i]) < p["body_atr"] * atr or c.vol[i] < p["vol_mult"] * f.vol_avg[i]:
+            continue
+        prev_cl, prev_vw = c.cl[i - k:i], vw[i - k:i]
+        if np.isnan(prev_vw).any():
+            continue
+        tr = int(f.trend60[f.i60[i]]) if f.i60[i] >= 0 else 0
+        entry = float(c.cl[i])
+        if (prev_cl < prev_vw).all() and entry > vw[i] and entry - vw[i] <= p["max_ext_atr"] * atr and tr >= 0:
+            sl = min(float(c.lo[i - sl_n:i + 1].min()), float(vw[i])) - p["sl_atr"] * atr
+            if entry - sl > 0:
+                _, tp1, tpf = _levels("LONG", entry, entry - sl, p["tp_r"], p.get("tp1_r", 1.0))
+                out.append(Signal(i, "LONG", entry, sl, tp1, tpf, "VWAP-Rückeroberung"))
+        elif (prev_cl > prev_vw).all() and entry < vw[i] and vw[i] - entry <= p["max_ext_atr"] * atr and tr <= 0:
+            sl = max(float(c.hi[i - sl_n:i + 1].max()), float(vw[i])) + p["sl_atr"] * atr
+            if sl - entry > 0:
+                _, tp1, tpf = _levels("SHORT", entry, sl - entry, p["tp_r"], p.get("tp1_r", 1.0))
+                out.append(Signal(i, "SHORT", entry, sl, tp1, tpf, "VWAP-Verlust"))
+    return out
+
+
 # --------------------------------------------------------------------------
 # Registry: Detektor + Varianten je Setup (Reihenfolge = Test-Reihenfolge)
 # --------------------------------------------------------------------------
@@ -466,6 +522,7 @@ DETECTORS: Dict[str, Callable[[Features, Dict], List[Signal]]] = {
     "trend_follow2": detect_trend_follow2,
     "pullback": detect_pullback,
     "divergence": detect_divergence,
+    "vwap_reclaim": detect_vwap_reclaim,
 }
 
 VARIANTS: Dict[str, List[Dict]] = {
@@ -519,6 +576,14 @@ VARIANTS: Dict[str, List[Dict]] = {
         {"name": "standard", "lookback": 30, "rsi_gap": 3.0, "tp_r": 1.5},
         {"name": "konservativ", "lookback": 40, "rsi_gap": 5.0, "tp_r": 1.2},
         {"name": "aggressiv", "lookback": 24, "rsi_gap": 2.0, "tp_r": 2.0},
+    ],
+    "vwap_reclaim": [
+        {"name": "standard", "below_bars": 3, "vol_mult": 1.2, "body_atr": 0.3, "max_ext_atr": 0.6,
+         "sl_lookback": 6, "sl_atr": 0.2, "tp_r": 2.0},
+        {"name": "konservativ", "below_bars": 4, "vol_mult": 1.5, "body_atr": 0.4, "max_ext_atr": 0.5,
+         "sl_lookback": 8, "sl_atr": 0.3, "tp_r": 1.5},
+        {"name": "aggressiv", "below_bars": 2, "vol_mult": 1.0, "body_atr": 0.2, "max_ext_atr": 0.8,
+         "sl_lookback": 5, "sl_atr": 0.15, "tp_r": 2.5},
     ],
 }
 
@@ -585,7 +650,10 @@ BASE_PARAM_HELP: Dict[str, str] = {
     "touch_atr": "Toleranz der Level-Berührung in ATR", "pivot_k": "Pivot-Stärke (Kerzen je Seite, 15m)",
     "rsi_gap": "Mindest-RSI-Differenz der Divergenz",
     "chg_pct": "Mindest-Preisänderung in % über lookback Kerzen (Impuls-Filter, TF2)",
-    "sl_lookback": "Struktur-SL: Tief/Hoch der letzten n 5m-Kerzen (TF2)",
+    "sl_lookback": "Struktur-SL: Tief/Hoch der letzten n 5m-Kerzen (TF2/VWAP)",
+    "below_bars": "VWAP: mind. n Schlusskurse auf der anderen VWAP-Seite vor der Rückeroberung",
+    "body_atr": "Mindest-Kerzenkörper der Signalkerze in ATR",
+    "max_ext_atr": "VWAP: max. Abstand Entry–VWAP in ATR (kein Hinterherlaufen)",
 }
 
 

@@ -40,7 +40,7 @@ EXCLUDED: Dict[str, Set[str]] = {
     CRYPTO: set(),
     INDICES: {"funding_fade"},
     RESOURCES: {"funding_fade"},
-    FOREX: {"funding_fade"},
+    FOREX: {"funding_fade", "vwap_reclaim"},   # Yahoo-FX ohne Volumen -> kein VWAP
 }
 
 # Kompakte Klassen-Hinweise für den Prompt (bewusst 1 Zeile – Token-Budget).

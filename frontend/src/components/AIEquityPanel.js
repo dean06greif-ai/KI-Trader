@@ -1,4 +1,5 @@
 import { SetupMaturityTable, SetupClassTabs } from './SetupMaturityTable';
+import { AssetCapitalLog } from './AssetCapitalLog';
 import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowsClockwise, ChartLineUp, ShieldCheck } from '@phosphor-icons/react';
 
@@ -165,7 +166,7 @@ export const AIEquityPanel = () => {
         Pro Setup wird ein Parameter-Profil (SL / TP-Ratio / TF / Hebel) versioniert – mit Auto-Rollback auf die beste Version.
         Von der KI entdeckte Setups (Badge „KI") starten immer im Shadow-Test.
         <b> Seit 06/2026 gilt der gesamte Lebenszyklus je Anlageklasse</b> (Krypto / Indizes / Rohstoffe / Forex):
-        das Kapital je Setup × Asset wird automatisch nach Historie skaliert (×0.5 = reduziert, ⏸ = Live ausgesetzt, nur Paper) –
+        das Kapital je Setup × Asset wird automatisch nach Historie schrittweise skaliert (×0.75 → ×0.5 → ×0.25, ⏸ = Live ausgesetzt, nur Paper) –
         ein einzelnes schlechtes Asset stuft das Setup nicht zurück (erst ab ⅓ der Assets negativ). Rückgestufte Setups darf die KI
         pro Klasse überarbeiten (Badge „Rev.“) – die Validierung startet dann neu.
         {pbClass !== 'all' && playbook?.classes?.[pbClass]?.excluded?.length > 0 && (
@@ -186,6 +187,9 @@ export const AIEquityPanel = () => {
       )}
       {Array.isArray(maturity) && maturity.length > 0 && (
         <SetupMaturityTable rows={maturity} showAssets={pbClass !== 'all'} mode={maturityMode} diagnosis={pbClass !== 'all' ? playbook?.classes?.[pbClass]?.diagnosis : null} />
+      )}
+      {pbClass !== 'all' && playbook?.classes?.[pbClass] && (
+        <AssetCapitalLog events={playbook.classes[pbClass].asset_events} />
       )}
     </div>
   );

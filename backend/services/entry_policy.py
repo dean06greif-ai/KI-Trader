@@ -28,6 +28,7 @@ SETUP_STYLE: Dict[str, str] = {
     "pullback": "level", "liquidity_sweep": "level", "mean_reversion": "level",
     "breakout": "confirm", "squeeze_breakout": "confirm", "momentum_news": "confirm",
     "trend_follow2": "confirm", "session_open": "confirm", "divergence": "confirm",
+    "vwap_reclaim": "confirm",
     "funding_fade": "confirm", "fomc_event": "confirm", "cpi_event": "confirm",
     "nfp_event": "confirm", "ppi_event": "confirm", "pce_event": "confirm",
     "trend_follow": "either", "swing_trend": "either", "hedge": "either",

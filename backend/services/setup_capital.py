@@ -9,8 +9,8 @@ bitunix_trade / limit_live_sync / position_sizing wie ml_risk_scale wirkt:
   2. Setup-Qualität auf DIESEM Asset       (Setup × Symbol)
   3. Einstiegsqualität                     (Konfidenz, ML-Gate-Wahrscheinlichkeit)
 
-Eskalation bei einem Asset, das ein Setup "ins Minus zieht": erst Kapital
-reduzieren (Faktor 0.5), als letzte Instanz Live-Trades für genau dieses
+Eskalation bei einem Asset, das ein Setup "ins Minus zieht": Kapital
+schrittweise reduzieren (0.75 -> 0.5 -> 0.25), als letzte Instanz Live-Trades für genau dieses
 Setup × Asset AUSSETZEN (Faktor 0 -> der Trade läuft nur noch als Paper-
 Datensammlung weiter). Das Setup selbst wird in der Klasse erst dann zurück-
 gestuft, wenn das Gesamtbild schlecht ist (setup_lifecycle.breadth_ok:
@@ -21,12 +21,19 @@ from typing import Dict, Optional, Tuple
 # Setup-Faktor nach Urteil (ai_playbook.verdict_for)
 SETUP_FACTOR = {"bewährt": 1.0, "neutral": 0.85, "test": 0.6, "schwach": 0.5,
                 "backtest": 0.4}   # per Backtest-Seeding freigeschaltet: kleiner Live-Antest
-# Asset-Ebene (Setup × Symbol)
+# Asset-Ebene (Setup × Symbol) – schrittweise Drosselung statt Setup-Rückstufung:
+# ok 1.0 -> leicht 0.75 -> 0.5 -> 0.25 -> ausgesetzt 0 (nur noch Paper)
 ASSET_MIN_TRADES = 4          # darunter: keine Aussage -> Faktor 1.0
-ASSET_REDUCE_FACTOR = 0.5     # PnL < 0 und WR < 45 % -> Kapital halbieren
+ASSET_REDUCE_FACTOR = 0.5     # (Alt-Konstante, UI/API) mittlere Stufe
+ASSET_STEPS = (               # (Faktor, max. Winrate, max. PnL-% der Margin) – erste passende Stufe
+    (0.25, 36.0, -3.0),
+    (0.5, 42.0, -1.5),
+    (0.75, 50.0, -0.5),
+)
 ASSET_SUSPEND_TRADES = 6      # ab hier darf ausgesetzt werden ...
 ASSET_SUSPEND_WINRATE = 30.0  # ... bei WR <= 30 % ODER
 ASSET_SUSPEND_PNL_PCT = -5.0  # ... PnL <= -5 % der eingesetzten Margin
+ASSET_EVENTS_MAX = 80         # Verlauf der Stufenwechsel je Klasse
 # Einstiegsqualität
 ENTRY_FLOOR = 0.7             # Konfidenz = min_confidence -> 0.7, 100 -> 1.0
 SCALE_FLOOR = 0.25            # Untergrenze, sofern nicht ausgesetzt
@@ -49,8 +56,8 @@ def setup_factor(stats: Optional[Dict]) -> Tuple[float, str]:
 
 
 def asset_factor(stats: Optional[Dict]) -> Tuple[float, str]:
-    """Faktor aus Setup × Symbol: 1.0 (ok/keine Daten), 0.5 (reduziert),
-    0.0 (ausgesetzt)."""
+    """Faktor aus Setup × Symbol (rein): 1.0 ok/keine Daten, dann schrittweise
+    0.75 / 0.5 / 0.25 je nach Winrate bzw. PnL-% der Margin, 0.0 = ausgesetzt."""
     n = int((stats or {}).get("trades") or 0)
     if n < ASSET_MIN_TRADES:
         return 1.0, "Asset: zu wenig Daten für Setup × Asset"
@@ -63,9 +70,38 @@ def asset_factor(stats: Optional[Dict]) -> Tuple[float, str]:
             or (pnl_pct is not None and pnl_pct <= ASSET_SUSPEND_PNL_PCT)):
         pct = f", {pnl_pct:+.1f}% der Margin" if pnl_pct is not None else ""
         return 0.0, f"Asset AUSGESETZT: {n} Trades, WR {wr:.0f}%, PnL {pnl:+.2f}{pct}"
-    if pnl < 0 and wr < 45:
-        return ASSET_REDUCE_FACTOR, f"Asset reduziert: {n} Trades, WR {wr:.0f}%, PnL {pnl:+.2f}"
+    if pnl < 0:
+        for factor, wr_max, pct_max in ASSET_STEPS:
+            if wr < wr_max or (pnl_pct is not None and pnl_pct <= pct_max):
+                label = "leicht reduziert" if factor >= 0.75 else "reduziert"
+                return factor, f"Asset {label} ×{factor}: {n} Trades, WR {wr:.0f}%, PnL {pnl:+.2f}"
     return 1.0, f"Asset ok: {n} Trades, WR {wr:.0f}%, PnL {pnl:+.2f}"
+
+
+def track_asset_changes(prev: Optional[Dict[str, float]], per_symbol: Optional[Dict[str, Dict[str, Dict]]],
+                        events: Optional[list], now_iso: str) -> Tuple[Dict[str, float], list]:
+    """Stufenwechsel je Setup × Asset protokollieren (rein). `prev`/Rückgabe
+    speichern nur gedrosselte Paare (Faktor < 1); fehlend = 1.0."""
+    prev = dict(prev or {})
+    events = list(events or [])
+    state: Dict[str, float] = {}
+    notes: Dict[str, str] = {}
+    for sid, syms in (per_symbol or {}).items():
+        for sym, st in (syms or {}).items():
+            f, note = asset_factor(st)
+            key = f"{sid}|{sym}"
+            notes[key] = note
+            if f < 1.0:
+                state[key] = f
+    for key in sorted(set(prev) | set(state)):
+        old, new = float(prev.get(key, 1.0)), float(state.get(key, 1.0))
+        if old == new:
+            continue
+        sid, _, sym = key.partition("|")
+        events.append({"at": now_iso, "setup": sid, "symbol": sym, "from": old, "to": new,
+                       "direction": "down" if new < old else "up",
+                       "note": notes.get(key) or "keine Trades mehr im Auswertungsfenster -> Faktor 1.0"})
+    return state, events[-ASSET_EVENTS_MAX:]
 
 
 def entry_factor(confidence, min_confidence, p_win: Optional[float] = None) -> Tuple[float, str]:
