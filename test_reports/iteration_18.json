@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 18: Verified Regime-Lab improvements (quality benchmark, autopilot phase bounds 5-15, shadow release override, worker persistence race, setup variant filtering). Backend unit tests: 59/59 passed (test_regime_improvements_2309b + test_variant_stats_market_hours_backupkeys + test_regime_release + test_worker_reconnect_and_regime_autopilot + test_regime_pruefung_2309). Live backend API checks against preview URL: GET /api/regime-lab/releases returns activation.min_trades=30 as expected; GET /api/regime-lab/nonexistent/release-check -> 404 with 'Regime-Analyse nicht gefunden'; POST /api/regime-lab/nonexistent/release without reason -> 400 'reason (kurz) ist Pflicht'; POST with reason -> 404. GET /api/ai/playbook -> 200 with 22 maturity rows incl. momentum_news. Frontend: Admin-Login via data-testid=admin-lock-button OK. Tools-Menu -> tools-menu-regime-lab opens Regime-Lab modal. Autopilot inputs verified: autopilot-min-phase default=5, autopilot-max-phase default=15. Comma-decimal one-fraction formatting for -pct verified in code: RegimeJobProgress.js line 222 uses (progress).toFixed(1).replace('.', ','). regime-quality-benchmark data-testid exists in RegimeQualityCard.js (rendered only when a saved analysis with focus is loaded; local Mongo has 0 analyses so card not rendered - matches expected conditional render). SetupMaturityTable exposes ai-maturity-total-<setup> testid. No frontend runtime errors after login. Preexisting 'Failed to fetch'/401 console noise before login is cosmetic and out-of-scope. Local MongoDB (crypto_scanner_dev) intentionally empty; no seed created. Not testable in this env without seed: full release-check/override happy path on real aid, benchmark card render, maturity table with 0-trade momentum_news bug reproduction - all covered by unit tests instead.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_regime_improvements_2309b.py",
+    "/app/backend/tests/test_variant_stats_market_hours_backupkeys.py",
+    "/app/backend/tests/test_regime_release.py",
+    "/app/backend/tests/test_worker_reconnect_and_regime_autopilot.py",
+    "/app/backend/tests/test_regime_pruefung_2309.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "RegimeJobProgress.js pct formatting is centralized/correct (toFixed(1).replace('.', ',')). If additional job progress indicators are added elsewhere, ensure same helper is reused to avoid drift.",
+    "regime-quality-benchmark render depends on focus being present - a small UX improvement could show a subtle 'Benchmark verfuegbar sobald Analyse geladen' hint on empty state (non-blocking).",
+    "In routers/regime_lab.py the order 'reason required' check happens before aid existence check causing 400 before 404 on nonexistent aid without reason - acceptable but inconsistent; consider validating aid first."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (via POST /api/auth/login {username,password} -> Bearer token). No /app/memory/test_credentials.md file exists (used credentials from review_request).",
+  "seed_data_creation": "None - strict read-only against local Mongo which is intentionally empty. Unit tests provide the persistence-dependent coverage.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Local Mongo crypto_scanner_dev has 0 regime analyses and 0 trades, so UI paths that require a persisted analysis (RegimeReleaseOverride card, regime-quality-benchmark render, SetupMaturityTable with real variant filtering) cannot be exercised end-to-end in this env - relevant logic is covered by the 59 unit tests. If seed is needed later, use the Regime-Lab modal 'Regime suchen & speichern' with a small (e.g. BTC 15m 60d) job; note market data calls can be slow because no exchange keys are set. Header testids to reach Regime-Lab: admin-lock-button -> input[placeholder='Passwort'] -> Anmelden -> tools-menu-button -> tools-menu-regime-lab.",
+  "rca of the issue": "N/A - no bugs found. All acceptance criteria for iter18 Regime-Lab improvements verified via unit tests + live API smoke + UI structural check."
+}
