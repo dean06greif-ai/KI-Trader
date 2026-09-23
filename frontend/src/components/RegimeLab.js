@@ -788,6 +788,24 @@ export default function RegimeLab({ onClose }) {
     setCalibAppliedRaw(next);
   }, []);
   const [execution, setExecution] = useState(saved.execution || 'cloud');
+  // Kalibrierung JE TIMEFRAME: aktive Engine-Einstellungen + Kalibrierung werden
+  // pro Zeitfenster gemerkt (Slots) – 1d und 4h stehen parallel bereit und
+  // überschreiben sich beim Timeframe-Wechsel nicht mehr gegenseitig.
+  const [tfSlots, setTfSlots] = useState(saved.tfSlots || {});
+  const prevTfRef = useRef(saved.timeframe || '15m');
+  useEffect(() => {
+    const prev = prevTfRef.current;
+    if (prev === timeframe) return;
+    prevTfRef.current = timeframe;
+    setTfSlots(s => {
+      const next = { ...s, [prev]: { engineConfig, calibApplied } };
+      const slot = next[timeframe];
+      setEngineConfig(slot?.engineConfig || {});
+      setCalibAppliedRaw(slot?.calibApplied || null);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeframe]);
   const [lwOnline, setLwOnline] = useState(false);
   const [showLW, setShowLW] = useState(false);
   const [name, setName] = useState('');
@@ -818,10 +836,11 @@ export default function RegimeLab({ onClose }) {
       localStorage.setItem(STATE_KEY, JSON.stringify({
         selCoins, timeframe, days, scope, maxRegimes, lookback, minShare, confMin, minHold, trainPct, execution,
         engine, engineConfig, calibApplied,
+        tfSlots: { ...tfSlots, [timeframe]: { engineConfig, calibApplied } },
       }));
     } catch { /* quota */ }
   }, [selCoins, timeframe, days, scope, maxRegimes, lookback, minShare, confMin, minHold, trainPct, execution,
-    engine, engineConfig, calibApplied]);
+    engine, engineConfig, calibApplied, tfSlots]);
 
   const loadList = useCallback(() => {
     fetch(`${API_URL}/api/regime-lab/list`).then(r => r.json())
