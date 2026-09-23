@@ -25,7 +25,7 @@ export const SetupUsagePanel = () => {
           <div className="setup-usage-head">
             <span>Entscheidungen der KI → ausgelöst → Trades (Echtgeld / Paper / Sammlung) · häufigste Blockgründe</span>
             <select value={days} onChange={e => setDays(Number(e.target.value))} data-testid="setup-usage-days">
-              {[7, 14, 30].map(d => <option key={d} value={d}>{d} Tage</option>)}
+              {[7, 14, 30].map(d => <option key={d} value={d}>{`${d} Tage`}</option>)}
             </select>
           </div>
           {!data && <div className="setup-usage-empty">Lade…</div>}

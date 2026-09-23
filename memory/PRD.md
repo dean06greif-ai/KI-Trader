@@ -1,3 +1,26 @@
+# PRD – KI-Trader Verbesserungen (Session 06/2026, Branch conflict_230926_1748)
+
+## Ausgangslage
+Produktive, extern auf Render deployte Daytrading-App (FastAPI + React + MongoDB). Repo 1:1 nach /app geklont (Struktur unverändert). Preview nur gegen lokale MongoDB (crypto_scanner_dev); Prod-DB ausschließlich lesend für Diagnose (scripts/prod_*_probe.py).
+
+## Umgesetzt (2026-09-23, Session E1 – Teil 4)
+- VWAP im Prompt: services/vwap_context.py – je Asset Tages-VWAP-Abstand (% + ATR5m), 5m-Seitenwechsel, „frischer VWAP-RECLAIM/-VERLUST“ bzw. „überdehnt“; Regel im Systemprompt (full + lean); vwap_reclaim-Beschreibung gekürzt
+- KI-eigene Setups: Setup-Enum im Prompt-Schema jetzt dynamisch inkl. custom Setups (vorher statisch -> 0 Entscheidungen für KI-Setups)
+- Setup-Diagnose (Prod read-only): Hauptblocker Richtungs-Guard (globale Zählung über alle Klassen) + stiller Sammel-Cooldown -> Sammel-Richtungslimit je Anlageklasse, Sammel-Cooldown je Symbol×Setup, Cooldown-Gründe protokolliert; neuer Setup-Trichter (GET /api/ai/setup-usage + SetupUsagePanel im Verlauf)
+- Verlauf: Echtgeld / Paper / Live-Logik gesamt / Sammlung getrennt (equity-curve modes real|paper|live|collection + breakdown), Setup-Reife-Spalte je Welt (paper_*/coll_*), Bugfix globale Tabelle Sammel-Spalte leer bei Varianten
+- Mindest-Trade (nur Echtgeld-Live, Bitunix): services/min_trade.py – statt Ablehnung an Kapital-Grenze/Risikobudget kleinste handelbare Position (Ziel-Marge 1 USDT, min. Börsen-Minimum, Risiko <= 3 % Equity, max. 3 offen, echtes freies Guthaben); Paper/Sammel unverändert; Einstellungen im Kapital-Modal (Live); Trade-Flag min_trade
+- Telegram: Katalog NOTIFY_CATALOG (gruppiert, Unter-Schalter live/paper, Signale Scanner/KI, Order-Abbruch Börse vs. intern, Mindest-Trade, Confluence, bisher nicht abschaltbare Typen) + UI TelegramNotifySettings; Abbruch-Meldung unterscheidet „Interne Prüfung“ vs. „Bitunix hat abgelehnt“
+- Strategie-Optimizer: Ausreißer-Assets (services/optimizer_outliers.py, robuster z-Wert, max. ⅓, Rest profitabel) -> Option B „übernehmen & Asset AUS“ (apply exclude_symbols) oder „ohne Ausreißer neu optimieren“; Empfehlungs-Ampel je Top-Ergebnis (farbig statt dunkel-transparent); Score-Text statt -500000000; win_rate-Ziel bevorzugt nie Verlust-Kandidaten; Endlos-Suche: „positiv“ = Filter bestanden + echter Gewinn, Champion braucht Mindest-Test-Trades + Test-DD
+- Tests: tests/test_session_0626_improvements.py (17), backend/tests/test_iter21_session_0626.py (Testing-Agent, 11); zwei veraltete Tests an neues Verhalten angepasst
+- .gitignore: backend/.env, frontend/.env, yarn.lock (öffentliches Repo)
+
+## Backlog
+- P1: Portfolio-Drawdown (zeitlich kombiniert) statt Summe der Einzel-DDs im Optimizer (aktuell konservativ)
+- P1: Konfidenz-Kalibrierung (momentum_news meist 60 % < Live-Schwelle 65 %)
+- P2: Detektoren für KI-eigene Setups (derzeit nur LLM-Entscheidungen/Sammeltrades)
+- P2: Vorbestehende rote Tests: test_history_days_cap, TestNormalizeDefinition, test_resolve_forex_falls_back_to_yahoo_without_ibkr, ap13 Ablation
+
+---
 # PRD – KI-Trader Verbesserungen (23.09 / Session E1)
 
 ## Ausgangslage

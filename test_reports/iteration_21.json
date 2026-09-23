@@ -1,0 +1,25 @@
+{
+  "summary": "Session_0626 improvements (iteration 21) end-to-end tested. Backend: 17/17 pre-existing unit tests pass (tests/test_session_0626_improvements.py) + 11/11 new integration tests pass (backend/tests/test_iter21_session_0626.py). Verified GET /api/telegram/notify-catalog contains required groups (Signale, Trades, Risiko, KI, Labor) and keys signals_ai/trade_opened_live/trade_opened_paper/order_rejected_internal/min_trade; POST /api/telegram/notify-config persists trade_opened_paper=false and can be restored. GET/POST /api/min-trade/config returns nested {config:{enabled,target_margin_usdt,max_risk_pct,max_open,paper_fallback_if_impossible}} for admin; unauthenticated call returns 401. GET /api/ai/equity-curve?mode=real|paper|live|collection returns correct summary+points+breakdown with exactly the expected counts: real 35, paper 35, collection 341, and mode=live sums to 70 (=real+paper). GET /api/ai/playbook exposes paper_trades/paper_winrate/paper_pnl and coll_trades/coll_winrate/coll_pnl. GET /api/ai/setup-usage?days=14 returns rows with all required fields (setup, decisions, signaled, low_conf, trades_real, trades_paper, trades_collection, top_reasons, never_chosen, custom). Frontend (React, DE UI): admin_token injection worked, KI Trader strategy tab -> edit-strategy-params -> Verlauf toggle shown; all four mode buttons (real/paper/live/collection) toggle equity curve, three breakdown cards render with correct values (Echtgeld -8.86$/35 · 34.3%, Paper -475.56$/35 · 14.3%, Sammlung -1785.81$/341 · 41.3%), clicking a breakdown card switches active mode (ai-action-btn active class). Maturity mode tabs switch header text to Echtgeld/Paper/Sammlung. Setup-Nutzung toggle reveals setup-usage-table. Settings gear (data-testid=settings-button) -> Telegram tab shows telegram-notify-groups; unchecking notify-toggle-trade_opened disables notify-toggle-trade_opened_live sub-toggle; 5 'alle an' and 5 'alle aus' group buttons rendered. Capital modal opens via [data-testid=live-overlay] in header, shows min-trade-settings with min-trade-enabled checkbox and inputs; changing max_risk_pct 2.5 -> 3.7 persists across modal close/reopen (restored to 2.5). Optimizer live run was optional and skipped (unit tests for outlier variant, score_text, recommendations, win_rate objective, DD-Filter and deep_explore all pass).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/tests/test_session_0626_improvements.py",
+    "/app/backend/tests/test_iter21_session_0626.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Non-blocking: React hydration warning during setup-usage-panel select (a <span> is being rendered inside <option> in SetupUsagePanel.js line 28). It doesn't break functionality but pollutes console – consider rendering plain text child in the option to satisfy HTML nesting rules.",
+    "Task spec described /api/min-trade/config as returning a flat object, actual shape is {config: {...}, open_live_min_trades: N}. Consistent with existing usage but worth documenting.",
+    "notify-catalog endpoint occasionally slow (~15-30s cold response through Cloudflare); default 15s timeouts elsewhere may be flaky – consider warm-up or shorter server-side computation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter21_session_0626.py (new)"
+  ],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "100% (all required flows)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin via POST /api/auth/login (token stored in localStorage as admin_token + admin_token_ts).",
+  "seed_data_creation": "None – local crypto_scanner_dev already contains 35 real / 35 paper / 341 collection closed AI trades as expected.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration-21 fully green. Capital modal is opened via [data-testid=live-overlay] (LIVE chip). Settings gear testid is settings-button (not settings-btn). Telegram tab is button:has-text('Telegram') inside the settings dialog. Setup-usage table appears inside AITradingPanel -> Verlauf. Optimizer live-run test was NOT executed (optional, requires ~1-2 min & candles). If needed later, use mode=params, strategy=rsi_only, 6 coins, days=10, iterations=16, walk-forward single, DD-Filter ON – then assert [data-testid=opt-rec-0] and no raw negative score in phase.",
+  "rca of the issue": "N/A – all requested checks pass."
+}
