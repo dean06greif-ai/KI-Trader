@@ -14,6 +14,11 @@ Produktive, extern auf Render deployte Daytrading-App (FastAPI + React + MongoDB
 - Tests: tests/test_session_0626_improvements.py (17), backend/tests/test_iter21_session_0626.py (Testing-Agent, 11); zwei veraltete Tests an neues Verhalten angepasst
 - .gitignore: backend/.env, frontend/.env, yarn.lock (öffentliches Repo)
 
+## Umgesetzt (2026-09-23, Session E1 – Teil 5)
+- Mindest-Trade-Übersicht im Verlauf (GET /api/min-trade/stats, MinTradeOverview): Mindest-Trades vs. normale Live-Trades (WR, PnL, Ø, R-Multiple, Fees), Urteil ab 10 Trades, Tabelle mit Grund; Trade-Feld min_trade_note
+- Regime-Lab-Review: Befund Prod-Autopilot (15m/1080d/11 Coins, Min 1-3d, keine Obergrenze -> Ø Phase 21-29d, Score 98-99 % ohne Referenz = Selbst-Übereinstimmung). Neu: services/regime_advice.py (Eingabe-Hinweise + Ergebnis-Warnungen), GET /api/regime-lab/autopilot/advice, RegimeAutopilotAdvice mit „Sweet Spot 4–14 Tage übernehmen“, UI-Defaults 4/14
+- KI-Setup-Review (nur Analyse, Prod read-only): SL-Abstand < 0,4 % = WR 24 % & Hauptverlust; Gebühren > Nettoverlust in Sammlung; Empfehlungen an Nutzer (Fee-Wächter strenger, Richtungs-Limit, CRV)
+
 ## Backlog
 - P1: Portfolio-Drawdown (zeitlich kombiniert) statt Summe der Einzel-DDs im Optimizer (aktuell konservativ)
 - P1: Konfidenz-Kalibrierung (momentum_news meist 60 % < Live-Schwelle 65 %)
