@@ -3,6 +3,11 @@
 ## Ausgangslage
 Produktive, extern auf Render deployte Daytrading-App (FastAPI + React + MongoDB). Repo: dean06greif-ai/KI-Trader, Branch conflict_230926_1428, 1:1 nach /app geklont (Struktur unverändert). Lokale Tests nur gegen lokale MongoDB (crypto_scanner_dev). Einmalig: rein lesende Diagnose der Produktions-DB (vom Nutzer erlaubt).
 
+## Umgesetzt (2026-09-23, Teil 3)
+- LINKUSDT + SUIUSDT zentral in core/instruments.py (Scanner, Regime-Lab, Backtester, KI-Trader, Liquidity-Panel); KI-Trade-Modus je Coin standardmäßig „off“
+- Neues Setup vwap_reclaim (5m, Tages-VWAP, nie gegen 1h-Trend) mit Detektor → Backtests + automatische Detektor-Sammeltrades (Shadow); Forex ausgeschlossen
+- Kapital je Setup × Asset schrittweise gedrosselt (×0.75 → ×0.5 → ×0.25 → ausgesetzt), Stufenwechsel als Verlauf im AI-Trading-Panel (AssetCapitalLog)
+
 ## Umgesetzt (2026-09-23, Teil 2)
 - Regime je Horizont-Band: pro Anlageklasse bis zu 2 Freigaben (Intraday ≤1h für Scalps, Swing ≥2h für Swing-Trades), eine einzelne Freigabe gilt weiter für alles; Prompt, Gate „Lab“, Entry-Snapshot und Shadow-Nachweis (structural_aid) je Band
 - Telegram + Website-Glocke „Regime bereit für Wirksam“ (1× je Freigabe, Toggle regime_release_ready)
