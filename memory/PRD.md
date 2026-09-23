@@ -34,3 +34,20 @@ Produktions-DB: MongoDB Atlas (crypto_scanner), echte Keys (Bitunix, IBKR, LLM-P
 - P1: Aktive Kalibrierung pro Timeframe getrennt speichern (Slots statt Einzel-Slot)
 - P2: Sammlung-Trades optional im Chart anders markieren (eigene Marker-Farbe)
 - P2: Live-Gate-Status („warum live_blocked?") je Setup direkt im Signal-Panel anzeigen
+
+## Umgesetzt (23.09.2026) – Regime-Lab Prüfung (Branch-Basis `conflict_230926_0659`)
+Vollständiger Bericht: `/app/REGIME_LAB_PRUEFBERICHT_2309.md`.
+1. **P0 Brücke Lab→KI-Trader**: Struktur-Regime lief auf 30 Tagen Historie → bis 55 % andere Regime-IDs als im Lab
+   (echte BTC-Daten). Fix: `regime_engine.required_history_*`, `structural_regime` lädt Detektor-Warmup, `stale` bei zu
+   wenig Kerzen, Health-Check `structural_short_history`. Nachweis: 0 % Abweichung (ema), 3 % (reactive).
+2. **P1 Qualitätsmetrik**: „Live=Final“ ist Selbst-Übereinstimmung (EMA ~98 %), Referenz-Treffer real 51–70 %.
+   Neu `services/regime_reference.py`; `reference` je Symbol in neuen Analysen; Note durch Referenz gedeckelt;
+   EMA-Vergleich wählt nach Referenz (Kette). UI: `RegimeQualityCard`, `RegimeDetectorTools`, `RegimeBridgeHealth`.
+3. Tests: `backend/tests/test_regime_pruefung_2309.py` (13, unit) + `test_regime_readonly_iter17.py` (lesend, live).
+4. Preview läuft mit `AI_TRADER_LOCAL_DISABLE=1` gegen Produktiv-Atlas (keine Trades aus der Preview).
+
+## Backlog (priorisiert)
+- P1: Kombi-Kalibrierung + `_profile_quality` auf Referenz umstellen (Baustein `regime_reference`).
+- P1: Neue 1h-Analyse mit EMA-Vergleich 5/9/14/21 nach Referenz; erst dann Shadow-Freigabe.
+- P2: Brücke optional bis `bounds.start_ts` ankern (reactive 0 %); `regime_gate` Quelle `own` als Legacy kennzeichnen;
+  `per_coin` bei Engine v2 als redundant ausblenden; reaktiver Warmup (EMA-Anker/Vola) in den Lab-Labels maskieren.

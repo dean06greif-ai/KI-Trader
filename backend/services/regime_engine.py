@@ -708,7 +708,7 @@ def detector_warmup_bars(cfg: Dict) -> int:
         need.append(3 * int(cfg.get("ema_slow_bars") or 4))
     if mode == 9:
         # Vola-z braucht die volle Referenz PLUS eingeschwungene Vola-Glättung
-        need.append(int(cfg.get("vol_ref_bars") or 20) + 5 * int(cfg.get("vol_smooth_bars") or 1)
+        need.append(int(cfg.get("vol_ref_bars") or 20) + 3 * int(cfg.get("vol_smooth_bars") or 1)
                     + int(cfg.get("vol_window_bars") or 5))
     if mode == 5:
         need.append(2 * int((cfg.get("horizon_bars") or [7])[0]))
@@ -726,7 +726,7 @@ def required_history_bars(cfg: Dict, extra_days: float = 2.0) -> int:
     return int(detector_warmup_bars(cfg) + math.ceil(extra_days * bpd))
 
 
-def required_history_days(cfg: Dict, min_days: int = 30, max_days: int = 400) -> int:
+def required_history_days(cfg: Dict, min_days: int = 30, max_days: int = 600) -> int:
     """Tage Historie, die der KI-Trader für das Struktur-Regime laden muss."""
     if not cfg or not cfg.get("bars_per_day"):
         return int(min_days)

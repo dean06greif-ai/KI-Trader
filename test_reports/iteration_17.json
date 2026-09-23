@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 17: Read-only regression of Regime-Lab changes (Regime-Historien-Vertrag, Referenz-Qualität, structural_short_history Check) against LIVE preview (MongoDB Atlas). Backend: 5/5 read-only pytest tests passed (regime-lab/list, regime-lab/{aid} quality-Feldstruktur inkl. reference_* Felder & thresholds, cockpit/health mit 6 Checks inkl. structural_short_history, engine/defaults, autotrade/regime-phase). Unit-Tests test_regime_pruefung_2309.py 13/13 grün. Frontend: Admin-Login (via Header-Schloss) und Werkzeuge-Menue -> Regime-Lab funktionieren. Analyse ra_5c8e1115 (4/5 Regime Krypto 1h) rendert quality-card mit grade='GUT' und pct='97.7%'. regime-quality-reference-pct FEHLT wie erwartet (Bestandsanalyse ohne reference). Alle 4 neuen Metrik-Labels (Referenz-Treffer Holdout/gesamt, Referenz-Lag, Verpasste Phasen) sichtbar. EMA-Vergleich-Sektion mit periods-Input und run-Button vorhanden (nicht geklickt). Keine JS-Runtime-Errors beim Oeffnen. Strikt lesend getestet - keine Analyse-Jobs, keine Trades, keine POST/PUT/DELETE ausser Login.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "App-Start (nicht eingeloggt)", "issues": ["Mehrere 'Failed to fetch' und 401-Console-Errors durch fetchSession/fetchNotif-Polling bevor Admin eingeloggt ist - kein Blocker, aber Log-Rauschen"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_regime_readonly_iter17.py",
+    "/app/backend/tests/test_regime_pruefung_2309.py",
+    "/app/test_reports/pytest/iter17_readonly.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "regime-bridge-health data-testid war in Analyse-Detail-Ansicht dieser Bestandsanalyse nicht sichtbar (moeglicherweise nur bei Analysen mit strukturellem Regime-Anteil / Cockpit sichtbar) - kein Bug, im Auftrag als optional markiert",
+    "fetchSession/fetchNotif Requests laufen bereits vor Admin-Login und werfen 401 in Console - kosmetischer Log-Noise"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_regime_readonly_iter17.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "Keine - strikt read-only.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter17 hat neue read-only pytest-Datei /app/backend/tests/test_regime_readonly_iter17.py hinzugefuegt, die als Regression fuer Regime-Lab Aenderungen dient (list/detail/health/engine-defaults/regime-phase). Live-Test-Datei ist safe - nur GET + Login POST. Analyse ra_5c8e1115 hat KEIN reference_pct-Feld (Bestandsanalyse), daher testid regime-quality-reference-pct nicht gerendert - erwartetes Verhalten. Alle 6 Cockpit-Health-Checks vorhanden inkl. structural_short_history.",
+  "rca of the issue": "N/A - keine Bugs gefunden. Alle Akzeptanzkriterien der Regime-Lab-Aenderungen bestaetigt."
+}

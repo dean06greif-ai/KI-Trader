@@ -32,13 +32,16 @@ die der Trader live so nie gesehen hätte. Dynamische Strategien hätten auf ein
 
 **Fix (rückwärtskompatibel):**
 - `regime_engine.detector_warmup_bars / required_history_bars / required_history_days` (rein): Mindest-Historie
-  je Detektor (EMA-Spannen, Vola-Referenz + Glättung, Pivot-Gedächtnis, EMA-Anker), 30 ≤ Tage ≤ 400.
+  je Detektor (EMA-Spannen, Vola-Referenz + Glättung, Pivot-Gedächtnis, EMA-Anker), 30 ≤ Tage ≤ 600.
 - `structural_regime._compute` lädt genau diese Tage; `context_from_model` liefert `history_bars`,
   `history_required_bars`, `history_ok` und setzt bei zu wenig Kerzen **`state = stale` mit Grund**
   (Gate/Prompt ohne Struktur, wie bei veraltetem Stand) statt eines stillen Fremdlabels.
 - Cockpit-Health: neuer Check `structural_short_history` (`GET /api/regime-cockpit/health`).
 - Restrisiko reaktiver Detektor (~3 %): Pivot-Zustand ist pfadabhängig; für 0 % müsste die Brücke bis zum
   Analyse-Anfang (`bounds.start_ts`) laden – bewusst nicht getan (Datenlast), 📝 siehe Abschnitt 6.
+- Historienbedarf der gespeicherten Analysen (statt bisher 30 Tage): 1h/5 Regime 122 d · 4h/5 Regime 110 d ·
+  1d/5 Regime 114 d · 1h/9 Regime 308 d · 4h+1d/9 Regime („grob“, Vola-Referenz 307 d) ≈ 400 d · 15m/reactive 152 d.
+  Der 9er-Modus ist wegen der Vola-Referenz teuer – für die Brücke ist der 3er/5er-Modus deutlich robuster.
 
 ## 2. Befund P1 ✅ – „Erkennungs-Qualität: gut“ war beim EMA-Detektor eine Selbst-Bestätigung
 
@@ -118,6 +121,13 @@ längste/trägste EMA (dort sind Live- und Final-Steigung am ähnlichsten).
   `test_regime_bridge_hardening`, `test_engine_split_and_regime_core`, `test_regime_cockpit`, u.a.
 - Skripte (nur lesend): `backend/scripts/inspect_regime_research.py` (Forschungsstand aus der DB),
   `backend/scripts/probe_live_window_dependence.py` (Fenster-Beweis; `PROBE_WINDOW_FROM_MODEL=1`).
+- Testing-Agent (lesend, Preview gegen Produktiv-Atlas): `backend/tests/test_regime_readonly_iter17.py`
+  (list/detail/health/engine-defaults/regime-phase) + UI (Login → Werkzeuge → Regime-Lab → Analyse → Qualitätskarte,
+  EMA-Vergleich-Sektion) – alles grün, keine JS-Fehler.
+- ⚠️ **Hinweis Live-Tests:** Die Repo-eigenen API-Tests (`test_*api*.py`, `test_ap13_*`, `test_regime_iter*`)
+  starten echte Analyse-Jobs. Gegen eine Instanz mit Produktiv-DB erzeugen sie Test-Analysen (in dieser Session
+  11 Stück, wieder gelöscht – nur BTC-Einzelanalysen mit Testnamen von 08:39–08:40 UTC). Nur Unit-Tests
+  (`-m unit` / ohne Server) oder gegen eine Dev-DB (`DB_NAME=crypto_scanner_dev`) laufen lassen.
 
 ## 6. Empfohlene nächste Schritte (Reihenfolge)
 
@@ -125,7 +135,7 @@ längste/trägste EMA (dort sind Live- und Final-Steigung am ähnlichsten).
    EMA-Vergleich 5/9/14/21 → Periode nach **Referenz** wählen → „Regime suchen & speichern“ → Karte lesen:
    Referenz-Treffer Holdout ≥ 65 % und Lag ≤ ⅓ der Ø Phasendauer.
 2. Kombi-Kalibrierung und `_profile_quality` auf die Referenz umstellen (gleicher Baustein `regime_reference`).
-3. Brücke: optional Anker bis `bounds.start_ts` (max. 400 d) für den reaktiven Detektor (0 % statt 3 %).
+3. Brücke: optional Anker bis `bounds.start_ts` (max. 600 d) für den reaktiven Detektor (0 % statt 3 %).
 4. `regime_gate` Quelle `own` in der UI als „Kurzfrist-Legacy“ kennzeichnen oder auf `lab` umstellen.
 5. Erst danach Shadow-Freigabe → 4 Wochen Reward-Split beobachten → dynamische Strategien.
 

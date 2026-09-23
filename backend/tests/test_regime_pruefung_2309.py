@@ -53,6 +53,7 @@ def test_required_history_grows_with_detector_needs():
     assert eng.required_history_days(m_ema5["config"]) >= 30  # nie unter dem alten Standard
     assert eng.required_history_days({}) == 30                   # Legacy-Modell ohne Config
     assert eng.required_history_days(m_ema9["config"], max_days=120) == 120
+    assert eng.required_history_days(m_ema9["config"]) <= 600
 
 
 def test_reactive_warmup_covers_ema_anchor_and_pivots():
