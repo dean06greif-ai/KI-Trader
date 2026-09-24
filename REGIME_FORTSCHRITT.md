@@ -12,7 +12,7 @@
 ## In Arbeit / offen (Reihenfolge)
 - [x] 1.4 Regime-Nutzen (services/regime_utility.py → Referenz-Dict, Qualitätskarte „Regime-Nutzen / Richtung bestätigt / Seitwärts-Ruhe“, Autopilot-Kennzahlen)
 - [x] 1.5 Autopilot: Duplikat-Cache, Plateau-Stopp (UI-Feld, Standard 300), erweiterter Suchraum (kombi_ema ab 3, dominance ab 0.5, ema ab 2), Top-10-Neustart alle 120 stagnierende Runden
-- [ ] 1.6 Tests + Testing-Agent
+- [x] 1.6 Tests + Testing-Agent (iteration_25: 66/66 Backend, Frontend Plateau-Feld ok)
 - [ ] 2.1 Höherer-TF-Filter
 - [ ] 2.2 Richtungs-Modus als Freigabe-Standard
 - [ ] 2.3 Crash-Wick-Robustheit
@@ -20,11 +20,19 @@
 - [ ] 3.x Funding/OI, Markt-Breite
 - [ ] 4.x Kette Autopilot→Analyse→Ablation, Kombi-Kalibrierung v2
 
+## Messwerte (BTC/ETH/SOL 1h, 1080 d, Holdout) – Stand 24.09.
+| Variante | Roh-Treffer | Macro-F1 | κ | Richtungs-Phase | Regime-Nutzen 3 d | Richtung bestätigt |
+|---|---|---|---|---|---|---|
+| gespeichert (Krypto 1h) | ~66 % | 44,0 | 12,6 | 22,9 d | +1,2 % | 52,6 % |
+| kombi ema 8 / dominance 5 | – | 47,6 | 20,0 | 7,5 d | +1,6 % | 53,2 % |
+Nächster Schritt: 2.1 Höherer-TF-Filter (Ziel: κ ≥ 25, Macro-F1 ≥ 50).
+
 ## Was DU danach tun musst
 1. Deploy auf Render (Branch pushen) + Worker-Paket ≥ 1.14.0 neu herunterladen
 2. Autopilot neu starten (1h, Krypto-Kern, Ziel 4–14 d) – alte Scores nicht mit neuen vergleichen
 3. Analyse ausführen → Qualitätskarte: Macro-F1, κ, Regime-Nutzen prüfen
 
 ## Log
+- 24.09. 1.6 erledigt (Testing-Agent grün). Nächster Schritt: 2.1
 - 24.09. 1.4 + 1.5 umgesetzt, Unit-Tests grün (tests/test_pruefung_2409.py 28), Build ok – nächster Schritt 1.6 Testing-Agent
 - 24.09. Plan erstellt, Start Phase 1.4
