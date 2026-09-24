@@ -82,3 +82,16 @@ Produktive, extern auf Render deployte Daytrading-App (FastAPI + React + MongoDB
 - P1: Konfidenz-Kalibrierung prüfen (momentum_news-Entscheidungen meist 60 % < Live-Schwelle 65 %)
 - P2: Timeframe-spezifisches Struktur-Regime je Setup-Timeframe
 - P2: Benchmark-Schwellen im UI konfigurierbar
+
+
+## Iteration 25.09.2026 – Signale nur bei Trade, Event-Setups, Regime-Lab (Jump-Modell)
+Auftrag: (1) Signale nur, wenn daraus ein Trade wird; KI-Trader zeigt LIVE/Datensammlung + Setup. (2) Event-Setups nur nach
+verpasstem Event überarbeiten. (3) Regime-Lab/Autopilot umfassend prüfen & optimieren. (4) Lokaler Worker RAM – nur Beratung.
+Umgesetzt:
+- `services/signal_notify.py` + `core/pipeline.py`: Telegram/Website-Signal erst nach Trade-Versuch mit Modus + Setup; Toggles `signals_only_traded`, `signals_collection`.
+- `services/setup_lifecycle.py` / `ai_playbook.py` / `setup_review.py`: Event-Setup-Inaktivität = Event ohne Trade im Fenster.
+- `services/regime_jump.py`: neuer Detektor "jump" (Statistisches Jump-Modell), Holdout-F1 ~62 / κ ~42 statt 47 / 17 (ema); voll integriert.
+- Autopilot: Holdout-Leck im Gleichstand entfernt; Übernahme-Schutz über Referenz-F1 (Backend + Frontend).
+- Bericht `REGIME_LAB_PRUEFBERICHT_2509.md`; Tests `test_regime_jump.py`, `test_event_setups_and_signal_notify.py`; Testing-Agent Iteration 26: 100 %.
+- Lokaler Worker: unverändert (bereits adaptiv: RAM − 1 GB, alle Kerne).
+Backlog: P1 Autopilot mit "jump" auf Prod + neue Analyse/Ablation, dann Shadow-Freigabe · P2 veraltete Unit-Tests reparieren.
