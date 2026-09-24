@@ -23,6 +23,7 @@ VG_REFERENCE_HOLDOUT = 72.0   # Referenz-Treffer im Holdout (detektor-unabhängi
 VG_LIVE_FINAL = 80.0          # Live=Final (Holdout) – Live-Sicht stabil
 VG_LAG_SHARE = 1.0 / 3.0      # Referenz-Lag ≤ ⅓ der Ø Phasendauer
 VG_MISSED_MAX = 15.0          # verpasste Referenz-Phasen ≤ 15 %
+VG_REFERENCE_BALANCED = 65.0  # v2: klassen-balancierter Referenz-Treffer (Holdout)
 SWEET_SPOT_DAYS = (5.0, 15.0)  # Ø Phasendauer fürs Daytrading-Umschalten
 
 
@@ -33,7 +34,7 @@ def _mean(vals: List[Optional[float]]) -> Optional[float]:
 
 def grade_of(holdout_pct: Optional[float], overall_pct: Optional[float],
              holdout_bars: int, reference_pct: Optional[float] = None,
-             reference_basis: str = None) -> Dict:
+             reference_basis: str = None, reference_balanced: Optional[float] = None) -> Dict:
     """Note + Klartext. Ohne Holdout zählt der Gesamtwert, aber mit Hinweis.
     `reference_pct` (Live vs. detektor-unabhängige Referenz) begrenzt die Note
     nach oben: Live=Final allein ist beim Detektor 'ema' fast immer ~98 %
@@ -50,7 +51,11 @@ def grade_of(holdout_pct: Optional[float], overall_pct: Optional[float],
         g, txt = "mittel", "Live-Erkennung trifft die Richtung mehrheitlich, aber mit spürbarer Verzögerung/Flackern – nur mit Bestätigung nutzen."
     else:
         g, txt = "schwach", "Live-Erkennung liegt zu oft daneben – Detektor/Einstellungen ändern (Kalibrierung, EMA-Vergleich) und neu analysieren."
-    ref_grade = regime_reference.grade(reference_pct)
+    # Referenz v2: klassen-balanciert (sonst gewinnt "immer seitwärts" ~70 %)
+    ref_grade = (regime_reference.balanced_grade(reference_balanced) if reference_balanced is not None
+                 else regime_reference.grade(reference_pct))
+    if reference_balanced is not None:
+        reference_pct = reference_balanced
     if ref_grade is not None and GRADE_ORDER[ref_grade] < GRADE_ORDER[g]:
         g = ref_grade
         txt = (f"Live=Final {pct:.0f} %, aber nur {reference_pct:.0f} % Richtungs-Treffer gegen die "
@@ -82,7 +87,13 @@ def _symbol_row(sym: str, entry: Dict) -> Optional[Dict]:
             "reference_pct": ref.get("direction_pct"),
             "reference_holdout_pct": ref.get("holdout_direction_pct"),
             "reference_lag_days": ref.get("mean_lag_days"),
-            "reference_missed_pct": ref.get("missed_pct")}
+            "reference_missed_pct": ref.get("missed_pct"),
+            "reference_version": ref.get("version") or 1,
+            "reference_holdout_balanced_pct": ref.get("holdout_balanced_pct"),
+            "reference_holdout_skill_pct": ref.get("holdout_skill_pct"),
+            "reference_holdout_baseline_pct": ref.get("holdout_baseline_pct"),
+            "live_direction_phase_days": ref.get("live_direction_phase_days"),
+            "reference_phase_days": ref.get("truth_phase_days")}
 
 
 def benchmark_checks(agg: Dict) -> List[Dict]:
@@ -91,23 +102,33 @@ def benchmark_checks(agg: Dict) -> List[Dict]:
         return {"key": key, "label": label, "value": value, "target": target, "ok": bool(ok)}
     ref_h = agg.get("reference_holdout_pct")
     lf = agg.get("holdout_direction_pct")
-    phase = agg.get("avg_segment_days")
+    v2 = agg.get("reference_version") == 2
+    # v2: Richtungs-Phase (auf/seit/ab) statt Segmente inkl. Vola-Unterstufen
+    phase = (agg.get("live_direction_phase_days") if v2 and agg.get("live_direction_phase_days")
+             else agg.get("avg_segment_days"))
     lag = agg.get("reference_lag_days")
     missed = agg.get("reference_missed_pct")
     lo, hi = SWEET_SPOT_DAYS
     return [
         row("holdout_bars", "Belastbarer Holdout", agg.get("holdout_bars"),
             f"≥ {MIN_HOLDOUT_BARS} Kerzen", (agg.get("holdout_bars") or 0) >= MIN_HOLDOUT_BARS),
-        row("reference_holdout", "Referenz-Treffer (Holdout)", ref_h, f"≥ {VG_REFERENCE_HOLDOUT:.0f} %",
-            ref_h is not None and ref_h >= VG_REFERENCE_HOLDOUT),
+        (row("reference_holdout", "Referenz balanciert (Holdout, v2)", agg.get("reference_holdout_balanced_pct"),
+             f"≥ {VG_REFERENCE_BALANCED:.0f} %", (agg.get("reference_holdout_balanced_pct") or 0) >= VG_REFERENCE_BALANCED)
+         if v2 else
+         row("reference_holdout", "Referenz-Treffer (Holdout)", ref_h, f"≥ {VG_REFERENCE_HOLDOUT:.0f} %",
+             ref_h is not None and ref_h >= VG_REFERENCE_HOLDOUT)),
         row("live_final", "Live=Final (Holdout)", lf, f"≥ {VG_LIVE_FINAL:.0f} %",
             lf is not None and lf >= VG_LIVE_FINAL),
         row("lag", "Referenz-Lag", lag, "≤ ⅓ Ø Phasendauer",
             lag is not None and phase is not None and lag <= phase * VG_LAG_SHARE),
         row("missed", "Verpasste Phasen", missed, f"≤ {VG_MISSED_MAX:.0f} %",
             missed is not None and missed <= VG_MISSED_MAX),
-        row("sweet_spot", "Ø Phasendauer im Sweet Spot", phase, f"{lo:.0f}–{hi:.0f} Tage",
-            phase is not None and lo <= phase <= hi),
+        row("sweet_spot", "Ø Richtungs-Phase im Sweet Spot" if v2 else "Ø Phasendauer im Sweet Spot",
+            phase, f"{lo:.0f}–{hi:.0f} Tage", phase is not None and lo <= phase <= hi),
+    ] + ([
+        row("skill", "Besser als „immer Mehrheitsrichtung“ (Skill)", agg.get("reference_holdout_skill_pct"),
+            "> 0 %", (agg.get("reference_holdout_skill_pct") or -1) > 0),
+    ] if v2 else []) + [
         row("validation", "Plausibilitäts-Validierung", agg.get("validation_passed"), "bestanden",
             agg.get("validation_passed") is not False),
     ]
@@ -134,7 +155,15 @@ def _aggregate(rows: List[Dict]) -> Dict:
     ref_all = _mean([r.get("reference_pct") for r in rows])
     ref_basis = "holdout" if ref_hold is not None and hb >= MIN_HOLDOUT_BARS else "overall"
     ref_pct = ref_hold if ref_basis == "holdout" else ref_all
+    v2 = bool(rows) and all(r.get("reference_version") == 2 for r in rows)
+    ref_bal = _mean([r.get("reference_holdout_balanced_pct") for r in rows]) if v2 else None
     return apply_benchmark({"n_symbols": len(rows),
+            "reference_version": 2 if v2 else 1,
+            "reference_holdout_balanced_pct": ref_bal,
+            "reference_holdout_skill_pct": _mean([r.get("reference_holdout_skill_pct") for r in rows]) if v2 else None,
+            "reference_holdout_baseline_pct": _mean([r.get("reference_holdout_baseline_pct") for r in rows]) if v2 else None,
+            "live_direction_phase_days": _mean([r.get("live_direction_phase_days") for r in rows]) if v2 else None,
+            "reference_phase_days": _mean([r.get("reference_phase_days") for r in rows]) if v2 else None,
             "holdout_direction_pct": hold, "direction_pct": overall,
             "trend_hit_pct": _mean([r["trend_hit_pct"] for r in rows]),
             "violation_bars_pct": _mean([r["violation_bars_pct"] for r in rows]),
@@ -144,7 +173,7 @@ def _aggregate(rows: List[Dict]) -> Dict:
             "reference_lag_days": _mean([r.get("reference_lag_days") for r in rows]),
             "reference_missed_pct": _mean([r.get("reference_missed_pct") for r in rows]),
             "validation_passed": all(r["validation_passed"] is not False for r in rows),
-            "holdout_bars": hb, **grade_of(hold, overall, hb, ref_pct, ref_basis)})
+            "holdout_bars": hb, **grade_of(hold, overall, hb, ref_pct, ref_basis, ref_bal)})
 
 
 def summarize_scope(per_symbol: Dict[str, Dict]) -> Optional[Dict]:

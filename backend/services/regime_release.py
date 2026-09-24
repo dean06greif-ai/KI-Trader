@@ -124,9 +124,14 @@ def ablation_delta_pct(run: Optional[Dict]) -> Optional[float]:
     alts = [r for r in rows if str(r.get("variant_key") or "").startswith("alt_")]
     if not full or not alts:
         return None
+    # Referenz v2 bevorzugt: Live=Final ist zwischen Detektoren nicht vergleichbar
+    # (Selbst-Übereinstimmung, Prüfung 24.09.); Altläufe ohne v2 -> Live=Final.
+    key = ("holdout_reference_bal_pct" if full.get("holdout_reference_bal_pct") is not None
+           and any(r.get("holdout_reference_bal_pct") is not None for r in alts)
+           else "holdout_direction_pct")
     try:
-        best_alt = max(float(r.get("holdout_direction_pct") or 0) for r in alts)
-        return round(float(full.get("holdout_direction_pct") or 0) - best_alt, 2)
+        best_alt = max(float(r.get(key) or 0) for r in alts)
+        return round(float(full.get(key) or 0) - best_alt, 2)
     except (TypeError, ValueError):
         return None
 
@@ -341,6 +346,28 @@ async def jobs_for(db, doc: Dict) -> Dict:
     calibs = await db.regime_calibrations.find({}, {"_id": 0, "report": 0}).sort("created_at", -1).to_list(50)
     runs = await db.regime_lab_runs.find({"result.kind": "ablation"}, {"_id": 0}).sort("created_at", -1).to_list(50)
     return {"calibrations": calibs, "ablations": runs}
+
+
+def split_shadow_counts(counts: Dict[str, int], existing_ids: List[str]) -> Tuple[Dict[str, int], Dict[str, int]]:
+    """Shadow-Trades je Analyse in (existierend, verwaist=gelöschte Analyse) trennen (rein)."""
+    have = set(existing_ids or [])
+    by_aid = {a: n for a, n in (counts or {}).items() if a in have}
+    orphan = {a: n for a, n in (counts or {}).items() if a not in have}
+    return by_aid, orphan
+
+
+async def shadow_counts_by_aid(db, days: int = 90) -> Tuple[Dict[str, int], Dict[str, int]]:
+    """Shadow-Trades (Rewards MIT Struktur-Regime) je Analyse-ID der letzten `days` Tage."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    counts: Dict[str, int] = {}
+    async for g in db.ai_rewards.aggregate([
+            {"$match": {"ts": {"$gte": cutoff}, "structural_aid": {"$nin": [None, ""]},
+                        "structural_regime": {"$nin": [None, "", "unbekannt"]}}},
+            {"$group": {"_id": "$structural_aid", "n": {"$sum": 1}}}]):
+        counts[str(g["_id"])] = int(g["n"])
+    ids = [d["id"] async for d in db.regime_analyses.find(
+        {"id": {"$in": list(counts)}}, {"_id": 0, "id": 1})] if counts else []
+    return split_shadow_counts(counts, ids)
 
 
 async def released_for_class(db, asset_class: str, min_stage: str = "shadow",

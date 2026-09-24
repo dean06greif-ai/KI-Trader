@@ -19,6 +19,61 @@ from services import regime_truth as rt
 REF_GOOD = 65.0   # Richtungs-Treffer gegen die Referenz: ab hier "gut"
 REF_OK = 55.0     # dazwischen "mittel" – darunter "schwach"
 
+# ---- Referenz v2 (Prüfung 24.09.2026) ----
+# v1 nahm Fenster/Mindestlänge aus dem GEPRÜFTEN Modell (mittlerer Horizont,
+# 0,8 % des Zeitraums): 1h-"fein" wurde gegen ~43-Tage-Phasen gemessen, 4h gegen
+# ~22 Tage, 15m gegen ~58 Tage – nicht vergleichbar und viel träger als das
+# Daytrading-Ziel (Ø 4–14 Tage). Zudem ist die Referenz zu 66–90 % "seitwärts":
+# ein Detektor, der IMMER seitwärts sagt, erreichte schon ~70 % Roh-Treffer.
+# v2: festes Fenster (Standard 7 Tage -> Ø Referenz-Phase ~10 Tage bei BTC 1h),
+# feste Mindestlänge 2 Tage, und die Note basiert auf dem SKILL über der
+# trivialen Mehrheits-Baseline (+ klassen-balancierter Treffer).
+REFERENCE_VERSION = 2
+DEFAULT_WINDOW_DAYS = 7.0
+DEFAULT_MIN_DAYS = 2.0
+SKILL_GOOD = 40.0   # % der möglichen Verbesserung über "immer Mehrheitsklasse"
+SKILL_OK = 20.0
+
+
+def reference_cfg(model_cfg: Dict) -> Dict:
+    """Detektor-unabhängige Referenz-Konfiguration (rein). Nur Fenster/Mindest-
+    länge sind fix; die Vola-Unterachse (9er-Modus) bleibt modellbezogen."""
+    cfg = dict(model_cfg or {})
+    cfg["reference_window_days"] = float(cfg.get("reference_window_days") or DEFAULT_WINDOW_DAYS)
+    cfg["reference_min_days"] = float(cfg.get("reference_min_days") or DEFAULT_MIN_DAYS)
+    return cfg
+
+
+def _baseline_pct(truth: List, mode: int) -> Optional[float]:
+    """Treffer eines Detektors, der immer die häufigste Referenz-Richtung sagt."""
+    tt = [t for t in rt._trend_arr(truth, mode).tolist() if t >= 0]
+    if not tt:
+        return None
+    return round(max(tt.count(k) for k in (0, 1, 2)) / len(tt) * 100.0, 1)
+
+
+def skill_pct(direction_pct: Optional[float], baseline_pct: Optional[float]) -> Optional[float]:
+    """Anteil der möglichen Verbesserung über die triviale Baseline (Kappa-artig)."""
+    if direction_pct is None or baseline_pct is None or baseline_pct >= 100.0:
+        return None
+    return round((float(direction_pct) - float(baseline_pct)) / (100.0 - float(baseline_pct)) * 100.0, 1)
+
+
+BAL_GOOD = 60.0    # klassen-balancierter Holdout-Treffer (konstant = 33 %)
+BAL_OK = 50.0
+
+
+def balanced_grade(pct: Optional[float]) -> Optional[str]:
+    if pct is None:
+        return None
+    return "gut" if pct >= BAL_GOOD else ("mittel" if pct >= BAL_OK else "schwach")
+
+
+def skill_grade(skill: Optional[float]) -> Optional[str]:
+    if skill is None:
+        return None
+    return "gut" if skill >= SKILL_GOOD else ("mittel" if skill >= SKILL_OK else "schwach")
+
 
 def _split_index(candles, ts: Optional[int]) -> Optional[int]:
     """Erster Index mit timestamp > ts (None, wenn kein Anker)."""
@@ -49,12 +104,25 @@ def compare(candles, live_labels: List, truth_labels: List, mode: int, bpd: floa
            "missed_pct": lag["missed_pct"],
            "holdout_direction_pct": None, "holdout_bars": 0,
            "inner_direction_pct": None, "inner_bars": 0,
-           "source": "centered_reference"}
+           "source": "centered_reference",
+           "baseline_pct": _baseline_pct(truth, mode)}
+    out["skill_pct"] = skill_pct(out["direction_pct"], out["baseline_pct"])
+    # Ø RICHTUNGS-Phase (nur auf/seit/ab – ohne Vola-Unterstufen des 9er-Modus)
+    days = total["bars"] / max(bpd, 1e-9)
+    out["live_direction_phase_days"] = round(days / (total["switches_live"] + 1), 2) if total["bars"] else None
+    out["truth_phase_days"] = round(days / (total["switches_truth"] + 1), 2) if total["bars"] else None
     h0 = _split_index(candles[:n], train_end_ts)
     if h0 is not None and h0 < n:
         m = rt.agreement(live[h0:], truth[h0:], mode)
         out["holdout_direction_pct"] = m["direction_pct"] if m["bars"] else None
         out["holdout_bars"] = m["bars"]
+        if m["bars"]:
+            out["holdout_balanced_pct"] = m["balanced_direction_pct"]
+            out["holdout_baseline_pct"] = _baseline_pct(truth[h0:], mode)
+            out["holdout_skill_pct"] = skill_pct(m["direction_pct"], out["holdout_baseline_pct"])
+        if h0 > 0:
+            mt = rt.agreement(live[:h0], truth[:h0], mode)
+            out["train_balanced_pct"] = mt["balanced_direction_pct"] if mt["bars"] else None
     i0 = _split_index(candles[:n], inner_start_ts)
     if i0 is not None:
         i1 = h0 if h0 is not None else n
@@ -62,6 +130,10 @@ def compare(candles, live_labels: List, truth_labels: List, mode: int, bpd: floa
             m = rt.agreement(live[i0:i1], truth[i0:i1], mode)
             out["inner_direction_pct"] = m["direction_pct"] if m["bars"] else None
             out["inner_bars"] = m["bars"]
+            if m["bars"]:
+                out["inner_balanced_pct"] = m["balanced_direction_pct"]
+                out["inner_skill_pct"] = skill_pct(m["direction_pct"],
+                                                   _baseline_pct(truth[i0:i1], mode))
     return out
 
 

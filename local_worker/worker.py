@@ -18,6 +18,8 @@ Benutzerordner gemerkt – auch ein frisch entpacktes Paket verbindet sich ohne
 Nachfrage), robuste Fortschritts-Meldungen (Thread stirbt nie still, Bestes
 wird nach Reconnect erneut gemeldet, Server-Fehler werden geloggt) und der
 Regime-Autopilot (fn="autopilot").
+Neu in 1.14.0: Regime-Ablation lokal (fn="ablation") – nutzt den Kerzen-Cache
+des Workers statt Cloud-Neuladen.
 Neu in 1.13.0: Absturzsicher (die Poll-Schleife fängt JEDEN Fehler ab statt
 mit Traceback zu enden), Ergebnisse werden vor dem Upload auf Platte gesichert
 (`<data_dir>/pending_results/`) und nach einem Neustart/Reconnect automatisch
@@ -35,7 +37,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "1.13.0"
+VERSION = "1.14.0"
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = SCRIPT_DIR / "worker_config.json"
 # Zweiter Speicherort im Benutzerordner: überlebt das Neu-Entpacken des Pakets
@@ -428,6 +430,8 @@ def run_regime_job(job_id, payload):
         elif fn == "autopilot":
             from services import regime_autopilot
             asyncio.run(regime_autopilot.run_autopilot(job_id, body, None))
+        elif fn == "ablation":
+            asyncio.run(rlab.run_ablation(job_id, body, None))
         else:
             raise RuntimeError(f"Unbekannter Regime-Lab-Job: {fn}")
     except Exception as e:  # noqa: BLE001

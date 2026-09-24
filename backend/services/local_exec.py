@@ -136,6 +136,16 @@ def worker_supports_regime_lab() -> bool:
     return False
 
 
+FN_MIN_VERSION = {"calibrate": (1, 7), "autopilot": (1, 12), "ablation": (1, 14)}
+
+
+def worker_supports_fn(fn: str) -> bool:
+    """Kennt ein verbundener Worker den Regime-Lab-Job `fn`?"""
+    need = FN_MIN_VERSION.get(fn, (1, 5))
+    return any(_now() - w.get("last_seen", 0) < WORKER_TIMEOUT and _ver(w.get("version")) >= need
+               for w in WORKERS.values())
+
+
 def worker_supports_explore() -> bool:
     """Endlos-Suche (Optimizer mode='explore') braucht Worker >= 1.9.0
     (sanfter Stop via 'stop'-Flag + deep_explore-Modul im Paket)."""
@@ -573,7 +583,7 @@ def claim(worker_id: str, want_compute: bool = True, want_data: bool = True) -> 
             # ein alter Worker würde ihn sonst stumm liegen lassen.
             if item["kind"] == "regime_lab":
                 fn = (((item.get("payload") or {}).get("args") or {}).get("fn"))
-                need = {"calibrate": (1, 7), "autopilot": (1, 12)}.get(fn, (1, 5))
+                need = FN_MIN_VERSION.get(fn, (1, 5))
                 if w_ver < need:
                     skipped.append(item)
                     continue

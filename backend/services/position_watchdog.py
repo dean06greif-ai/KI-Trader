@@ -94,6 +94,8 @@ def parse_positions(payload) -> List[Dict]:
                     "entry": entry, "position_id": str(pid),
                     "leverage": _f(row.get("leverage")),
                     "margin": _f(row.get("margin") or row.get("im")),
+                    # Börsen-Liquidationspreis (Wahrheit für den Fill/Liq-Guard)
+                    "liq_price": _f(row.get("liqPrice")),
                     # Eröffnungszeit (ms) laut Börse – 0 = unbekannt
                     "opened_ms": ctime if ctime > 1e12 else 0.0})
     return out

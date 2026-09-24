@@ -197,7 +197,10 @@ def centered_labels(candles, cfg: Dict, mode: int = 9) -> List[Optional[int]]:
     logc = np.log(np.maximum(close, 1e-12))
     bpd = float(cfg.get("bars_per_day") or 1.0)
     hz = sorted(cfg.get("horizons_days") or [10.0, 30.0])
-    w_days = float(hz[len(hz) // 2])
+    # Referenz v2 (Prüfung 24.09.): festes, detektor-UNABHÄNGIGES Fenster statt
+    # des mittleren Horizonts des geprüften Modells (sonst verschiebt sich die
+    # "Wahrheit" mit Profil/Timeframe und Analysen sind nicht vergleichbar).
+    w_days = float(cfg.get("reference_window_days") or hz[len(hz) // 2])
     W = max(int(round(w_days * bpd)), 15)
     W = min(W, max(n // 3, 15))
     t_long, sl_long = _centered_t(logc, W)
@@ -244,7 +247,9 @@ def centered_labels(candles, cfg: Dict, mode: int = 9) -> List[Optional[int]]:
                     for i in range(n)], dtype=int)
     ids[invalid] = -1
     total_days = n / max(bpd, 1e-9)
-    min_bars = max(int(max(total_days * 0.008, 1.5) * bpd), 3)
+    min_days = cfg.get("reference_min_days")
+    min_bars = (max(int(float(min_days) * bpd), 3) if min_days
+                else max(int(max(total_days * 0.008, 1.5) * bpd), 3))
     ids = _merge_short(ids, min_bars)
     return [None if r < 0 else int(r) for r in ids]
 

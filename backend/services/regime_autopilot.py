@@ -41,6 +41,7 @@ PHASE_PENALTY_MAX = 15.0      # Punkte Abzug bei viel zu kurzen/langen Phasen
 # Phasen = Selbst-Übereinstimmung, Prüfbericht 23.09 Befund 2) -> die
 # detektor-unabhängige Referenz zählt zur Hälfte mit, sobald vorhanden.
 REFERENCE_WEIGHT = 0.5
+REFERENCE_WEIGHT_V2 = 0.75
 
 # Suchraum: (lo, hi, step) für Zahlen (int wenn alle int), Liste = Auswahl
 COMMON_SPACE = {
@@ -181,13 +182,20 @@ def score_metrics(m: Optional[Dict], target_min_days: float,
     base = _half_mix(m.get("inner_direction_pct"), train)
     if base is None:
         return None
-    ref_train = m.get("train_reference_pct")
-    if ref_train is None:
-        ref_train = m.get("reference_pct")
-    ref = _half_mix(m.get("inner_reference_pct"), ref_train)
+    # Referenz v2 (klassen-balanciert, ohne Holdout) bevorzugt – dann zählt sie
+    # stärker, denn Live=Final ist bei allen Detektoren ~93–98 % (kaum Trennkraft).
+    ref = _half_mix(m.get("inner_reference_bal_pct"), m.get("train_reference_bal_pct"))
+    weight = REFERENCE_WEIGHT_V2
+    if ref is None:
+        ref_train = m.get("train_reference_pct")
+        if ref_train is None:
+            ref_train = m.get("reference_pct")
+        ref = _half_mix(m.get("inner_reference_pct"), ref_train)
+        weight = REFERENCE_WEIGHT
     if ref is not None:
-        base = (1.0 - REFERENCE_WEIGHT) * base + REFERENCE_WEIGHT * ref
-    penalty = phase_penalty(m.get("avg_live_phase_days"), target_min_days, target_max_days)
+        base = (1.0 - weight) * base + weight * ref
+    phase = m.get("live_direction_phase_days") or m.get("avg_live_phase_days")
+    penalty = phase_penalty(phase, target_min_days, target_max_days)
     return round(float(base) - penalty, 3)
 
 
@@ -200,7 +208,7 @@ def robustness_key(m: Optional[Dict], band: Optional[tuple] = None) -> tuple:
     if not m:
         return (-1e9, -1e9, -1e9)
     hold = m.get("holdout_direction_pct")
-    phase = m.get("avg_live_phase_days")
+    phase = m.get("live_direction_phase_days") or m.get("avg_live_phase_days")
     switches = m.get("switches_live")
     if phase is None:
         phase_term = -1.0 if not band else -1e6
@@ -270,7 +278,10 @@ def evaluate_config(cfg: Dict, histories: Dict, train_hist: Dict, bounds: Dict,
     agg = {"direction_pct": [], "holdout_direction_pct": [],
            "inner_direction_pct": [], "trend_hit_pct": [], "train_direction_pct": []}
     ragg = {"reference_pct": [], "inner_reference_pct": [], "holdout_reference_pct": [],
-            "train_reference_pct": [], "reference_lag_days": []}
+            "train_reference_pct": [], "reference_lag_days": [],
+            "inner_reference_bal_pct": [], "train_reference_bal_pct": [],
+            "holdout_reference_bal_pct": [], "holdout_skill_pct": [],
+            "live_direction_phase_days": []}
     holdout_bars = switches = seg_bars = seg_n = 0
     for sym, candles in histories.items():
         if stop and stop():
@@ -308,7 +319,12 @@ def _collect_reference(ref: Dict, ragg: Dict) -> None:
     """Referenz-Kennzahlen eines Symbols sammeln; Training = gesamt ohne Holdout."""
     for src, dst in (("direction_pct", "reference_pct"), ("inner_direction_pct", "inner_reference_pct"),
                      ("holdout_direction_pct", "holdout_reference_pct"),
-                     ("mean_lag_days", "reference_lag_days")):
+                     ("mean_lag_days", "reference_lag_days"),
+                     ("inner_balanced_pct", "inner_reference_bal_pct"),
+                     ("train_balanced_pct", "train_reference_bal_pct"),
+                     ("holdout_balanced_pct", "holdout_reference_bal_pct"),
+                     ("holdout_skill_pct", "holdout_skill_pct"),
+                     ("live_direction_phase_days", "live_direction_phase_days")):
         if ref.get(src) is not None:
             ragg[dst].append(float(ref[src]))
     bars, hbars = int(ref.get("bars") or 0), int(ref.get("holdout_bars") or 0)

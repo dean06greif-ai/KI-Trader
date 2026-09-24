@@ -131,9 +131,14 @@ WORKFLOW IM REGIME-LAB (in dieser Reihenfolge):
     Das Beste wird automatisch übernommen (Vollautomatik reiht danach die
     Analyse ein).
   - EMA-Vergleich nur für ema, Auto-Kalibrierung nur für kombi.
-3 „Regime suchen & speichern“ → Analyse entsteht. Note auf dem Holdout
-  (Live=Final): ≥65 % gut, ≥50 % mittel, sonst schwach. Ø Phasendauer 5–15
-  Tage = handelbar, kürzer = Flackern. <200 Holdout-Kerzen = nicht belastbar.
+3 „Regime suchen & speichern“ → Analyse entsteht. Live=Final (oft 90–98 %)
+  misst nur die SELBST-Übereinstimmung des Detektors und ist zwischen
+  Detektoren NICHT vergleichbar. Maßgeblich ist die Referenz v2 (festes,
+  detektor-unabhängiges Fenster, klassen-balanciert): ≥60 % gut, ≥50 % mittel,
+  sonst schwach; Skill ≤ 0 % = nicht besser als „immer Mehrheitsrichtung“.
+  Analysen ohne Referenz v2 (vor dem 24.09.) sind zu optimistisch bewertet –
+  neu analysieren. Ø RICHTUNGS-Phase 4–14 Tage = handelbar (die Segmentdauer
+  im 9er-Modus zählt auch Vola-Stufen mit). <200 Holdout-Kerzen = nicht belastbar.
 4 Analyse öffnen: „Behalten vorschlagen“ (Regime mit ≥5 Abschnitten bleiben),
   Regime-Insights lesen.
 5 Ablation (Diagnose, KEIN Übernehmen): volle Konfiguration vs. ohne je eine
@@ -150,6 +155,9 @@ WORKFLOW IM REGIME-LAB (in dieser Reihenfolge):
     der KI-Trader je Trade das Struktur-Regime mit – KEINE Wirkung auf Prompt
     oder Gate. Der Nutzer muss nichts weiter tun außer den KI-Trader (Paper/
     Live) laufen lassen; die Shadow-Trades sammeln sich von selbst.
+  - Shadow-Trades zählen NUR für die freigegebene Analyse (release.
+    shadow_trades_this_analysis). Steht die Analyse auf Stufe none, sind 0
+    Shadow-Trades korrekt; Trades gelöschter Analysen zählen für keine.
   - Wirksam: zusätzlich ≥30 Shadow-Trades je Struktur-Regime und ein
     Ø-Reward-Unterschied ≥0.25 R zwischen bestem und schlechtestem Regime.
     Erst dann sieht der KI-Trader das Regime im Prompt.

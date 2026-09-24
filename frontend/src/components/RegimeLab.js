@@ -811,8 +811,9 @@ export default function RegimeLab({ onClose }) {
   const [name, setName] = useState('');
   const [job, setJob] = useState(null);
   const [analyses, setAnalyses] = useState(null);
-  const [shadowTrades, setShadowTrades] = useState(null);
   const [shadowMinTrades, setShadowMinTrades] = useState(null);
+  const [shadowByAid, setShadowByAid] = useState({});
+  const [orphanShadow, setOrphanShadow] = useState({});
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const selectedRef = useRef(null);
@@ -847,7 +848,10 @@ export default function RegimeLab({ onClose }) {
     fetch(`${API_URL}/api/regime-lab/list`).then(r => r.json())
       .then(d => setAnalyses(d.analyses || [])).catch(() => setAnalyses([]));
     fetch(`${API_URL}/api/regime-lab/releases`).then(r => r.json())
-      .then(d => { setShadowTrades(d?.activation?.shadow_trades ?? null); setShadowMinTrades(d?.activation?.min_trades ?? null); }).catch(() => {});
+      .then(d => {
+        setShadowMinTrades(d?.activation?.min_trades ?? null);
+        setShadowByAid(d?.shadow_by_aid || {}); setOrphanShadow(d?.orphan_shadow || {});
+      }).catch(() => {});
   }, []);
 
   const loadDetail = useCallback((aid) => {
@@ -1204,7 +1208,7 @@ export default function RegimeLab({ onClose }) {
           onQueued={() => setQueueRefresh(k => k + 1)} />
 
         <AblationCompare selCoins={selCoins} timeframe={timeframe} days={days}
-          trainPct={trainPct} engineConfig={engineConfig} jobBlocked={jobBlocked}
+          trainPct={trainPct} engineConfig={engineConfig} jobBlocked={jobBlocked} execution={execution}
           onStarted={attachPoll} onResult={(r) => setToolResult('ablation', r)}
           onQueued={() => setQueueRefresh(k => k + 1)} />
 
@@ -1239,7 +1243,7 @@ export default function RegimeLab({ onClose }) {
               <span className="opt-small">{a.timeframe} · {a.days}d · Training {a.settings?.train_pct}%</span>
               {a.n_regimes_combined > 0 && <span className="opt-small">{a.n_regimes_combined} Regime (kombiniert)</span>}
               {a.n_assignments > 0 && <span className="opt-small pos">{a.n_assignments} Strategie(n) bestätigt</span>}
-              <RegimeReleaseBadge analysis={a} shadowTrades={shadowTrades} minTrades={shadowMinTrades} />
+              <RegimeReleaseBadge analysis={a} shadowTrades={shadowByAid[a.id] ?? 0} minTrades={shadowMinTrades} />
               {a.has_walkforward
                 ? (a.walkforward_stale
                   ? <span className="opt-small" style={{ color: '#FFB74D' }}
@@ -1289,7 +1293,7 @@ export default function RegimeLab({ onClose }) {
           )}
           {selected && detail && (
             <>
-              <RegimeReleaseControls analysis={detail} shadowTrades={shadowTrades}
+              <RegimeReleaseControls analysis={detail} shadowTrades={shadowByAid[detail.id] ?? 0}
                 onChanged={() => { loadDetail(selected); loadList(); }} />
               <AnalysisDetail analysis={detail} strategies={strategies}
                 jobBlocked={jobBlocked} execution={execution} onChanged={() => loadDetail(selected)} />
@@ -1348,14 +1352,26 @@ export default function RegimeLab({ onClose }) {
                 analyses_saved: analyses?.length ?? 0,
                 analysis: detail ? {
                   name: detail.name, symbols: detail.symbols, timeframe: detail.timeframe, days: detail.days,
-                  grade: focus?.grade, holdout_live_final_pct: focus?.pct,
+                  grade: focus?.grade, holdout_live_final_pct_self_consistency: focus?.holdout_direction_pct,
+                  reference_version: focus?.reference_version || 1,
+                  reference_holdout_balanced_pct: focus?.reference_holdout_balanced_pct,
+                  reference_holdout_raw_pct: focus?.reference_holdout_pct,
+                  reference_skill_pct: focus?.reference_holdout_skill_pct,
+                  live_direction_phase_days: focus?.live_direction_phase_days,
+                  reference_lag_days: focus?.reference_lag_days, reference_missed_pct: focus?.reference_missed_pct,
                   trend_hit_pct: focus?.trend_hit_pct, avg_segment_days: focus?.avg_segment_days,
                   avg_delay_days: focus?.avg_delay_days, holdout_bars: focus?.holdout_bars,
                   regimes: regs.slice(0, 9).map(r => ({ label: r.label, share_pct: Math.round(r.share_pct || 0) })),
                   kept_regimes: Object.values(detail.kept || {}).filter(Boolean).length,
                   assignments: Object.keys(detail.assignments || {}).length,
                   release: { stage: rel?.stage || 'none', since: rel?.since, asset_classes: rel?.asset_classes,
-                    shadow_trades: shadowTrades, active_needs: `mind. ${shadowMinTrades ?? 30} Shadow-Trades je Struktur-Regime (dynamisch nach Erkennungs-Note) + Ø-Reward-Unterschied ≥ 0.25 R; manuelle Freigabe möglich (Wirksam ab Note mittel)` },
+                    shadow_trades_this_analysis: shadowByAid[detail.id] ?? 0,
+                    shadow_note: (rel?.stage || 'none') === 'none'
+                      ? 'Diese Analyse ist NICHT freigegeben (Stufe none) – für sie werden noch keine Shadow-Trades gesammelt; Zähler 0 ist korrekt.'
+                      : 'Shadow-Trades zählen nur für diese Analyse (structural_aid).',
+                    orphan_shadow_trades_deleted_analyses: Object.values(orphanShadow).reduce((a, b) => a + b, 0),
+                    orphan_note: 'Shadow-Trades gelöschter Analysen zählen für KEINE aktuelle Analyse.',
+                    active_needs: `mind. ${shadowMinTrades ?? 30} Shadow-Trades je Struktur-Regime (dynamisch nach Erkennungs-Note) + Ø-Reward-Unterschied ≥ 0.25 R; manuelle Freigabe möglich (Wirksam ab Note mittel)` },
                   walkforward: wf ? { dynamic_pnl: wf.dynamic_test?.pnl, dynamic_trades: wf.dynamic_test?.trades,
                     benchmark_pnl: wf.best_single?.metrics?.pnl, passed: !!wf.verdict?.dynamic_better } : null,
                 } : null,

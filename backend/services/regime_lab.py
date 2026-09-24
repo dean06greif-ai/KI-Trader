@@ -25,6 +25,7 @@ from services import job_control
 from services import regime as rg
 from services import regime_engine as eng
 from services import regime_reference
+from services import regime_truth as rt
 from services import (research_ablation, research_calibration, research_dataset,
                       research_pooling, research_validation)
 from services.backtester import JobCancelled
@@ -246,10 +247,15 @@ def _reference_payload(candles: List[Dict], live_labels: List, model: Dict,
     try:
         cfg = model.get("config") or {}
         mode = eng.norm_mode(cfg.get("regime_mode", 9))
-        ideal = eng.ideal_labels(model, candles)
+        # Referenz v2: festes, detektor-unabhängiges Fenster (regime_reference)
+        rcfg = regime_reference.reference_cfg(cfg)
+        ideal = rt.centered_labels(candles, rcfg, mode)
         ref = regime_reference.compare(candles, live_labels, ideal, mode,
                                        float(cfg.get("bars_per_day") or 1.0),
                                        train_end_ts, inner_start_ts)
+        ref.update({"version": regime_reference.REFERENCE_VERSION,
+                    "window_days": rcfg["reference_window_days"],
+                    "min_days": rcfg["reference_min_days"]})
         return ref, ideal
     except Exception as e:  # noqa: BLE001
         logger.warning(f"reference agreement failed: {e}")
@@ -667,6 +673,13 @@ async def run_ema_compare(job_id: str, body: Dict, db):
                     if ref.get(src) is not None:
                         agg[dst].append(ref[src])
                 agg["holdout_bars"] += int(la.get("holdout_bars") or 0)
+                ref = entry.get("reference") or {}
+                for src, dst in (("holdout_balanced_pct", "holdout_reference_bal_pct"),
+                                 ("inner_balanced_pct", "inner_reference_bal_pct"),
+                                 ("train_balanced_pct", "train_reference_bal_pct"),
+                                 ("holdout_skill_pct", "holdout_skill_pct")):
+                    if ref.get(src) is not None:
+                        agg[dst].append(ref[src])
                 segs = entry.get("segments") or []
                 lsegs = entry.get("live_segments") or []
                 if segs:
@@ -757,7 +770,13 @@ def _variant_metrics(agg: Dict) -> Dict:
             "holdout_bars": agg["holdout_bars"],
             "trend_hit_pct": mean(agg["trend_hit_pct"]),
             "switches_final": agg["switches_final"],
-            "switches_live": agg["switches_live"]}
+            "switches_live": agg["switches_live"],
+            # Referenz v2 (detektor-unabhängig, klassen-balanciert): zwischen
+            # Detektoren vergleichbar – Live=Final ist es NICHT (Prüfung 24.09.)
+            "holdout_reference_bal_pct": mean(agg.get("holdout_reference_bal_pct") or []),
+            "inner_reference_bal_pct": mean(agg.get("inner_reference_bal_pct") or []),
+            "train_reference_bal_pct": mean(agg.get("train_reference_bal_pct") or []),
+            "holdout_skill_pct": mean(agg.get("holdout_skill_pct") or [])}
 
 
 async def run_ablation(job_id: str, body: Dict, db):
@@ -804,7 +823,9 @@ async def run_ablation(job_id: str, body: Dict, db):
                 continue
             agg = {"direction_pct": [], "holdout_direction_pct": [],
                    "inner_direction_pct": [], "holdout_bars": 0,
-                   "trend_hit_pct": [], "switches_final": 0, "switches_live": 0}
+                   "trend_hit_pct": [], "switches_final": 0, "switches_live": 0,
+                   "holdout_reference_bal_pct": [], "inner_reference_bal_pct": [],
+                   "train_reference_bal_pct": [], "holdout_skill_pct": []}
             sym_rows = {}
             for sym, candles in histories.items():
                 if job.get("cancel"):
@@ -827,13 +848,19 @@ async def run_ablation(job_id: str, body: Dict, db):
             rows.append({"variant_key": var["key"], "name": var["name"],
                          "removed": var["removed"], **_variant_metrics(agg),
                          "pooling": research_pooling.pool_rows(sym_rows)})
-        best, selection_basis = research_validation.select_best_row(rows)
+        best, selection_basis = research_validation.select_best_row(rows, chain=[
+            ("inner_reference_bal_pct", "inner_reference_v2"),
+            ("inner_direction_pct", "inner_validation"), ("direction_pct", "train_only")])
         attempt_no = await research_validation.register_attempt(
             db, f"ablation:{timeframe}:{','.join(sorted(histories.keys()))}",
             "ablation")
+        has_ref = any(r.get("inner_reference_bal_pct") is not None for r in rows)
         result = {"kind": "ablation", "rows": rows,
                   "best_variant": best.get("variant_key") if best else None,
-                  "verdicts": research_ablation.component_verdicts(rows),
+                  "verdict_metric": "inner_reference_bal_pct" if has_ref else "inner_direction_pct",
+                  "verdicts": (research_ablation.component_verdicts(
+                      rows, metric="inner_reference_bal_pct", fallback="train_reference_bal_pct")
+                      if has_ref else research_ablation.component_verdicts(rows)),
                   "selection_basis": selection_basis,
                   "holdout_role": "final_test",
                   "evidence": research_validation.evidence_verdict(
@@ -1211,7 +1238,7 @@ async def persist_worker_result(db, job_id: str, job: Dict):
              "symbols": list((job.get("params") or {}).get("symbols") or []),
              "timeframe": (job.get("params") or {}).get("timeframe"),
              "report": res.get("report")})
-    elif kind in ("regime_opt", "autopilot"):
+    elif kind in ("regime_opt", "autopilot", "ablation"):
         await db.regime_lab_runs.replace_one(
             {"id": job_id}, {"id": job_id, "result": res,
                              "created_at": res.get("created_at")}, upsert=True)

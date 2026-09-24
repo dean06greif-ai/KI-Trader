@@ -67,12 +67,13 @@ export function ablationInterpretation(result) {
   const helps = parts.filter(r => verdicts[r.variant_key]?.verdict === 'traegt_bei');
   const hurts = parts.filter(r => verdicts[r.variant_key]?.verdict === 'schadet');
   const redundant = parts.filter(r => verdicts[r.variant_key]?.verdict === 'redundant');
-  const altRated = alts.filter(r => r.holdout_direction_pct != null && r.inner_direction_pct != null);
-  const altUnrated = alts.filter(r => r.holdout_direction_pct == null || r.inner_direction_pct == null);
+  const refKey = full?.holdout_reference_bal_pct != null ? 'holdout_reference_bal_pct' : 'holdout_direction_pct';
+  const altRated = alts.filter(r => r[refKey] != null);
+  const altUnrated = alts.filter(r => r[refKey] == null);
   const bestAlt = altRated.length
-    ? altRated.reduce((a, b) => ((b.holdout_direction_pct || 0) > (a.holdout_direction_pct || 0) ? b : a)) : null;
+    ? altRated.reduce((a, b) => ((b[refKey] || 0) > (a[refKey] || 0) ? b : a)) : null;
   const gateDelta = full && bestAlt
-    ? Number(full.holdout_direction_pct || 0) - Number(bestAlt.holdout_direction_pct || 0) : null;
+    ? Number(full[refKey] || 0) - Number(bestAlt[refKey] || 0) : null;
   const lines = [];
   if (!parts.length) {
     lines.push('Dein Grundgerüst hat keine abschaltbaren Bestätigungs-Komponenten – es gab nur „voll“ und die einfache Alternative zu vergleichen.');
@@ -89,14 +90,18 @@ export function ablationInterpretation(result) {
       ? `Freigabe-Nachweis: volle Konfiguration ${gateDelta >= 0 ? '+' : ''}${gateDelta.toFixed(1)}pp vs. einfache Alternative im Holdout – Regime-Umschaltung verliert nicht ✓.`
       : `Freigabe-Nachweis: volle Konfiguration ${gateDelta.toFixed(1)}pp SCHLECHTER als die einfache Alternative im Holdout – so wird die Freigabe blockiert.`);
   }
-  const next = full && (full.holdout_direction_pct ?? 0) >= 65
+  if (refKey === 'holdout_reference_bal_pct') {
+    lines.push(`Bewertet gegen die detektor-unabhängige Referenz v2 (klassen-balanciert, Holdout: voll ${full.holdout_reference_bal_pct}%). Live=Final ist zwischen Detektoren nicht vergleichbar.`);
+  }
+  const next = full && (full[refKey] ?? 0) >= (refKey === 'holdout_reference_bal_pct' ? 55 : 65)
     ? 'Nächster Schritt: Analyse unter „3 · Analyse“ öffnen → „Behalten vorschlagen“ → „Beobachten (Shadow)“ (die Knöpfe zeigen an, welcher Nachweis noch fehlt).'
     : 'Nächster Schritt: Erkennung verbessern (Autopilot oder anderes Grundgerüst), dann neu „Regime suchen & speichern“.';
   return { lines, next, fullHoldout: full?.holdout_direction_pct ?? null, gateDelta };
 }
 
-export function AblationCompare({ selCoins, timeframe, days, trainPct, engineConfig, jobBlocked, onQueued, onStarted, onResult }) {
-  const body = { symbols: selCoins, timeframe, days, train_pct: trainPct, engine_config: engineConfig || {} };
+export function AblationCompare({ selCoins, timeframe, days, trainPct, engineConfig, jobBlocked, execution, onQueued, onStarted, onResult }) {
+  // execution=local: Worker nutzt seinen Kerzen-Cache (kein Cloud-Neuladen aller 1m-Kerzen)
+  const body = { symbols: selCoins, timeframe, days, train_pct: trainPct, engine_config: engineConfig || {}, execution: execution || 'cloud' };
   const [result, setResult] = useState(null);
   const { start, running } = useLabJob({
     errorLabel: 'Ablation fehlgeschlagen', onStarted,
@@ -137,8 +142,9 @@ export function AblationCompare({ selCoins, timeframe, days, trainPct, engineCon
                 <th style={th()} title="Innere Validierung (letzter Teil des Trainingsfensters) – Bewertungsbasis">Innere Val.</th>
                 <th style={th()} title="Holdout = unangetasteter FINALER Test (keine Auswahlbasis)">Holdout (finaler Test)</th>
                 <th style={th()} title="Nur auf Trend-Kerzen (Auf/Ab)">Trend-Treffer</th>
+                <th style={th()} title="Referenz v2 (detektor-unabhängig, klassen-balanciert): innere Validierung / Holdout – zwischen Detektoren vergleichbar, Basis von Beitrag und Freigabe">Referenz v2 (innen/Holdout)</th>
                 <th style={th()}>Wechsel (final/live)</th>
-                <th style={th()} title="Beitrag der entfernten Komponente: volle Konfiguration minus diese Variante (innere Validierung)">Beitrag</th>
+                <th style={th()} title="Beitrag der entfernten Komponente: volle Konfiguration minus diese Variante (Referenz v2 innen; Altläufe: Live=Final innen)">Beitrag</th>
               </tr>
             </thead>
             <tbody>
@@ -146,12 +152,15 @@ export function AblationCompare({ selCoins, timeframe, days, trainPct, engineCon
                 <tr key={r.variant_key} data-testid={`ablation-row-${r.variant_key}`}
                   style={r.variant_key === result.best_variant ? BEST_BG : undefined}>
                   <td style={th({ paddingLeft: 0 })}><b>{r.name}</b>{r.variant_key === result.best_variant ? ' ★' : ''}</td>
-                  {r.error ? <td colSpan={6} className="neg">{r.error}</td> : (
+                  {r.error ? <td colSpan={7} className="neg">{r.error}</td> : (
                     <>
                       <td style={th()}>{fmt(r.direction_pct, 1)}%</td>
                       <td style={th()}><b>{fmt(r.inner_direction_pct, 1)}%</b></td>
                       <td style={th()}>{fmt(r.holdout_direction_pct, 1)}%</td>
                       <td style={th()}>{fmt(r.trend_hit_pct, 1)}%</td>
+                      <td style={th()} data-testid={`ablation-ref-${r.variant_key}`}>
+                        {r.inner_reference_bal_pct != null ? `${fmt(r.inner_reference_bal_pct, 1)}% / ${fmt(r.holdout_reference_bal_pct, 1)}%` : '–'}
+                      </td>
                       <td style={th()}>{r.switches_final} / {r.switches_live}</td>
                       <td style={th()} className={verdictOf(r.variant_key)?.cls || ''}>
                         {r.variant_key === 'full' ? '–'

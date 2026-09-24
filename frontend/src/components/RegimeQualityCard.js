@@ -63,6 +63,16 @@ export default function RegimeQualityCard({ quality }) {
           help="Nur der unangetastete Testzeitraum nach der Trainings-Grenze. ACHTUNG: misst nur, wie einig sich der Detektor mit seiner eigenen Rückschau ist – beim Detektor 'ema' fast immer ~98 %. Vergleichbar zwischen Detektoren ist nur der Referenz-Treffer." />
         <Metric label="Referenz-Treffer (Holdout)" value={fmt(focus.reference_holdout_pct)} unit="%"
           help="Live-Sicht gegen die detektor-UNABHÄNGIGE Referenz (zentrierte Rückblick-Phasen, dieselbe wie in der Kalibrierung). Die ehrlichste Kennzahl für 'trifft die Erkennung die echten Phasen?' – begrenzt die Note nach oben." />
+        {focus.reference_version === 2 && (
+          <>
+            <Metric label="Referenz balanciert (Holdout)" value={fmt(focus.reference_holdout_balanced_pct)} unit="%"
+              help="Referenz v2: Mittel der Treffer je Richtung (auf/seit/ab). Ein Detektor, der immer 'seitwärts' sagt, erreicht hier nur 33 % – beim Roh-Treffer dagegen ~70 %. Basis der Note." />
+            <Metric label="Skill vs. „immer Mehrheit“" value={fmt(focus.reference_holdout_skill_pct)} unit="%"
+              help={`Anteil der möglichen Verbesserung über die triviale Baseline (immer häufigste Richtung = ${fmt(focus.reference_holdout_baseline_pct)} % Roh-Treffer). ≤ 0 % = nicht besser als raten.`} />
+            <Metric label="Ø Richtungs-Phase (live)" value={fmt(focus.live_direction_phase_days)} unit="d"
+              help={`Wie lange die Live-Erkennung im Schnitt bei auf/seit/ab bleibt (ohne Vola-Unterstufen des 9er-Modus). Referenz-Phasen: Ø ${fmt(focus.reference_phase_days)} d.`} />
+          </>
+        )}
         <Metric label="Referenz-Treffer gesamt" value={fmt(focus.reference_direction_pct)} unit="%"
           help="Live-Sicht vs. Referenz über den gesamten Zeitraum" />
         <Metric label="Referenz-Lag" value={fmt(focus.reference_lag_days)} unit="d"

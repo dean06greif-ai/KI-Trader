@@ -1085,11 +1085,18 @@ def parse_closed_position(res, position_id) -> Optional[Dict]:
                 # (Bug-Report BTC 25.08.: +30.478 statt +29.876).
                 net = gross
                 fee_included = True
+        try:
+            liq_qty = abs(float(p.get("liqQty") or 0))
+        except (TypeError, ValueError):
+            liq_qty = 0.0
         return {"exit_price": close if close > 0 else None,
                 "net_pnl": round(net, 6),
                 "gross_pnl": round(gross, 6), "fee": round(fee, 6),
                 "fee_included_in_pnl": fee_included,
-                "funding": round(funding, 6), "max_qty": max_qty}
+                "funding": round(funding, 6), "max_qty": max_qty,
+                "entry_price": entry if entry > 0 else None,
+                # Bitunix setzt liqQty nur bei Zwangsliquidation (POL 23.09.)
+                "liquidated": liq_qty > 0}
     return None
 
 
@@ -3023,6 +3030,8 @@ class AutoTradeManager:
         logger.info(f"AutoTrade OPEN {side} {symbol} qty={qty} entry={entry} mode={mode}"
                     + (" [Datensammlung]" if collection else ""))
         trade.pop("_id", None)
+        if mode == "live" and trade.get("bitunix_position_id") and not self.is_ibkr_trade(trade):
+            await self._post_open_fill_check(dict(trade))
         if collection:
             # Kein Telegram-Spam durch Sammel-Trades (bis zu Dutzende pro Tag)
             return trade
@@ -3229,6 +3238,9 @@ class AutoTradeManager:
             fees_total = exact["fee"]
             event = (f"EXTERN GESCHLOSSEN (Bitunix-Sync) @ {price} – echter "
                      f"Börsen-PnL {realized:+} (inkl. Fees/Funding)")
+            if exact.get("liquidated"):
+                event = (f"LIQUIDATION an der Börse @ {price} (echter Entry "
+                         f"{exact.get('entry_price')}) – Börsen-PnL {realized:+}")
         else:
             price = float(await self._current_mark(t["symbol"]) or t.get("entry") or 0)
             if price <= 0:
@@ -3248,6 +3260,7 @@ class AutoTradeManager:
             "realized_pnl": realized, "qty_remaining": 0,
             "fees_paid": fees_total,
             "pnl_exchange_exact": bool(exact),
+            **({"liquidated": True} if exact and exact.get("liquidated") else {}),
             "closed_by": "bitunix_sync", "live_close_failed": False,
             "closed_at": closed_at,
             "events": (t.get("events", []) + [event])[-20:]}):
@@ -3447,7 +3460,114 @@ class AutoTradeManager:
             await self.db.auto_trades.update_one({"id": local["id"]},
                                                  {"$set": updates})
             logger.info(f"Positions-Sync {local['symbol']}: " + " | ".join(changes))
+        # ---- 3) Fill-/Liq-Abgleich (RCA POL 23.09.): echte Börsen-Liq vs. SL ----
+        try:
+            changes += await self.guard_fill_liq({**local, **updates}, pos)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Fill/Liq-Guard {local.get('symbol')} fehlgeschlagen: {e}")
         return changes
+
+    async def guard_fill_liq(self, t: Dict, pos: Dict) -> List[str]:
+        """Echten Fill (avgOpenPrice) übernehmen und sicherstellen, dass der SL
+        VOR der echten Börsen-Liquidation liegt (services/fill_liq_guard.py).
+        Nur für reine (nicht gemischte) Live-Positionen."""
+        from services import fill_liq_guard as flg
+        changes: List[str] = []
+        if t.get("status") != "open" or t.get("mode") != "live" or self.is_ibkr_trade(t):
+            return changes
+        qty_rem = float(t.get("qty_remaining", t.get("qty", 0)) or 0)
+        ex_qty = float(pos.get("qty") or 0)
+        if qty_rem <= 0 or ex_qty <= 0 or abs(ex_qty - qty_rem) > max(qty_rem * 0.02, 1e-9) + 1:
+            return changes
+        side = str(t["side"]).upper()
+        ex_entry = float(pos.get("entry") or 0)
+        ex_liq = float(pos.get("liq_price") or 0)
+        ex_margin = float(pos.get("margin") or 0)
+        updates: Dict = {}
+        events = list(t.get("events", []))
+        dev = flg.entry_deviation_pct(t.get("entry"), ex_entry)
+        if (dev is not None and abs(dev) >= flg.ENTRY_TOL_PCT
+                and not t.get("entry_reconciled") and not t.get("tp1_hit")):
+            sl0 = float(t.get("initial_sl") or t.get("sl") or 0)
+            risk = abs(ex_entry - sl0) if sl0 else float(t.get("risk") or 0)
+            updates.update({
+                "entry": ex_entry, "entry_planned": float(t.get("entry") or 0),
+                "entry_reconciled": True, "risk": round(risk, 8),
+                "risk_usdt": round(risk * qty_rem, 6),
+                "slippage_pct": compute_slippage_pct(side, t.get("signal_price") or t.get("entry"),
+                                                     ex_entry)})
+            msg = (f"FILL-ABGLEICH: echter Börsen-Entry {ex_entry} statt {t.get('entry')} "
+                   f"({dev:+.2f}%) – Risiko neu {round(risk * qty_rem, 4)} USDT")
+            events.append(msg)
+            changes.append(msg)
+        if ex_liq > 0 and abs(ex_liq - float(t.get("liq_price") or 0)) > ex_liq * 0.0005:
+            updates["liq_price"] = ex_liq
+        entry_now = ex_entry if ex_entry > 0 else float(t.get("entry") or 0)
+        buffer_pct = float(t.get("profit_secure_sl_liq_buffer_pct") or flg.DEFAULT_BUFFER_PCT)
+        sl = float(t.get("sl") or 0)
+        if ex_liq > 0 and sl > 0 and not flg.sl_safe(side, sl, ex_liq, entry_now, buffer_pct):
+            try:
+                free = capital_fit.usable_free(await self._live_available_balance(), live=True)
+            except Exception:  # noqa: BLE001
+                free = None
+            mark = await self._current_mark(t["symbol"])
+            p = flg.plan(side, sl, entry_now, ex_liq, ex_qty, ex_margin, mark=mark,
+                         usable_free=free, buffer_pct=buffer_pct)
+            action = p["action"]
+            done = False
+            if action == "add_margin":
+                try:
+                    res = await self.client.adjust_position_margin(
+                        t["symbol"], p["amount"], position_id=t.get("bitunix_position_id"),
+                        side=side)
+                    done = isinstance(res, dict) and res.get("code") == 0
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"{t['symbol']}: Marge-Nachschuss fehlgeschlagen: {e}")
+                if done:
+                    self._avail_cache = (0.0, None)
+                    new_margin = round(ex_margin + p["amount"], 6)
+                    updates.update({"margin_used": new_margin, "liq_price": p["target_liq"],
+                                    "effective_leverage": round(ex_qty * entry_now
+                                                                / max(new_margin, 1e-9), 2)})
+                else:
+                    sl_new = flg.plan(side, sl, entry_now, ex_liq, ex_qty, ex_margin,
+                                      mark=mark, usable_free=0.0, buffer_pct=buffer_pct)
+                    p, action = sl_new, sl_new["action"]
+            if action == "move_sl":
+                done = await self._live_move_sl(t, p["new_sl"], ex_qty)
+                if done:
+                    updates["sl"] = p["new_sl"]
+            elif action == "close":
+                res = await self._live_flash_close(t, ex_qty)
+                done = bool(res.get("ok"))
+            msg = (f"LIQ-SCHUTZ ({action}{'' if done else ' FEHLGESCHLAGEN'}): {p['reason']}")
+            events.append(msg)
+            changes.append(msg)
+            updates["liq_guard"] = {"action": action, "ok": done, "reason": p["reason"],
+                                    "ts": datetime.now(timezone.utc).isoformat()}
+            await self._notify_reject(t["symbol"], side, msg)
+        if updates:
+            updates["events"] = events[-20:]
+            await self.db.auto_trades.update_one({"id": t["id"]}, {"$set": updates})
+            if changes:
+                logger.warning(f"Fill/Liq-Guard {t['symbol']}: " + " | ".join(changes))
+        return changes
+
+    async def _post_open_fill_check(self, trade: Dict) -> None:
+        """Direkt nach dem Live-Open: Börsen-Position lesen und Fill/Liq prüfen
+        (der Watchdog-Zyklus käme erst nach bis zu 120 s)."""
+        from services.position_watchdog import parse_positions
+        pid = str(trade.get("bitunix_position_id") or "")
+        if not pid:
+            return
+        try:
+            await asyncio.sleep(1.0)
+            rows = parse_positions(await self.client.get_positions(trade["symbol"]))
+            pos = next((r for r in rows if r.get("position_id") == pid), None)
+            if pos:
+                await self.guard_fill_liq(trade, pos)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"{trade.get('symbol')}: Fill/Liq-Check nach Open fehlgeschlagen: {e}")
 
     async def _record_sync(self, synced: int, open_live: int):
         """Zeitpunkt/Ergebnis des letzten Bitunix-Abgleichs fürs Master-Panel merken."""

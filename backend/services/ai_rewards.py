@@ -128,13 +128,19 @@ def structural_regime_of(trade: Dict) -> Optional[str]:
     return f"strukturell {st['phase']}"
 
 
-async def by_structural_regime(db, days: int = 30, aid: Optional[str] = None) -> List[Dict]:
+async def by_structural_regime(db, days: int = 30, aid: Optional[str] = None,
+                               aids: Optional[List[str]] = None) -> List[Dict]:
     """Reward-Auswertung nach Struktur-Regime (Regime-Brücke 3.2, rein wie by_regime).
     Trades ohne Struktur-Kontext (Stufe none / stale) laufen unter 'unbekannt'.
-    Mit `aid`: nur Trades dieser Freigabe (Alt-Rewards ohne structural_aid zählen mit)."""
+    Mit `aid`: nur Trades dieser Freigabe (Alt-Rewards ohne structural_aid zählen mit).
+    Mit `aids`: nur Trades dieser Analysen (Fix 24.09.: Shadow-Trades gelöschter
+    Analysen wurden sonst der aktuell geöffneten Analyse zugerechnet)."""
     rows = await db.ai_rewards.find({"ts": {"$gte": _cutoff(days)}}).to_list(3000)
     if aid:
         rows = [r for r in rows if r.get("structural_aid") in (None, aid)]
+    if aids is not None:
+        keep = set(aids)
+        rows = [r for r in rows if r.get("structural_aid") in keep]
     agg: Dict[str, Dict] = {}
     for r in rows:
         k = str(r.get("structural_regime") or "unbekannt")

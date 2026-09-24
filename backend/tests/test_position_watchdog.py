@@ -156,7 +156,7 @@ def test_parse_positions_normalizes_rows():
     assert len(rows) == 2
     assert rows[0] == {"bitunix_symbol": "ADAUSDT", "side": "LONG", "qty": 500.0,
                        "entry": 0.5, "position_id": "p1", "leverage": 10.0,
-                       "margin": 25.0, "opened_ms": 0.0}
+                       "margin": 25.0, "liq_price": 0.0, "opened_ms": 0.0}
     assert rows[1]["side"] == "SHORT" and rows[1]["qty"] == 40.0
 
 

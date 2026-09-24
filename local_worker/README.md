@@ -1,4 +1,9 @@
-# Lokaler Worker (v1.13.0)
+# Lokaler Worker (v1.14.0)
+
+## Neu in 1.14.0
+- Regime-Lab-Ablation kann lokal laufen (Ausführung „Lokal“): nutzt den Kerzen-Cache des Workers,
+  statt in der Cloud alle 1m-Kerzen neu zu laden.
+
 
 Führt Backtests, Optimierungen (inkl. Endlos-Suche), Regime-Lab-Jobs (inkl.
 Regime-Autopilot) und Daten-Downloads auf deinem eigenen Rechner aus. Der

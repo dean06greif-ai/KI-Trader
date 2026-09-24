@@ -164,6 +164,20 @@ async def start_ablation(body: Dict, _: bool = Depends(require_admin)):
     _guard_no_running()
     params = {k: body.get(k) for k in
               ("symbols", "timeframe", "days", "train_pct", "engine_config")}
+    execution = (body.get("execution") or "cloud").lower()
+    params["execution"] = execution
+    if execution == "local":
+        # Lokal (Prüfung 24.09.): der Worker hat die 1m-Kerzen der Autopilot-/
+        # Analyse-Läufe bereits im Disk-Cache – in der Cloud (512 MB) wurden sie
+        # für jede Ablation neu von der Börse geladen (Hauptgrund der Wartezeit).
+        _check_local_available()
+        from services import local_exec
+        if not local_exec.worker_supports_fn("ablation"):
+            raise HTTPException(status_code=409, detail="Lokale Ablation braucht Worker ≥ 1.14.0 – "
+                                "Worker-Paket neu herunterladen oder Cloud wählen.")
+        job_id = lab.create_job("ablation", params)
+        _enqueue_local("ablation", job_id, body)
+        return {"status": "started", "job_id": job_id, "execution": "local"}
     job_id = lab.create_job("ablation", params)
     queued = ram_queue.submit(lab.JOBS, job_id,
                               lambda: lab.run_ablation(job_id, body, state.db),
@@ -457,7 +471,11 @@ async def list_releases():
     Stichproben-Ziel dynamisch nach Erkennungs-Note (strengste Shadow-Analyse)."""
     from services import ai_rewards, regime_release
     rows = await regime_release.all_releases(state.db)
-    rewards = await ai_rewards.by_structural_regime(state.db, 90)
+    # Nur Shadow-Trades AKTUELL freigegebener Analysen zählen (Fix 24.09.: die
+    # 122 Trades einer gelöschten Analyse wurden der geöffneten zugerechnet).
+    rewards = await ai_rewards.by_structural_regime(
+        state.db, 90, aids=[r.get("id") for r in rows if r.get("id")])
+    shadow_by_aid, orphan_shadow = await regime_release.shadow_counts_by_aid(state.db, 90)
     min_trades = regime_release.ACTIVATION_MIN_TRADES
     shadow_ids = [r.get("id") for r in rows if r.get("id") and (r.get("release") or {}).get("stage") == "shadow"]
     if shadow_ids:
@@ -472,6 +490,7 @@ async def list_releases():
          "status": {"$in": ["pending", "needs_data", "auto_applied"]}},
         {"_id": 0}).sort("ts", -1).to_list(10)
     return {"releases": rows, "rewards_by_structural": rewards,
+            "shadow_by_aid": shadow_by_aid, "orphan_shadow": orphan_shadow,
             "activation": {"ok": act_ok, "reasons": act_reasons, **act_info},
             "autonomy": autonomy, "proposals": pending}
 
@@ -626,6 +645,13 @@ async def get_transitions(aid: str, scope: str = "combined",
 @router.delete("/api/regime-lab/{aid}")
 async def delete_analysis(aid: str, _: bool = Depends(require_admin)):
     res = await state.db.regime_analyses.delete_one({"id": aid})
+    if res.deleted_count:
+        # Freigabe der gelöschten Analyse sofort aus dem Struktur-Kontext des
+        # KI-Traders entfernen (sonst bis zu TTL ein Label einer toten Analyse).
+        from services import structural_regime
+        structural_regime.invalidate()
+        await state.db.settings.update_one(
+            {"_id": "structural_regime_cache"}, {"$set": {"symbols": {}}})
     if not res.deleted_count:
         raise HTTPException(status_code=404, detail="Nicht gefunden")
     return {"status": "deleted"}

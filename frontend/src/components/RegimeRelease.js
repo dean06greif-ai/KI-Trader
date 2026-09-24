@@ -79,6 +79,8 @@ export function RegimeReleaseControls({ analysis, onChanged, shadowTrades }) {
   const [busy, setBusy] = useState(false);
   const stage = stageOf(analysis);
   const aid = analysis.id;
+  const keptCount = Object.entries(analysis.kept || {})
+    .filter(([k, v]) => v && k.startsWith(analysis.scope === 'per_coin' ? 'per_coin:' : 'combined:')).length;
 
   const loadChecks = useCallback(() => {
     ['shadow', 'active'].forEach(st => {
@@ -152,6 +154,7 @@ export function RegimeReleaseControls({ analysis, onChanged, shadowTrades }) {
             title="Behalten-Vorschlag: Regime mit mindestens 5 Abschnitten werden als „behalten“ markiert, dünne verworfen – ohne Häkchen scheitert das Freigabe-Gate. Gesetzte Häkchen bleiben."
             data-testid={`regime-release-suggest-kept-${aid}`}>
             <CheckSquare size={12} weight="bold" /> Behalten vorschlagen
+            {keptCount > 0 && <span data-testid={`regime-release-kept-count-${aid}`}> ✓ {keptCount} behalten</span>}
           </button>
         )}
         {btn('shadow', 'Beobachten (Shadow)', Eye, `regime-release-shadow-${aid}`)}
