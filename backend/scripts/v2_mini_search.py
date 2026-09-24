@@ -42,7 +42,10 @@ async def main():
             cands.append((f"{det} m{mode} Start", c))
     best_k = dict(base, kombi_ema_days=8.0, kombi_dominance_days=5.0)
     cands.append(("kombi ema8 dom5 (Mini-Suche)", best_k))
-    if "--htf" in sys.argv:
+    if "--rec" in sys.argv:
+        cands = [cands[0], ("EMPFOHLEN kombi8/5 + HTF 4d thr0.2",
+                            dict(best_k, htf_confirm=True, htf_days=4.0, htf_thr=0.2, htf_promote_thr=0.0))]
+    elif "--htf" in sys.argv:
         cands = cands[:1] + [cands[-1]]
         for hd in (2.0, 4.0, 7.0):
             for thr in (0.2, 0.5):
