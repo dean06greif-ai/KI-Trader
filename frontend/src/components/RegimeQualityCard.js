@@ -66,7 +66,9 @@ export default function RegimeQualityCard({ quality }) {
         {focus.reference_version === 2 && (
           <>
             <Metric label="Referenz balanciert (Holdout)" value={fmt(focus.reference_holdout_balanced_pct)} unit="%"
-              help="Referenz v2: Mittel der Treffer je Richtung (auf/seit/ab). Ein Detektor, der immer 'seitwärts' sagt, erreicht hier nur 33 % – beim Roh-Treffer dagegen ~70 %. Basis der Note." />
+              help="Referenz v2: Mittel der Treffer je Richtung (auf/seit/ab). Ein Detektor, der immer 'seitwärts' sagt, erreicht hier nur 33 % – beim Roh-Treffer dagegen ~70 %." />
+            <Metric label="Referenz Macro-F1 (Holdout)" value={fmt(focus.reference_holdout_f1_pct)} unit="%"
+              help={`Basis der Note: bestraft verpasste UND falsch gemeldete Trends (konstant „seitwärts“ ≈ 28 %; gut ≥ 55, mittel ≥ 45). Cohens κ: ${fmt(focus.reference_holdout_kappa_pct)} % (0 = Zufall, 20–40 = mäßig, > 40 = gut).`} />
             <Metric label="Skill vs. „immer Mehrheit“" value={fmt(focus.reference_holdout_skill_pct)} unit="%"
               help={`Anteil der möglichen Verbesserung über die triviale Baseline (immer häufigste Richtung = ${fmt(focus.reference_holdout_baseline_pct)} % Roh-Treffer). ≤ 0 % = nicht besser als raten.`} />
             <Metric label="Ø Richtungs-Phase (live)" value={fmt(focus.live_direction_phase_days)} unit="d"

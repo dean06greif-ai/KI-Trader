@@ -12,7 +12,11 @@ Timeframes) prüfen, Ablation beschleunigen. Prod-DB nur lesend, Tests gegen lok
 - Ablation lokal auf dem Worker (Worker 1.14.0, fn="ablation")
 - Bericht: /app/REGIME_LAB_PRUEFBERICHT_2409.md; Tests: backend/tests/test_pruefung_2409.py (15), Testing-Agent iteration_23 grün
 
+- Nachtrag 24.09.: alle 5 Analysen mit Referenz v2 nachgemessen (scripts/reevaluate_analyses_v2.py), Mini-Suche (scripts/v2_mini_search.py); Bewerter auf Macro-F1 + Cohens κ nachgeschärft (Note, Autopilot-Score, Ablation, Freigabe-Delta, UI)
+
 ## Backlog
+- P0: Autopilot-Suchraum: kombi_ema_days/dominance kürzer, Early-Stop bei Plateau, Richtungs-Modus 3 für Freigabe
+- P1: Regime-Nutzen-Test (Forward-Return-Trennung je Live-Regime) als ökonomischer Benchmark
 - P1: Autopilot neu laufen lassen (Scores v2), dann Analyse + lokale Ablation; ggf. Referenz-Fenster je Ziel-Band einstellbar in der UI
 - P1: 15m-Horizonte skalieren mit dem Zeitraum (Warmup 22 811 Kerzen) -> an Timeframe koppeln
 - P2: Optional Ablation/Analyse automatisch als Folgejob nach dem Autopilot (Schalter)

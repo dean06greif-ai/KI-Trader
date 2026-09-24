@@ -69,6 +69,16 @@ def balanced_grade(pct: Optional[float]) -> Optional[str]:
     return "gut" if pct >= BAL_GOOD else ("mittel" if pct >= BAL_OK else "schwach")
 
 
+F1_GOOD = 55.0     # Macro-F1 Holdout (konstant „seitwärts“ ≈ 28 %)
+F1_OK = 45.0
+
+
+def f1_grade(pct: Optional[float]) -> Optional[str]:
+    if pct is None:
+        return None
+    return "gut" if pct >= F1_GOOD else ("mittel" if pct >= F1_OK else "schwach")
+
+
 def skill_grade(skill: Optional[float]) -> Optional[str]:
     if skill is None:
         return None
@@ -118,11 +128,14 @@ def compare(candles, live_labels: List, truth_labels: List, mode: int, bpd: floa
         out["holdout_bars"] = m["bars"]
         if m["bars"]:
             out["holdout_balanced_pct"] = m["balanced_direction_pct"]
+            out["holdout_f1_pct"] = m["macro_f1_pct"]
+            out["holdout_kappa_pct"] = m["kappa_pct"]
             out["holdout_baseline_pct"] = _baseline_pct(truth[h0:], mode)
             out["holdout_skill_pct"] = skill_pct(m["direction_pct"], out["holdout_baseline_pct"])
         if h0 > 0:
             mt = rt.agreement(live[:h0], truth[:h0], mode)
             out["train_balanced_pct"] = mt["balanced_direction_pct"] if mt["bars"] else None
+            out["train_f1_pct"] = mt["macro_f1_pct"] if mt["bars"] else None
     i0 = _split_index(candles[:n], inner_start_ts)
     if i0 is not None:
         i1 = h0 if h0 is not None else n
@@ -132,6 +145,7 @@ def compare(candles, live_labels: List, truth_labels: List, mode: int, bpd: floa
             out["inner_bars"] = m["bars"]
             if m["bars"]:
                 out["inner_balanced_pct"] = m["balanced_direction_pct"]
+                out["inner_f1_pct"] = m["macro_f1_pct"]
                 out["inner_skill_pct"] = skill_pct(m["direction_pct"],
                                                    _baseline_pct(truth[i0:i1], mode))
     return out

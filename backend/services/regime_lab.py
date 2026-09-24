@@ -677,7 +677,9 @@ async def run_ema_compare(job_id: str, body: Dict, db):
                 for src, dst in (("holdout_balanced_pct", "holdout_reference_bal_pct"),
                                  ("inner_balanced_pct", "inner_reference_bal_pct"),
                                  ("train_balanced_pct", "train_reference_bal_pct"),
-                                 ("holdout_skill_pct", "holdout_skill_pct")):
+                                 ("holdout_skill_pct", "holdout_skill_pct"),
+                                 ("inner_f1_pct", "inner_reference_f1_pct"),
+                                 ("holdout_f1_pct", "holdout_reference_f1_pct")):
                     if ref.get(src) is not None:
                         agg[dst].append(ref[src])
                 segs = entry.get("segments") or []
@@ -776,7 +778,9 @@ def _variant_metrics(agg: Dict) -> Dict:
             "holdout_reference_bal_pct": mean(agg.get("holdout_reference_bal_pct") or []),
             "inner_reference_bal_pct": mean(agg.get("inner_reference_bal_pct") or []),
             "train_reference_bal_pct": mean(agg.get("train_reference_bal_pct") or []),
-            "holdout_skill_pct": mean(agg.get("holdout_skill_pct") or [])}
+            "holdout_skill_pct": mean(agg.get("holdout_skill_pct") or []),
+            "inner_reference_f1_pct": mean(agg.get("inner_reference_f1_pct") or []),
+            "holdout_reference_f1_pct": mean(agg.get("holdout_reference_f1_pct") or [])}
 
 
 async def run_ablation(job_id: str, body: Dict, db):
@@ -825,7 +829,8 @@ async def run_ablation(job_id: str, body: Dict, db):
                    "inner_direction_pct": [], "holdout_bars": 0,
                    "trend_hit_pct": [], "switches_final": 0, "switches_live": 0,
                    "holdout_reference_bal_pct": [], "inner_reference_bal_pct": [],
-                   "train_reference_bal_pct": [], "holdout_skill_pct": []}
+                   "train_reference_bal_pct": [], "holdout_skill_pct": [],
+                   "inner_reference_f1_pct": [], "holdout_reference_f1_pct": []}
             sym_rows = {}
             for sym, candles in histories.items():
                 if job.get("cancel"):
@@ -849,17 +854,18 @@ async def run_ablation(job_id: str, body: Dict, db):
                          "removed": var["removed"], **_variant_metrics(agg),
                          "pooling": research_pooling.pool_rows(sym_rows)})
         best, selection_basis = research_validation.select_best_row(rows, chain=[
+            ("inner_reference_f1_pct", "inner_reference_v2_f1"),
             ("inner_reference_bal_pct", "inner_reference_v2"),
             ("inner_direction_pct", "inner_validation"), ("direction_pct", "train_only")])
         attempt_no = await research_validation.register_attempt(
             db, f"ablation:{timeframe}:{','.join(sorted(histories.keys()))}",
             "ablation")
-        has_ref = any(r.get("inner_reference_bal_pct") is not None for r in rows)
+        has_ref = any(r.get("inner_reference_f1_pct") is not None for r in rows)
         result = {"kind": "ablation", "rows": rows,
                   "best_variant": best.get("variant_key") if best else None,
-                  "verdict_metric": "inner_reference_bal_pct" if has_ref else "inner_direction_pct",
+                  "verdict_metric": "inner_reference_f1_pct" if has_ref else "inner_direction_pct",
                   "verdicts": (research_ablation.component_verdicts(
-                      rows, metric="inner_reference_bal_pct", fallback="train_reference_bal_pct")
+                      rows, metric="inner_reference_f1_pct", fallback="holdout_reference_f1_pct")
                       if has_ref else research_ablation.component_verdicts(rows)),
                   "selection_basis": selection_basis,
                   "holdout_role": "final_test",

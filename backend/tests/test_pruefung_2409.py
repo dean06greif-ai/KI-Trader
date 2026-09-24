@@ -149,3 +149,32 @@ def test_autopilot_score_prefers_balanced_reference_and_direction_phase():
     s = ap.score_metrics(m, 4, 14)
     expected = 0.25 * 95 + 0.75 * 50 - ap.phase_penalty(30, 4, 14)
     assert s == pytest.approx(expected, abs=1e-3)
+
+
+def test_macro_f1_and_kappa_punish_trend_nervous_and_constant_detectors():
+    import numpy as np
+    truth = np.array([1] * 70 + [2] * 15 + [0] * 15)
+    const = np.array([1] * 100)
+    f1_c, k_c = rt._f1_kappa(const, truth)
+    assert k_c == 0.0 and f1_c < 30
+    nervous = np.array([2, 0] * 50)
+    f1_n, k_n = rt._f1_kappa(nervous, truth)
+    assert f1_n < 30 and k_n <= 5
+    good = truth.copy()
+    good[:5] = 2
+    f1_g, k_g = rt._f1_kappa(good, truth)
+    assert f1_g > 90 and k_g > 85
+
+
+def test_autopilot_score_prefers_f1_over_balanced():
+    m = {"inner_direction_pct": 90, "train_direction_pct": 90,
+         "inner_reference_f1_pct": 40, "train_reference_f1_pct": 40,
+         "inner_reference_bal_pct": 60, "train_reference_bal_pct": 60,
+         "live_direction_phase_days": 8}
+    assert ap.score_metrics(m, 4, 14) == pytest.approx(0.25 * 90 + 0.75 * 40, abs=1e-3)
+
+
+def test_quality_grade_uses_f1_when_present():
+    g = regime_quality.grade_of(95.0, 95.0, 5000, reference_pct=74.0, reference_basis="holdout",
+                                reference_balanced=62.0, reference_f1=44.0)
+    assert g["grade"] == "schwach"

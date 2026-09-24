@@ -184,7 +184,10 @@ def score_metrics(m: Optional[Dict], target_min_days: float,
         return None
     # Referenz v2 (klassen-balanciert, ohne Holdout) bevorzugt – dann zählt sie
     # stärker, denn Live=Final ist bei allen Detektoren ~93–98 % (kaum Trennkraft).
-    ref = _half_mix(m.get("inner_reference_bal_pct"), m.get("train_reference_bal_pct"))
+    # Macro-F1 (bestraft verpasste UND falsche Trends) vor balanciertem Treffer
+    ref = _half_mix(m.get("inner_reference_f1_pct"), m.get("train_reference_f1_pct"))
+    if ref is None:
+        ref = _half_mix(m.get("inner_reference_bal_pct"), m.get("train_reference_bal_pct"))
     weight = REFERENCE_WEIGHT_V2
     if ref is None:
         ref_train = m.get("train_reference_pct")
@@ -280,6 +283,8 @@ def evaluate_config(cfg: Dict, histories: Dict, train_hist: Dict, bounds: Dict,
     ragg = {"reference_pct": [], "inner_reference_pct": [], "holdout_reference_pct": [],
             "train_reference_pct": [], "reference_lag_days": [],
             "inner_reference_bal_pct": [], "train_reference_bal_pct": [],
+            "inner_reference_f1_pct": [], "train_reference_f1_pct": [],
+            "holdout_reference_f1_pct": [], "holdout_kappa_pct": [],
             "holdout_reference_bal_pct": [], "holdout_skill_pct": [],
             "live_direction_phase_days": []}
     holdout_bars = switches = seg_bars = seg_n = 0
@@ -321,6 +326,10 @@ def _collect_reference(ref: Dict, ragg: Dict) -> None:
                      ("holdout_direction_pct", "holdout_reference_pct"),
                      ("mean_lag_days", "reference_lag_days"),
                      ("inner_balanced_pct", "inner_reference_bal_pct"),
+                     ("inner_f1_pct", "inner_reference_f1_pct"),
+                     ("train_f1_pct", "train_reference_f1_pct"),
+                     ("holdout_f1_pct", "holdout_reference_f1_pct"),
+                     ("holdout_kappa_pct", "holdout_kappa_pct"),
                      ("train_balanced_pct", "train_reference_bal_pct"),
                      ("holdout_balanced_pct", "holdout_reference_bal_pct"),
                      ("holdout_skill_pct", "holdout_skill_pct"),

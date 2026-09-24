@@ -407,10 +407,32 @@ def agreement(live, truth, mode: int) -> Dict:
         if mask.any():
             recalls.append(float(np.mean(tl[mask] == cls)))
     bal = float(np.mean(recalls)) * 100 if recalls else 0.0
+    f1, kappa = _f1_kappa(tl[m], tt[m])
     return {"bars": int(m.sum()), "exact_pct": round(exact, 1),
             "direction_pct": round(dir_pct, 1),
             "balanced_direction_pct": round(bal, 1),
+            "macro_f1_pct": f1, "kappa_pct": kappa,
             "switches_live": _switches(tl), "switches_truth": _switches(tt)}
+
+
+def _f1_kappa(tl: np.ndarray, tt: np.ndarray) -> tuple:
+    """Macro-F1 (über die in der Referenz vorkommenden Richtungen) und Cohens κ.
+    Beide bestrafen verpasste Trends UND falsche Trend-Meldungen – der
+    balancierte Treffer allein belohnt „trend-nervöse“ Detektoren."""
+    if not len(tt):
+        return 0.0, 0.0
+    f1s = []
+    for cls in (0, 1, 2):
+        tp = float(np.sum((tl == cls) & (tt == cls)))
+        fp = float(np.sum((tl == cls) & (tt != cls)))
+        fn = float(np.sum((tl != cls) & (tt == cls)))
+        if tp + fn == 0:
+            continue
+        f1s.append(2 * tp / (2 * tp + fp + fn) if tp else 0.0)
+    po = float(np.mean(tl == tt))
+    pe = sum(float(np.mean(tl == c)) * float(np.mean(tt == c)) for c in (0, 1, 2))
+    kappa = (po - pe) / (1 - pe) if pe < 1 else 0.0
+    return round(float(np.mean(f1s)) * 100 if f1s else 0.0, 1), round(kappa * 100, 1)
 
 
 def detection_lag_days(live, truth, mode: int, bpd: float) -> Dict:

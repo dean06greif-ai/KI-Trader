@@ -13,18 +13,23 @@ from services.bitunix_client import fetch_klines_range  # noqa: E402
 from services import regime_truth as rt, regime_engine as eng  # noqa: E402
 
 
-async def load_1h(sym: str, days: int):
+STEP_MS = {"15m": 900000, "1h": 3600000, "4h": 14400000}
+
+
+async def load_1h(sym: str, days: int, interval: str = "1h"):
+    step = STEP_MS[interval]
     end = int(time.time() * 1000)
     start = end - days * 86400000
     out, cur = {}, start
     while cur < end:
-        ks = await fetch_klines_range(sym, "1h", cur, min(cur + 200 * 3600000, end), limit=200)
+        ks = await fetch_klines_range(sym, interval, cur, min(cur + 200 * step, end), limit=200)
         if not ks:
-            cur += 200 * 3600000
+            cur += 200 * step
             continue
         for k in ks:
             out[k["time"]] = k
-        cur = max(k["time"] for k in ks) * 1000 + 3600000
+        nxt = max(k["time"] for k in ks) * 1000 + step
+        cur = nxt if nxt > cur else cur + 200 * step   # vor Listing: nicht hängen
     return [{"timestamp": t * 1000, **{x: v[x] for x in ("open", "high", "low", "close")},
              "volume": 0.0} for t, v in sorted(out.items())]
 

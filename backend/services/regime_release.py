@@ -126,9 +126,9 @@ def ablation_delta_pct(run: Optional[Dict]) -> Optional[float]:
         return None
     # Referenz v2 bevorzugt: Live=Final ist zwischen Detektoren nicht vergleichbar
     # (Selbst-Übereinstimmung, Prüfung 24.09.); Altläufe ohne v2 -> Live=Final.
-    key = ("holdout_reference_bal_pct" if full.get("holdout_reference_bal_pct") is not None
-           and any(r.get("holdout_reference_bal_pct") is not None for r in alts)
-           else "holdout_direction_pct")
+    key = next((k for k in ("holdout_reference_f1_pct", "holdout_reference_bal_pct")
+                if full.get(k) is not None and any(r.get(k) is not None for r in alts)),
+               "holdout_direction_pct")
     try:
         best_alt = max(float(r.get(key) or 0) for r in alts)
         return round(float(full.get(key) or 0) - best_alt, 2)

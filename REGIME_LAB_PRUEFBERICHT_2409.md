@@ -113,3 +113,42 @@ Disk-Cache. Neu: Ausführung „Lokal“ für die Ablation (Worker ≥ **1.14.0*
 5. Erst dann Shadow-Freigabe.
 
 Skripte (nur lesend): `backend/scripts/reference_window_probe.py`, `backend/scripts/reference_v2_probe.py`.
+
+---
+
+## 7. Nachtrag: alle 5 gespeicherten Analysen nachgemessen (Referenz v2, nur lesend)
+
+Skript: `backend/scripts/reevaluate_analyses_v2.py` (gleiches Datenfenster wie die Analyse; Kerzen direkt von Bitunix).
+Holdout-Mittel über die Symbole:
+
+| Analyse | TF / Detektor | Live=Final | Ref v1 roh | **Ref v2 balanciert** | Skill | verpasst | Ø Richtungs-Phase live / Ref |
+|---|---|---|---|---|---|---|---|
+| Regime Krypto 1h (5 von 13 Coins) | 1h kombi | 92,7 | 70,8 | **43,0** | −27 % | 39 % | 26 d / 10 d |
+| Regime BTC ETH SOL 1h | 1h kombi | 96,3 | 70,5 | **42,8** | −38 % | 41 % | 29 d / 9,5 d |
+| Regime Rohstoffe 1h | 1h kombi | 97,9 | 62,8 | **33,9** (= trivial) | ±0 | 51 % | 102 d / 7,6 d |
+| Regime Rohstoffe 15m | 15m kombi | 95,7 | 63,3 | **48,2** | −18 % | 42 % | 21 d / 8,4 d |
+| Regime Rohstoffe 4h | 4h ema | 97,6 | 59,1 | **47,8** | −62 % | 43 % | 16 d / 8,3 d |
+
+- Alle 5 erkennen die **Richtung zu träge** (Richtungs-Phase 16–100 d statt 4–14 d) und verpassen ~40–50 % der Phasen.
+  Der Lag ist dagegen klein (1,4–3,3 d) – wenn umgeschaltet wird, dann rechtzeitig.
+- Silber (Rohstoffe 1h) schaltet praktisch nie um (Phase 228 d) – reines „immer seitwärts“.
+- Rohstoffe: Bitunix/Dukascopy liefern nur **max. 365 Tage** (Einstellung 1080 d wird still gekürzt); bei 15m reichen
+  die Horizonte bis 238 Tage → ein Großteil des Jahres ist Aufwärmphase, der Holdout nur ~90 Tage.
+
+## 8. Mini-Suche mit dem neuen Bewerter (60 Konfigurationen, BTC/ETH/SOL 1h, 1080 d)
+
+Skript: `backend/scripts/v2_mini_search.py`. Eine Konfiguration zu bewerten dauert nur **~2–4 s** (3 Coins, 1080 d).
+
+| Konfiguration | Macro-F1 Holdout | Cohens κ | Richtungs-Phase |
+|---|---|---|---|
+| gespeichert (Krypto 1h) | 43,9 | 12,5 | 22,9 d |
+| kombi, `kombi_ema_days` 8, `kombi_dominance_days` 5 | **47,5** | **19,9** | 7,5 d |
+| ema, thr 0,34, smooth 0,75, mode 3 | 46,6 | 16,7 | 10,4 d |
+
+**Nachschärfung des v2-Bewerters:** balancierter Treffer allein belohnt „trend-nervöse“ Detektoren (Skill bis −110 %).
+Note/Autopilot-Score/Ablation nutzen jetzt **Macro-F1** (bestraft verpasste UND falsche Trends; konstant seitwärts ≈ 28 %;
+gut ≥ 55, mittel ≥ 45) plus Cohens κ als Anzeige.
+
+**Ehrliche Einordnung:** Mit reiner Preis-Erkennung liegt die Decke bei κ ≈ 20 („mäßig“). Mehr holt man nicht durch
+längere Autopilot-Läufe (die 2–8 h testeten tausende fast identische Varianten), sondern nur durch andere Stellschrauben
+(siehe Empfehlungen).
