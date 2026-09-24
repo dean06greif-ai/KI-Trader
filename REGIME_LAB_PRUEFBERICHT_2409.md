@@ -152,3 +152,18 @@ gut ≥ 55, mittel ≥ 45) plus Cohens κ als Anzeige.
 **Ehrliche Einordnung:** Mit reiner Preis-Erkennung liegt die Decke bei κ ≈ 20 („mäßig“). Mehr holt man nicht durch
 längere Autopilot-Läufe (die 2–8 h testeten tausende fast identische Varianten), sondern nur durch andere Stellschrauben
 (siehe Empfehlungen).
+
+## 9. Datenkontrolle + Bug „Ø Erkennungs-Verzögerung 23,6 d“ ✅ behoben
+
+**Richtige Daten?** Ja. Nachgerechnet wurden genau die 5 Analysen aus der Liste (ra_d41ad11b, ra_71186af0, ra_ee302201,
+ra_8148e46b, ra_dc22cc33). Die Nachrechnung reproduziert die gespeicherten Werte (Live=Final je Coin z. B. BTC 93,3 / ETH 93,0 /
+BNB 92,3 / XRP 92,7 = identisch mit der Oberfläche). Die gelöschte Analyse ra_2e8723cf spielte nur bei den Shadow-Trades eine Rolle.
+
+**Gefundener Fehler:** „Ø Erkennungs-Verzögerung 23,6 d“ (Krypto 1h) stammte von DOT/SUI (je 121 d), AVAX 22,8 d, DOGE 21,2 d,
+POL 12,6 d. Ursache: Crash-Wick vom 10.10.2025 (DOT/SUI −66 %, ADA −55 %, AVAX −56 % in einer 1h-Kerze). Der Umkehrpunkt-Scan
+(kombi + reactive) nahm den Wick-Bar nach jeder Bestätigung wieder als Startpunkt → Endlos-Kippen Hoch/Tief alle `persist`
+Kerzen bis Serienende (bis 347 d Verzögerung, 133 Schein-Pivots auf einem Bar). Fix: Suche beginnt NACH dem bestätigten Pivot.
+Ergebnis: DOT 70 d → 0,6 d, SUI 22,6 d → 0,6 d, BTC unverändert (0,6 d). Wirkt auch auf die Live-Erkennung (Umkehrpunkt-Beschleuniger,
+Frühwarnungen) dieser Coins. Die Richtungs-Kennzahlen änderten sich kaum – das Hauptproblem (zu träge Richtung) bleibt.
+
+Neue Analysen zeigen den Hinweis „Alte Referenz v1“ nicht mehr; alte Analysen bitte neu ausführen.

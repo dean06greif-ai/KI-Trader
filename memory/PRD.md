@@ -14,6 +14,8 @@ Timeframes) prüfen, Ablation beschleunigen. Prod-DB nur lesend, Tests gegen lok
 
 - Nachtrag 24.09.: alle 5 Analysen mit Referenz v2 nachgemessen (scripts/reevaluate_analyses_v2.py), Mini-Suche (scripts/v2_mini_search.py); Bewerter auf Macro-F1 + Cohens κ nachgeschärft (Note, Autopilot-Score, Ablation, Freigabe-Delta, UI)
 
+- Fix 24.09.: Crash-Wick-Endlosschleife im Pivot-Scan (regime_kombi/_reactive), v1-Warnhinweis auf Qualitätskarte; iteration_24 grün
+
 ## Backlog
 - P0: Autopilot-Suchraum: kombi_ema_days/dominance kürzer, Early-Stop bei Plateau, Richtungs-Modus 3 für Freigabe
 - P1: Regime-Nutzen-Test (Forward-Return-Trennung je Live-Regime) als ökonomischer Benchmark
