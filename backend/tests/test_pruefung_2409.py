@@ -178,3 +178,38 @@ def test_quality_grade_uses_f1_when_present():
     g = regime_quality.grade_of(95.0, 95.0, 5000, reference_pct=74.0, reference_basis="holdout",
                                 reference_balanced=62.0, reference_f1=44.0)
     assert g["grade"] == "schwach"
+
+
+def _crash_wick_series(n=600):
+    import numpy as np
+    rnd = random.Random(5)
+    close = [100.0]
+    for _ in range(n - 1):
+        close.append(close[-1] * math.exp(rnd.gauss(0, 0.004)))
+    close = np.array(close)
+    high, low = close * 1.003, close * 0.997
+    w = 200                       # Crash-Wick wie DOT 10.10.2025: −66 % in einer Kerze
+    high[w] = close[w - 1] * 1.002
+    low[w] = close[w - 1] * 0.34
+    close[w] = close[w - 1] * 0.8
+    close[w + 1:] = close[w + 1:] * 0.8
+    high[w + 1:], low[w + 1:] = close[w + 1:] * 1.003, close[w + 1:] * 0.997
+    return high, low, close
+
+
+def test_kombi_pivot_scan_does_not_flip_forever_after_crash_wick():
+    import numpy as np
+    from services.regime_kombi import _pivot_scan
+    high, low, close = _crash_wick_series()
+    pivots, *_ = _pivot_scan(high, low, close, np.full(len(close), 1.5), 3)
+    delays = [p["confirmed_i"] - p["i"] for p in pivots]
+    assert max(delays) < 100, max(delays)          # vorher: wächst bis Serienende
+    same_i = [p["i"] for p in pivots if p["i"] == 200]
+    assert len(same_i) <= 2
+
+
+def test_reactive_detector_source_uses_exclusive_rebase_window():
+    import inspect
+    from services import regime_reactive
+    src = inspect.getsource(regime_reactive._detect_reactive)
+    assert "j0 = min(ext_hi_i + 1, i)" in src and "j0 = min(ext_lo_i + 1, i)" in src

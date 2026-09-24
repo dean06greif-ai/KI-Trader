@@ -44,6 +44,11 @@ export default function RegimeQualityCard({ quality }) {
       <div className="rl-quality-head">
         <span className="rl-quality-grade" data-testid="regime-quality-grade">{focus.grade.toUpperCase()}</span>
         <b>{title}</b>
+        {focus.reference_version !== 2 && (
+          <span className="opt-small" style={{ color: '#f59e0b' }} data-testid="regime-quality-v1-warning">
+            Alte Referenz v1 (vor 24.09.): Note zu optimistisch (träges Referenz-Fenster, „immer seitwärts“ zählt als Treffer) – Analyse neu ausführen für Referenz v2 / Macro-F1.
+          </span>
+        )}
         <span className="opt-small">
           Live=Final {focus.basis === 'holdout' ? 'im Holdout' : 'gesamt (kein Holdout)'}:
           {' '}<b data-testid="regime-quality-pct">{fmt(focus.pct)}%</b>

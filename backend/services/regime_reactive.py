@@ -382,7 +382,7 @@ def _detect_reactive(f: Dict, cfg: Dict) -> Dict:
                 hi_hist.append(float(ext_hi))
                 d = -1
                 pivot_price = ext_hi
-                j0 = ext_hi_i
+                j0 = min(ext_hi_i + 1, i)   # Fix 24.09.: ab NACH dem Pivot (Crash-Wick-Endlosschleife)
                 k = int(np.argmin(low[j0:i + 1]))
                 ext_lo, ext_lo_i = float(low[j0 + k]), j0 + k
                 ext_hi, ext_hi_i = float(high[i]), i
@@ -404,7 +404,7 @@ def _detect_reactive(f: Dict, cfg: Dict) -> Dict:
                 lo_hist.append(float(ext_lo))
                 d = 1
                 pivot_price = ext_lo
-                j0 = ext_lo_i
+                j0 = min(ext_lo_i + 1, i)
                 k = int(np.argmax(high[j0:i + 1]))
                 ext_hi, ext_hi_i = float(high[j0 + k]), j0 + k
                 ext_lo, ext_lo_i = float(low[i]), i

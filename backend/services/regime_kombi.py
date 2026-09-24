@@ -89,7 +89,10 @@ def _pivot_scan(high: np.ndarray, low: np.ndarray, close: np.ndarray,
                            "price": float(ext_hi), "confirmed_i": i})
             accel[i] = -1
             d = -1
-            j0 = ext_hi_i
+            # Fix 24.09.: Suche NACH dem Pivot-Bar beginnen. Sonst bleibt ein
+            # Crash-Wick-Bar (10.10.2025: DOT/SUI −66 %) gleichzeitig Hoch und
+            # Tief -> Endlos-Kippen alle `persist` Kerzen, Verzögerung bis 347 d.
+            j0 = min(ext_hi_i + 1, i)
             k = int(np.argmin(low[j0:i + 1]))
             ext_lo, ext_lo_i = float(low[j0 + k]), j0 + k
             ext_hi, ext_hi_i = float(high[i]), i
@@ -99,7 +102,7 @@ def _pivot_scan(high: np.ndarray, low: np.ndarray, close: np.ndarray,
                            "price": float(ext_lo), "confirmed_i": i})
             accel[i] = 1
             d = 1
-            j0 = ext_lo_i
+            j0 = min(ext_lo_i + 1, i)
             k = int(np.argmax(high[j0:i + 1]))
             ext_hi, ext_hi_i = float(high[j0 + k]), j0 + k
             ext_lo, ext_lo_i = float(low[i]), i
