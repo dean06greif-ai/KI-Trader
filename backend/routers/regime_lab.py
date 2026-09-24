@@ -657,6 +657,33 @@ async def delete_analysis(aid: str, _: bool = Depends(require_admin)):
     return {"status": "deleted"}
 
 
+@router.post("/api/regime-lab/{aid}/reevaluate")
+async def reevaluate_analysis(aid: str, body: Dict, _: bool = Depends(require_admin)):
+    """Plan 2.4: gespeicherte Analyse mit der aktuellen Bewertung neu messen
+    (Referenz v2 / Macro-F1 / Regime-Nutzen) – lokal empfohlen (Kerzen-Cache)."""
+    doc = await state.db.regime_analyses.find_one({"id": aid}, {"_id": 0, "chart": 0, "chart_emas": 0,
+                                                              "per_coin": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Analyse nicht gefunden")
+    job_body = lab.reevaluate_body(doc)
+    execution = ((body or {}).get("execution") or "cloud").lower()
+    params = {"aid": aid, "execution": execution,
+              "symbols": job_body["symbols"], "timeframe": job_body["timeframe"]}
+    if execution == "local":
+        _check_local_available()
+        from services import local_exec
+        if not local_exec.worker_supports_fn("reevaluate"):
+            raise HTTPException(status_code=409, detail="Lokale Neubewertung braucht Worker ≥ 1.15.0 – "
+                                "Worker-Paket neu herunterladen oder Cloud wählen.")
+        job_id = lab.create_job("reevaluate", params)
+        _enqueue_local("reevaluate", job_id, job_body)
+        return {"status": "started", "job_id": job_id, "execution": "local"}
+    job_id = lab.create_job("reevaluate", params)
+    queued = ram_queue.submit(lab.JOBS, job_id, lambda: lab.run_reevaluate(job_id, job_body, state.db),
+                              kind="regime_reevaluate")
+    return {"status": "started", "job_id": job_id, "ram_queued": queued}
+
+
 @router.post("/api/regime-lab/{aid}/rename")
 async def rename_analysis(aid: str, body: Dict, _: bool = Depends(require_admin)):
     """Analyse nachträglich umbenennen (nur der Anzeigename – Modell, Nachweise

@@ -898,6 +898,47 @@ def _ids(dir3, sub, mode: int) -> np.ndarray:
     return t * 3 + s
 
 
+def htf_slope(close: np.ndarray, atr_pct: np.ndarray, bpd: float, htf_days: float) -> np.ndarray:
+    """Kausale Steigung einer „höheren Zeitebene“: EMA über `htf_days`, Änderung
+    über die halbe Spanne, in ATR-Einheiten (vergleichbar über Coins/TFs)."""
+    n = len(close)
+    span = max(int(round(htf_days * bpd)), 2)
+    alpha = 2.0 / (span + 1.0)
+    ema = np.empty(n)
+    acc = float(close[0]) if n else 0.0
+    for i in range(n):
+        acc = alpha * float(close[i]) + (1 - alpha) * acc
+        ema[i] = acc
+    k = max(span // 2, 1)
+    out = np.zeros(n)
+    if n > k:
+        chg = (ema[k:] / np.maximum(ema[:-k], 1e-12) - 1.0) * 100.0
+        atr = np.nan_to_num(np.asarray(atr_pct[k:], dtype=float), nan=0.0)
+        out[k:] = np.where(atr > 1e-9, chg / np.maximum(atr, 1e-9), 0.0)
+    return out
+
+
+def htf_filter(live3: np.ndarray, f: Dict, cfg: Dict) -> np.ndarray:
+    """Plan 2.1 Höherer-TF-Filter (kausal): widerspricht die Steigung der höheren
+    Zeitebene der Live-Richtung um mehr als `htf_thr` ATR, wird auf seitwärts
+    gesetzt (weniger Fehlalarme). Optional `htf_promote_thr` > 0: bei starker
+    Steigung wird seitwärts zum Trend hochgestuft (weniger verpasste Phasen)."""
+    close = np.asarray(f["close"], dtype=float)
+    atr = np.asarray(f["atr_pct"], dtype=float)
+    bpd = float(cfg.get("bars_per_day") or 1.0)
+    s = htf_slope(close, atr, bpd, float(cfg.get("htf_days") or 4.0))
+    thr = float(cfg.get("htf_thr") if cfg.get("htf_thr") is not None else 0.3)
+    prom = float(cfg.get("htf_promote_thr") or 0.0)
+    out = np.asarray(live3).copy()
+    valid = out >= 0
+    out[valid & (out == 2) & (s < -thr)] = 1
+    out[valid & (out == 0) & (s > thr)] = 1
+    if prom > 0:
+        out[valid & (out == 1) & (s >= prom)] = 2
+        out[valid & (out == 1) & (s <= -prom)] = 0
+    return out
+
+
 def classify(f: Dict, cfg: Dict, conf_min: float = None,
              min_hold_bars: int = None):
     """(ids, confidence, detail) – Live-Labels ohne Lookahead.
@@ -906,6 +947,8 @@ def classify(f: Dict, cfg: Dict, conf_min: float = None,
     viele Kerzen zurückliegt (kausale Mindesthaltedauer fürs Umschalten)."""
     from services import regime_engine as eng
     det = detect(f, cfg)
+    if cfg.get("htf_confirm"):
+        det["live3"] = htf_filter(det["live3"], f, cfg)
     mode = eng.norm_mode(cfg.get("regime_mode", eng.DEFAULT_REGIME_MODE))
     det["mode"] = mode
     sub = _sub_axis(det, f, cfg, det["live3"], mode, causal=True)

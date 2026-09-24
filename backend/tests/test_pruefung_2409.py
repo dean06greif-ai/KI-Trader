@@ -264,3 +264,63 @@ def test_autopilot_skips_duplicates_and_stops_on_plateau(monkeypatch):
     assert res["stop_reason"] == "plateau"
     assert len(evaluated) == len(set(evaluated)) <= 3     # Start + 2 Varianten, nie doppelt
     assert res["duplicates_skipped"] > 0
+
+
+# ---- Plan 2.1 Höherer-TF-Filter ----
+def test_htf_filter_demotes_contradicting_trends_and_optionally_promotes():
+    import numpy as np
+    from services import regime_reactive as rx
+    n = 24 * 20
+    close = np.concatenate([np.linspace(100, 120, n // 2), np.linspace(120, 100, n // 2)])
+    f = {"close": close, "atr_pct": np.full(n, 0.5)}
+    cfg = {"bars_per_day": 24.0, "htf_days": 2.0, "htf_thr": 0.2}
+    live_up = np.full(n, 2, dtype=np.int8)
+    out = rx.htf_filter(live_up, f, cfg)
+    assert (out[-24:] == 1).all()            # „auf“ im klaren Abwärtslauf -> seitwärts
+    assert (out[24:n // 2 - 24] == 2).all()  # passt zur höheren Zeitebene -> bleibt
+    side = np.full(n, 1, dtype=np.int8)
+    assert (rx.htf_filter(side, f, cfg) == 1).all()
+    prom = rx.htf_filter(side, f, dict(cfg, htf_promote_thr=0.5))
+    assert (prom[48:n // 2 - 24] == 2).all() and (prom[-24:] == 0).all()
+
+
+def test_htf_keys_survive_config_resolution():
+    from services import regime_engine as eng
+    c = eng.resolve_config({"detector": "kombi", "htf_confirm": True, "htf_days": 4, "htf_thr": 0.2}, "1h")
+    assert c["htf_confirm"] is True and c["htf_days"] == 4.0 and c["htf_thr"] == 0.2
+    assert eng.resolve_config({}, "1h")["htf_confirm"] is False     # Standard aus = rückwärtskompatibel
+
+
+def test_autopilot_score_uses_train_utility_only():
+    m = {"inner_direction_pct": 90, "train_direction_pct": 90,
+         "inner_reference_f1_pct": 40, "train_reference_f1_pct": 40,
+         "live_direction_phase_days": 8, "utility_sign_hit_pct": 99.0}
+    base = ap.score_metrics(m, 4, 14)
+    assert ap.score_metrics(dict(m, utility_train_sign_hit_pct=54.0), 4, 14) == pytest.approx(base + 2.0)
+    assert ap.score_metrics(dict(m, utility_train_sign_hit_pct=30.0), 4, 14) == pytest.approx(base - 5.0)
+
+
+# ---- Plan 2.4 Neubewertung gespeicherter Analysen ----
+def test_reevaluate_recomputes_reference_v2_on_stored_window(monkeypatch):
+    import asyncio
+    from services import regime_lab as lab, regime as rg
+    c = _walk(24 * 200)
+    cut = int(len(c) * 0.75)
+    model = rg.detect_regimes({"BTCUSDT": c[:cut]}, "1h", 5, 3.0, 5.0, engine="v2",
+                              engine_config={"detector": "kombi", "regime_mode": 3})
+    assert model
+
+    async def fake_fetch(symbols, days, timeframe, job=None, **kw):
+        assert kw.get("start_ts") == {"BTCUSDT": c[0]["timestamp"]}
+        return {"BTCUSDT": c}
+
+    monkeypatch.setattr(lab, "fetch_histories", fake_fetch)
+    body = {"aid": "ra_x", "model": model, "timeframe": "1h", "days": 200, "symbols": ["BTCUSDT"],
+            "bounds": {"BTCUSDT": {"start_ts": c[0]["timestamp"], "end_ts": c[-1]["timestamp"] + 1,
+                                   "train_end_ts": c[cut - 1]["timestamp"], "inner_start_ts": None}}}
+    job_id = lab.create_job("reevaluate", {})
+    asyncio.run(lab.run_reevaluate(job_id, body, None))
+    job = lab.JOBS[job_id]
+    assert job["status"] == "done", job.get("error")
+    ref = job["result"]["updates"]["BTCUSDT"]["reference"]
+    assert ref["version"] == 2 and "holdout_f1_pct" in ref and "utility" in ref

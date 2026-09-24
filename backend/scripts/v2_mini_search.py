@@ -40,7 +40,15 @@ async def main():
         for mode in (3, 9):
             c = dict(base, detector=det, regime_mode=mode)
             cands.append((f"{det} m{mode} Start", c))
-    cands.append(("kombi ema8 dom5 (Mini-Suche)", dict(base, kombi_ema_days=8.0, kombi_dominance_days=5.0)))
+    best_k = dict(base, kombi_ema_days=8.0, kombi_dominance_days=5.0)
+    cands.append(("kombi ema8 dom5 (Mini-Suche)", best_k))
+    if "--htf" in sys.argv:
+        cands = cands[:1] + [cands[-1]]
+        for hd in (2.0, 4.0, 7.0):
+            for thr in (0.2, 0.5):
+                for prom in (0.0, 1.2, 2.0):
+                    cands.append((f"kombi8/5 HTF {hd}d thr{thr} prom{prom}",
+                                  dict(best_k, htf_confirm=True, htf_days=hd, htf_thr=thr, htf_promote_thr=prom)))
     while len(cands) < n:
         det = rng.choice(["kombi", "ema", "reactive"])
         c = ap.mutate(dict(base, detector=det, regime_mode=rng.choice([3, 9])), rng, False, rng.randint(2, 8))

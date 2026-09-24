@@ -83,13 +83,19 @@ def compute(candles, live_labels: List, mode: int, bpd: float,
             st, basis = horizon_stats(close, trend, k), "overall"
         st["basis"] = basis
         out["horizons"][f"{hd:g}d"] = st
+        # Training-Anteil (ohne Holdout) – nur DIESER darf in die Auswahl (Autopilot-Score)
+        if h0 is not None and h0 > k:
+            out.setdefault("train", {})[f"{hd:g}d"] = horizon_stats(close[:h0], trend[:h0], k)
     return out
 
 
 def summary(util: Dict, horizon: str = "3d") -> Dict:
     """Kurzform für Qualitätskarte/Autopilot."""
     h = (util or {}).get("horizons", {}).get(horizon) or {}
-    return {"utility_separation_pct": h.get("separation_pct"),
+    t = ((util or {}).get("train") or {}).get(horizon) or {}
+    return {"utility_train_sign_hit_pct": t.get("sign_hit_pct"),
+            "utility_train_separation_pct": t.get("separation_pct"),
+            "utility_separation_pct": h.get("separation_pct"),
             "utility_sign_hit_pct": h.get("sign_hit_pct"),
             "utility_side_range_ratio": h.get("side_range_ratio"),
             "utility_basis": h.get("basis")}

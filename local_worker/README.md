@@ -1,4 +1,8 @@
-# Lokaler Worker (v1.14.0)
+# Lokaler Worker (v1.15.0)
+
+## Neu in 1.15.0
+- Gespeicherte Regime-Analysen lokal neu bewerten (Referenz v2 / Macro-F1 / Regime-Nutzen).
+
 
 ## Neu in 1.14.0
 - Regime-Lab-Ablation kann lokal laufen (Ausführung „Lokal“): nutzt den Kerzen-Cache des Workers,

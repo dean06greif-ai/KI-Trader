@@ -50,11 +50,17 @@ def config_key(cfg: Dict) -> str:
     import json
     return json.dumps(cfg or {}, sort_keys=True, default=str)
 REFERENCE_WEIGHT_V2 = 0.75
+UTILITY_WEIGHT = 0.5
 
 # Suchraum: (lo, hi, step) für Zahlen (int wenn alle int), Liste = Auswahl
 COMMON_SPACE = {
     "confidence_min": (0.5, 0.8, 0.05),
     "min_phase_days": (0.0, 10.0, 0.5),
+    # Plan 2.1 Höherer-TF-Filter (für alle Detektoren)
+    "htf_confirm": [True, False],
+    "htf_days": (1.0, 10.0, 0.5),
+    "htf_thr": (0.0, 1.5, 0.1),
+    "htf_promote_thr": [0.0, 0.8, 1.2, 1.6, 2.0, 3.0],
 }
 DETECTOR_SPACE = {
     "reactive": {
@@ -207,6 +213,11 @@ def score_metrics(m: Optional[Dict], target_min_days: float,
         weight = REFERENCE_WEIGHT
     if ref is not None:
         base = (1.0 - weight) * base + weight * ref
+    # Plan 2.5: Regime-Nutzen (NUR Trainingsteil, kein Holdout-Leck): bestätigt
+    # sich die Live-Richtung danach öfter als ein Münzwurf? ±0,5 Punkte je %-Punkt
+    util = m.get("utility_train_sign_hit_pct")
+    if util is not None:
+        base += UTILITY_WEIGHT * max(min(float(util) - 50.0, 10.0), -10.0)
     phase = m.get("live_direction_phase_days") or m.get("avg_live_phase_days")
     penalty = phase_penalty(phase, target_min_days, target_max_days)
     return round(float(base) - penalty, 3)
@@ -296,6 +307,7 @@ def evaluate_config(cfg: Dict, histories: Dict, train_hist: Dict, bounds: Dict,
             "inner_reference_f1_pct": [], "train_reference_f1_pct": [],
             "holdout_reference_f1_pct": [], "holdout_kappa_pct": [],
             "utility_separation_pct": [], "utility_sign_hit_pct": [],
+            "utility_train_sign_hit_pct": [],
             "holdout_reference_bal_pct": [], "holdout_skill_pct": [],
             "live_direction_phase_days": []}
     holdout_bars = switches = seg_bars = seg_n = 0
@@ -343,6 +355,7 @@ def _collect_reference(ref: Dict, ragg: Dict) -> None:
                      ("holdout_kappa_pct", "holdout_kappa_pct"),
                      ("utility_separation_pct", "utility_separation_pct"),
                      ("utility_sign_hit_pct", "utility_sign_hit_pct"),
+                     ("utility_train_sign_hit_pct", "utility_train_sign_hit_pct"),
                      ("train_balanced_pct", "train_reference_bal_pct"),
                      ("holdout_balanced_pct", "holdout_reference_bal_pct"),
                      ("holdout_skill_pct", "holdout_skill_pct"),

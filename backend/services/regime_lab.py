@@ -908,6 +908,73 @@ async def run_ablation(job_id: str, body: Dict, db):
         job["phase"] = "Fehler"
 
 
+# ---------------- Plan 2.4: gespeicherte Analyse neu bewerten ----------------
+REEVAL_FIELDS = ("reference", "live_agreement", "corrections")
+
+
+def reevaluate_body(doc: Dict) -> Dict:
+    """Alles, was die Neubewertung braucht (auch für den lokalen Worker ohne DB)."""
+    return {"aid": doc["id"], "model": (doc.get("combined") or {}).get("model"),
+            "bounds": doc.get("bounds") or {}, "symbols": doc.get("symbols") or [],
+            "days": doc.get("days"), "timeframe": doc.get("timeframe")}
+
+
+async def apply_reevaluation(db, aid: str, updates: Dict[str, Dict]) -> int:
+    sets = {f"combined.per_symbol.{sym}.{k}": v
+            for sym, fields in (updates or {}).items() for k, v in fields.items()}
+    if not sets:
+        return 0
+    sets["reevaluated_at"] = datetime.now(timezone.utc).isoformat()
+    res = await db.regime_analyses.update_one({"id": aid}, {"$set": sets})
+    return res.modified_count
+
+
+async def run_reevaluate(job_id: str, body: Dict, db):
+    """Gespeichertes Modell mit der AKTUELLEN Bewertung (Referenz v2, Macro-F1,
+    Regime-Nutzen, Pivot-Fix) auf exakt dem gespeicherten Datenfenster neu
+    bewerten – ohne Autopilot/Analyse neu laufen zu lassen. Modell & Regime
+    bleiben unverändert; aktualisiert werden nur Kennzahlen je Symbol."""
+    job = JOBS[job_id]
+    try:
+        model, b = body.get("model"), body.get("bounds") or {}
+        if not model:
+            raise RuntimeError("Analyse ohne kombiniertes Modell – Neubewertung nicht möglich")
+        cfg = model.get("config") or {}
+        tf, syms = body.get("timeframe") or "1h", list(body.get("symbols") or [])
+        hist = await fetch_histories(
+            syms, int(body.get("days") or 360), tf, job,
+            start_ts={s: b[s]["start_ts"] for s in syms if s in b},
+            end_ts={s: b[s]["end_ts"] for s in syms if s in b})
+        updates: Dict[str, Dict] = {}
+        for i, (sym, candles) in enumerate(hist.items()):
+            if job.get("cancel"):
+                raise JobCancelled()
+            job["phase"] = f"Neu bewerten: {sym}"
+            job["progress"] = 10 + round(i / max(len(hist), 1) * 85)
+            bs = b.get(sym) or {}
+            _, entry = await asyncio.to_thread(
+                _symbol_payload, model, candles, tf, float(cfg.get("confidence_min") or 0.55),
+                float(cfg.get("min_hold_days") or 0), False, bs.get("train_end_ts"),
+                bs.get("inner_start_ts"))
+            updates[sym] = {k: entry[k] for k in REEVAL_FIELDS if entry.get(k) is not None}
+        result = {"kind": "reevaluate", "aid": body.get("aid"), "updates": updates,
+                  "created_at": datetime.now(timezone.utc).isoformat()}
+        if db is not None:
+            await apply_reevaluation(db, body.get("aid"), updates)
+        job["result"] = result
+        job["status"] = "done"
+        job["progress"] = 100
+        job["phase"] = "Fertig"
+    except JobCancelled:
+        job["status"] = "cancelled"
+        job["phase"] = "Abgebrochen"
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"reevaluate {job_id} failed")
+        job["status"] = "error"
+        job["error"] = str(e)[:300]
+        job["phase"] = "Fehler"
+
+
 # ---------------- Kombi-Detektor: Auto-Kalibrierung ----------------
 async def run_kombi_calibrate(job_id: str, body: Dict, db):
     """Auto-Kalibrierung für den Detektor 'kombi': Grid-Suche über die
@@ -1250,6 +1317,8 @@ async def persist_worker_result(db, job_id: str, job: Dict):
              "symbols": list((job.get("params") or {}).get("symbols") or []),
              "timeframe": (job.get("params") or {}).get("timeframe"),
              "report": res.get("report")})
+    elif kind == "reevaluate":
+        await apply_reevaluation(db, res.get("aid"), res.get("updates") or {})
     elif kind in ("regime_opt", "autopilot", "ablation"):
         await db.regime_lab_runs.replace_one(
             {"id": job_id}, {"id": job_id, "result": res,

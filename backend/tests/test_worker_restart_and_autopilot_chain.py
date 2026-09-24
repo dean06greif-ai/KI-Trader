@@ -134,7 +134,7 @@ def test_required_version_bumped():
 # ---------------- worker.py (Quelltext-Verträge) ----------------
 def test_worker_source_contracts():
     src = WORKER_PY.read_text(encoding="utf-8")
-    assert 'VERSION = "1.14.0"' in src  # 1.14: lokale Ablation (fn="ablation")
+    assert 'VERSION = "1.15.0"' in src  # 1.15: lokale Neubewertung (fn="reevaluate")
     # absturzsichere Poll-Schleife: Catch-all nach RequestException/KeyboardInterrupt
     main_src = src[src.index("def main():"):]
     assert "except Exception as e:" in main_src and "Unerwarteter Fehler in der Poll-Schleife" in main_src

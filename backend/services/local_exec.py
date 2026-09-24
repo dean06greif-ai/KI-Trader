@@ -136,7 +136,7 @@ def worker_supports_regime_lab() -> bool:
     return False
 
 
-FN_MIN_VERSION = {"calibrate": (1, 7), "autopilot": (1, 12), "ablation": (1, 14)}
+FN_MIN_VERSION = {"calibrate": (1, 7), "autopilot": (1, 12), "ablation": (1, 14), "reevaluate": (1, 15)}
 
 
 def worker_supports_fn(fn: str) -> bool:

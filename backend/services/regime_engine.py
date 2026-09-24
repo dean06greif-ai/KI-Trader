@@ -136,6 +136,11 @@ DEFAULT_CONFIG: Dict = {
     "kombi_persist_days": 1.0,        # Live-Wechsel erst nach x Tagen stabil
     "kombi_dominance_days": 3.0,      # Trend-Dominanz: max. Seitwärts-Tage im Trend
     "kombi_pivot_accel": True,        # Umkehrpunkte beschleunigen Übergänge
+    # --- Höherer-TF-Filter (Plan 2.1, alle Detektoren, nur Live-Sicht) ---
+    "htf_confirm": False,             # Live-Richtung gegen höhere Zeitebene prüfen
+    "htf_days": 4.0,                  # EMA-Spanne der höheren Zeitebene (Tage)
+    "htf_thr": 0.3,                   # Widerspruch ab x ATR -> seitwärts
+    "htf_promote_thr": 0.0,           # > 0: starke Steigung stuft seitwärts zum Trend hoch
     # --- Trend (Multi-Timeframe-Regression) ---
     "horizons_days": [5, 10, 20, 50, 100],
     "horizon_weights": None,          # None = längere Horizonte leicht höher gewichtet
@@ -234,6 +239,15 @@ CONFIG_META = [
      "'kombi': Seitwärts-Einschübe bis zu dieser Länge INNERHALB eines Trends "
      "bleiben Teil des Trends (live überbrückt, final absorbiert). Filtert "
      "Mini-Seitwärtsphasen im übergeordneten Trend heraus. Standard 3."),
+    ("htf_confirm", "Höherer-TF-Filter", "Live-Richtung zusätzlich gegen die "
+     "Steigung einer höheren Zeitebene (EMA über 'HTF-Spanne') prüfen: widerspricht "
+     "sie deutlich, wird auf seitwärts gesetzt (weniger Fehlalarme)."),
+    ("htf_days", "HTF-Spanne (Tage)", "EMA-Spanne der höheren Zeitebene. Standard 4."),
+    ("htf_thr", "HTF-Widerspruch (ATR)", "Ab dieser Gegen-Steigung (in ATR) wird "
+     "ein Trend auf seitwärts gesetzt. Standard 0,3."),
+    ("htf_promote_thr", "HTF-Hochstufen (ATR)", "> 0: bei so starker Steigung der "
+     "höheren Zeitebene wird seitwärts zum Trend hochgestuft (weniger verpasste "
+     "Phasen). 0 = aus."),
     ("kombi_pivot_accel", "Kombi: Umkehrpunkte beschleunigen", "Nur Detektor "
      "'kombi': ein bestätigter Hoch-/Tiefpunkt (ATR-ZigZag) schaltet einen "
      "Wechsel, den die EMA-Steigung bereits anzeigt, SOFORT – er erzeugt nie "
@@ -366,6 +380,8 @@ _grp("Kombi-Detektor (EMA + Umkehrpunkte)", ["kombi"],
      "kombi_ema_days", "kombi_thr", "kombi_slope_days", "kombi_persist_days",
      "kombi_dominance_days", "kombi_pivot_accel")
 _grp("Phasen-Glättung", ["reactive", "ema", "kombi"], "min_phase_days")
+_grp("Höherer-TF-Filter", ["reactive", "ema", "kombi"],
+     "htf_confirm", "htf_days", "htf_thr", "htf_promote_thr")
 _grp("EMA-Bestätigung (Live-Sicht)", ["reactive", "regression"],
      "use_ema_confirm", "ema_fast_days", "ema_mid_days", "ema_slow_days",
      "ema_slope_thr", "ema_persist_days")
@@ -605,6 +621,10 @@ def resolve_config(config: Optional[Dict], timeframe: str, n_bars: int = 10 ** 9
     _f("kombi_persist_days", 0.0, 30.0)
     _f("kombi_dominance_days", 0.0, 15.0)
     cfg["kombi_pivot_accel"] = bool(cfg.get("kombi_pivot_accel", True))
+    cfg["htf_confirm"] = bool(cfg.get("htf_confirm", False))
+    _f("htf_days", 0.5, 30.0)
+    _f("htf_thr", 0.0, 5.0)
+    _f("htf_promote_thr", 0.0, 10.0)
     _f("rev_atr_mult", 0.5, 15.0)
     _f("rev_min_pct", 0.0, 10.0)
     _f("rev_max_pct", 1.0, 60.0)

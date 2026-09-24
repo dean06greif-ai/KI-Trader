@@ -488,6 +488,36 @@ function LazyRegimeChart({ analysis, symbol, ...rest }) {
 }
 
 // ---------------- Detail einer Analyse ----------------
+/** Plan 2.4: gespeicherte Analyse mit aktueller Bewertung neu messen (Modell bleibt). */
+function ReevaluateButton({ analysis, execution, jobBlocked }) {
+  const [busy, setBusy] = useState(false);
+  const start = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(`${API_URL}/api/regime-lab/${analysis.id}/reevaluate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ execution }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) toast.success(`Neubewertung gestartet (${d.execution === 'local' ? 'lokal' : 'Cloud'}) – danach Analyse neu öffnen`);
+      else toast.error(d.detail || 'Neubewertung fehlgeschlagen');
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="rl-sim" data-testid="regime-reevaluate-row">
+      <button className="opt-btn-sm" onClick={start} disabled={busy || jobBlocked} data-testid="regime-reevaluate-btn"
+        title="Rechnet Referenz v2, Macro-F1/κ, Regime-Nutzen und Umkehrpunkt-Verzögerung für diese Analyse neu – auf exakt demselben Datenfenster, ohne Autopilot. Modell und Regime bleiben unverändert. Lokal empfohlen (Kerzen-Cache).">
+        <ArrowClockwise size={12} /> Neu bewerten (aktuelle Bewertung)
+      </button>
+      {analysis.reevaluated_at && (
+        <span className="opt-small" data-testid="regime-reevaluated-at">
+          zuletzt neu bewertet: {new Date(analysis.reevaluated_at).toLocaleString('de-DE')}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function AnalysisDetail({ analysis, strategies, jobBlocked, execution, onChanged }) {
   const scopes = [];
   if (analysis.combined) scopes.push({ id: 'combined', label: 'Alle Assets (kombiniert)' });
@@ -606,6 +636,7 @@ function AnalysisDetail({ analysis, strategies, jobBlocked, execution, onChanged
           : ` Cluster-Modell · Lookback ${analysis.settings?.lookback_days}d · max. ${analysis.settings?.max_regimes} Regime · Cluster-Qualität ${fmt(model?.silhouette, 2)}`}
       </div>
       <RegimeQualityCard quality={(analysis.quality || {})[scopeKey(scope, symbol)]} />
+      <ReevaluateButton analysis={analysis} execution={execution} jobBlocked={jobBlocked} />
       {model?.adapt?.report?.candidates?.length > 0 && (
         <div className="rl-sim" data-testid="regime-adapt-report">
           <span className="opt-small" style={{ alignSelf: 'center' }}
