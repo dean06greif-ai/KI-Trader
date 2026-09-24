@@ -13,7 +13,8 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 const fmt = (v, d = 1) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
 const DET = { reactive: 'Umkehrpunkte (reactive)', ema: 'EMA-Steigung (ema)', kombi: 'Kombi', regression: 'Regression' };
 const STOP = { stopped_by_user: 'per „Suche beenden“ gestoppt', time_limit: 'Zeitlimit erreicht',
-  target_reached: 'Ziel-Trefferquote erreicht', rounds_limit: 'Runden-Limit erreicht' };
+  target_reached: 'Ziel-Trefferquote erreicht', rounds_limit: 'Runden-Limit erreicht',
+  plateau: 'keine Verbesserung mehr (Plateau-Stopp)', space_exhausted: 'Suchraum ausgeschöpft (nur noch bekannte Varianten)' };
 const REASON = {
   holdout_regressed: 'der Holdout (finaler Test) ist gegenüber der Ausgangslage gefallen',
   worse: 'liegt unter der aktiven Kalibrierung desselben Grundgerüsts (gleicher Timeframe)',
@@ -50,6 +51,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [maxMin, setMaxMin] = useState(saved.maxMin ?? 0);
   const [targetPct, setTargetPct] = useState(saved.targetPct ?? 0);
   const [maxRounds, setMaxRounds] = useState(saved.maxRounds ?? 0);
+  const [plateau, setPlateau] = useState(saved.plateau ?? 300);
   const [minPhase, setMinPhase] = useState(saved.minPhase ?? 4);
   const [maxPhase, setMaxPhase] = useState(saved.maxPhase ?? 14);
   const [searchDet, setSearchDet] = useState(saved.searchDet ?? true);
@@ -61,8 +63,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [lastDecision, setLastDecision] = useState(null);
 
   useEffect(() => {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, minPhase, maxPhase, searchDet, autoChain })); } catch { /* quota */ }
-  }, [maxMin, targetPct, maxRounds, minPhase, maxPhase, searchDet, autoChain]);
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, autoChain })); } catch { /* quota */ }
+  }, [maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, autoChain]);
 
   const loadRuns = () => fetch(`${API_URL}/api/regime-lab/autopilot/runs`).then(r => r.json())
     .then(d => setRuns(d.runs || [])).catch(() => {});
@@ -139,7 +141,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
 
   const buildBody = () => ({
     symbols: selCoins, timeframe, days, train_pct: trainPct, engine_config: engineConfig || {},
-    max_minutes: maxMin, target_pct: targetPct, max_rounds: maxRounds,
+    max_minutes: maxMin, target_pct: targetPct, max_rounds: maxRounds, plateau_rounds: plateau,
     min_phase_days_target: minPhase, max_phase_days_target: maxPhase, search_detectors: searchDet, execution,
     auto_chain: autoChain,
   });
@@ -214,6 +216,11 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
           Max. Runden (0 = ∞)
           <NumInput int min={0} max={100000} value={maxRounds} onCommit={(v) => setMaxRounds(v || 0)}
             data-testid="autopilot-max-rounds" style={{ width: 65 }} />
+        </label>
+        <label className="opt-field" title="Stoppt automatisch, wenn so viele Varianten nacheinander keine Verbesserung bringen (bereits getestete werden übersprungen). 0 = aus. Eine Bewertung dauert nur Sekunden – stundenlanges Weitersuchen bringt meist nichts.">
+          Plateau-Stopp (Runden)
+          <NumInput int min={0} max={100000} value={plateau} onCommit={(v) => setPlateau(v ?? 300)}
+            data-testid="autopilot-plateau-rounds" style={{ width: 65 }} />
         </label>
         <label className="opt-field" title="Sweet Spot unten: liegt die Ø Live-Phasendauer darunter, gibt es Strafpunkte (bis 15) – zu kurz = Flackern, nicht handelbar">
           Min. Ø Phase (Tage)

@@ -96,6 +96,9 @@ def _symbol_row(sym: str, entry: Dict) -> Optional[Dict]:
             "reference_holdout_balanced_pct": ref.get("holdout_balanced_pct"),
             "reference_holdout_skill_pct": ref.get("holdout_skill_pct"),
             "reference_holdout_f1_pct": ref.get("holdout_f1_pct"),
+            "utility_separation_pct": ref.get("utility_separation_pct"),
+            "utility_sign_hit_pct": ref.get("utility_sign_hit_pct"),
+            "utility_side_range_ratio": ref.get("utility_side_range_ratio"),
             "reference_holdout_kappa_pct": ref.get("holdout_kappa_pct"),
             "reference_holdout_baseline_pct": ref.get("holdout_baseline_pct"),
             "live_direction_phase_days": ref.get("live_direction_phase_days"),
@@ -173,6 +176,12 @@ def _aggregate(rows: List[Dict]) -> Dict:
             "reference_holdout_balanced_pct": ref_bal,
             "reference_holdout_skill_pct": _mean([r.get("reference_holdout_skill_pct") for r in rows]) if v2 else None,
             "reference_holdout_f1_pct": ref_f1,
+            "utility_separation_pct": _mean([r.get("utility_separation_pct") for r in rows]),
+            "utility_sign_hit_pct": _mean([r.get("utility_sign_hit_pct") for r in rows]),
+            "utility_side_range_ratio": _mean([r.get("utility_side_range_ratio") for r in rows]),
+            "utility_positive_share_pct": (round(sum(1 for r in rows if (r.get("utility_separation_pct") or 0) > 0)
+                                                 / len(rows) * 100.0, 1)
+                                           if any(r.get("utility_separation_pct") is not None for r in rows) else None),
             "reference_holdout_kappa_pct": _mean([r.get("reference_holdout_kappa_pct") for r in rows]) if v2 else None,
             "reference_holdout_baseline_pct": _mean([r.get("reference_holdout_baseline_pct") for r in rows]) if v2 else None,
             "live_direction_phase_days": _mean([r.get("live_direction_phase_days") for r in rows]) if v2 else None,

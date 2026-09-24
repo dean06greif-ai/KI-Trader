@@ -26,6 +26,7 @@ from services import regime as rg
 from services import regime_engine as eng
 from services import regime_reference
 from services import regime_truth as rt
+from services import regime_utility
 from services import (research_ablation, research_calibration, research_dataset,
                       research_pooling, research_validation)
 from services.backtester import JobCancelled
@@ -256,6 +257,11 @@ def _reference_payload(candles: List[Dict], live_labels: List, model: Dict,
         ref.update({"version": regime_reference.REFERENCE_VERSION,
                     "window_days": rcfg["reference_window_days"],
                     "min_days": rcfg["reference_min_days"]})
+        # Plan 1.4: Regime-Nutzen (Kursentwicklung NACH der Live-Richtung)
+        util = regime_utility.compute(candles, live_labels, mode,
+                                      float(cfg.get("bars_per_day") or 1.0), train_end_ts)
+        ref["utility"] = util
+        ref.update(regime_utility.summary(util))
         return ref, ideal
     except Exception as e:  # noqa: BLE001
         logger.warning(f"reference agreement failed: {e}")

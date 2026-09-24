@@ -80,6 +80,16 @@ export default function RegimeQualityCard({ quality }) {
               help={`Wie lange die Live-Erkennung im Schnitt bei auf/seit/ab bleibt (ohne Vola-Unterstufen des 9er-Modus). Referenz-Phasen: Ø ${fmt(focus.reference_phase_days)} d.`} />
           </>
         )}
+        {focus.utility_separation_pct != null && (
+          <>
+            <Metric label="Regime-Nutzen (3 Tage)" value={fmt(focus.utility_separation_pct, 2)} unit="%"
+              help={`Ø Kursentwicklung 3 Tage NACH einer Kerze mit Live-Richtung „auf“ minus „ab“ (Holdout). > 0 = die Live-Richtung hat echten Vorhersagewert. Coins mit positivem Wert: ${fmt(focus.utility_positive_share_pct, 0)} %.`} />
+            <Metric label="Richtung danach bestätigt" value={fmt(focus.utility_sign_hit_pct)} unit="%"
+              help="Anteil der Trend-Kerzen (auf/ab), nach denen der Kurs 3 Tage später tatsächlich in diese Richtung lief. 50 % = Münzwurf." />
+            <Metric label="Seitwärts-Ruhe" value={fmt(focus.utility_side_range_ratio, 2)} unit="×"
+              help="Ø Kursbewegung nach Seitwärts-Kerzen im Verhältnis zu Trend-Kerzen. < 1 = Seitwärtsphasen sind wirklich ruhiger (gut für Range-Strategien)." />
+          </>
+        )}
         <Metric label="Referenz-Treffer gesamt" value={fmt(focus.reference_direction_pct)} unit="%"
           help="Live-Sicht vs. Referenz über den gesamten Zeitraum" />
         <Metric label="Referenz-Lag" value={fmt(focus.reference_lag_days)} unit="d"

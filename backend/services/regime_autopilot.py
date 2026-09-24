@@ -41,6 +41,14 @@ PHASE_PENALTY_MAX = 15.0      # Punkte Abzug bei viel zu kurzen/langen Phasen
 # Phasen = Selbst-Übereinstimmung, Prüfbericht 23.09 Befund 2) -> die
 # detektor-unabhängige Referenz zählt zur Hälfte mit, sobald vorhanden.
 REFERENCE_WEIGHT = 0.5
+PLATEAU_ROUNDS_DEFAULT = 300   # Plan 1.5b: so viele Runden ohne Verbesserung -> Stopp
+RESTART_AFTER_STALE = 120      # Plan 1.5d: dann aus einer Top-10-Variante weitersuchen
+
+
+def config_key(cfg: Dict) -> str:
+    """Stabiler Schlüssel einer Konfiguration (Plan 1.5a Duplikat-Cache)."""
+    import json
+    return json.dumps(cfg or {}, sort_keys=True, default=str)
 REFERENCE_WEIGHT_V2 = 0.75
 
 # Suchraum: (lo, hi, step) für Zahlen (int wenn alle int), Liste = Auswahl
@@ -58,14 +66,16 @@ DETECTOR_SPACE = {
         "ema_persist_days": (0.5, 3.0, 0.25), "ema_mid_days": (10.0, 34.0, 1.0),
     },
     "ema": {
-        "ema_regime_days": (4.0, 30.0, 1.0), "ema_regime_thr": (0.06, 0.4, 0.02),
+        "ema_regime_days": (2.0, 30.0, 1.0), "ema_regime_thr": (0.06, 0.4, 0.02),
         "ema_regime_smooth_days": (0.5, 3.0, 0.25),
         "ema_regime_persist_days": (0.25, 3.0, 0.25),
     },
     "kombi": {
-        "kombi_ema_days": (5.0, 30.0, 1.0), "kombi_thr": (0.06, 0.4, 0.02),
-        "kombi_slope_days": (1.0, 10.0, 0.5), "kombi_persist_days": (0.25, 3.0, 0.25),
-        "kombi_dominance_days": (1.0, 8.0, 0.5), "kombi_pivot_accel": [True, False],
+        # Plan 1.5c: kürzere Untergrenzen – Mini-Suche 24.09.: beste Varianten bei
+        # kombi_ema_days 8 / dominance 5 (Richtungs-Phase 7,5 d statt 23 d)
+        "kombi_ema_days": (3.0, 30.0, 1.0), "kombi_thr": (0.06, 0.4, 0.02),
+        "kombi_slope_days": (0.5, 10.0, 0.5), "kombi_persist_days": (0.25, 3.0, 0.25),
+        "kombi_dominance_days": (0.5, 8.0, 0.5), "kombi_pivot_accel": [True, False],
     },
 }
 
@@ -285,6 +295,7 @@ def evaluate_config(cfg: Dict, histories: Dict, train_hist: Dict, bounds: Dict,
             "inner_reference_bal_pct": [], "train_reference_bal_pct": [],
             "inner_reference_f1_pct": [], "train_reference_f1_pct": [],
             "holdout_reference_f1_pct": [], "holdout_kappa_pct": [],
+            "utility_separation_pct": [], "utility_sign_hit_pct": [],
             "holdout_reference_bal_pct": [], "holdout_skill_pct": [],
             "live_direction_phase_days": []}
     holdout_bars = switches = seg_bars = seg_n = 0
@@ -330,6 +341,8 @@ def _collect_reference(ref: Dict, ragg: Dict) -> None:
                      ("train_f1_pct", "train_reference_f1_pct"),
                      ("holdout_f1_pct", "holdout_reference_f1_pct"),
                      ("holdout_kappa_pct", "holdout_kappa_pct"),
+                     ("utility_separation_pct", "utility_separation_pct"),
+                     ("utility_sign_hit_pct", "utility_sign_hit_pct"),
                      ("train_balanced_pct", "train_reference_bal_pct"),
                      ("holdout_balanced_pct", "holdout_reference_bal_pct"),
                      ("holdout_skill_pct", "holdout_skill_pct"),
@@ -450,6 +463,7 @@ async def run_autopilot(job_id: str, body: Dict, db):
         target_pct = min(max(float(body.get("target_pct") or 0), 0.0), 100.0)
         max_rounds = max(int(body.get("max_rounds") or 0), 0)
         search_detectors = bool(body.get("search_detectors", True))
+        plateau_rounds = max(int(body.get("plateau_rounds", PLATEAU_ROUNDS_DEFAULT) or 0), 0)
         target_min_days = min(max(float(body.get("min_phase_days_target") or 3.0), 0.0), 30.0)
         # Sweet Spot nach oben (0 = aus, Rückwärtskompatibilität für alte Aufrufer)
         target_max_days = min(max(float(body.get("max_phase_days_target") or 0.0), 0.0), 120.0)
@@ -499,7 +513,9 @@ async def run_autopilot(job_id: str, body: Dict, db):
         best = dict(baseline)
         job["best"] = _public_best(best, baseline)
         history: List[Dict] = []
-        tested = improved = stale = 0
+        tested = improved = stale = duplicates = restarts = 0
+        seen = {config_key(start_cfg)}
+        dup_run = 0
         t0 = time.time()
         stop_reason = None
 
@@ -512,6 +528,8 @@ async def run_autopilot(job_id: str, body: Dict, db):
                 return "target_reached"
             if max_rounds and tested >= max_rounds:
                 return "rounds_limit"
+            if plateau_rounds and stale >= plateau_rounds:
+                return "plateau"
             return None
 
         def pct():
@@ -544,7 +562,24 @@ async def run_autopilot(job_id: str, body: Dict, db):
             await job_control.wait_if_paused(job)
             if stop():
                 raise JobCancelled()
-            cand = mutate(best["engine_config"], rng, search_detectors, stale)
+            parent = best["engine_config"]
+            if stale and stale % RESTART_AFTER_STALE == 0 and len(history) > 3:
+                parent = rng.choice(history[:10])["engine_config"]
+                restarts += 1
+            cand = mutate(parent, rng, search_detectors, stale)
+            ck = config_key(cand)
+            if ck in seen:
+                duplicates += 1
+                dup_run += 1
+                stale += 1
+                if dup_run >= 2000:
+                    stop_reason = "space_exhausted"
+                    break
+                if duplicates % 50 == 0:
+                    await asyncio.sleep(0)
+                continue
+            seen.add(ck)
+            dup_run = 0
             changes = config_diff(best["engine_config"], cand)
             desc = ", ".join(f"{k}={v}" for k, v in list(changes.items())[:3])
             job["phase"] = phase_txt(f" · teste {desc}")[:200]
@@ -595,6 +630,8 @@ async def run_autopilot(job_id: str, body: Dict, db):
                   "improved": improved > 0, "improvements": improved, "tested": tested,
                   "holdout_regressed": holdout_regressed(best["metrics"], base_m),
                   "history": history, "stop_reason": stop_reason,
+                  "duplicates_skipped": duplicates, "restarts": restarts,
+                  "plateau_rounds": plateau_rounds,
                   "elapsed_seconds": round(time.time() - t0, 1),
                   "selection_basis": ("inner_validation+train"
                                       if base_m.get("inner_direction_pct") is not None

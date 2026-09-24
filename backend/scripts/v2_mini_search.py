@@ -40,6 +40,7 @@ async def main():
         for mode in (3, 9):
             c = dict(base, detector=det, regime_mode=mode)
             cands.append((f"{det} m{mode} Start", c))
+    cands.append(("kombi ema8 dom5 (Mini-Suche)", dict(base, kombi_ema_days=8.0, kombi_dominance_days=5.0)))
     while len(cands) < n:
         det = rng.choice(["kombi", "ema", "reactive"])
         c = ap.mutate(dict(base, detector=det, regime_mode=rng.choice([3, 9])), rng, False, rng.randint(2, 8))
@@ -53,7 +54,8 @@ async def main():
         print(f"{name:<28} score {sc if sc is None else round(sc, 1)} | bal innen {fmt(m, 'inner_reference_bal_pct')} "
               f"holdout {fmt(m, 'holdout_reference_bal_pct')} | F1 innen {fmt(m, 'inner_reference_f1_pct')} hold {fmt(m, 'holdout_reference_f1_pct')} κ {fmt(m, 'holdout_kappa_pct')} | "
               f"Richtungs-Phase {fmt(m, 'live_direction_phase_days')} d | LF hold {fmt(m, 'holdout_direction_pct')} "
-              f"| lag {fmt(m, 'reference_lag_days')} | {rows[-1][4]}s", flush=True)
+              f"| lag {fmt(m, 'reference_lag_days')} | Nutzen 3d {fmt(m, 'utility_separation_pct')}% "
+              f"Richtung bestätigt {fmt(m, 'utility_sign_hit_pct')}% | {rows[-1][4]}s", flush=True)
     rows.sort(key=lambda r: -r[0])
     print("\nTOP 5 (Score v2, Ziel 4–14 d):")
     for sc, name, m, cfg, _ in rows[:5]:

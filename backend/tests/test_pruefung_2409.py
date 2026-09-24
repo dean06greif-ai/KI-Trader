@@ -213,3 +213,54 @@ def test_reactive_detector_source_uses_exclusive_rebase_window():
     from services import regime_reactive
     src = inspect.getsource(regime_reactive._detect_reactive)
     assert "j0 = min(ext_hi_i + 1, i)" in src and "j0 = min(ext_lo_i + 1, i)" in src
+
+
+# ---- Plan 1.4 Regime-Nutzen ----
+def test_utility_separation_positive_for_prescient_labels_and_zero_for_random():
+    import numpy as np
+    from services import regime_utility as ru
+    c = _walk(24 * 200)
+    close = np.array([k["close"] for k in c])
+    k = 72
+    fwd = np.concatenate([close[k:] / close[:-k] - 1, np.zeros(k)])
+    prescient = [2 if f > 0.01 else (0 if f < -0.01 else 1) for f in fwd]
+    u = ru.compute(c, prescient, 3, 24.0, train_end_ts=c[int(len(c) * .75)]["timestamp"])
+    s = ru.summary(u)
+    assert s["utility_separation_pct"] > 1.0 and s["utility_sign_hit_pct"] > 90
+    rnd = random.Random(1)
+    u2 = ru.summary(ru.compute(c, [rnd.choice([0, 1, 2]) for _ in c], 3, 24.0))
+    assert abs(u2["utility_separation_pct"]) < 1.0
+    assert 35 < u2["utility_sign_hit_pct"] < 65
+
+
+def test_utility_handles_short_input():
+    from services import regime_utility as ru
+    assert ru.compute([], [], 3, 24.0) == {}
+
+
+# ---- Plan 1.5 Autopilot: Duplikat-Cache + Plateau-Stopp ----
+def test_autopilot_skips_duplicates_and_stops_on_plateau(monkeypatch):
+    import asyncio
+    from services import regime_lab as lab
+    c = _walk(24 * 120)
+
+    async def fake_fetch(symbols, days, timeframe, job=None, **kw):
+        return {"BTCUSDT": c}
+
+    monkeypatch.setattr(lab, "fetch_histories", fake_fetch)
+    evaluated = []
+
+    def fake_eval(cfg, *a, **kw):
+        evaluated.append(ap.config_key(cfg))
+        return {"inner_direction_pct": 50.0, "train_direction_pct": 50.0, "holdout_direction_pct": 50.0}
+
+    monkeypatch.setattr(ap, "evaluate_config", fake_eval)
+    monkeypatch.setattr(ap, "mutate", lambda cfg, rng, sd, st: {"detector": "ema", "ema_regime_days": rng.choice([5, 6])})
+    job_id = lab.create_job("autopilot", {})
+    body = {"symbols": ["BTCUSDT"], "timeframe": "1h", "days": 120, "plateau_rounds": 40,
+            "engine_config": {"version": "v2", "detector": "ema"}}
+    asyncio.run(ap.run_autopilot(job_id, body, None))
+    res = lab.JOBS[job_id]["result"]
+    assert res["stop_reason"] == "plateau"
+    assert len(evaluated) == len(set(evaluated)) <= 3     # Start + 2 Varianten, nie doppelt
+    assert res["duplicates_skipped"] > 0
