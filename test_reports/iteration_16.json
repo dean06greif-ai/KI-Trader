@@ -1,0 +1,20 @@
+{
+  "summary": "Verified all three targeted improvements read-only against production. Backend: GET /api/ 200, GET /api/autotrade/trades?limit=200 200 (total=200; 11 open; 153 data_collection; 8 open+data_collection), GET /api/regime-lab/calibrations 200. No tracebacks in backend.err.log (only unrelated IBKR 503 warning). Unit tests: pytest tests/test_job_control_pause.py tests/test_ai_chat_commands_and_fixes.py -> 22 passed. Frontend jest: CI=true yarn test --testPathPattern regimeLabHelpers -> 24 passed (incl. new timeframe rules: other_timeframe uebernommen, gleicher timeframe verglichen, altbestand ohne timeframe unveraendert). UI E2E: view-trades tab opens OFFENE TRADES; open-collection-hint appears exactly once with text '+8 in Sammlung'; clicking it switches pnlFilter to 'collection' (Sammlung button highlighted, 8 offene Sammel-Trades gelistet inkl. OIL, SAMMLUNG-Badge sichtbar), and the hint disappears. Clicking pnl-filter-all returns to Alle-Ansicht mit 2 normalen offenen Trades und der Hinweis '+8 in Sammlung' erscheint wieder. Regime-Lab Endless-Autopilot progress=best.score behaviour ist ueber unit tests abgedeckt (nicht end-to-end getestet, da Produktions-Jobs nicht gestartet werden duerfen).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_job_control_pause.py",
+    "/app/backend/tests/test_ai_chat_commands_and_fixes.py",
+    "/app/frontend/src/__tests__/regimeLabHelpers.test.js"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (not used - read-only tests only)",
+  "seed_data_creation": "None (strict read-only against production Atlas)",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Live-URL wird von /app/frontend/.env REACT_APP_BACKEND_URL geliefert. Testflow: goto /, wait 5s, click [data-testid='view-trades'], warte ~20s auf Trade-Load; open-collection-hint ist ein einzelner Button neben OFFENE TRADES-Ueberschrift; Klick setzt pnlFilter='collection'; pnl-filter-all setzt zurueck. Endlos-Autopilot-Balken kann nur ueber unit tests validiert werden (Regime-Job-Start ist read-only-verboten).",
+  "rca of the issue": "N/A - alle drei Verbesserungen (endless progress = best score, timeframe-spezifische Kalibrierungen, Sammlung-Transparenz) funktionieren korrekt."
+}

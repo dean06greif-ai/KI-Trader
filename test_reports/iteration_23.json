@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 23 tested: (A) 99 unit tests from the 9 requested test files all pass. (B) Backend API pytest suite /app/backend/tests/test_iter23_regime_lab_api.py – 3/3 pass: GET /api/regime-lab/releases returns keys shadow_by_aid, orphan_shadow, activation, releases, rewards_by_structural (shadow_by_aid + orphan_shadow are dicts); POST /api/regime-lab/ablation with execution=local returns 503 (no local worker); DELETE /api/regime-lab/nonexistent-id-xyz-12345 returns 404 without crash. (C) Frontend Playwright: Admin login via /api/auth/login OK (token 124 chars), token injected as admin_token+admin_token_ts in localStorage, tools-menu-button -> tools-menu-regime-lab opens the Regime-Lab modal; page renders (Regime-Engine v2, BTC/ETH/BNB/SOL/... symbols, Ablation section, Ausführung Cloud/Lokal toggle, Timeframe 15Min, Zeitraum 360 Tage), no page errors, REGIME-LAB-COPILOT panel visible. Console shows 'Failed to fetch' entries from background pollers (fetchNotif, fetchSession, etc.) during the initial pre-token page load; they are not thrown from the Regime-Lab component and page_errors=0.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter23_regime_lab_api.py",
+    "/app/test_reports/pytest/iter23_unit.xml",
+    "/app/test_reports/pytest/iter23_api.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Multiple background polling hooks in App shell (notif, session, etc.) fire fetch() before the admin token is in localStorage on hard reload, producing red 'Failed to fetch'/aborted requests in the console. Consider gating those pollers on token presence or catching AbortError silently to keep the console clean for QA.",
+    "start_ablation execution='local' correctly returns 503 when no local worker is connected; message could optionally include a hint 'Bitte lokalen Worker starten' for UX (non-blocking)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter23_regime_lab_api.py (new)"
+  ],
+  "success_rate": {"backend": "100% (99 unit + 3 API = 102/102)", "frontend": "100% (Regime-Lab opens, copilot visible, no page errors)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin via POST /api/auth/login (from /app/test_reports/iteration_22.json context; /app/memory/test_credentials.md is not present, only /app/memory/PRD.md).",
+  "seed_data_creation": "None – used a non-existent id 'nonexistent-id-xyz-12345' for the 404 test; no writes to prod DB.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Regime-Lab is opened via Header tools-menu-button -> tools-menu-regime-lab. Auth login endpoint: POST /api/auth/login with {username, password} returns {token, ...}; store as localStorage.admin_token + admin_token_ts. GET /api/regime-lab/releases now exposes shadow_by_aid (per active-analysis-id) and orphan_shadow (deleted-analysis id -> count) – iter23 delivered fix for the '122 shadow trades of a deleted analysis' contradiction. POST /api/regime-lab/ablation body {symbols, timeframe, days, execution:'local'} returns 503 in this preview because no local worker is connected – do NOT flip to execution='cloud' (heavy). DELETE /api/regime-lab/<id> handles missing ids with 404. Pre-existing collection errors in tests/test_regime_lab.py and tests/test_regime_worker_regression.py are unrelated (missing fixture file) and remain – ignore per request.",
+  "rca of the issue": "N/A – all requested checks pass."
+}

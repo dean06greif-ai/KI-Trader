@@ -1,0 +1,655 @@
+"""Lokaler Worker v1.9.0 – führt Rechen- und Daten-Jobs der Website lokal aus.
+
+Verbindet sich per Outbound-Polling (alle ~2s) mit dem Server, claimt Jobs
+und rechnet sie mit EXAKT denselben Modulen wie die Cloud (services/*,
+strategies/*, core/*, im ZIP enthalten). Ergebnisse werden gzip-komprimiert
+zurückgeladen; bei Verbindungsabbruch rechnet der Worker weiter und lädt das
+Ergebnis nach der Wiederverbindung hoch.
+
+Neu in 1.9.0: Endlos-Suche (Optimizer mode="explore") inkl. sanftem Stop
+("stop"-Flag in der Progress-Antwort: Suche beenden, Bestes behalten).
+Neu in 1.9.2: RAM-Limit 0 = automatisch (gesamter RAM minus 1 GB), robustere
+Kerzen-Downloads (certifi-Zertifikate, Binance-Host-Wechsel bei Fehlern).
+Neu in 1.10.0: Pause/Fortsetzen ("pause"-Flag in der Progress-Antwort, Job
+steht im RAM – auch tagelang), großzügigere Timeouts gegen Render-"Read timed
+out", Reconnect-Meldungen im Log, Ergebnis-Upload bis 2 h Wiederholung.
+Neu in 1.12.0: Auto-Verbindung (Server-URL + Token werden zusätzlich im
+Benutzerordner gemerkt – auch ein frisch entpacktes Paket verbindet sich ohne
+Nachfrage), robuste Fortschritts-Meldungen (Thread stirbt nie still, Bestes
+wird nach Reconnect erneut gemeldet, Server-Fehler werden geloggt) und der
+Regime-Autopilot (fn="autopilot").
+Neu in 1.15.0: Analysen neu bewerten lokal (fn="reevaluate").
+Neu in 1.14.0: Regime-Ablation lokal (fn="ablation") – nutzt den Kerzen-Cache
+des Workers statt Cloud-Neuladen.
+Neu in 1.13.0: Absturzsicher (die Poll-Schleife fängt JEDEN Fehler ab statt
+mit Traceback zu enden), Ergebnisse werden vor dem Upload auf Platte gesichert
+(`<data_dir>/pending_results/`) und nach einem Neustart/Reconnect automatisch
+nachgeliefert; Upload-Wiederholung 6 h (wie die Server-Toleranz); sanfter
+Backoff bei Verbindungsfehlern.
+"""
+import argparse
+import asyncio
+import gzip
+import json
+import os
+import sys
+import threading
+import time
+import uuid
+from pathlib import Path
+
+VERSION = "1.15.0"
+SCRIPT_DIR = Path(__file__).resolve().parent
+CONFIG_PATH = SCRIPT_DIR / "worker_config.json"
+# Zweiter Speicherort im Benutzerordner: überlebt das Neu-Entpacken des Pakets
+USER_CONFIG_PATH = Path.home() / ".ki_trader_worker" / "worker_config.json"
+POLL_INTERVAL = 2.0
+HTTP_TIMEOUT = 30          # Render braucht nach Neustart/Deploy oft > 10 s
+RESULT_RETRY_S = 5
+RESULT_RETRY_MAX = 4320    # 4320 * 5 s = 6 h Reconnect-Toleranz für Ergebnisse
+POLL_BACKOFF_MAX = 30      # Sekunden zwischen Polls, solange der Server nicht erreichbar ist
+
+sys.path.insert(0, str(SCRIPT_DIR))
+
+
+# ---------------- Konfiguration ----------------
+def _read_json(path):
+    if path.is_file():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+    return {}
+
+
+def save_config(cfg):
+    """Config lokal UND im Benutzerordner sichern (Auto-Verbindung beim
+    nächsten Start – auch aus einem neu heruntergeladenen Paket)."""
+    for path in (CONFIG_PATH, USER_CONFIG_PATH):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+
+
+def load_config():
+    cfg = _read_json(CONFIG_PATH)
+    user_cfg = _read_json(USER_CONFIG_PATH)
+    # Fehlende Angaben (z.B. frisch entpacktes Paket) aus dem Benutzerordner
+    # übernehmen -> keine erneute Token-Eingabe nötig.
+    for k in ("server_url", "token", "name", "worker_id", "data_dir"):
+        if not cfg.get(k) and user_cfg.get(k):
+            cfg[k] = user_cfg[k]
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--server", default=None)
+    ap.add_argument("--token", default=None)
+    ap.add_argument("--name", default=None)
+    ap.add_argument("--data-dir", default=None)
+    args, _ = ap.parse_known_args()
+    server = (args.server or os.environ.get("WORKER_SERVER_URL")
+              or cfg.get("server_url") or "")
+    token = (args.token or os.environ.get("WORKER_TOKEN")
+             or cfg.get("token") or "")
+    if not server:
+        server = input("Server-URL der Website (z.B. https://meine-app.example): ").strip()
+    if not token:
+        token = input("Worker-Token (Website: Ausführung → Lokal → ⚙ Verwalten): ").strip()
+    cfg["server_url"] = server.rstrip("/")
+    cfg["token"] = token
+    cfg["name"] = args.name or cfg.get("name") or os.environ.get(
+        "COMPUTERNAME") or os.uname().nodename if hasattr(os, "uname") else "Worker"
+    cfg.setdefault("worker_id", "w" + uuid.uuid4().hex[:11])
+    cfg["data_dir"] = args.data_dir or cfg.get("data_dir") or str(SCRIPT_DIR / "worker_data")
+    save_config(cfg)
+    return cfg
+
+
+CONFIG = load_config()
+os.environ.setdefault("CANDLE_CACHE_DISK", "1")
+os.environ.setdefault("CANDLE_CACHE_DIR", CONFIG["data_dir"])
+os.makedirs(CONFIG["data_dir"], exist_ok=True)
+
+import requests  # noqa: E402
+
+
+def log(msg):
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+def api(path):
+    return f"{CONFIG['server_url']}{path}"
+
+
+def hdrs():
+    return {"X-Worker-Token": CONFIG["token"]}
+
+
+# ---------------- Job-Verwaltung ----------------
+RUNNING = {}          # job_id -> {"kind","thread","job"(dict im JOBS-Store)}
+SETTINGS = {}
+_last_ram_budget = None
+_last_auto_update = 0.0
+
+
+def apply_settings(settings):
+    global SETTINGS
+    SETTINGS = settings or {}
+    cores = int(SETTINGS.get("cpu_cores") or 0)
+    os.environ["SIM_WORKERS"] = str(cores)
+    os.environ["USE_GPU"] = "1" if SETTINGS.get("use_gpu") else "0"
+    ram_mb = int(SETTINGS.get("ram_limit_mb") or 0)
+    if ram_mb <= 0:
+        # 0 = automatisch: gesamter physischer RAM des PCs minus 1 GB Reserve
+        # (die 2-GB-Grenze gilt nur für die Website auf Render, nicht hier).
+        ram_mb = auto_ram_mb()
+    max_candles = max(ram_mb, 512) * 1024 * 1024 // 64
+    os.environ["CANDLE_CACHE_MAX_CANDLES"] = str(max_candles)
+    global _last_ram_budget
+    if _last_ram_budget != ram_mb:
+        _last_ram_budget = ram_mb
+        log(f"Kerzen-Cache-Budget: {ram_mb} MB (~{max_candles // 1_000_000} Mio. Kerzen)"
+            + (" – automatisch (ganzer RAM minus 1 GB)" if not SETTINGS.get("ram_limit_mb") else ""))
+    # candle_cache liest das Limit beim Import – bereits geladen? Dann live setzen.
+    cc = sys.modules.get("services.candle_cache")
+    if cc is not None and getattr(cc, "MAX_CANDLES_IN_MEMORY", None) != max_candles:
+        cc.MAX_CANDLES_IN_MEMORY = max_candles
+    # Daten-Ordner vom Server übernehmen (pro Worker konfigurierbar):
+    new_dir = str(SETTINGS.get("data_dir") or "").strip()
+    if new_dir and new_dir != CONFIG.get("data_dir"):
+        try:
+            os.makedirs(new_dir, exist_ok=True)
+        except OSError as e:
+            log(f"Daten-Ordner {new_dir} nicht anlegbar: {e} – bleibe bei {CONFIG.get('data_dir')}")
+            return
+        CONFIG["data_dir"] = new_dir
+        save_config(CONFIG)
+        os.environ["CANDLE_CACHE_DIR"] = new_dir
+        if not RUNNING:
+            try:
+                from services import candle_cache
+                candle_cache.CACHE_DIR = new_dir
+                log(f"Daten-Ordner umgestellt: {new_dir}")
+            except Exception:  # noqa: BLE001
+                log(f"Neuer Daten-Ordner {new_dir} gilt ab dem nächsten Start")
+        else:
+            log(f"Neuer Daten-Ordner {new_dir} gilt ab dem nächsten Start (Job läuft)")
+
+
+def auto_ram_mb():
+    try:
+        import psutil
+        total = int(psutil.virtual_memory().total / (1024 * 1024))
+        return max(total - 1024, 512)
+    except Exception:  # noqa: BLE001
+        return 4096
+
+
+def http_session():
+    """aiohttp-Session für Daten-Downloads: Zertifikate über certifi (Windows-
+    Python kennt sonst oft die CA nicht -> 'attempt failed'), System-Proxy
+    respektieren, Verbindungen begrenzen."""
+    import aiohttp
+    ssl_ctx = None
+    try:
+        import ssl
+        import certifi
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+    except Exception:  # noqa: BLE001
+        ssl_ctx = None
+    connector = aiohttp.TCPConnector(ssl=ssl_ctx, limit=16, ttl_dns_cache=300)
+    return aiohttp.ClientSession(connector=connector, trust_env=True)
+
+
+def make_registry(custom_definitions):
+    from strategies.registry import StrategyRegistry
+    reg = StrategyRegistry()
+    try:
+        reg.load_custom(custom_definitions or [])
+    except Exception as e:  # noqa: BLE001
+        log(f"Custom-Strategien laden fehlgeschlagen: {e}")
+    return reg
+
+
+def new_job_dict(kind_store, job_id, params=None):
+    """Job-Eintrag im lokalen JOBS-Store anlegen (gleiche Form wie der Server)."""
+    from datetime import datetime, timezone
+    d = {"id": job_id, "status": "running", "progress": 0, "phase": "Startet",
+         "params": params or {}, "best": None, "cancel": False,
+         "created_at": datetime.now(timezone.utc).isoformat(),
+         "result": None, "error": None}
+    kind_store[job_id] = d
+    return d
+
+
+class JobCancelledLocal(Exception):
+    pass
+
+
+def progress_reporter(job_id, jobd, stop_evt):
+    """Meldet Fortschritt alle 2s; Antwort steuert Abbruch/sanften Stop/Pause.
+
+    Robust (1.12.0): der Thread stirbt nie still (jede Ausnahme wird geloggt),
+    Server-Fehlerstatus wird gemeldet, nach einer Wiederverbindung wird das
+    aktuelle Beste erneut gesendet – vorher konnte die Website dauerhaft
+    „Verbindung unterbrochen“ zeigen, obwohl der Worker längst wieder da war."""
+    last = None
+    offline_since = None
+    bad_status = 0
+    while not stop_evt.is_set():
+        try:
+            body = {"progress": jobd.get("progress"), "phase": jobd.get("phase"),
+                    "paused": bool(jobd.get("paused"))}
+            if jobd.get("best") is not None and jobd.get("best") != last:
+                body["best"] = jobd["best"]
+                last = jobd["best"]
+            r = requests.post(api(f"/api/worker/job/{job_id}/progress"),
+                              headers={**hdrs(), "Content-Type": "application/json"},
+                              data=json.dumps(body, default=str), timeout=HTTP_TIMEOUT)
+            if r.status_code == 200:
+                bad_status = 0
+                resp = r.json()
+                if resp.get("cancel"):
+                    jobd["cancel"] = True
+                if resp.get("stop"):
+                    jobd["stop_explore"] = True
+                # Pause: services.job_control hält die Rechnung am nächsten
+                # Checkpoint an (auch tagelang) und setzt sie bei False fort.
+                want_pause = bool(resp.get("pause"))
+                if want_pause != bool(jobd.get("pause")):
+                    jobd["pause"] = want_pause
+                    log(f"Job {job_id}: {'PAUSE angefordert' if want_pause else 'wird fortgesetzt'}")
+                if offline_since is not None:
+                    log(f"Job {job_id}: Verbindung wiederhergestellt "
+                        f"(nach {int(time.time() - offline_since)} s)")
+                    offline_since = None
+            else:
+                bad_status += 1
+                if bad_status in (1, 15, 150):
+                    log(f"Job {job_id}: Server antwortet auf Fortschritt mit HTTP "
+                        f"{r.status_code} ({r.text[:80]}) – versuche weiter")
+                last = None  # Bestes nach Erholung erneut senden
+        except requests.RequestException:
+            last = None
+            if offline_since is None:
+                offline_since = time.time()
+                log(f"Job {job_id}: Server nicht erreichbar – rechne weiter, "
+                    "Fortschritt wird nach der Wiederverbindung gemeldet")
+        except Exception as e:  # noqa: BLE001
+            last = None
+            log(f"Job {job_id}: Fortschritts-Meldung fehlgeschlagen ({str(e)[:80]}) – weiter")
+        stop_evt.wait(2.0)
+
+
+def _pending_dir():
+    d = Path(CONFIG["data_dir"]) / "pending_results"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _try_upload(job_id, raw):
+    """Ein Upload-Versuch. Rückgabe: True = erledigt (200/404 = Server hat es
+    bzw. kennt den Job nicht mehr), False = später erneut versuchen."""
+    r = requests.post(api(f"/api/worker/job/{job_id}/result"),
+                      headers={**hdrs(), "Content-Type": "application/json",
+                               "Content-Encoding": "gzip"},
+                      data=raw, timeout=120)
+    if r.status_code in (200, 404):
+        return True
+    raise requests.RequestException(f"HTTP {r.status_code} ({r.text[:80]})")
+
+
+def upload_result(job_id, payload):
+    raw = gzip.compress(json.dumps(payload, default=str).encode())
+    # Erst auf Platte sichern: ein Absturz/Neustart des Workers während der
+    # Wiederholungen verliert das (teuer berechnete) Ergebnis nicht mehr.
+    pending = None
+    try:
+        pending = _pending_dir() / f"{job_id}.json.gz"
+        pending.write_bytes(raw)
+    except OSError:
+        pending = None
+    for attempt in range(RESULT_RETRY_MAX):  # bis ~6 h Reconnect-Toleranz
+        try:
+            if _try_upload(job_id, raw):
+                if attempt:
+                    log(f"Ergebnis für {job_id} nach {attempt} Versuchen hochgeladen")
+                if pending is not None:
+                    pending.unlink(missing_ok=True)
+                return
+        except requests.RequestException as e:
+            if attempt in (0, 12, 120, 720):
+                log(f"Ergebnis-Upload {job_id} noch nicht möglich ({str(e)[:80]}) – "
+                    "wiederhole alle 5 s")
+        except Exception as e:  # noqa: BLE001
+            if attempt in (0, 12, 120, 720):
+                log(f"Ergebnis-Upload {job_id} fehlgeschlagen ({str(e)[:80]}) – wiederhole")
+        time.sleep(RESULT_RETRY_S)
+    log(f"Ergebnis-Upload für {job_id} vorerst fehlgeschlagen – bleibt in "
+        f"{_pending_dir()} und wird beim nächsten Verbindungsaufbau nachgeliefert")
+
+
+def flush_pending_results():
+    """Gesicherte, noch nicht hochgeladene Ergebnisse nachliefern (nach
+    Neustart des Workers oder Wiederverbindung). Fehler werden geloggt."""
+    try:
+        files = sorted(_pending_dir().glob("*.json.gz"))
+    except OSError:
+        return
+    for f in files:
+        job_id = f.name[:-len(".json.gz")]
+        try:
+            if _try_upload(job_id, f.read_bytes()):
+                f.unlink(missing_ok=True)
+                log(f"Gesichertes Ergebnis für {job_id} nachgeliefert")
+        except Exception as e:  # noqa: BLE001
+            log(f"Nachlieferung {job_id} noch nicht möglich ({str(e)[:80]})")
+            return
+
+
+# ---------------- Rechen-Jobs ----------------
+def run_backtest_job(job_id, payload):
+    from services import backtester as bt
+    args = payload.get("args") or {}
+    reg = make_registry(payload.get("custom_definitions"))
+    jobd = new_job_dict(bt.JOBS, job_id, args)
+    stop_evt = threading.Event()
+    rep = threading.Thread(target=progress_reporter, args=(job_id, jobd, stop_evt),
+                           daemon=True)
+    rep.start()
+    try:
+        asyncio.run(bt.run_backtest(
+            job_id, args.get("strategy_ids") or [], args.get("symbols") or [],
+            int(args.get("days") or 1), args.get("cfg") or {}, reg,
+            args.get("settings") or {}, None, args.get("strategy_configs") or {},
+            args.get("default_timeframe"), args.get("date_from"), args.get("date_to")))
+    except Exception as e:  # noqa: BLE001
+        jobd["status"] = "error"
+        jobd["error"] = str(e)[:300]
+    finally:
+        stop_evt.set()
+    upload_result(job_id, {
+        "kind": "backtest", "status": jobd.get("status") or "error",
+        "input_hash": (payload or {}).get("_input_hash"),
+        "error": jobd.get("error"), "result": jobd.get("result"),
+        "export_trades": jobd.get("export_trades") or []})
+
+
+def run_optimizer_job(job_id, payload):
+    from services import optimizer as opt
+    args = payload.get("args") or {}
+    body = args.get("body") or {}
+    reg = make_registry(payload.get("custom_definitions"))
+    jobd = new_job_dict(opt.JOBS, job_id, body)
+    stop_evt = threading.Event()
+    rep = threading.Thread(target=progress_reporter, args=(job_id, jobd, stop_evt),
+                           daemon=True)
+    rep.start()
+    try:
+        asyncio.run(opt.run_optimizer(job_id, body, reg,
+                                      args.get("settings") or {},
+                                      args.get("default_cfg") or {}, None))
+    except Exception as e:  # noqa: BLE001
+        jobd["status"] = "error"
+        jobd["error"] = str(e)[:300]
+    finally:
+        stop_evt.set()
+    upload_result(job_id, {
+        "kind": "optimizer", "status": jobd.get("status") or "error",
+        "input_hash": (payload or {}).get("_input_hash"),
+        "error": jobd.get("error"), "result": jobd.get("result"),
+        "best": jobd.get("best"),
+        "export_trades": jobd.get("export_trades") or []})
+
+
+def run_regime_job(job_id, payload):
+    from services import regime_lab as rlab
+    from services import regime_opt
+    args = payload.get("args") or {}
+    fn = args.get("fn")
+    body = args.get("body") or {}
+    settings = args.get("settings") or {}
+    default_cfg = args.get("default_cfg") or {}
+    reg = make_registry(payload.get("custom_definitions"))
+    jobd = new_job_dict(rlab.JOBS, job_id, body)
+    jobd["kind"] = fn
+    stop_evt = threading.Event()
+    rep = threading.Thread(target=progress_reporter, args=(job_id, jobd, stop_evt),
+                           daemon=True)
+    rep.start()
+    try:
+        if fn == "analysis":
+            asyncio.run(rlab.run_analysis(job_id, body, None))
+        elif fn == "calibrate":
+            asyncio.run(rlab.run_calibration(job_id, body, None))
+        elif fn == "regime_opt":
+            asyncio.run(regime_opt.run_regime_optimizer(
+                job_id, body, reg, settings, default_cfg, None))
+        elif fn == "walkforward":
+            asyncio.run(regime_opt.run_walkforward(
+                job_id, body, reg, settings, default_cfg, None))
+        elif fn == "autopilot":
+            from services import regime_autopilot
+            asyncio.run(regime_autopilot.run_autopilot(job_id, body, None))
+        elif fn == "ablation":
+            asyncio.run(rlab.run_ablation(job_id, body, None))
+        elif fn == "reevaluate":
+            asyncio.run(rlab.run_reevaluate(job_id, body, None))
+        else:
+            raise RuntimeError(f"Unbekannter Regime-Lab-Job: {fn}")
+    except Exception as e:  # noqa: BLE001
+        jobd["status"] = "error"
+        jobd["error"] = str(e)[:300]
+    finally:
+        stop_evt.set()
+    upload_result(job_id, {
+        "kind": "regime_lab", "status": jobd.get("status") or "error",
+        "input_hash": (payload or {}).get("_input_hash"),
+        "error": jobd.get("error"), "result": jobd.get("result")})
+
+
+# ---------------- Daten-Jobs ----------------
+async def _download_symbols(jobd, symbols, days):
+    import aiohttp
+    from services import candle_cache
+    done = []
+    async with http_session() as session:
+        for i, sym in enumerate(symbols):
+            if jobd.get("cancel"):
+                raise JobCancelledLocal()
+            jobd["phase"] = f"Lade {sym} ({days} Tage)..."
+            jobd["progress"] = round(i / max(len(symbols), 1) * 100)
+            candles = await candle_cache.get_candles(session, sym, days, job=jobd)
+            await candle_cache.persist_symbol_async(sym)
+            done.append({"symbol": sym, "candles": len(candles)})
+    return done
+
+
+def run_data_job(job_id, kind, params):
+    from services import candle_cache
+    jobd = {"id": job_id, "status": "running", "progress": 0,
+            "phase": "Startet", "cancel": False}
+    stop_evt = threading.Event()
+    rep = threading.Thread(target=progress_reporter, args=(job_id, jobd, stop_evt),
+                           daemon=True)
+    rep.start()
+    status, error, summary = "done", None, None
+    try:
+        if kind == "data_download":
+            done = asyncio.run(_download_symbols(
+                jobd, params.get("symbols") or [], int(params.get("days") or 30)))
+            summary = {"symbols": [d["symbol"] for d in done], "detail": done}
+        elif kind == "data_update":
+            now_ms = int(time.time() * 1000)
+            updated = []
+            for meta in candle_cache.list_disk_symbols():
+                sym = meta.get("symbol")
+                dm = candle_cache.disk_meta(sym) or {}
+                first = dm.get("first_ts") or now_ms
+                days = max(int((now_ms - first) / 86400000) + 1, 2)
+                asyncio.run(_download_symbols(jobd, [sym], days))
+                updated.append(sym)
+            summary = {"symbols": updated}
+        elif kind == "data_delete":
+            candle_cache.remove_symbol(params.get("symbol"))
+            summary = {"symbol": params.get("symbol")}
+        else:
+            raise RuntimeError(f"Unbekannter Daten-Job: {kind}")
+    except JobCancelledLocal:
+        status = "cancelled"
+    except Exception as e:  # noqa: BLE001
+        status, error = "error", str(e)[:300]
+    finally:
+        stop_evt.set()
+    upload_result(job_id, {"kind": kind, "status": status, "error": error,
+                           "summary": summary})
+
+
+# ---------------- Heartbeat / Poll-Loop ----------------
+def resources():
+    out = {"cores": os.cpu_count() or 1}
+    try:
+        import psutil
+        out["ram_gb"] = round(psutil.virtual_memory().total / 1e9, 1)
+        out["ram_free_gb"] = round(psutil.virtual_memory().available / 1e9, 1)
+        out["cpu_pct"] = psutil.cpu_percent(interval=None)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def gpu_info():
+    try:
+        from services import gpu_accel
+        return gpu_accel.info()
+    except Exception:  # noqa: BLE001
+        return {"available": False}
+
+
+def data_info():
+    try:
+        from services import candle_cache
+        syms = candle_cache.list_disk_symbols()
+        return {"symbols": [s.get("symbol") for s in syms], "detail": syms[:50],
+                "data_dir": CONFIG.get("data_dir")}
+    except Exception:  # noqa: BLE001
+        return {"symbols": [], "data_dir": CONFIG.get("data_dir")}
+
+
+def cleanup_finished():
+    for jid in list(RUNNING.keys()):
+        if not RUNNING[jid]["thread"].is_alive():
+            RUNNING.pop(jid, None)
+
+
+def dispatch(job):
+    jid, kind, payload = job["job_id"], job["kind"], job.get("payload") or {}
+    if kind == "backtest":
+        target, args = run_backtest_job, (jid, payload)
+    elif kind == "optimizer":
+        target, args = run_optimizer_job, (jid, payload)
+    elif kind == "regime_lab":
+        target, args = run_regime_job, (jid, payload)
+    elif kind in ("data_download", "data_update", "data_delete"):
+        target, args = run_data_job, (jid, kind, payload)
+    else:
+        log(f"Unbekannter Job-Typ: {kind}")
+        upload_result(jid, {"kind": kind, "status": "error",
+                            "error": f"Worker kennt Job-Typ '{kind}' nicht"})
+        return
+    t = threading.Thread(target=target, args=args, daemon=True)
+    RUNNING[jid] = {"kind": kind, "thread": t}
+    t.start()
+    log(f"Job übernommen: {jid} ({kind})")
+
+
+def find_job_dict(jid):
+    for mod_name, attr in (("services.backtester", "JOBS"),
+                           ("services.optimizer", "JOBS"),
+                           ("services.regime_lab", "JOBS")):
+        mod = sys.modules.get(mod_name)
+        if mod is not None and jid in getattr(mod, attr, {}):
+            return getattr(mod, attr)[jid]
+    return None
+
+
+def maybe_auto_update():
+    global _last_auto_update
+    if not SETTINGS.get("auto_update_enabled"):
+        return
+    minutes = int(SETTINGS.get("auto_update_minutes") or 60)
+    if time.time() - _last_auto_update < minutes * 60 or RUNNING:
+        return
+    _last_auto_update = time.time()
+    log("Auto-Update der Kerzendaten...")
+    threading.Thread(target=run_data_job,
+                     args=("auto-" + uuid.uuid4().hex[:8], "data_update", {}),
+                     daemon=True).start()
+
+
+def main():
+    log(f"Lokaler Worker v{VERSION} · Server: {CONFIG['server_url']}")
+    log(f"Daten-Ordner: {CONFIG['data_dir']}")
+    offline_since = None
+    backoff = 5
+    while True:
+        try:
+            cleanup_finished()
+            max_jobs = int(SETTINGS.get("max_parallel_jobs") or 1)
+            compute_running = sum(1 for r in RUNNING.values()
+                                  if not r["kind"].startswith("data_"))
+            r = requests.post(api("/api/worker/poll"), headers=hdrs(), json={
+                "worker_id": CONFIG["worker_id"], "name": CONFIG["name"],
+                "version": VERSION, "resources": resources(), "gpu": gpu_info(),
+                "data": data_info(), "running_jobs": list(RUNNING.keys()),
+                "sim_workers": int(os.environ.get("SIM_WORKERS") or 0) or (os.cpu_count() or 1),
+                "want_compute": compute_running < max_jobs,
+                "want_data": True,
+            }, timeout=HTTP_TIMEOUT)
+            if r.status_code == 401:
+                log("FEHLER: Worker-Token ungültig – neues Token auf der Website "
+                    "holen und worker_config.json anpassen")
+                time.sleep(10)
+                continue
+            r.raise_for_status()
+            resp = r.json()
+            if offline_since is not None:
+                log(f"Verbindung zum Server wiederhergestellt (nach {int(time.time() - offline_since)} s)")
+                offline_since = None
+                flush_pending_results()
+            backoff = 5
+            apply_settings(resp.get("settings"))
+            for jid in resp.get("cancel_ids") or []:
+                jd = find_job_dict(jid)
+                if jd is not None:
+                    jd["cancel"] = True
+            if resp.get("job"):
+                dispatch(resp["job"])
+            maybe_auto_update()
+        except requests.RequestException as e:
+            if offline_since is None:
+                offline_since = time.time()
+                log(f"Verbindung zum Server fehlgeschlagen: {e}")
+                if RUNNING:
+                    log("Laufende Jobs rechnen weiter – Ergebnisse werden nach der "
+                        "Wiederverbindung hochgeladen")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, POLL_BACKOFF_MAX)
+        except KeyboardInterrupt:
+            log("Beendet")
+            return
+        except Exception as e:  # noqa: BLE001
+            # Vorher beendete JEDER unerwartete Fehler (z.B. ungültige Server-
+            # Antwort während eines Render-Deploys) den Worker mit Traceback –
+            # er blieb dann bis zum manuellen Neustart offline.
+            log(f"Unerwarteter Fehler in der Poll-Schleife ({str(e)[:120]}) – weiter")
+            time.sleep(5)
+        time.sleep(POLL_INTERVAL)
+
+
+if __name__ == "__main__":
+    try:
+        flush_pending_results()
+        main()
+    except KeyboardInterrupt:
+        log("Beendet")

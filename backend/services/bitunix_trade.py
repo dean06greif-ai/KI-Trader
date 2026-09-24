@@ -1,0 +1,4905 @@
+"""
+Bitunix futures trading: request signer, live REST client, paper broker,
+and an AutoTradeManager that opens/manages auto-trades with dynamic SL/TP,
+partial TP1 and break-even logic.
+
+Fix summary (Bitunix Live-Trading):
+- Root cause: The app used the internal short names GOLD / SILVER / OIL as
+  order symbols. Bitunix does not know these symbols and rejected the order
+  with code 300105 "System error".
+  The real Bitunix USDT-M futures contracts are:
+      GOLD   -> XAUUSDT
+      SILVER -> XAGUSDT
+      OIL    -> CLUSDT
+  Crypto symbols like BTCUSDT / XRPUSDT already match.
+- Every private call to Bitunix (place_order, flash_close, set_leverage,
+  get_positions) now translates the internal symbol via `to_bitunix_symbol()`.
+- The mapping is validated at startup against
+  GET /api/v1/futures/market/trading_pairs so future contract-name changes
+  on Bitunix don't break us silently.
+- Second fix: `on_signal` no longer stores the trade locally when the live
+  order was rejected. Instead a Telegram alert is emitted and the trade is
+  dropped. That prevents "ghost positions" that never existed on Bitunix.
+- qty/price are sent as strings, rounded to the contract's step/tick size
+  when the metadata is available.
+"""
+import asyncio
+import os
+import time
+import json
+import hashlib
+import logging
+import aiohttp
+import uuid
+from decimal import Decimal, ROUND_DOWN, ROUND_UP, ROUND_HALF_UP
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional
+from core import instruments as _instruments
+from services.technical_indicators import TechnicalIndicators
+from services.backtester import effective_leverage
+from services.runner_policy import trail_decision
+from services import capital_fit
+
+logger = logging.getLogger(__name__)
+
+
+def effective_fee_percent(cfg: Dict) -> float:
+    """Gebühr (%/Seite) für NEUE Trades: eine explizit abweichende
+    Coin-Einstellung hat Vorrang, sonst gilt die globale Taker-Gebühr aus den
+    Haupteinstellungen (futures_taker_fee_pct, Standard 0,06%)."""
+    coin_fee = float((cfg or {}).get("fee_percent", 0.06) or 0.06)
+    if abs(coin_fee - 0.06) > 1e-9:
+        return coin_fee
+    try:
+        from core import state
+        return float(state.scanner.settings.get(
+            "futures_taker_fee_pct", coin_fee) or coin_fee)
+    except Exception:
+        return coin_fee
+
+
+def effective_maker_fee_percent(cfg: Dict) -> float:
+    """Maker-Gebühr (%/Seite) für Post-Only-Limit-Entries (Maker-Order-Modus):
+    global aus den Haupteinstellungen (futures_maker_fee_pct, Standard 0,02%)."""
+    try:
+        from core import state
+        return float(state.scanner.settings.get("futures_maker_fee_pct", 0.02) or 0.02)
+    except Exception:
+        return 0.02
+
+
+def parse_order_fill(res, allow_price_fallback: bool = True) -> Dict:
+    """get_order_detail -> {status, filled_qty, avg_price} (rein, testbar).
+
+    allow_price_fallback=False: das generische 'price'-Feld wird NICHT als
+    avg_price akzeptiert. Für die Slippage-Messung von MARKET-Orders ist
+    'price' gefährlich – Bitunix liefert dort u.U. den Schutz-/Limitpreis
+    (~±5% vom Mark), NICHT den Fill (RCA custom_23a30b65: Ø ~5% Phantom-
+    Slippage). Maker-LIMIT-Fluss nutzt weiter den Default (Limitpreis = Fill).
+    """
+    data = (res or {}).get("data") if isinstance(res, dict) else None
+    if not isinstance(data, dict):
+        return {"status": "", "filled_qty": 0.0, "avg_price": 0.0}
+
+    def _fv(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+    status = str(data.get("status") or data.get("orderStatus") or "").upper()
+    filled = 0.0
+    for k in ("dealAmount", "tradeQty", "dealQty", "executedQty", "filledQty"):
+        if data.get(k) not in (None, ""):
+            filled = abs(_fv(data[k]))
+            if filled:
+                break
+    avg = 0.0
+    avg_keys = (("avgPrice", "dealAvgPrice", "averagePrice", "price")
+                if allow_price_fallback else ("avgPrice", "dealAvgPrice", "averagePrice"))
+    for k in avg_keys:
+        v = _fv(data.get(k))
+        if v > 0:
+            avg = v
+            break
+    return {"status": status, "filled_qty": filled, "avg_price": avg}
+
+
+def fill_price_for_slippage(fi: Dict, side: str, signal_price):
+    """Baustein-B-Messung: akzeptiert nur echte avg-Fills gefüllter Orders.
+    Plausibilitäts-Grenze 2%: größere Abweichungen sind bei unseren Notionals
+    praktisch sicher Artefakte (Schutzpreis) und würden die Statistik zerstören
+    – sie werden verworfen und geloggt statt gespeichert."""
+    if not fi or not fi.get("avg_price"):
+        return None
+    if not (str(fi.get("status") or "").startswith("FILL")
+            or float(fi.get("filled_qty") or 0) > 0):
+        return None
+    cand = float(fi["avg_price"])
+    chk = compute_slippage_pct(side, signal_price, cand)
+    if chk is not None and abs(chk) > 2.0:
+        logger.warning(f"Slippage-Messung verworfen (|{chk:+.2f}%| > 2% – vermutlich "
+                       f"Schutzpreis statt Fill): signal={signal_price} avg={cand}")
+        return None
+    return cand
+
+
+def profit_release_plan(qty_rem: float, entry: float, lev_now: float,
+                        max_lev: float, reduce_pct: float = 100.0) -> Optional[Dict]:
+    """Gewinnsicherung: wieviel Marge kann freigesetzt werden? (rein, testbar)
+    Positionsgröße bleibt gleich -> der Hebel steigt Richtung max_lev (Deckel 200x).
+    reduce_pct (10-100): Anteil der maximal freisetzbaren Marge, der tatsächlich
+    entnommen wird (Trader-Regler; 100 = maximale Reduzierung)."""
+    notional = float(qty_rem or 0) * float(entry or 0)
+    lev_now = max(1.0, float(lev_now or 1))
+    target = max(1.0, min(200.0, float(max_lev or 0)))
+    if notional <= 0 or target <= lev_now + 0.01:
+        return None
+    margin_now = notional / lev_now
+    pct = max(10.0, min(100.0, float(reduce_pct or 100))) / 100
+    release = (margin_now - notional / target) * pct
+    if release <= 0 or (margin_now > 0 and release / margin_now < 0.01):
+        return None
+    new_margin = margin_now - release
+    return {"release": round(release, 6),
+            "new_leverage": round(notional / new_margin, 2),
+            "new_margin": round(new_margin, 6), "margin_now": round(margin_now, 6)}
+
+
+def sl_liq_guard(side: str, entry: float, leverage: float, price: float,
+                 cur_sl: Optional[float], mmr_percent: float = 0.5,
+                 buffer_pct: float = 0.3,
+                 min_price_dist_pct: float = 0.2):
+    """Nach einer Hebel-/Margen-Änderung prüfen, ob der SL noch VOR der
+    Liquidation liegt (rein, testbar). Rückgabe (needed_sl, liq, ok):
+      * needed_sl: SL, der `buffer_pct`% (vom Entry) hinter der neuen Liq liegt –
+        None, wenn der aktuelle SL bereits sicher vor der Liq liegt.
+      * ok=False: der nötige SL läge näher als `min_price_dist_pct`% am
+        aktuellen Kurs -> Änderung NICHT ausführen (zu früh / zu eng)."""
+    lev = max(float(leverage or 1), 0.01)
+    mmr = float(mmr_percent) / 100
+    liq_dist = max(1.0 / lev - mmr, 0.0005)
+    long = str(side).upper() == "LONG"
+    liq = entry * (1 - liq_dist) if long else entry * (1 + liq_dist)
+    buf = entry * max(float(buffer_pct), 0.05) / 100
+    needed = liq + buf if long else liq - buf
+    try:
+        sl = float(cur_sl) if cur_sl is not None else None
+    except (TypeError, ValueError):
+        sl = None
+    if sl is not None and ((long and sl >= needed) or (not long and sl <= needed)):
+        return None, round(liq, 6), True  # SL liegt bereits sicher vor der Liq
+    min_dist = float(price or 0) * max(float(min_price_dist_pct), 0.05) / 100
+    if price and ((long and needed >= price - min_dist)
+                  or (not long and needed <= price + min_dist)):
+        return round(needed, 6), round(liq, 6), False
+    return round(needed, 6), round(liq, 6), True
+
+
+def fee_guard_min_sl_pct(fee_percent: float, mult: float,
+                         atr_pct: float = 0.0, atr_mult: float = 0.0,
+                         funding_pct: float = 0.0) -> float:
+    """Mindest-SL-Distanz in % = max(mult × Roundtrip-Kosten, atr_mult × ATR%).
+    V2: der ATR-Anteil koppelt das Minimum an die aktuelle Marktschwankung –
+    Stops im Rauschband (z.B. pauschal 0,5% bei hoher Vola) werden geblockt.
+    V4: Roundtrip-Kosten = 2× Fee + projizierte Funding-Kosten (% Notional)
+    über die erwartete Haltedauer – lange gehaltene Trades werden realistisch
+    bewertet (services/funding_fees.py)."""
+    fee_floor = max(0.0, float(mult)) * (2.0 * max(0.0, float(fee_percent))
+                                         + max(0.0, float(funding_pct)))
+    atr_floor = max(0.0, float(atr_mult)) * max(0.0, float(atr_pct))
+    return max(fee_floor, atr_floor)
+
+
+def trade_fee_percent(cfg: Dict, symbol: Optional[str] = None,
+                      notional_usd: float = 0.0, orders_per_side: int = 1) -> float:
+    """Broker-korrekte Gebühr (%/Seite) für einen Trade: Krypto/Rohstoffe/
+    Indizes = Bitunix-Taker-Fee, Forex = IBKR-Kommission inkl. Mindest-
+    kommission (services/fee_model.py). Ohne Symbol: Bitunix-Fee."""
+    fee = effective_fee_percent(cfg)
+    if not symbol:
+        return fee
+    from services import fee_model
+    return fee_model.fee_percent_for(symbol, fee, notional_usd=notional_usd,
+                                     orders_per_side=orders_per_side)
+
+
+def planned_notional(cfg: Dict, entry: float, sl: float) -> float:
+    """Geplantes Notional (Kapital × Hebel) aus der Coin-Config – für die
+    Gebührenschätzung des Fee-Wächters (Mindestkommission bei Forex)."""
+    try:
+        lev = effective_leverage(cfg, entry, sl) if cfg.get("auto_leverage_enabled") \
+            else float(cfg.get("leverage") or 1)
+        return max(0.0, float(cfg.get("max_capital") or 0) * max(lev, 1.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def fee_guard_check(ai_cfg: Dict, cfg: Dict, entry: float, sl: float,
+                    atr: float = 0.0, tp: float = 0.0,
+                    funding_pct: float = 0.0, symbol: Optional[str] = None):
+    """Fee-Wächter (KI-Trader): blockt Trades, deren SL-Distanz unter dem
+    Vielfachen der Roundtrip-Fees ODER unter dem ATR-Rauschband liegt –
+    mathematisch garantierte Fee-Verlierer bzw. Rausch-Stops.
+    Mit `symbol` wird die Gebühr des zuständigen Brokers genutzt (Forex:
+    IBKR-Kommission + Mindestkommission je Order, ggf. zwei OCA-Legs).
+    Liefert (ok, grund)."""
+    ai_cfg = ai_cfg or {}
+    if not ai_cfg.get("fee_guard_enabled", True):
+        return True, ""
+    try:
+        mult = float(ai_cfg.get("fee_guard_mult", 2.5) or 0)
+    except (TypeError, ValueError):
+        mult = 2.5
+    if mult <= 0 or not entry or not sl:
+        return True, ""
+    try:
+        atr_mult = float(ai_cfg.get("fee_guard_atr_mult", 2.5) or 0)
+    except (TypeError, ValueError):
+        atr_mult = 2.5
+    legs = 1
+    broker_note = ""
+    if symbol:
+        from services import fee_model
+        if fee_model.is_forex(symbol):
+            try:
+                pct1 = float(cfg.get("tp1_close_percent") or 0)
+            except (TypeError, ValueError):
+                pct1 = 0.0
+            legs = 2 if 0 < pct1 < 100 else 1
+            broker_note = " IBKR"
+    fee = trade_fee_percent(cfg, symbol, planned_notional(cfg, entry, sl), legs)
+    atr_pct = (float(atr) / float(entry) * 100.0) if (atr and entry) else 0.0
+    min_pct = fee_guard_min_sl_pct(fee, mult, atr_pct, atr_mult,
+                                   funding_pct=funding_pct)
+    sl_dist_pct = abs(float(entry) - float(sl)) / float(entry) * 100.0
+    if sl_dist_pct + 1e-9 < min_pct:
+        # V3 (knappe Setups fair bewerten): ein hohes CRV deckt die Gebühren
+        # überproportional – bei CRV >= 2 darf das Minimum um 15%, bei CRV >= 3
+        # um 25% unterschritten werden. Darunter bleibt der harte Block.
+        if tp and ai_cfg.get("fee_guard_crv_relax", True):
+            try:
+                crv = abs(float(tp) - float(entry)) / (abs(float(entry) - float(sl)) or 1e-9)
+            except (TypeError, ValueError, ZeroDivisionError):
+                crv = 0.0
+            relax = 0.75 if crv >= 3.0 else (0.85 if crv >= 2.0 else 1.0)
+            if relax < 1.0 and sl_dist_pct + 1e-9 >= min_pct * relax:
+                logger.info(
+                    f"Fee-Wächter V3: knappes Setup zugelassen – SL-Distanz {sl_dist_pct:.3f}% "
+                    f"unter Standard-Minimum {min_pct:.2f}%, aber CRV {crv:.2f} deckt die "
+                    f"Gebühren (gelockertes Minimum {min_pct * relax:.2f}%)")
+                return True, ""
+        fee_floor = fee_guard_min_sl_pct(fee, mult, funding_pct=funding_pct)
+        funding_note = (f" + erwartete Funding-Kosten {funding_pct:.3f}%"
+                        if funding_pct > 0 else "")
+        if min_pct > fee_floor + 1e-9:
+            return False, (
+                f"Fee-Wächter: SL-Distanz {sl_dist_pct:.3f}% < ATR-Minimum {min_pct:.2f}% "
+                f"({atr_mult:g}× 1m-ATR {atr_pct:.3f}%) – so enge Stops liegen im "
+                f"Markt-Rauschen und werden fast sicher ausgestoppt (abschaltbar im KI-Setup)")
+        return False, (
+            f"Fee-Wächter: SL-Distanz {sl_dist_pct:.3f}% < Minimum {min_pct:.2f}% "
+            f"({mult:g}× (Roundtrip-Fees{broker_note} {2 * fee:.3f}%{funding_note})) – Kosten "
+            f"würden das geplante Risiko auffressen (abschaltbar im KI-Setup)")
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# Symbol mapping: internal display name -> real Bitunix contract symbol.
+# Quelle: core.instruments (dort werden neue Assets gepflegt). Symbole, die
+# bereits dem Bitunix-Kontrakt entsprechen (BTCUSDT, QQQUSDT, ...), gehen
+# unverändert durch; Instrumente ohne Kontrakt (Forex) sind nicht live handelbar.
+# ---------------------------------------------------------------------------
+SYMBOL_MAP: Dict[str, str] = dict(_instruments.SYMBOL_MAP)
+
+
+def _sha256(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
+def _nonce() -> str:
+    return os.urandom(16).hex()
+
+
+def _millis() -> str:
+    return str(int(time.time() * 1000))
+
+
+def sign_request(api_key: str, secret: str, query: Optional[Dict], body_str: str,
+                 nonce: str, ts: str) -> str:
+    qp = ""
+    if query:
+        qp = "".join(f"{k}{query[k]}" for k in sorted(query.keys()))
+    digest = _sha256(nonce + ts + api_key + qp + body_str)
+    return _sha256(digest + secret)
+
+
+def _round_step(value: float, step: float, rounding=ROUND_DOWN) -> str:
+    """Round `value` to a multiple of `step` and return a plain string
+    (no scientific notation, no trailing zeros beyond the step precision).
+    Default rounding is DOWN (used for quantities). For prices we sometimes
+    need HALF_EVEN / to-tick alignment; pass a different `rounding` in that
+    case."""
+    if step <= 0:
+        return f"{value}"
+    d_val = Decimal(str(value))
+    d_step = Decimal(str(step))
+    quant = (d_val / d_step).to_integral_value(rounding=rounding) * d_step
+    # Preserve step precision explicitly – .normalize() drops trailing zeros
+    # which Bitunix sometimes rejects (e.g. "1.11" instead of "1.1100").
+    # Whole-unit steps (1.0, 10) must yield "928", not "928.0" (code 10002).
+    step_exp = d_step.normalize().as_tuple().exponent
+    quant = quant.quantize(Decimal(10) ** step_exp if step_exp < 0 else Decimal(1))
+    s = format(quant, "f")
+    return s if s else "0"
+
+
+def _precision_to_step(prec) -> float:
+    """Bitunix returns basePrecision / quotePrecision as *decimal places*
+    (e.g. 3 -> 0.001). If the value already looks like a step (e.g. 0.001)
+    we pass it through. Handles ints, floats and strings safely."""
+    if prec is None or prec == "":
+        return 0.0
+    try:
+        f = float(prec)
+    except (TypeError, ValueError):
+        return 0.0
+    if f < 0:
+        return 0.0
+    # Heuristic: a non-negative integer is a decimal-place count (0 = whole
+    # units -> step 1.0, e.g. POL/AVAX), anything < 1 is already a step size.
+    # BUGFIX code 10002 "Parameter error": basePrecision=0 ergab vorher
+    # step 0.0 -> die Menge ging ungerundet ("928.37" POL) an die Börse.
+    if float(int(f)) == f:
+        return float(Decimal(10) ** Decimal(-int(f)))
+    return f
+
+
+def update_peak(side: str, prev_peak, *prices):
+    """Bester Stand im Trade (MFE): LONG = höchster, SHORT = niedrigster Kurs.
+    Nimmt den bisherigen Peak plus beliebige neue Preise und liefert den neuen
+    Bestwert (None, wenn gar kein Preis vorliegt)."""
+    vals = []
+    for p in (prev_peak,) + prices:
+        try:
+            f = float(p)
+            if f > 0:
+                vals.append(f)
+        except (TypeError, ValueError):
+            continue
+    if not vals:
+        return None
+    return max(vals) if str(side).upper() == "LONG" else min(vals)
+
+
+def update_trough(side: str, prev_trough, *prices):
+    """Schlechtester Stand im Trade (MAE): LONG = tiefster, SHORT = höchster
+    Kurs seit Entry – Spiegelbild von update_peak."""
+    return update_peak("SHORT" if str(side).upper() == "LONG" else "LONG",
+                       prev_trough, *prices)
+
+
+def atr_market_block(atr_pct, threshold_pct) -> bool:
+    """Low-Vol-Market-Block (Baustein A): True = Market-Entry sperren, weil die
+    1m-ATR (% vom Preis) unter der Schwelle liegt – Gebühren wären größer als
+    die erwartbare Bewegung. Fail-open bei ungültigen Werten (kein Block)."""
+    try:
+        thr = float(threshold_pct)
+        pct = float(atr_pct)
+    except (TypeError, ValueError):
+        return False
+    if thr <= 0:
+        return False
+    return pct < thr
+
+
+def recovered_fill_qty(planned_qty: float, untracked) -> Optional[float]:
+    """AP02a (Befund T02): tatsächlich belegbare Menge nach verlorener
+    Order-Antwort. None = zu wenig Beleg für eine Übernahme. Es wird NIE mehr
+    als die an der Börse gefundene, nicht erfasste Menge verbucht."""
+    try:
+        planned = float(planned_qty or 0)
+        found = None if untracked is None else float(untracked)
+    except (TypeError, ValueError):
+        return None
+    if found is None or planned <= 0 or found < planned * 0.5:
+        return None
+    return round(min(planned, found), 6)
+
+
+def sl_exchange_status_of(position_id, sl_ok) -> str:
+    """AP02b (Befund T03): dreistufiger Schutzstatus. None (API unsicher) ist
+    weder 'confirmed' noch sicher 'missing' -> 'unknown' (konservativ)."""
+    if not position_id or sl_ok is None:
+        return "unknown"
+    return "confirmed" if sl_ok else "missing"
+
+
+def compute_slippage_pct(side: str, signal_price, fill_price):
+    """Signierte Entry-Slippage in % (Baustein B): + = schlechterer Fill als
+    der Signalpreis (LONG: teurer gekauft, SHORT: billiger verkauft)."""
+    try:
+        sp, fp = float(signal_price), float(fill_price)
+    except (TypeError, ValueError):
+        return None
+    if sp <= 0 or fp <= 0:
+        return None
+    pct = (fp - sp) / sp * 100.0
+    return round((pct if str(side).upper() == "LONG" else -pct) + 0.0, 4)
+
+
+class BitunixTradeClient:
+    """Live Bitunix USDT-M futures client (signed private endpoints).
+
+    Owns the symbol translation layer + a cache of contract metadata
+    (step size, tick size, min qty) loaded from the public
+    /api/v1/futures/market/trading_pairs endpoint.
+    """
+
+    def __init__(self):
+        # Support both naming conventions (Render uses BITUNIX_SECRET_KEY)
+        self.api_key = os.getenv("BITUNIX_API_KEY") or os.getenv("BITUNIX_KEY", "")
+        self.secret = (os.getenv("BITUNIX_API_SECRET")
+                       or os.getenv("BITUNIX_SECRET_KEY")
+                       or os.getenv("BITUNIX_SECRET", ""))
+        self.base = os.getenv("BITUNIX_BASE_URL", "https://fapi.bitunix.com").rstrip("/")
+
+        # contract metadata: bitunix_symbol -> {"qty_step", "price_tick", "min_qty"}
+        self._pairs_meta: Dict[str, Dict[str, float]] = {}
+        self._valid_bitunix_symbols: set = set()
+        # RAM/Latenz: EINE wiederverwendete HTTP-Session statt einer neuen
+        # Session (Connector, DNS, SSL) pro API-Call.
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    def _http(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=15),
+                connector=aiohttp.TCPConnector(limit=20, ttl_dns_cache=300))
+        return self._session
+
+    def configured(self) -> bool:
+        return bool(self.api_key and self.secret)
+
+    # --------------------- symbol translation ----------------------------
+    def to_bitunix_symbol(self, internal: str) -> str:
+        """Translate the app-internal symbol (e.g. GOLD) to the real Bitunix
+        contract symbol (e.g. XAUUSDT). Crypto symbols pass through unchanged."""
+        if not internal:
+            return internal
+        s = internal.upper()
+        mapped = SYMBOL_MAP.get(s, s)
+        # If we already know the pair catalogue and the mapped symbol isn't in
+        # it, log a warning so the mismatch shows up in the logs instead of
+        # silently ending up as code 300105 "System error".
+        if self._valid_bitunix_symbols and mapped not in self._valid_bitunix_symbols:
+            logger.warning(
+                f"Bitunix symbol '{mapped}' (from internal '{internal}') is not "
+                "listed in trading_pairs; order will likely be rejected."
+            )
+        return mapped
+
+    def contract_meta(self, bitunix_symbol: str) -> Dict[str, float]:
+        return self._pairs_meta.get(bitunix_symbol, {})
+
+    def max_leverage_for(self, internal: str) -> float:
+        """Max. Hebel des Coins laut Bitunix-Kontraktkatalog (Fallback 200)."""
+        s = str(internal or "").upper()
+        m = self._pairs_meta.get(SYMBOL_MAP.get(s, s)) or {}
+        lev = float(m.get("max_lev") or 0)
+        return min(lev, 200.0) if lev > 0 else 200.0
+
+    async def load_trading_pairs(self) -> None:
+        """Load the public trading-pair catalogue and cache step/tick/min-qty.
+        Called once at startup; safe to re-call. Never raises to the caller."""
+        url = f"{self.base}/api/v1/futures/market/trading_pairs"
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                    payload = await r.json()
+        except Exception as e:
+            logger.error(f"load_trading_pairs failed: {e}")
+            return
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, list):
+            logger.warning(f"trading_pairs unexpected payload: {str(payload)[:200]}")
+            return
+
+        meta: Dict[str, Dict[str, float]] = {}
+        valid: set = set()
+        for row in data:
+            sym = row.get("symbol")
+            if not sym:
+                continue
+            valid.add(sym)
+            try:
+                meta[sym] = {
+                    # basePrecision / quotePrecision are DECIMAL PLACES on
+                    # Bitunix, not step sizes. Convert them properly.
+                    "qty_step": _precision_to_step(row.get("basePrecision")),
+                    "price_tick": _precision_to_step(
+                        row.get("quotePrecision") or row.get("pricePrecision")
+                    ),
+                    "min_qty": float(row.get("minTradeVolume") or 0) or 0.0,
+                    "max_lev": float(row.get("maxLeverage") or 0) or 0.0,
+                }
+            except (TypeError, ValueError):
+                meta[sym] = {}
+        self._pairs_meta = meta
+        self._valid_bitunix_symbols = valid
+        logger.info(f"Bitunix trading_pairs cached: {len(valid)} symbols")
+
+        # Sanity check the internal -> bitunix mapping now that we have data.
+        for internal, mapped in SYMBOL_MAP.items():
+            if mapped not in valid:
+                logger.error(
+                    f"Symbol mapping mismatch: internal '{internal}' -> '{mapped}' "
+                    "is NOT a valid Bitunix contract. Live orders will fail."
+                )
+
+    # --------------------- signed transport ------------------------------
+    async def _post(self, path: str, body: Dict) -> Dict:
+        body_str = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
+        nonce, ts = _nonce(), _millis()
+        sign = sign_request(self.api_key, self.secret, None, body_str, nonce, ts)
+        headers = {"api-key": self.api_key, "nonce": nonce, "timestamp": ts,
+                   "sign": sign, "language": "en-US", "Content-Type": "application/json"}
+        async with self._http().post(self.base + path, data=body_str,
+                                     headers=headers) as r:
+            txt = await r.text()
+            try:
+                return json.loads(txt)
+            except Exception:
+                return {"code": r.status, "msg": txt[:200]}
+
+    async def _get(self, path: str, query: Dict = None) -> Dict:
+        query = query or {}
+        nonce, ts = _nonce(), _millis()
+        sign = sign_request(self.api_key, self.secret, query, "", nonce, ts)
+        headers = {"api-key": self.api_key, "nonce": nonce, "timestamp": ts,
+                   "sign": sign, "language": "en-US"}
+        async with self._http().get(self.base + path, params=query,
+                                    headers=headers) as r:
+            txt = await r.text()
+            try:
+                return json.loads(txt)
+            except Exception:
+                return {"code": r.status, "msg": txt[:200]}
+
+    # --------------------- public API ------------------------------------
+    def _fmt_qty(self, bitunix_symbol: str, qty: float,
+                 round_up: bool = False) -> str:
+        """`round_up=True` (Voll-Close): Menge auf den nächsten Step AUFrunden.
+        Das ROUND_DOWN ließ beim kompletten Schließen bis zu einen Qty-Step an
+        der Börse zurück (Bug-Report XRP: Watchdog musste den Rest aufräumen).
+        Mit reduceOnly kappt Bitunix die Order sicher auf die Positionsgröße."""
+        m = self._pairs_meta.get(bitunix_symbol) or {}
+        step = m.get("qty_step") or 0.0
+        min_qty = m.get("min_qty") or 0.0
+        # If the raw qty is already below the exchange minimum, bump it up to
+        # the minimum so we don't get code 30016 for a rounded-to-zero amount.
+        if min_qty > 0 and qty < min_qty:
+            qty = min_qty
+        if step > 0:
+            rounded = _round_step(qty, step, ROUND_UP if round_up else ROUND_DOWN)
+            # After rounding down we might dip below min_qty again; round up
+            # to the nearest step in that case.
+            try:
+                if min_qty > 0 and float(rounded) < min_qty:
+                    rounded = _round_step(min_qty, step, ROUND_UP)
+            except ValueError:
+                pass
+            return rounded
+        return f"{qty}"
+
+    def _fmt_price(self, bitunix_symbol: str, price: float,
+                   direction: str = "nearest") -> str:
+        """direction:
+            "nearest" -> half-up (default, LIMIT entry)
+            "up"      -> ROUND_UP  (LONG TP / SHORT SL – keep away from mark)
+            "down"    -> ROUND_DOWN (LONG SL / SHORT TP – keep away from mark)
+        """
+        m = self._pairs_meta.get(bitunix_symbol) or {}
+        tick = m.get("price_tick") or 0.0
+        if tick <= 0:
+            return f"{price}"
+        mode = {"up": ROUND_UP, "down": ROUND_DOWN}.get(direction, ROUND_HALF_UP)
+        return _round_step(price, tick, mode)
+
+    async def place_order(self, symbol, side, qty, order_type="MARKET", price=None,
+                          tp_price=None, sl_price=None, reduce_only=False,
+                          effect=None, client_id=None):
+        b_symbol = self.to_bitunix_symbol(symbol)
+        # Direction-aware rounding for TP/SL. For LONG (BUY):
+        #   * TP must be ABOVE mark, so round UP to the next tick.
+        #   * SL must be BELOW mark, so round DOWN.
+        # For SHORT (SELL) it's the opposite. This prevents Bitunix code
+        # 30027 ("TP price must be greater than mark price") caused by
+        # rounding a marginal TP down onto/below the mark.
+        is_long = str(side).upper() in ("BUY", "LONG")
+        tp_dir = "up" if is_long else "down"
+        sl_dir = "down" if is_long else "up"
+        body = {"symbol": b_symbol, "qty": self._fmt_qty(b_symbol, qty), "side": side,
+                "tradeSide": "OPEN", "orderType": order_type}
+        if order_type == "LIMIT" and price:
+            body["price"] = self._fmt_price(b_symbol, price)
+        if client_id:
+            body["clientId"] = str(client_id)[:64]
+        if effect:
+            body["effect"] = str(effect)
+        if tp_price:
+            body.update({"tpPrice": self._fmt_price(b_symbol, tp_price, tp_dir),
+                         "tpStopType": "MARK_PRICE", "tpOrderType": "MARKET"})
+        if sl_price:
+            body.update({"slPrice": self._fmt_price(b_symbol, sl_price, sl_dir),
+                         "slStopType": "MARK_PRICE", "slOrderType": "MARKET"})
+        if reduce_only:
+            body["reduceOnly"] = True
+        return await self._post("/api/v1/futures/trade/place_order", body)
+
+    async def flash_close(self, symbol, position_id, side, qty, full: bool = False):
+        """`full=True` = die Position soll KOMPLETT zu sein: Menge wird auf den
+        nächsten Step AUFgerundet (reduceOnly verhindert Überschließen), damit
+        kein Rundungs-Rest an der Börse zurückbleibt (Watchdog-Bug XRP)."""
+        b_symbol = self.to_bitunix_symbol(symbol)
+        order_side = "SELL" if side == "LONG" else "BUY"
+        body = {"symbol": b_symbol, "qty": self._fmt_qty(b_symbol, qty, round_up=full),
+                "side": order_side, "tradeSide": "CLOSE", "orderType": "MARKET",
+                "positionId": position_id, "reduceOnly": True}
+        return await self._post("/api/v1/futures/trade/place_order", body)
+
+    async def place_position_tp_sl(self, symbol, position_id, side,
+                                    tp_price=None, tp_qty=None,
+                                    sl_price=None, sl_qty=None):
+        """Attach a (partial) TP and/or SL to an existing position via
+        Bitunix `/api/v1/futures/tpsl/place_order`. Used for:
+          * placing TP1 as a real reduce-only partial order right after entry
+          * moving SL to break-even when TP1 fills
+        `side` is the POSITION side ("LONG"/"SHORT") – rounding direction is
+        derived from it so ticks never push TP under or SL above the mark.
+        Returns the raw exchange response."""
+        b_symbol = self.to_bitunix_symbol(symbol)
+        is_long = str(side).upper() == "LONG"
+        body: Dict = {"symbol": b_symbol, "positionId": position_id}
+        if tp_price:
+            body["tpPrice"] = self._fmt_price(b_symbol, tp_price,
+                                              "up" if is_long else "down")
+            body["tpStopType"] = "MARK_PRICE"
+            body["tpOrderType"] = "MARKET"
+            if tp_qty is not None:
+                body["tpQty"] = self._fmt_qty(b_symbol, tp_qty)
+        if sl_price:
+            body["slPrice"] = self._fmt_price(b_symbol, sl_price,
+                                              "down" if is_long else "up")
+            body["slStopType"] = "MARK_PRICE"
+            body["slOrderType"] = "MARKET"
+            if sl_qty is not None:
+                body["slQty"] = self._fmt_qty(b_symbol, sl_qty)
+        return await self._post("/api/v1/futures/tpsl/place_order", body)
+
+    async def modify_position_tp_sl(self, symbol, position_id,
+                                     tp_price=None, sl_price=None, side="LONG"):
+        """Position-TP/SL ändern (z.B. SL -> Break-Even).
+
+        BUGFIX (Bug-Report 'Please set at least one of TP/Stop Loss'):
+        Vorher wurde ein falscher Endpoint mit 'orderId' aufgerufen. Laut
+        Bitunix-Doku ist es POST /api/v1/futures/tpsl/position/modify_order
+        mit Pflichtfeld 'positionId' – deshalb wurden ALLE SL/TP-Anpassungen
+        an der Börse abgelehnt."""
+        b_symbol = self.to_bitunix_symbol(symbol)
+        is_long = str(side).upper() == "LONG"
+        body: Dict = {"symbol": b_symbol, "positionId": str(position_id)}
+        if tp_price:
+            body["tpPrice"] = self._fmt_price(b_symbol, tp_price,
+                                              "up" if is_long else "down")
+            body["tpStopType"] = "MARK_PRICE"
+        if sl_price:
+            body["slPrice"] = self._fmt_price(b_symbol, sl_price,
+                                              "down" if is_long else "up")
+            body["slStopType"] = "MARK_PRICE"
+        return await self._post("/api/v1/futures/tpsl/position/modify_order", body)
+
+    async def modify_tpsl_order(self, symbol, order_id, side="LONG",
+                                tp_price=None, tp_qty=None,
+                                sl_price=None, sl_qty=None):
+        """Bestehende TP/SL-Order per orderId ändern (tpsl/modify_order).
+
+        BUGFIX (XRP: 'SL im Verlauf verschoben, live nicht umgesetzt'):
+        `tpsl/position/modify_order` antwortet mit code 0 ("Success"), ändert
+        qty-basierte TP/SL-Orders aber NICHT (Silent-No-Op der Börse). Nur
+        dieser Endpoint mit der echten Order-ID greift wirklich."""
+        b_symbol = self.to_bitunix_symbol(symbol)
+        is_long = str(side).upper() == "LONG"
+        body: Dict = {"symbol": b_symbol, "orderId": str(order_id)}
+        if tp_price:
+            body["tpPrice"] = self._fmt_price(b_symbol, tp_price,
+                                              "up" if is_long else "down")
+            body["tpStopType"] = "MARK_PRICE"
+            body["tpOrderType"] = "MARKET"
+            if tp_qty is not None:
+                body["tpQty"] = self._fmt_qty(b_symbol, tp_qty)
+        if sl_price:
+            body["slPrice"] = self._fmt_price(b_symbol, sl_price,
+                                              "down" if is_long else "up")
+            body["slStopType"] = "MARK_PRICE"
+            body["slOrderType"] = "MARKET"
+            if sl_qty is not None:
+                body["slQty"] = self._fmt_qty(b_symbol, sl_qty)
+        return await self._post("/api/v1/futures/tpsl/modify_order", body)
+
+    async def get_pending_tpsl(self, symbol, position_id=None):
+        """Offene TP/SL-Orders (optional je Position) abfragen."""
+        q: Dict = {"symbol": self.to_bitunix_symbol(symbol)}
+        if position_id:
+            q["positionId"] = str(position_id)
+        return await self._get("/api/v1/futures/tpsl/get_pending_orders", q)
+
+    async def cancel_tpsl_order(self, symbol, order_id):
+        """Eine offene TP/SL-Order stornieren."""
+        return await self._post("/api/v1/futures/tpsl/cancel_order",
+                                {"symbol": self.to_bitunix_symbol(symbol),
+                                 "orderId": str(order_id)})
+
+    async def get_order_detail(self, order_id):
+        """Order-Status/Fills einer normalen Order (Maker-Order-Modus)."""
+        return await self._get("/api/v1/futures/trade/get_order_detail",
+                               {"orderId": str(order_id)})
+
+    async def get_pending_orders(self, symbol):
+        """Offene (ungefüllte) normale Orders eines Symbols."""
+        return await self._get("/api/v1/futures/trade/get_pending_orders",
+                               {"symbol": self.to_bitunix_symbol(symbol)})
+
+    async def cancel_orders(self, symbol, order_ids):
+        """Normale Orders stornieren (Maker-Order-Modus: Timeout-Cancel)."""
+        return await self._post(
+            "/api/v1/futures/trade/cancel_orders",
+            {"symbol": self.to_bitunix_symbol(symbol),
+             "orderList": [{"orderId": str(o)} for o in order_ids]})
+
+    async def adjust_position_margin(self, symbol, amount: float,
+                                     position_id: Optional[str] = None,
+                                     side: Optional[str] = None):
+        """Margin einer ISOLIERTEN Position anpassen.
+        amount > 0 = Margin hinzufügen, amount < 0 = Margin entnehmen.
+        Bitunix: POST /api/v1/futures/account/adjust_position_margin"""
+        b_symbol = self.to_bitunix_symbol(symbol)
+        body: Dict = {"symbol": b_symbol, "marginCoin": "USDT",
+                      "amount": f"{float(amount):.6f}".rstrip("0").rstrip(".")}
+        if position_id:
+            body["positionId"] = position_id
+        elif side:
+            body["side"] = str(side).upper()
+        return await self._post("/api/v1/futures/account/adjust_position_margin", body)
+
+    async def set_leverage(self, symbol, leverage, margin_mode="ISOLATION"):
+        b_symbol = self.to_bitunix_symbol(symbol)
+        return await self._post("/api/v1/futures/account/change_leverage",
+                                {"symbol": b_symbol, "leverage": int(leverage),
+                                 "marginCoin": "USDT"})
+
+    async def get_positions(self, symbol=None):
+        q = {"symbol": self.to_bitunix_symbol(symbol)} if symbol else {}
+        return await self._get("/api/v1/futures/position/get_pending_positions", q)
+
+    async def get_history_positions(self, symbol=None, position_id=None, limit=20):
+        """Geschlossene Positionen (echter closePrice/realizedPNL der Börse)."""
+        q = {"limit": int(limit)}
+        if symbol:
+            q["symbol"] = self.to_bitunix_symbol(symbol)
+        if position_id:
+            q["positionId"] = str(position_id)
+        return await self._get("/api/v1/futures/position/get_history_positions", q)
+
+    async def resolve_position_id(self, symbol: str, side: str) -> Optional[str]:
+        """Poll get_positions to find the positionId matching an open position.
+        Bitunix's place_order response only returns orderId, not positionId,
+        so we fetch it separately to attach TP1 / modify SL later.
+        Returns None if the position cannot be found."""
+        try:
+            res = await self.get_positions(symbol)
+        except Exception as e:
+            logger.warning(f"resolve_position_id({symbol}) failed: {e}")
+            return None
+        data = res.get("data") if isinstance(res, dict) else None
+        rows = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
+        want = str(side).upper()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            row_side = str(row.get("side") or row.get("positionSide") or "").upper()
+            # Bitunix returns "BUY"/"SELL" for side and/or LONG/SHORT for positionSide
+            if row_side in ("BUY", "LONG") and want != "LONG":
+                continue
+            if row_side in ("SELL", "SHORT") and want != "SHORT":
+                continue
+            pid = row.get("positionId") or row.get("id")
+            if pid:
+                return str(pid)
+        return None
+
+    async def get_balance(self):
+        return await self._get("/api/v1/futures/account", {"marginCoin": "USDT"})
+
+    async def get_all_mark_prices(self) -> Dict[str, float]:
+        """EIN Public-Call für ALLE Ticker – der schnelle Preis-Wächter
+        (services/price_watch.py) aktualisiert damit alle offenen Trades im
+        Sekundentakt ohne Rate-Limit-Druck. {} bei jedem Fehler."""
+        url = f"{self.base}/api/v1/futures/market/tickers"
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                    payload = await r.json()
+        except Exception as e:
+            logger.warning(f"get_all_mark_prices failed: {e}")
+            return {}
+        return parse_ticker_prices(payload)
+
+    async def get_mark_price(self, symbol: str) -> Optional[float]:
+        """Public endpoint: latest mark price for a Bitunix futures symbol.
+        Returns None on any failure – caller should degrade gracefully."""
+        b_symbol = self.to_bitunix_symbol(symbol)
+        url = f"{self.base}/api/v1/futures/market/tickers"
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url, params={"symbols": b_symbol},
+                                 timeout=aiohttp.ClientTimeout(total=8)) as r:
+                    payload = await r.json()
+        except Exception as e:
+            logger.warning(f"get_mark_price failed for {b_symbol}: {e}")
+            return None
+        data = payload.get("data") if isinstance(payload, dict) else None
+        row = None
+        # Symbol strikt abgleichen: bei unbekannten Symbolen liefert Bitunix
+        # sonst die komplette Ticker-Liste und data[0] wäre ein FREMDER Coin
+        # (falscher Mark-Preis -> falsche SL-Clamps/Closes).
+        def _sym(r):
+            return str(r.get("symbol") or r.get("symbolName") or "").upper()
+        if isinstance(data, list):
+            row = next((r for r in data if isinstance(r, dict)
+                        and _sym(r) == b_symbol.upper()), None)
+        elif isinstance(data, dict):
+            if not _sym(data) or _sym(data) == b_symbol.upper():
+                row = data
+        if not isinstance(row, dict):
+            return None
+        for key in ("markPrice", "mark_price", "lastPrice", "last", "close"):
+            v = row.get(key)
+            if v is None:
+                continue
+            try:
+                f = float(v)
+                if f > 0:
+                    return f
+            except (TypeError, ValueError):
+                continue
+        return None
+
+
+DEFAULT_CAPITAL_ALLOCATION = {
+    "live": {"mode": "full", "value": 0.0},
+    "paper": {"mode": "full", "value": 0.0, "base_balance": 1000.0},
+}
+
+
+def ai_leverage_override(cfg: Dict, lev_used: float, ai_lev: float) -> float:
+    """KI-Hebelwunsch greift nur OHNE Coin-Auto-Hebel: hat der Nutzer für den
+    Coin auto_leverage_enabled gesetzt, bleibt der automatisch berechnete
+    Hebel (Liq hinter SL) immer maßgeblich (Nutzerwunsch pro Coin)."""
+    if ai_lev > 0 and not cfg.get("auto_leverage_enabled"):
+        return max(1.0, min(200.0, ai_lev))
+    return lev_used
+
+
+def ai_capital_base(cfg_capital: float, ai_max_cap: float) -> float:
+    """Kapital-Basis für KI-Trades: das globale 'Max. Kapital pro Trade' (KI-
+    Panel) kann die Coin-Einstellung nur SENKEN, nie erhöhen – das Max. Kapital
+    der Coin-Einstellungen bleibt die harte Obergrenze pro Coin."""
+    if ai_max_cap > 0:
+        return min(cfg_capital, ai_max_cap) if cfg_capital > 0 else ai_max_cap
+    return cfg_capital
+
+
+# Datensammel-Trades: feste Marge pro Trade (Vergleichbarkeit der Setups) –
+# zählt NICHT gegen das Paper-Guthaben (unendliches Sammel-Guthaben, siehe
+# used_margin). PnL wird normal getrackt.
+COLLECTION_MARGIN_USDT = 100.0
+
+# Audit F1 (Close-Fehlpfad): ab so vielen fehlgeschlagenen Live-Closes wird
+# eskaliert (KRITISCH-Meldung) und nur noch gedrosselt erneut versucht. Der
+# Trade wird NIE mehr lokal als 'closed' verbucht, solange die Börse den
+# Close nicht bestätigt hat.
+CLOSE_FAIL_ESCALATE_AT = 5
+CLOSE_FAIL_RETRY_SEC = 60
+
+
+def close_retry_due(last_try_iso, retry_sec: int = CLOSE_FAIL_RETRY_SEC,
+                    now: Optional[datetime] = None) -> bool:
+    """Darf nach der Eskalation erneut ein Close versucht werden? (rein)"""
+    if not last_try_iso:
+        return True
+    try:
+        last = datetime.fromisoformat(str(last_try_iso))
+    except ValueError:
+        return True
+    now = now or datetime.now(timezone.utc)
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (now - last).total_seconds() >= retry_sec
+
+
+def parse_ticker_prices(payload) -> Dict[str, float]:
+    """Bitunix /market/tickers Antwort -> {SYMBOL: Mark-/Last-Preis} (rein &
+    testbar). Basis des schnellen Preis-Wächters (services/price_watch.py)."""
+    data = payload.get("data") if isinstance(payload, dict) else None
+    rows = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
+    out: Dict[str, float] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sym = str(row.get("symbol") or row.get("symbolName") or "").upper()
+        if not sym:
+            continue
+        for key in ("markPrice", "mark_price", "lastPrice", "last", "close"):
+            try:
+                f = float(row.get(key))
+            except (TypeError, ValueError):
+                continue
+            if f > 0:
+                out[sym] = f
+                break
+    return out
+
+
+BE_SLIP_BUFFER_MAX_PCT = 0.2   # Deckel für den Slippage-Puffer am Break-Even
+
+
+def breakeven_price(entry: float, side: str, fee_percent: float,
+                    slip_pct: float = 0.0) -> float:
+    """ECHTES Break-Even inkl. Gebühren (rein): Entry-Fee UND Exit-Fee gedeckt.
+    LONG:  be*(1-fee) = entry*(1+fee)  ->  be = entry*(1+fee)/(1-fee)
+    SHORT: entry*(1-fee) = be*(1+fee)  ->  be = entry*(1-fee)/(1+fee)
+    `slip_pct` (optional, %) puffert zusätzlich die Exit-Slippage: sonst endeten
+    BE-Stops trotz Kurs im Plus mit ~-Slippage als „Verlust“ (Analyse 23.09:
+    30 von 410 KI-Trades) und drückten Winrate/Setup-Urteile."""
+    fee = float(fee_percent or 0.06) / 100
+    slip = min(max(float(slip_pct or 0), 0.0), BE_SLIP_BUFFER_MAX_PCT) / 100
+    be = entry * (1 + fee) / (1 - fee) * (1 + slip) if str(side).upper() == "LONG" \
+        else entry * (1 - fee) / (1 + fee) * (1 - slip)
+    return round(be, 6)
+
+
+DEFAULT_COIN_CFG = {
+    "enabled": False,
+    "max_capital": 100.0,
+    "leverage": 10,
+    "margin_mode": "ISOLATION",
+    "order_type": "MARKET",
+    "sl_mode": "structure",       # structure | fixed | atr
+    "sl_fixed_percent": 1.0,
+    "sl_ticks": 4,
+    "sl_lookback": 10,
+    "atr_period": 14,
+    "atr_sl_multiplier": 1.2,     # ATR buffer beyond structure (anti stop-hunt)
+    "tp1_crv": 1.0,
+    "tp1_close_percent": 50,
+    "tp_full_crv": 2.0,
+    "breakeven_enabled": True,
+    # Break-Even Modus: "tp1" | "crv" | "profit_pct" | "smart" | "off"
+    "be_mode": "tp1",
+    "be_trigger_crv": 1.0,           # bei be_mode=crv: BE ab X R Gewinn
+    "be_trigger_profit_pct": 30.0,   # bei be_mode=profit_pct: BE ab X% Gewinn auf Marge
+    "be_smart_lookback": 10,         # bei be_mode=smart: Swing-Lookback
+    # 100%-Regel fest verankert: Volle Signale erfüllen nach dem Richtungs-Fix
+    # immer ALLE Regeln ihrer Richtung; Pre-Signale haben den eigenen Schalter
+    # trade_pre_signals. Checkbox wurde aus der UI entfernt (Nutzerwunsch).
+    "require_all_rules": True,
+    "trail_after_tp1": True,      # ATR trailing stop after TP1 -> let winners run
+    "trail_atr_mult": 1.5,
+    "fee_percent": 0.06,
+    "trade_pre_signals": False,
+    # --- Auto-Leverage: Hebel automatisch aus SL-Abstand berechnen ---
+    "auto_leverage_enabled": False,
+    "auto_lev_mode": "liq_pct",      # liq_pct | liq_ticks
+    "auto_lev_value": 0.5,           # % bzw. Ticks hinter dem Stop
+    "auto_lev_max": 50,              # maximaler Hebel
+    # --- Marktphasen-Filter (services/regime_gate.py): neue Trades in
+    # blockierten Phasen überspringen (z.B. Seitwärtsmarkt). Offene Trades
+    # laufen unverändert weiter.
+    "regime_filter_enabled": False,
+    "regime_block_phases": ["seitwärts"],
+    # Regime-Brücke 2.2: Quelle der Phase – `own` (eigene Erkennung, heutiges
+    # Verhalten) | `lab` (freigegebene Lab-Analyse, wirkt nur bei Stufe active)
+    "regime_gate_source": "own",
+    # --- Gewinnsicherung: SL in den Gewinn ziehen + Marge freisetzen ---
+    "profit_secure_enabled": False,
+    "profit_secure_trigger_pct": 30.0,   # ab X% Gewinn auf die Marge
+    "profit_lock_pct": 50.0,             # X% des aktuellen Gewinns absichern
+    # NEU: beim Auslösen zusätzlich gebundene Marge freisetzen – die Position
+    # bleibt gleich groß, der Hebel steigt automatisch (Liq rückt an den Entry,
+    # der SL liegt zu diesem Zeitpunkt aber bereits im Gewinn).
+    "profit_secure_release_margin": False,
+    "profit_secure_max_leverage": 100,   # Ziel-Hebel beim Freisetzen (200 = Marge maximal reduzieren)
+    # Anteil der maximal freisetzbaren Marge, der tatsächlich entnommen wird
+    # (Regler 10-100%; 100 = maximale Reduzierung bis zum Ziel-Hebel)
+    "profit_secure_margin_reduce_pct": 100.0,
+    # Abstand (% vom Entry), den der SL nach dem Freisetzen mindestens
+    # HINTER der neuen Liquidation hält (SL wird ggf. automatisch nachgezogen)
+    "profit_secure_sl_liq_buffer_pct": 0.3,
+    # --- Bitunix live-order safety (fix for codes 30016 / 30027) ---
+    # Minimum absolute distance (percent of mark price) that TP/SL must keep
+    # away from the current mark price when the order hits the exchange.
+    "min_tp_distance_percent": 0.15,
+    # Floor for the risk-per-trade so TP/SL never end up microscopic
+    # (percent of entry price). Prevents the classic "0.07%" reject case.
+    "min_risk_percent": 0.25,
+    # --- Take-Profit Modus: "crv" (dynamisch, R-Vielfache) | "fixed_pct" | "structure" ---
+    "tp_mode": "crv",
+    "tp1_percent": 0.5,       # bei tp_mode=fixed_pct: TP1-Abstand % vom Entry
+    "tp_full_percent": 1.0,   # bei tp_mode=fixed_pct: Full-TP-Abstand % vom Entry
+    # --- Liquidation (Isolated Margin) ---
+    "maintenance_margin_rate": 0.5,  # % - bestimmt Liquidationspreis (~1/Hebel - MMR)
+}
+
+
+def parse_closed_position(res, position_id) -> Optional[Dict]:
+    """Echten Abschluss einer Position aus get_history_positions ziehen (rein, testbar).
+
+    Netto-PnL laut Doku = realizedPNL (ohne Fees/Funding) − fee + funding.
+    Bug-Report (ETH 15.08): Die Bitunix-API liefert realizedPNL in der Praxis
+    teils BEREITS inkl. Fees – die Fee würde dann doppelt abgezogen (−8,59 $
+    wurde als −12,58 $ verbucht). Erkennung über den reinen Preis-PnL
+    (entryPrice/closePrice/qty): Liegt realizedPNL näher an (Preis-PnL − fee)
+    als am Preis-PnL selbst, sind die Fees schon enthalten."""
+    if not isinstance(res, dict) or res.get("code") != 0:
+        return None
+    data = res.get("data") or {}
+    items = data.get("positionList") if isinstance(data, dict) else data
+    for p in items or []:
+        if not isinstance(p, dict) or str(p.get("positionId")) != str(position_id):
+            continue
+        try:
+            gross = float(p["realizedPNL"])
+            fee = abs(float(p.get("fee") or 0))
+            funding = float(p.get("funding") or 0)
+            close = float(p.get("closePrice") or 0)
+            max_qty = float(p.get("maxQty") or 0)
+        except (KeyError, TypeError, ValueError):
+            return None
+        net = gross - fee + funding
+        fee_included = False
+        try:
+            entry = float(p.get("entryPrice") or 0)
+            side = str(p.get("side") or "").upper()
+        except (TypeError, ValueError):
+            entry, side = 0.0, ""
+        if fee > 0 and entry > 0 and close > 0 and max_qty > 0 \
+                and side in ("BUY", "SELL", "LONG", "SHORT"):
+            sign = 1.0 if side in ("BUY", "LONG") else -1.0
+            price_pnl = (close - entry) * max_qty * sign
+            if abs(gross - (price_pnl - fee)) < abs(gross - price_pnl):
+                # Sind die Fees bereits in realizedPNL eingerechnet, ist auch
+                # das Funding schon enthalten (Bitunix nettet alles in die
+                # Position-History). Funding NICHT nochmal addieren – sonst
+                # weicht der Website-PnL vom Bitunix-App-PnL ab
+                # (Bug-Report BTC 25.08.: +30.478 statt +29.876).
+                net = gross
+                fee_included = True
+        try:
+            liq_qty = abs(float(p.get("liqQty") or 0))
+        except (TypeError, ValueError):
+            liq_qty = 0.0
+        return {"exit_price": close if close > 0 else None,
+                "net_pnl": round(net, 6),
+                "gross_pnl": round(gross, 6), "fee": round(fee, 6),
+                "fee_included_in_pnl": fee_included,
+                "funding": round(funding, 6), "max_qty": max_qty,
+                "entry_price": entry if entry > 0 else None,
+                # Bitunix setzt liqQty nur bei Zwangsliquidation (POL 23.09.)
+                "liquidated": liq_qty > 0}
+    return None
+
+
+def find_swing_levels(candles: List[Dict], lookback: int = 3) -> Dict[str, List[float]]:
+    """Bestätigte Swing-Hochs/-Tiefs (Key-Levels) aus Kerzen (rein, testbar)."""
+    highs: List[float] = []
+    lows: List[float] = []
+    n = len(candles)
+    for i in range(lookback, n - lookback):
+        try:
+            h = float(candles[i].get("high") or 0)
+            lo = float(candles[i].get("low") or 0)
+        except (TypeError, ValueError):
+            continue
+        window = range(i - lookback, i + lookback + 1)
+        if h > 0 and all(h >= float(candles[j].get("high") or 0)
+                         for j in window if j != i):
+            highs.append(h)
+        if lo > 0 and all(lo <= float(candles[j].get("low") or 1e18)
+                          for j in window if j != i):
+            lows.append(lo)
+    return {"highs": highs, "lows": lows}
+
+
+def key_level_trail_sl(candles: List[Dict], side: str, entry: float,
+                       cur_sl: float, price: float, risk: float,
+                       lookback: int = 3, buffer_pct: float = 0.15,
+                       min_r: float = 1.0) -> Optional[float]:
+    """Key-Level-Trailing: SL hinter das zuletzt DURCHBROCHENE Level ziehen.
+    LONG: höchstes bestätigtes Swing-Tief zwischen Entry und Kurs (Zone des
+    durchbrochenen Widerstands/Retests) -> SL knapp darunter.
+    SHORT: tiefstes Swing-Hoch zwischen Kurs und Entry -> SL knapp darüber.
+    Greift erst ab min_r × R Buchgewinn; None = kein besserer SL (rein, testbar)."""
+    if not candles or len(candles) < lookback * 2 + 3 or risk <= 0:
+        return None
+    in_profit = (price - entry) if side == "LONG" else (entry - price)
+    if in_profit < min_r * risk:
+        return None
+    lv = find_swing_levels(candles, lookback)
+    buf = max(buffer_pct, 0.01) / 100.0
+    if side == "LONG":
+        broken = [lo for lo in lv["lows"] if entry < lo < price]
+        if not broken:
+            return None
+        new_sl = round(max(broken) * (1 - buf), 8)
+        return new_sl if cur_sl < new_sl < price else None
+    broken = [h for h in lv["highs"] if price < h < entry]
+    if not broken:
+        return None
+    new_sl = round(min(broken) * (1 + buf), 8)
+    return new_sl if price < new_sl < cur_sl else None
+
+
+def make_client_id(strategy_id: Optional[str]) -> str:
+    """Eigene clientId für jede Website-Entry-Order: macht die Herkunft an der
+    Börse eindeutig nachweisbar (manuelle App-Orders tragen keine KIT-...-ID)."""
+    tag = "".join(ch for ch in str(strategy_id or "bot") if ch.isalnum())[:10] or "bot"
+    return f"KIT-{tag}-{int(time.time() * 1000) % 10_000_000_000}"
+
+
+def pick_new_position(rows: List[Dict], side: str, qty: Optional[float] = None,
+                      exclude: Optional[set] = None) -> Optional[str]:
+    """positionId der GERADE eröffneten Position aus get_positions-Zeilen wählen
+    (rein, testbar). Bitunix (Hedge-Modus) kann mehrere Positionen auf demselben
+    Symbol+Seite führen (z.B. unterschiedlicher Hebel, manuelle Position).
+    Bug-Report: die erste Zeile war dann die FALSCHE (alte) Position -> der
+    KI-Trade managte eine fremde Position und die echte wurde vom Watchdog als
+    'Manuell (Bitunix)' übernommen. Auswahl: Positionen, die bereits an andere
+    lokale Trades gebunden sind, ausschließen; dann beste Mengen-Übereinstimmung,
+    bei Gleichstand die jüngste (ctime)."""
+    want = str(side).upper()
+    exclude = {str(x) for x in (exclude or set()) if x}
+    cands = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        row_side = str(row.get("side") or row.get("positionSide") or "").upper()
+        if row_side in ("BUY", "LONG") and want != "LONG":
+            continue
+        if row_side in ("SELL", "SHORT") and want != "SHORT":
+            continue
+        pid = row.get("positionId") or row.get("id")
+        if not pid:
+            continue
+        rq = 0.0
+        for k in ("qty", "positionAmt", "amount", "size", "total"):
+            try:
+                rq = abs(float(row.get(k)))
+                if rq:
+                    break
+            except (TypeError, ValueError):
+                continue
+        try:
+            ctime = float(row.get("ctime") or 0)
+        except (TypeError, ValueError):
+            ctime = 0.0
+        cands.append((str(pid), rq, ctime))
+    if not cands:
+        return None
+    free = [c for c in cands if c[0] not in exclude]
+    cands = free or cands
+    if len(cands) == 1:
+        return cands[0][0]
+    q = float(qty or 0)
+
+    def _key(c):
+        qdiff = abs(c[1] - q) / q if q > 0 and c[1] > 0 else 1.0
+        return (round(qdiff, 3), -c[2])
+    return sorted(cands, key=_key)[0][0]
+
+
+def _extract_order_id(res) -> Optional[str]:
+    """orderId aus einer Bitunix-Antwort ziehen (Feldname variiert)."""
+    if not isinstance(res, dict):
+        return None
+    data = res.get("data")
+    for src in (data if isinstance(data, dict) else {}, res):
+        for key in ("orderId", "order_id", "id"):
+            if src.get(key):
+                return str(src[key])
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        return _extract_order_id({"data": data[0]})
+    return None
+
+
+class AutoTradeManager:
+    """
+    Opens & manages auto-trades. In paper mode everything is simulated in Mongo.
+    In live mode it calls Bitunix. Dynamic SL/TP, partial TP1 + break-even.
+    """
+
+    def __init__(self, client: BitunixTradeClient):
+        self.client = client
+        self.db = None
+        self.telegram = None  # optional TelegramNotifier for reject alerts
+        self.config = {"mode": "paper", "coins": {}}
+        self._last_pos_sync = 0.0  # Throttle für den Bitunix-Positions-Abgleich
+        self._avail_cache = (0.0, None)  # 10s-Cache für das Börsen-Guthaben
+        # Scanner-Tick UND schneller Preis-Wächter rufen monitor() auf – das
+        # Lock verhindert überlappende Läufe (kein Doppel-Close/Doppel-BE).
+        self._monitor_lock = asyncio.Lock()
+
+    def set_db(self, db):
+        self.db = db
+
+    def set_telegram(self, telegram):
+        self.telegram = telegram
+
+    def set_config(self, config: Dict):
+        self.config = {
+            "mode": config.get("mode", "paper"),
+            "coins": config.get("coins", {}),
+            "strategy_overrides": config.get("strategy_overrides", {}),
+            # Preserve per-strategy-per-coin configs across set_config calls.
+            # If the incoming config omits them, keep whatever we already had
+            # so a partial update never wipes the paper/live safety settings.
+            "strategy_coin_configs": config.get(
+                "strategy_coin_configs",
+                self.config.get("strategy_coin_configs", {}) if hasattr(self, "config") and self.config else {},
+            ),
+            "capital_allocation": config.get(
+                "capital_allocation",
+                self.config.get("capital_allocation", {}) if hasattr(self, "config") and self.config else {},
+            ),
+        }
+
+    def capital_allocation(self, mode: str) -> Dict:
+        """Saved capital allocation for 'live' or 'paper' (merged with defaults)."""
+        base = dict(DEFAULT_CAPITAL_ALLOCATION.get(mode, {}))
+        base.update((self.config.get("capital_allocation", {}) or {}).get(mode, {}))
+        return base
+
+    # Interne Gewinnschutz-Policy für KI-Trader-Live-Trades (kein Coin-Setting
+    # nötig; via settings['ai_profit_protection'] + API dynamisch anpassbar).
+    AI_PROTECTION_DEFAULTS = {
+        "enabled": True,
+        "trigger_pct": 30.0,        # Gewinnsicherung ab +X% Gewinn auf die Marge
+        "lock_pct": 50.0,           # SL sichert X% des erreichten Gewinns
+        "release_margin": True,     # Marge freisetzen (Hebel steigt, Liq rückt ran)
+        "max_leverage": 200.0,      # Ziel-Hebel beim Freisetzen (200 = Maximum)
+        "margin_reduce_pct": 100.0,
+        "sl_liq_buffer_pct": 0.3,   # SL bleibt sicher VOR der neuen Liq
+        "level_trail": True,        # Key-Level-Trailing (SL hinter durchbrochene Levels)
+        "collection_enabled": False,  # Gewinnschutz/Margen-Trick auch für Datensammel-Trades
+        "collection_trigger_pct": 60.0,  # ... aber erst ab größerem Abstand (ML-Labels bleiben sauber)
+    }
+
+    async def ai_protection_policy(self, force: bool = False) -> Dict:
+        now = time.time()
+        cached = getattr(self, "_ai_prot_cache", None)
+        if not force and cached and now - cached[0] < 60:
+            return cached[1]
+        pol = dict(self.AI_PROTECTION_DEFAULTS)
+        try:
+            doc = await self.db.settings.find_one(
+                {"_id": "ai_profit_protection"}) or {}
+            for k in pol:
+                if k in doc:
+                    pol[k] = doc[k]
+        except Exception as e:
+            logger.debug(f"ai_profit_protection-Config: {e}")
+        self._ai_prot_cache = (now, pol)
+        return pol
+
+    async def _live_total_balance(self) -> Optional[float]:
+        if not self.client or not self.client.configured():
+            return None
+        try:
+            bal = await self.client.get_balance()
+            data = bal.get("data") if isinstance(bal, dict) else None
+            if isinstance(data, list) and data:
+                data = data[0]
+            if isinstance(data, dict):
+                def _num(v):
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        return 0.0
+                return (_num(data.get("available") or data.get("availableBalance"))
+                        + _num(data.get("frozen")) + _num(data.get("margin")))
+        except Exception as e:
+            logger.warning(f"_live_total_balance failed: {e}")
+        return None
+
+    async def _live_available_balance(self) -> Optional[float]:
+        """Frei verfügbares Guthaben (USDT) laut Börse – mit 10s-Cache."""
+        if not self.client or not self.client.configured():
+            return None
+        ts, val = self._avail_cache
+        if val is not None and time.time() - ts < 10:
+            return val
+        try:
+            bal = await self.client.get_balance()
+            data = bal.get("data") if isinstance(bal, dict) else None
+            if isinstance(data, list) and data:
+                data = data[0]
+            if isinstance(data, dict):
+                val = float(data.get("available") or data.get("availableBalance") or 0)
+                self._avail_cache = (time.time(), val)
+                return val
+        except Exception as e:
+            logger.warning(f"_live_available_balance failed: {e}")
+        return None
+
+    async def free_capital(self, mode: str, total: Optional[float] = None) -> Dict:
+        """Zugewiesenes/belegtes/freies Kapital in einem Rutsch.
+
+        Live nutzt zusätzlich das ECHTE verfügbare Börsen-Guthaben als
+        Wahrheit: nach externen Margen-/Hebel-Änderungen oder Partial-TP/SL
+        direkt bei Bitunix drifteten die lokalen Margen sonst und die Anzeige
+        (bzw. der KI-Trader) meldete fälschlich 'kein verfügbares Kapital'."""
+        alloc = await self.allocated_capital(mode, total=total)
+        used = await self.used_margin(mode)
+        free = None if alloc is None else round(alloc - used, 6)
+        out = {"allocated": alloc, "used": used, "free": free}
+        if mode == "live":
+            avail = await self._live_available_balance()
+            if avail is not None:
+                out["exchange_available"] = round(avail, 6)
+                a_mode = self.capital_allocation("live").get("mode", "full")
+                if a_mode == "full" or free is None:
+                    out["free"] = round(avail, 6)
+                else:
+                    out["free"] = round(min(free, avail), 6)
+        return out
+
+    async def allocated_capital(self, mode: str, total: Optional[float] = None) -> Optional[float]:
+        """Effective capital cap (USDT) for the bot in the given mode.
+        None = no enforceable cap (e.g. live balance unknown)."""
+        a = self.capital_allocation(mode)
+        am, val = a.get("mode", "full"), float(a.get("value") or 0)
+        if mode == "paper":
+            base = float(a.get("base_balance") or 1000.0)
+            if am == "fixed":
+                return val if val > 0 else base
+            if am == "percent":
+                return base * min(max(val, 0), 100) / 100
+            return base
+        if total is None:
+            total = await self._live_total_balance()
+        if am == "fixed":
+            return min(val, total) if total is not None else val
+        if am == "percent":
+            return total * min(max(val, 0), 100) / 100 if total is not None else None
+        return total
+
+    @staticmethod
+    def trade_bound_margin(t: Dict) -> float:
+        """Aktuell gebundene Margin eines offenen Trades.
+
+        Bugfix: früher wurde stur das ursprüngliche max_capital gezählt –
+        Teil-Closes (Partial-TP/SL) und Margen-/Hebel-Änderungen wurden nie
+        eingerechnet, wodurch das freie Kapital ins Minus driftete und der
+        KI-Trader Live-Trades mit 'kein verfügbares Kapital' ablehnte.
+        Jetzt: Margin = Rest-Notional / Hebel (skaliert automatisch mit
+        Teil-Closes und Hebel-Anpassungen); Fallbacks: margin_used bzw.
+        max_capital, jeweils anteilig zur Restmenge."""
+        try:
+            qty = float(t.get("qty") or 0)
+            rem = float(t.get("qty_remaining", qty) or 0)
+            if rem <= 0:
+                return 0.0
+            entry = float(t.get("entry") or 0)
+            # effective_leverage (aus der realen Marge abgeleitet, Sync) hat
+            # Vorrang vor dem Anzeige-/Setting-Hebel – nur so stimmt die
+            # gebundene Marge nach manueller Margen-Entnahme (z.B. 9.08 USDT
+            # bei Setting 200x, effektiv 333x).
+            lev = float(t.get("effective_leverage") or t.get("leverage") or 0)
+            if lev > 0 and entry > 0:
+                return rem * entry / lev
+            share = (rem / qty) if 0 < qty and rem < qty else 1.0
+            m = float(t.get("margin_used") or 0)
+            if m > 0:
+                return m * share
+            return float(t.get("max_capital") or 0) * share
+        except (TypeError, ValueError):
+            return float(t.get("max_capital") or 0)
+
+    async def used_margin(self, mode: str) -> float:
+        """Summe der aktuell gebundenen Margin aller offenen Trades des Modus.
+        Datensammel-Trades zählen NICHT (eigenes, unendliches Sammel-Guthaben
+        mit fester Vergleichs-Marge – sie dürfen das Paper-Guthaben nicht belegen)."""
+        if self.db is None:
+            return 0.0
+        used = 0.0
+        async for t in self.db.auto_trades.find({"status": "open", "mode": mode,
+                                                 "data_collection": {"$ne": True}}):
+            used += self.trade_bound_margin(t)
+        return round(used, 6)
+
+    def coin_cfg(self, symbol: str) -> Dict:
+        c = dict(DEFAULT_COIN_CFG)
+        c.update(self.config.get("coins", {}).get(symbol, {}))
+        return c
+
+    def strategy_override(self, strategy_id: Optional[str]) -> Dict:
+        if not strategy_id:
+            return {}
+        return dict(self.config.get("strategy_overrides", {}).get(strategy_id, {}))
+
+    def effective_cfg(self, symbol: str, strategy_id: Optional[str]) -> Dict:
+        """
+        Merge coin defaults with any strategy-level override. Strategy override
+        values (max_capital, leverage, sl_*, tp_*, breakeven, fee, pre_signals)
+        take precedence when set. Reserved keys ('mode', 'enabled',
+        'signals_enabled') are handled separately by the caller.
+        """
+        cfg = self.coin_cfg(symbol)
+        so = self.strategy_override(strategy_id)
+        RESERVED = {"mode", "enabled", "signals_enabled"}
+        for k, v in so.items():
+            if k in RESERVED or v is None:
+                continue
+            cfg[k] = v
+        # Highest priority: per-strategy-per-coin trade parameters
+        # (e.g. individual stop-loss / max_capital for Scalping+BTC).
+        if strategy_id and symbol:
+            key = f"{strategy_id}_{symbol}"
+            scc = self.config.get("strategy_coin_configs", {}).get(key, {})
+            for k, v in scc.items():
+                if k in RESERVED or v is None:
+                    continue
+                cfg[k] = v
+        return cfg
+
+    def effective_mode(self, strategy_id: Optional[str], symbol: Optional[str] = None) -> str:
+        """Return effective trading mode.
+        Priority: strategy_coin_config > strategy_override > global mode.
+        'off' means the strategy is disabled and no trade should be opened."""
+        # 1) Highest priority: per-strategy-per-coin config
+        if strategy_id and symbol:
+            key = f"{strategy_id}_{symbol}"
+            scc = self.config.get("strategy_coin_configs", {}).get(key, {})
+            scm = scc.get("mode")
+            if scm in ("live", "paper", "off"):
+                return scm
+        # 2) Strategy-level override
+        so = self.strategy_override(strategy_id)
+        sm = so.get("mode")
+        if sm in ("live", "paper", "off"):
+            return sm
+        # 3) Fallback: global mode
+        return self.config.get("mode", "paper")
+
+    def is_enabled(self, symbol: str) -> bool:
+        return self.coin_cfg(symbol).get("enabled", False)
+
+    def ai_manage_allowed(self, strategy_id: Optional[str],
+                          symbol: Optional[str] = None) -> bool:
+        """Darf der KI-Trader offene Trades dieser Strategie anpassen?
+        Standard: NEIN – die KI managt nur ihre eigenen Trades (ai_trader).
+        Freigabe per Häkchen 'ai_manage' in den Trade-Einstellungen der
+        Strategie (per Coin-Config oder Strategie-Override)."""
+        if not strategy_id or strategy_id == "ai_trader":
+            return True
+        if symbol:
+            scc = self.config.get("strategy_coin_configs", {}) \
+                .get(f"{strategy_id}_{symbol}", {})
+            if scc.get("ai_manage") is not None:
+                return bool(scc.get("ai_manage"))
+        return bool(self.strategy_override(strategy_id).get("ai_manage", False))
+
+    def _levels(self, cfg, side, entry, candles, indicators):
+        # Volatility (ATR) drives a dynamic, noise-aware stop.
+        atr = 0.0
+        if candles and len(candles) > int(cfg.get("atr_period", 14)) + 1:
+            atr_arr = TechnicalIndicators.calculate_atr(candles, int(cfg.get("atr_period", 14)))
+            atr = atr_arr[-1] or 0.0
+        atr_mult = float(cfg.get("atr_sl_multiplier", 1.2))
+        buffer = atr * atr_mult
+
+        mode = cfg.get("sl_mode", "structure")
+        if mode == "atr" and atr > 0:
+            sl = entry - buffer if side == "LONG" else entry + buffer
+        elif mode == "structure" and candles:
+            lookback = int(cfg["sl_lookback"])
+            tick = entry * 0.0001
+            ticks = int(cfg["sl_ticks"])
+            struct_buffer = (buffer if buffer > 0 else ticks * tick)
+            if side == "LONG":
+                low = min(c["low"] for c in candles[-lookback:])
+                sl = low - struct_buffer
+            else:
+                high = max(c["high"] for c in candles[-lookback:])
+                sl = high + struct_buffer
+        else:
+            pct = float(cfg["sl_fixed_percent"]) / 100
+            sl = entry * (1 - pct) if side == "LONG" else entry * (1 + pct)
+        risk = abs(entry - sl)
+        if risk <= 0:
+            risk = entry * 0.003
+            sl = entry - risk if side == "LONG" else entry + risk
+        # ------------------------------------------------------------------
+        # Enforce a MINIMUM TP/SL distance from entry. If risk is too small
+        # (e.g. 0.07%), the market moves past TP between signal generation
+        # and order placement and Bitunix rejects with code 30027
+        # ("TP price must be greater than mark price"). The floor is the
+        # bigger of `min_risk_percent` (default 0.25%) and 3x the ATR-driven
+        # buffer if ATR is available.
+        # ------------------------------------------------------------------
+        min_risk_pct = float(cfg.get("min_risk_percent", 0.25)) / 100
+        min_risk_abs = entry * min_risk_pct
+        if risk < min_risk_abs:
+            risk = min_risk_abs
+            sl = entry - risk if side == "LONG" else entry + risk
+        tp_mode = cfg.get("tp_mode", "crv")
+        tp1 = tpf = None
+        if tp_mode == "fixed_pct":
+            p1 = float(cfg.get("tp1_percent", 0.5)) / 100
+            pf = float(cfg.get("tp_full_percent", 1.0)) / 100
+            if side == "LONG":
+                tp1, tpf = entry * (1 + p1), entry * (1 + pf)
+            else:
+                tp1, tpf = entry * (1 - p1), entry * (1 - pf)
+        elif tp_mode == "structure" and candles:
+            lb = int(cfg.get("sl_lookback", 10))
+            if side == "LONG":
+                target = max(c["high"] for c in candles[-lb:])
+                if target > entry * 1.001:
+                    tpf = target
+                    tp1 = entry + (target - entry) * 0.5
+            else:
+                target = min(c["low"] for c in candles[-lb:])
+                if target < entry * 0.999:
+                    tpf = target
+                    tp1 = entry - (entry - target) * 0.5
+        if tp1 is None or tpf is None:  # crv (Standard) oder Struktur-Fallback
+            if side == "LONG":
+                tp1 = entry + risk * cfg["tp1_crv"]
+                tpf = entry + risk * cfg["tp_full_crv"]
+            else:
+                tp1 = entry - risk * cfg["tp1_crv"]
+                tpf = entry - risk * cfg["tp_full_crv"]
+        return round(sl, 6), round(tp1, 6), round(tpf, 6), risk, round(atr, 6)
+
+    async def _notify_reject(self, symbol: str, side: str, reason: str) -> None:
+        if not self.telegram:
+            return
+        # Anti-Spam: identische Ablehnung (Symbol+Seite+Meldungskern) höchstens
+        # alle 30 Minuten melden. Bug-Report: eine manuell eröffnete QQQ-Position
+        # (nicht per OpenAPI handelbar) erzeugte bei jedem Zyklus eine
+        # "ORDER ABGEBROCHEN"-Telegram-Nachricht.
+        try:
+            sent = getattr(self, "_reject_sent", None)
+            if sent is None:
+                sent = self._reject_sent = {}
+            key = f"{symbol}:{side}:{str(reason)[:80]}"
+            now = time.time()
+            if now - sent.get(key, 0) < 1800:
+                logger.info(f"Reject-Notify unterdrückt (30min-Cooldown): {key}")
+                return
+            sent[key] = now
+            if len(sent) > 200:
+                for k in sorted(sent, key=sent.get)[:100]:
+                    sent.pop(k, None)
+        except Exception:
+            pass
+        try:
+            from services import notifications
+            internal = notifications.is_internal_reject(reason)
+            if not await notifications.enabled(
+                    self.db, "order_rejected", "order_rejected_internal" if internal else None):
+                return
+            await self.telegram.send_rejection(symbol, side, reason,
+                                               **({"internal": True} if internal else {}))
+        except Exception as e:
+            logger.error(f"telegram reject notify failed: {e}")
+
+    async def _current_mark(self, symbol: str) -> Optional[float]:
+        """Try to get the freshest mark price. Falls back to None."""
+        if self.client and self.client.configured():
+            try:
+                return await self.client.get_mark_price(symbol)
+            except Exception as e:
+                logger.warning(f"_current_mark failed: {e}")
+        return None
+
+    async def _maker_entry(self, symbol: str, side: str, qty: float,
+                           mark: float, wait_sec: int,
+                           tpf: float, sl: float,
+                           meta: Optional[Dict] = None) -> Dict:
+        """Maker-Order-Modus: Post-Only-Limit knapp neben dem Mark platzieren
+        und auf den Fill warten. Ergebnis-Dict:
+          kind='maker'         voll gefüllt (Maker-Fee)
+          kind='maker_partial' Teil-Fill, Rest storniert (Maker-Fee)
+          kind='fallback'      nicht gefüllt/abgelehnt -> Aufrufer schickt Market
+          kind='orphan'        Order nicht stornierbar -> KEIN Market-Fallback
+                               (Doppel-Positions-Schutz); die Registry überwacht
+                               die Order, der Watchdog übernimmt einen späteren
+                               Fill korrekt als KI-Trade.
+        Wirft NIE: jede Exception endet im sicheren Market-Fallback."""
+        from services import entry_order_registry
+        side_order = "BUY" if side == "LONG" else "SELL"
+        offset = mark * 0.0002  # 0,02% passiv -> Post-Only wird nicht verworfen
+        price = mark - offset if side == "LONG" else mark + offset
+        try:
+            res = await self.client.place_order(
+                symbol, side_order, qty, order_type="LIMIT", price=price,
+                tp_price=tpf, sl_price=sl, effect="POST_ONLY",
+                client_id=((meta or {}).get("client_id")
+                           or make_client_id((meta or {}).get("strategy_id"))))
+        except Exception as e:
+            # Antwort verloren: evtl. liegt die Limit-Order trotzdem im Buch.
+            logger.error(f"{symbol}: Maker-Limit EXCEPTION: {e}")
+            await asyncio.sleep(1.5)
+            try:
+                untracked = await self._untracked_qty(symbol, side)
+                if untracked is not None and untracked >= qty * 0.5:
+                    return {"kind": "maker", "qty": untracked, "entry": price,
+                            "res": {"code": 0, "data": {},
+                                    "recovered_after_exception": True}}
+                leftover = await self._cancel_pending_entry_orders(
+                    symbol, side_order, qty)
+                if leftover:
+                    # Order liegt weiter im Buch: als verwaist registrieren,
+                    # damit ein späterer Fill dem KI-Trader zugeordnet wird –
+                    # und KEIN Market-Fallback (sonst Doppel-Position).
+                    for oid in leftover:
+                        await entry_order_registry.register(
+                            self.db, order_id=oid, symbol=symbol, side=side,
+                            qty=qty, price=price, meta=meta, status="orphan")
+                    return {"kind": "orphan",
+                            "reason": "Cancel nach Exception nicht bestätigt"}
+            except Exception as e2:
+                logger.warning(f"{symbol}: Maker-Cleanup fehlgeschlagen: {e2}")
+            return {"kind": "fallback", "reason": f"exception: {str(e)[:80]}"}
+        if not (isinstance(res, dict) and res.get("code") == 0):
+            return {"kind": "fallback",
+                    "reason": f"abgelehnt: {str((res or {}).get('msg') or res)[:80]}"}
+        order_id = _extract_order_id(res)
+        if not order_id:
+            # Angenommen, aber keine orderId -> nicht stornierbar; wie Fill behandeln
+            logger.warning(f"{symbol}: Maker-Limit ohne orderId angenommen")
+            return {"kind": "maker", "qty": qty, "entry": price, "res": res}
+        try:
+            await entry_order_registry.register(
+                self.db, order_id=order_id, symbol=symbol, side=side,
+                qty=qty, price=price, meta=meta)
+        except Exception as e:
+            logger.warning(f"{symbol}: Entry-Order-Registry fehlgeschlagen: {e}")
+
+        async def _resolve():
+            try:
+                await entry_order_registry.resolve(self.db, order_id)
+            except Exception as e:
+                logger.debug(f"{symbol}: Registry-Resolve fehlgeschlagen: {e}")
+        deadline = time.time() + max(10, int(wait_sec))
+        fill = {"status": "", "filled_qty": 0.0, "avg_price": 0.0}
+        while time.time() < deadline:
+            await asyncio.sleep(3)
+            try:
+                fill = parse_order_fill(await self.client.get_order_detail(order_id))
+            except Exception as e:
+                logger.warning(f"{symbol}: get_order_detail fehlgeschlagen: {e}")
+                continue
+            if fill["status"].startswith("FILL") or fill["status"] == "ALL_FILLED":
+                await _resolve()
+                return {"kind": "maker", "qty": fill["filled_qty"] or qty,
+                        "entry": fill["avg_price"] or price,
+                        "order_id": order_id, "res": res}
+            if fill["status"] in ("CANCELED", "CANCELLED", "EXPIRED", "REJECTED"):
+                # Post-Only von der Börse verworfen (hätte sofort gefüllt)
+                await _resolve()
+                return {"kind": "fallback", "reason": f"status {fill['status']}"}
+        # Timeout: stornieren, dann letzten Stand prüfen (Race: Fill vor Cancel)
+        cancel_ok = True
+        try:
+            cres = await self.client.cancel_orders(symbol, [order_id])
+            cancel_ok = isinstance(cres, dict) and cres.get("code") == 0
+        except Exception as e:
+            cancel_ok = False
+            logger.warning(f"{symbol}: Maker-Cancel fehlgeschlagen: {e}")
+        try:
+            fill = parse_order_fill(await self.client.get_order_detail(order_id))
+        except Exception:
+            pass
+        filled = float(fill.get("filled_qty") or 0)
+        status_now = str(fill.get("status") or "")
+        if status_now.startswith("FILL") or filled >= qty * 0.999:
+            await _resolve()
+            return {"kind": "maker", "qty": filled or qty,
+                    "entry": fill.get("avg_price") or price,
+                    "order_id": order_id, "res": res}
+        if filled > 0:
+            if cancel_ok or status_now in ("CANCELED", "CANCELLED", "EXPIRED"):
+                await _resolve()
+            else:
+                # Rest-Menge liegt evtl. weiter im Buch -> überwacht lassen
+                try:
+                    await entry_order_registry.mark_orphan(
+                        self.db, order_id, "Teil-Fill, Rest-Cancel nicht bestätigt")
+                except Exception as e:
+                    logger.debug(f"{symbol}: mark_orphan fehlgeschlagen: {e}")
+            return {"kind": "maker_partial", "qty": filled,
+                    "entry": fill.get("avg_price") or price,
+                    "order_id": order_id, "res": res}
+        if not cancel_ok and status_now not in ("CANCELED", "CANCELLED",
+                                                "EXPIRED", "REJECTED"):
+            # Cancel NICHT bestätigt: Order kann später füllen. Kein Market-
+            # Fallback (Doppel-Positions-Schutz) – Registry + Watchdog
+            # übernehmen einen späteren Fill korrekt als KI-Trade.
+            try:
+                await entry_order_registry.mark_orphan(
+                    self.db, order_id, "Timeout-Cancel nicht bestätigt")
+            except Exception as e:
+                logger.debug(f"{symbol}: mark_orphan fehlgeschlagen: {e}")
+            logger.warning(f"{symbol}: Maker-Order {order_id} nicht stornierbar – "
+                           "wird überwacht, kein Market-Fallback")
+            return {"kind": "orphan", "reason": "Cancel nicht bestätigt"}
+        await _resolve()
+        return {"kind": "fallback", "reason": "timeout (nicht gefüllt)"}
+
+    async def _cancel_pending_entry_orders(self, symbol: str, side_order: str,
+                                           qty: float) -> List[str]:
+        """Best-Effort: passende offene LIMIT-Entry-Order stornieren (nach
+        verlorener Antwort), damit sie nicht später ZUSÄTZLICH füllt.
+        Rückgabe: Order-IDs, die trotz Cancel-Versuch weiter offen sind."""
+        def _open_entry_ids(res) -> List[str]:
+            data = (res or {}).get("data") if isinstance(res, dict) else None
+            rows = (data.get("orderList") if isinstance(data, dict) else data) or []
+            ids = []
+            for row in rows if isinstance(rows, list) else []:
+                if not isinstance(row, dict):
+                    continue
+                if (str(row.get("side") or "").upper() == side_order
+                        and str(row.get("tradeSide") or "OPEN").upper() == "OPEN"):
+                    oid = row.get("orderId") or row.get("id")
+                    if oid:
+                        ids.append(str(oid))
+            return ids
+
+        pending = _open_entry_ids(await self.client.get_pending_orders(symbol))
+        for oid in pending:
+            try:
+                await self.client.cancel_orders(symbol, [oid])
+                logger.info(f"{symbol}: verwaiste Maker-Order {oid} storniert")
+            except Exception as e:
+                logger.warning(f"{symbol}: Cancel {oid} fehlgeschlagen: {e}")
+        if not pending:
+            return []
+        try:
+            return _open_entry_ids(await self.client.get_pending_orders(symbol))
+        except Exception:
+            # Verifikation unsicher -> konservativ als offen behandeln
+            return pending
+
+    async def _record_maker_attempt(self, kind: str):
+        """Fill-Statistik für die Auto-Aussetzung des Maker-Modus (KI-Trader)."""
+        try:
+            await self.db.settings.update_one(
+                {"_id": "maker_mode_stats"},
+                {"$push": {"attempts": {
+                    "$each": [{"ts": datetime.now(timezone.utc).isoformat(),
+                               "filled": kind in ("maker", "maker_partial")}],
+                    "$slice": -30}},
+                 "$inc": {"total": 1}}, upsert=True)
+        except Exception as e:
+            logger.warning(f"Maker-Statistik fehlgeschlagen: {e}")
+
+    async def on_signal(self, signal: Dict, candles: List[Dict]) -> Optional[Dict]:
+        """Signal -> Trade (Paper oder Live). Dünner Wrapper um _on_signal_impl:
+        meldet den Entry-Prozess bei services/entry_inflight.py an, damit der
+        Positions-Watchdog die frische Börsen-Position im Fenster zwischen Fill
+        und DB-Insert nicht als 'Manuell (Bitunix)' doppelt übernimmt, und räumt
+        danach evtl. trotzdem entstandene Duplikate ab (KI-Trade bleibt führend)."""
+        from services import entry_inflight
+        symbol = signal.get("symbol")
+        side = signal.get("type")
+        key = entry_inflight.begin(symbol, side, signal.get("strategy_id")) \
+            if symbol and side else None
+        started = entry_inflight.started_iso(symbol, side) if key else None
+        try:
+            trade = await self._on_signal_impl(signal, candles)
+        finally:
+            if key:
+                entry_inflight.end(key)
+        if trade and trade.get("mode") == "live" and self.db is not None:
+            try:
+                await entry_inflight.remove_duplicate_adoptions(self.db, trade, started)
+            except Exception as e:
+                logger.warning(f"{symbol}: Duplikat-Bereinigung fehlgeschlagen: {e}")
+        return trade
+
+    async def _min_trade_cfg(self) -> Dict:
+        from services import min_trade
+        try:
+            return await min_trade.get_config(self.db)
+        except Exception:  # noqa: BLE001
+            return dict(min_trade.DEFAULT_CONFIG)
+
+    async def _try_min_trade(self, signal: Dict, checks, entry: float, sl: float,
+                             lev_used: float, cause: str):
+        """Mindest-Trade (services/min_trade.py) NUR für Echtgeld-Live bei Bitunix:
+        statt Ablehnung wegen Kapital-Grenze/Risikobudget die kleinste handelbare
+        Position eröffnen. Rückgabe (capital, qty) oder None (bisheriges Verhalten)."""
+        from services import min_trade
+        if signal.get("data_collection") or not (self.client and self.client.configured()):
+            return None
+        try:
+            cfg = await min_trade.get_config(self.db)
+            if not cfg.get("enabled", True):
+                return None
+            meta = self.client.contract_meta(self.client.to_bitunix_symbol(signal["symbol"])) or {}
+            res = min_trade.plan(
+                entry, sl, lev_used, min_qty=float(meta.get("min_qty") or 0),
+                qty_step=float(meta.get("qty_step") or 0),
+                exchange_free=await self._live_available_balance(),
+                equity=await self._live_total_balance(),
+                open_min_trades=await min_trade.open_count(self.db), cfg=cfg)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"{signal.get('symbol')}: Mindest-Trade-Prüfung fehlgeschlagen: {e}")
+            return None
+        if not res.get("ok"):
+            checks.record("min_trade", False, f"{cause} – Mindest-Trade nicht möglich: {res.get('reason')}")
+            signal["_min_trade_reject"] = res.get("reason")
+            return None
+        note = f"{res['note']} statt Ablehnung ({cause})"
+        logger.info(f"{signal['symbol']}: {note}")
+        signal["_min_trade"] = True
+        signal["_min_trade_note"] = note
+        prev = signal.get("_capital_fit_note")
+        signal["_capital_fit_note"] = f"{prev}; {note}" if prev else note
+        checks.record("min_trade", True, note, risk_usdt=res["risk"])
+        return res["margin"], res["qty"]
+
+    async def _fit_risk_budget(self, signal: Dict, checks, mode: str, entry: float, sl: float,
+                               qty: float, capital: float, lev_used: float,
+                               equity: Optional[float], min_qty: float = 0.0):
+        """Rest-Budget-Trading (services/risk_budget.py): passt das Risiko des
+        geplanten Trades nicht mehr ins Gesamt-Risikobudget, wird die Marge auf
+        den freien Rest verkleinert statt den Trade still abzulehnen (Befund
+        09/2026: TF2-Signale mit 40-100 USDT Marge bei ~22 USDT Equity wurden
+        ohne Meldung geblockt). Rückgabe (capital, qty) oder None = kein Trade
+        (Rest unter capital_fit.MIN_MARGIN_USDT bzw. Börsen-Minimum)."""
+        from services import entry_guard
+        symbol, side = signal["symbol"], signal["type"]
+        scale, room = await entry_guard.fit_risk_budget(
+            self.db, mode, symbol, abs(float(entry) - float(sl)) * qty, equity)
+        if scale is None or scale >= 1.0:
+            return capital, qty
+        scaled = round(capital * scale, 6)
+        scaled_qty = round((scaled * lev_used) / entry, 6)
+        if scaled < capital_fit.MIN_MARGIN_USDT or (min_qty > 0 and scaled_qty < min_qty):
+            if mode == "live":
+                mt = await self._try_min_trade(
+                    signal, checks, entry, sl, lev_used,
+                    f"Risikobudget erschöpft (Rest {room:.2f} USDT Risiko)")
+                if mt:
+                    return mt
+            why = (f"Risikobudget: Rest-Budget {room:.2f} USDT Risiko erlaubt nur ~{scaled:.2f} USDT "
+                   f"Marge @ {lev_used:g}x (gewünscht {capital:.2f}) -> unter Untergrenze/"
+                   f"Börsen-Minimum, kein Trade")
+            if signal.get("_min_trade_reject"):
+                why += f" (Mindest-Trade: {signal['_min_trade_reject']})"
+            logger.info(f"AutoTrade blockiert {symbol} {side}: {why}")
+            checks.record("risk_budget", False, why)
+            signal["_reject_reason"] = why
+            await self._notify_reject(symbol, side, why)
+            return None
+        note = (f"Marge auf Rest-Risikobudget verkleinert: {capital:.2f} -> {scaled:.2f} USDT "
+                f"(Rest-Budget {room:.2f} USDT Risiko)")
+        logger.info(f"{symbol}: Rest-Budget-Trading – {note}")
+        prev = signal.get("_capital_fit_note")
+        signal["_capital_fit_note"] = f"{prev}; {note}" if prev else note
+        signal["_risk_budget_note"] = note
+        checks.record("risk_budget_fit", True, note, scale=scale)
+        return scaled, scaled_qty
+
+    async def _on_signal_impl(self, signal: Dict, candles: List[Dict]) -> Optional[Dict]:
+        symbol = signal["symbol"]
+        strategy_id = signal.get("strategy_id")
+        # Zentraler Entry-Guard (Audit 2.1): Protokoll aller Einstiegsprüfungen,
+        # wird am Ende als entry_checks[] am Trade gespeichert.
+        from services import entry_guard
+        checks = entry_guard.EntryChecks()
+        # Master-Kill-Switch ("Stop All Trades"): blockiert JEDE neue Trade-
+        # Eröffnung zentral – Scanner-Strategien, KI-Trader und KI-Custom-Trades.
+        # Vorher wurden beim Einschalten nur offene Trades geschlossen, neue
+        # liefen ungebremst weiter (Import lazy wegen core.state-Zirkularität).
+        from core.state import control_state
+        if control_state.get("trades_paused"):
+            logger.info(f"AutoTrade blockiert {symbol} ({strategy_id}): "
+                        "Master-Schalter 'Stop All Trades' aktiv")
+            signal["_reject_reason"] = "Master-Schalter 'Stop All Trades' aktiv"
+            return None
+        # Effective mode: strategy_coin_config > strategy override > global.
+        # 'off' means this strategy is disabled -> no trade.
+        # Datensammel-Modus (Phase 4): Sammel-Signale sind IMMER Paper und
+        # laufen auch auf Coins, die für die Strategie auf AUS stehen.
+        collection = bool(signal.get("data_collection"))
+        eff_mode = "paper" if collection else self.effective_mode(strategy_id, symbol)
+        if eff_mode == "off":
+            signal["_reject_reason"] = f"{strategy_id or 'Strategie'} steht für {symbol} auf AUS"
+            return None
+        cfg = self.effective_cfg(symbol, strategy_id)
+        # Höchste Priorität für KI-Strategie-Kandidaten: deren individuelle
+        # Makro-Parameter (services/ai_strategy_lab.py) überschreiben die Config
+        # nur für diesen Trade.
+        overrides = signal.get("cfg_overrides") or {}
+        if isinstance(overrides, dict):
+            for k, v in overrides.items():
+                if k in cfg and v is not None:
+                    cfg[k] = v
+        # Enable-Logik: Wenn eine per-(Strategie,Coin)- oder Strategie-Config
+        # explizit auf live/paper steht, gilt DEREN enabled-Flag (Default True).
+        # Nur ohne solche Config bleibt der Coin-Schalter der Master-Switch.
+        # Fix: vorher blockierte der Coin-Level-Schalter Trades, obwohl die
+        # Strategie-Coin-Config auf live/paper gespeichert war.
+        scc = self.config.get("strategy_coin_configs", {}).get(
+            f"{strategy_id}_{symbol}", {}) if strategy_id else {}
+        so = self.strategy_override(strategy_id)
+        if not collection:
+            if scc.get("mode") in ("live", "paper"):
+                if scc.get("enabled") is False:
+                    return None
+            elif so.get("mode") in ("live", "paper"):
+                if so.get("enabled") is False:
+                    return None
+            elif not cfg["enabled"]:
+                return None
+        if signal.get("signal_class") == "PRE_SIGNAL" and not cfg["trade_pre_signals"]:
+            return None
+        # KI-Trader: Breakeven ab +1R (be_mode=crv) als Standard. Verhindert,
+        # dass Trades mit deutlichem Buchgewinn (MFE >= 1R) in den vollen
+        # SL-Verlust zurücklaufen (RCA 17.08.: DOGE +2.54R / ADA +2.15R ->
+        # voller Stop, weil be_mode=tp1 erst bei TP1-Touch @ CRV 2-3 greift).
+        # Explizit gesetzte Nutzer-Werte behalten IMMER Vorrang.
+        if strategy_id == "ai_trader":
+            explicit_be = (scc.get("be_mode") or so.get("be_mode")
+                           or self.config.get("coins", {}).get(symbol, {}).get("be_mode")
+                           or (overrides.get("be_mode") if isinstance(overrides, dict) else None))
+            if not explicit_be:
+                cfg["be_mode"] = "crv"
+        # Nur traden, wenn ALLE Regeln erfüllt sind (Fix: 3/5-Regeln-Trades).
+        # Pre-Signale sind ausgenommen: sie sind per Definition unvollständig
+        # und werden bereits explizit über trade_pre_signals freigeschaltet.
+        if cfg.get("require_all_rules") and signal.get("signal_class") != "PRE_SIGNAL" \
+                and signal.get("rules_total") \
+                and (signal.get("rules_met_count") or 0) < signal["rules_total"]:
+            return None
+        # Offene-Trades-Limit pro Coin.
+        # KI-Trader ("ai_trader"): bis zu max_trades_per_coin (1–5, per Panel-
+        # Dropdown einstellbar) gleichzeitig offene Trades pro Coin.
+        # Alle anderen Strategien: strikt EIN offener Trade pro Coin.
+        if strategy_id == "ai_trader":
+            ai_cfg = await self.db.settings.find_one({"_id": "ai_trader_config"}) or {}
+            if collection:
+                # Sammel-Trades haben eigene Slots und verbrauchen keine Live-Slots
+                max_per_coin = max(1, min(5, int(ai_cfg.get("collection_max_per_coin", 2) or 2)))
+                open_count = await self.db.auto_trades.count_documents(
+                    {"symbol": symbol, "status": "open", "strategy_id": "ai_trader",
+                     "data_collection": True})
+            else:
+                max_per_coin = max(1, min(5, int(ai_cfg.get("max_trades_per_coin", 1) or 1)))
+                open_count = await self.db.auto_trades.count_documents(
+                    {"symbol": symbol, "status": "open", "strategy_id": "ai_trader",
+                     "data_collection": {"$ne": True}})
+            if open_count >= max_per_coin:
+                signal["_reject_reason"] = (f"Trade-Limit erreicht: {open_count} offene "
+                                            f"KI-Trades auf {symbol} (max. {max_per_coin})")
+                return None
+        else:
+            existing = await self.db.auto_trades.find_one({"symbol": symbol, "status": "open"})
+            if existing:
+                signal["_reject_reason"] = f"Bereits ein offener Trade auf {symbol}"
+                return None
+
+        side = signal["type"]
+        entry = float(signal.get("entry_price") or 0)
+        if entry <= 0:
+            return None
+        # ---- Risiko-Schutzschicht: Kill-Switch + Anti-Stacking ----
+        tf = str(signal.get("timeframe") or signal.get("strategy_timeframe") or "")
+        if not tf:
+            try:
+                from strategies.registry import registry as _reg
+                st = _reg.get(strategy_id) if strategy_id else None
+                tf = getattr(st, "STRATEGY_TIMEFRAME", "1m") if st else "1m"
+            except Exception:
+                tf = "1m"
+        guard_mode = "paper" if collection else (
+            str(signal.get("force_mode") or "").lower() if str(signal.get("force_mode") or "").lower() in ("live", "paper") else eff_mode)
+        # Stufe-1-Bündel über den zentralen Entry-Guard (Audit 2.1):
+        # Kill-Switch + Lernpflicht + Übergangsschutz + Anti-Stacking
+        # (trade_guard) sowie Marktphasen-Filter (regime_gate, fail-open).
+        shadow_bypass = set(signal.get("_shadow_bypass") or [])
+        guard_ok, guard_reason = await entry_guard.check_entry(
+            self.db, signal, cfg, guard_mode, tf, checks, collection=collection,
+            skip=shadow_bypass)
+        if not guard_ok:
+            logger.info(f"AutoTrade blockiert {symbol} {side}: {guard_reason}")
+            signal["_reject_reason"] = guard_reason
+            # Wächter-Schattentrade: geblockten LIVE-Einstieg als Paper-Trade
+            # nachspielen, damit der Block später bewertet werden kann.
+            if strategy_id == "ai_trader" and not collection and guard_mode == "live":
+                from services import guard_shadow
+                failed = next((c["name"] for c in reversed(checks.items) if not c["ok"]), None)
+                if failed:
+                    await guard_shadow.maybe_open_shadow(
+                        self, signal, candles, failed, guard_reason, blocked_mode=guard_mode)
+            return None
+        sl, tp1, tpf, risk, atr = self._levels(cfg, side, entry, candles, signal)
+
+        # KI Trader: optional die von der KI berechneten Levels direkt nutzen
+        # (use_ai_levels in der KI-Config). Live-Mark-Price-Guards unten greifen weiterhin.
+        if signal.get("use_ai_levels"):
+            try:
+                _sl = float(signal.get("stop_loss") or 0)
+                _tp1 = float(signal.get("take_profit_1") or 0)
+                _tpf = float(signal.get("take_profit_full") or 0)
+                if _sl > 0 and _tp1 > 0 and _tpf > 0:
+                    sl, tp1, tpf = _sl, _tp1, _tpf
+                    risk = abs(entry - sl) or risk
+            except (TypeError, ValueError):
+                pass
+
+        # ---- Fee-Wächter (nur KI-Trader): Physik-Grenze statt Stil-Vorgabe.
+        # Der finale SL steht erst HIER fest (Coin-Config oder use_ai_levels) –
+        # deshalb sitzt der Wächter an dieser Stelle und deckt alle Pfade ab
+        # (Live-Signale, Sammel-Trades, KI-Panel-Trades). Abschaltbar im Setup.
+        if strategy_id == "ai_trader" and "fee_guard" in shadow_bypass:
+            checks.record("fee_guard", True, "übersprungen (Wächter-Schattentrade)")
+        elif strategy_id == "ai_trader":
+            # den Fee-Wächter einbeziehen – fail-open bei API-Fehlern (0.0).
+            funding_pct = 0.0
+            try:
+                from services import funding_fees
+                f_info = await funding_fees.get_funding_info(self.client, symbol)
+                if f_info:
+                    funding_pct = funding_fees.adverse_funding_pct(
+                        f_info["rate"], side,
+                        funding_fees.hold_hours(signal.get("ai_horizon")),
+                        f_info["interval_h"])
+            except Exception as e:
+                logger.debug(f"{symbol}: Funding-Projektion übersprungen: {e}")
+            from services import min_sl_rule
+            ms_ok, ms_why = min_sl_rule.check(ai_cfg, symbol, entry, sl, collection)
+            checks.record("min_sl_rule", ms_ok, ms_why)
+            if not ms_ok:
+                # Sicherheitsnetz (KI-Engine blockt bereits vor dem Signal)
+                logger.info(f"AutoTrade blockiert {symbol} {side}: {ms_why}")
+                signal["_reject_reason"] = ms_why
+                return None
+            fg_ok, fg_reason = fee_guard_check(ai_cfg, cfg, entry, sl, atr,
+                                               tp=tp1, funding_pct=funding_pct,
+                                               symbol=symbol)
+            checks.record("fee_guard", fg_ok, fg_reason)
+            if not fg_ok:
+                logger.info(f"AutoTrade blockiert {symbol} {side}: {fg_reason}")
+                signal["_reject_reason"] = fg_reason
+                # Blockier-Statistik: jeden Block mit geschätzten Roundtrip-Fees
+                # protokollieren (Notional = Kapital × Hebel). 60-Tage-Retention.
+                try:
+                    lev_est = effective_leverage(cfg, entry, sl) \
+                        if cfg.get("auto_leverage_enabled") else float(cfg.get("leverage") or 1)
+                    fee_pct = trade_fee_percent(
+                        cfg, symbol, float(cfg.get("max_capital") or 0) * lev_est)
+                    est_fees = round(float(cfg.get("max_capital") or 0) * lev_est
+                                     * 2 * fee_pct / 100, 4)
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    await self.db.fee_guard_blocks.insert_one({
+                        "id": str(uuid.uuid4()), "ts": now_iso,
+                        "symbol": symbol, "side": side, "collection": collection,
+                        "sl_dist_pct": round(abs(entry - sl) / entry * 100, 4),
+                        "est_fees_usdt": est_fees, "reason": fg_reason})
+                    await self.db.fee_guard_blocks.delete_many(
+                        {"ts": {"$lt": (datetime.now(timezone.utc)
+                                        - timedelta(days=60)).isoformat()}})
+                except Exception:
+                    pass
+                if not collection:
+                    try:
+                        await self.db.ai_chat.insert_one({
+                            "id": str(uuid.uuid4()), "role": "governance",
+                            "text": f"Trade {side} {symbol} blockiert – {fg_reason}",
+                            "ts": datetime.now(timezone.utc).isoformat()})
+                    except Exception:
+                        pass
+                    if guard_mode == "live":
+                        from services import guard_shadow
+                        await guard_shadow.maybe_open_shadow(
+                            self, signal, candles, "fee_guard", fg_reason,
+                            snapshot={"sl_dist_pct": round(abs(entry - sl) / entry * 100, 4),
+                                      "limiting": guard_shadow.limiting_factor(fg_reason),
+                                      "fee_guard_mult": ai_cfg.get("fee_guard_mult"),
+                                      "fee_guard_atr_mult": ai_cfg.get("fee_guard_atr_mult")},
+                            blocked_mode=guard_mode)
+                return None
+
+        # Auto-Leverage: Hebel so setzen, dass die Liquidation den konfigurierten
+        # Abstand hinter dem Stop-Loss hat (sonst fester Hebel aus der Config).
+        # Die Hebel-Quelle wird am Trade protokolliert (leverage_source), damit
+        # nachvollziehbar ist, WARUM genau dieser Hebel genutzt wurde.
+        if cfg.get("auto_leverage_enabled"):
+            lev_used = effective_leverage(cfg, entry, sl)
+            lev_source = (f"Auto-Leverage der Trade-Einstellungen (Liq-Puffer "
+                          f"{float(cfg.get('auto_lev_value', 0.5) or 0.5):g} "
+                          f"{'Ticks' if cfg.get('auto_lev_mode') == 'liq_ticks' else '%'} "
+                          f"hinter SL, max {float(cfg.get('auto_lev_max', 50) or 50):g}x)")
+        else:
+            lev_used = float(cfg["leverage"])
+            lev_source = f"Fester Hebel aus den Trade-Einstellungen ({lev_used:g}x)"
+
+        # ---- KI-Custom-Trade: Hebel/Kapitalanteil dürfen pro Trade vorgegeben
+        # werden (services/ai_trade_manager.py). Immer innerhalb der Limits der
+        # Coin-Config – Coin-Auto-Hebel und max_capital haben Vorrang, der
+        # Live/Paper-Modus bleibt tabu.
+        try:
+            _lev_before = lev_used
+            lev_used = ai_leverage_override(
+                cfg, lev_used, float(signal.get("ai_leverage") or 0))
+            if lev_used != _lev_before:
+                lev_source = (f"KI-Wahl pro Trade ({lev_used:g}x, Hebel-Modus im "
+                              f"KI-Panel – Coin ohne Auto-Leverage)")
+        except (TypeError, ValueError):
+            pass
+        # Max-Hebel des Coins (Bitunix-Katalog) deckelt alle Hebel-Pfade
+        _coin_cap = self._coin_max_lev(symbol)
+        if lev_used > _coin_cap:
+            lev_source += f"; auf Coin-Max {_coin_cap:g}x gedeckelt"
+        lev_used = max(1.0, min(lev_used, _coin_cap))
+        mode = eff_mode
+        # Manueller Modus-Override (nur Nicht-KI-Quellen setzen force_mode)
+        fm = str(signal.get("force_mode") or "").lower()
+        if fm in ("live", "paper"):
+            mode = fm
+        # Instrumente ohne Bitunix-Kontrakt: Forex läuft live über Interactive
+        # Brokers (services/ibkr_trade.py); ohne konfiguriertes/eingeloggtes
+        # IBKR-Gateway (und für alle anderen Fälle) -> Paper-Simulation.
+        use_ibkr = False
+        if mode == "live" and not _instruments.is_tradable(symbol):
+            inst_live = _instruments.get(symbol)
+            if inst_live is not None and inst_live.broker == "ibkr":
+                from services import ibkr_trade
+                if ibkr_trade.ibkr_ready():
+                    use_ibkr = True
+                else:
+                    logger.warning(f"{symbol}: IBKR-Gateway nicht konfiguriert/"
+                                   "eingeloggt – Live-Trade wird als Paper-Trade simuliert")
+                    mode = "paper"
+            else:
+                logger.warning(f"{symbol}: kein Bitunix-Kontrakt – Live-Trade wird "
+                               "als Paper-Trade simuliert")
+                mode = "paper"
+        # KI-Strategie-Kandidaten (services/ai_strategy_lab.py) dürfen erst nach
+        # bestandener Ghost-Phase und Freigabe des Traders live handeln.
+        if mode == "live" and signal.get("force_paper"):
+            logger.info(f"{symbol}: Signal erzwingt Paper "
+                        f"({signal.get('force_paper_reason') or 'noch nicht freigegeben'})")
+            mode = "paper"
+        # ---- Kapital-Zuweisung: Gesamt-Exposure des Bots begrenzen ----
+        capital = float(cfg["max_capital"])
+        # KI-Trader mit eigenem "Max. Kapital pro Trade": kann die Coin-Config
+        # nur SENKEN (Coin-Einstellung = harte Grenze); die KI wählt darunter
+        # per ai_capital_pct.
+        try:
+            capital = ai_capital_base(
+                capital, float(signal.get("ai_max_capital") or 0))
+        except (TypeError, ValueError):
+            pass
+        try:
+            ai_cap_pct = float(signal.get("ai_capital_pct") or 0)
+            if 5.0 <= ai_cap_pct <= 100.0:
+                capital = round(capital * ai_cap_pct / 100, 6)
+        except (TypeError, ValueError):
+            pass
+        # ML-Risiko-Skalierung (services/ml_gate.py): reduzierte Positionsgröße
+        # bei schwacher Vorhersagegüte des Gate-Modells (OOS-AUC unter Schwelle).
+        try:
+            ml_scale = float(signal.get("ml_risk_scale") or 0)
+            if 0.1 <= ml_scale < 1.0:
+                capital = round(capital * ml_scale, 6)
+                logger.info(f"{symbol}: ML-Risiko-Skalierung – Margin ×{ml_scale:g} "
+                            f"({signal.get('ml_risk_reason') or 'AUC unter Schwelle'})")
+        except (TypeError, ValueError):
+            pass
+        # Kapital-Zuweisung je Setup × Asset (services/setup_capital.py): Historie
+        # des Setups in der Anlageklasse und auf diesem Asset -> Faktor unter Max.
+        try:
+            sa_scale = float(signal.get("setup_asset_scale") or 0)
+            if 0.1 <= sa_scale < 1.0:
+                capital = round(capital * sa_scale, 6)
+                logger.info(f"{symbol}: Kapital-Zuweisung Setup×Asset – Margin ×{sa_scale:g} "
+                            f"({signal.get('setup_asset_reason') or ''})")
+        except (TypeError, ValueError):
+            pass
+        # Confluence-Boost: mehrere Strategien zeigen dieselbe Richtung ->
+        # erhöhte Margin für diesen einen Trade (services/confluence.py).
+        try:
+            c_boost = float(signal.get("capital_boost") or 0)
+            if 1.0 < c_boost <= 3.0:
+                capital = round(capital * c_boost, 6)
+                logger.info(f"{symbol}: Confluence-Boost – Margin ×{c_boost:g}")
+        except (TypeError, ValueError):
+            pass
+        alloc_note = None
+        if collection:
+            # Datensammel-Trades: unendliches Sammel-Guthaben – kein Kapital-
+            # Limit, keine Belegung des Paper-Guthabens (siehe used_margin).
+            alloc_cap = free_alloc = None
+            used = 0.0
+        else:
+            try:
+                fc = await self.free_capital(mode)
+                alloc_cap, used, free_alloc = fc["allocated"], fc["used"], fc["free"]
+            except Exception as e:
+                logger.warning(f"free_capital({mode}) failed: {e}")
+                alloc_cap = free_alloc = None
+                used = 0.0
+        # ---- Risiko-basierte Positionsgröße (KI-Trader, sizing_mode=risk):
+        # Marge/Hebel aus Equity × Risiko % / SL-Abstand statt der Kette
+        # max_capital × capital_pct × ML-Faktor (services/position_sizing.py).
+        # Equity = zugewiesenes Kapital (live: Börsen-Guthaben inkl. Marge,
+        # paper: Basis-Guthaben). Nicht berechenbar -> Legacy-Pfad oben bleibt.
+        sizing = signal.get("ai_sizing")
+        if isinstance(sizing, dict) and sizing.get("mode") == "risk" and not collection:
+            try:
+                from services import position_sizing
+                equity = alloc_cap
+                if equity is None and mode == "live":
+                    equity = await self._live_total_balance()
+                rs = position_sizing.compute(sizing, cfg, entry, sl, equity,
+                                             coin_max_lev=self._coin_max_lev(symbol),
+                                             preset_lev=lev_used, lev_source=lev_source)
+            except Exception as e:
+                logger.warning(f"{symbol}: Risiko-Sizing fehlgeschlagen – Legacy-Größe: {e}")
+                rs = None
+            if rs:
+                capital, lev_used = rs["margin"], rs["leverage"]
+                lev_source = rs.get("leverage_source") or lev_source
+                signal["ai_sizing_result"] = rs
+                logger.info(f"{symbol}: Risiko-Sizing – Marge {capital:.2f} USDT @ "
+                            f"{lev_used:g}x ({rs['note']})")
+            else:
+                signal["ai_sizing_result"] = {"fallback": "legacy"}
+        # ---- Datensammel-Trades: feste Marge pro Trade (Vergleichbarkeit der
+        # Setups). Hebel kommt weiter aus den Trade-Einstellungen; kein Abzug
+        # vom Paper-Guthaben (unendliches Sammel-Guthaben, siehe used_margin).
+        if collection:
+            capital = COLLECTION_MARGIN_USDT
+            signal["ai_sizing_result"] = {
+                "margin": capital, "leverage": lev_used, "leverage_source": lev_source,
+                "note": (f"Datensammlung: feste {COLLECTION_MARGIN_USDT:g} USDT Marge "
+                         f"(Vergleichbarkeit; zählt nicht gegen das Paper-Guthaben)")}
+        # _live_prefill: Entry ist bereits als echte Börsen-Limit-Order GEFÜLLT
+        # (services/limit_live_sync.py) – die Marge ist schon gebunden, deshalb
+        # darf die Kapital-Prüfung den Fill nicht mehr ablehnen.
+        fit_min_qty = 0.0
+        if mode == "live" and not use_ibkr and self.client and self.client.configured():
+            try:
+                fit_min_qty = float((self.client.contract_meta(
+                    self.client.to_bitunix_symbol(symbol)) or {}).get("min_qty") or 0)
+            except Exception:  # noqa: BLE001
+                fit_min_qty = 0.0
+        if free_alloc is not None and not signal.get("_live_prefill"):
+            # Rest-Kapital-Trading (services/capital_fit.py): reicht das freie
+            # Kapital nicht für die gewünschte Marge, wird mit dem REST gehandelt
+            # (Untergrenze ~1 EUR, Börsen-Minimum wird ggf. hochgezogen).
+            cap_str = f"{alloc_cap:.2f}" if alloc_cap is not None else "?"
+            fit = capital_fit.fit_margin(capital, free_alloc, lev_used, entry,
+                                         min_qty=fit_min_qty, live=(mode == "live"))
+            if fit["reject"] and mode == "live" and not use_ibkr:
+                # Live-Kapitalgrenze erreicht -> Mindest-Trade (nur Echtgeld-Live,
+                # services/min_trade.py) statt Paper-Ausweichen/Ablehnung.
+                mt = await self._try_min_trade(
+                    signal, checks, entry, sl, lev_used,
+                    f"Kapital-Grenze erreicht ({used:.2f}/{cap_str} USDT belegt)")
+                if mt:
+                    fit = {"margin": mt[0], "note": signal.get("_min_trade_note"), "reject": None}
+            if fit["reject"] and mode == "live" and (
+                    (await self._min_trade_cfg()).get("paper_fallback_if_impossible", True)):
+                # Live-Kapitalgrenze erreicht -> stattdessen Paper-Trade starten
+                # (User-Vorgabe 06/2026): gleiches Signal, gleiches Management,
+                # nur simuliert – statt den Trade komplett zu verwerfen.
+                try:
+                    fc_p = await self.free_capital("paper")
+                    p_alloc, p_used, p_free = fc_p["allocated"], fc_p["used"], fc_p["free"]
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"free_capital(paper) failed: {e}")
+                    p_alloc, p_used, p_free = None, 0.0, None
+                p_fit = capital_fit.fit_margin(capital, p_free, lev_used, entry,
+                                               min_qty=0.0, live=False)
+                if not p_fit["reject"]:
+                    fb_note = (f"Live-Kapitalgrenze erreicht ({used:.2f}/{cap_str} USDT "
+                               f"belegt) -> Paper-Trade statt Ablehnung")
+                    logger.info(f"{symbol}: {fb_note}")
+                    signal["_capital_fallback_note"] = fb_note
+                    checks.record("capital_limit_live_fallback", True, fb_note)
+                    mode, use_ibkr, fit_min_qty = "paper", False, 0.0
+                    alloc_cap, used = p_alloc, p_used
+                    free_alloc = p_free if p_free is not None else 0.0
+                    cap_str = f"{alloc_cap:.2f}" if alloc_cap is not None else "?"
+                    fit = p_fit
+            if fit["reject"]:
+                logger.info(f"{symbol}: Kapital-Limit ({used:.2f}/{cap_str} USDT belegt, "
+                            f"frei {free_alloc:.2f}) -> {fit['reject']}")
+                signal["_reject_reason"] = (f"Kapital-Limit erreicht: "
+                                            f"{used:.2f}/{cap_str} USDT belegt – {fit['reject']}")
+                await self._notify_reject(
+                    symbol, side,
+                    f"Kapital-Limit erreicht: {used:.2f}/{cap_str} USDT belegt – {fit['reject']}")
+                return None
+            if fit["note"]:
+                alloc_note = f"{fit['note']} (Limit {cap_str}, belegt {used:.2f})"
+                logger.info(f"{symbol}: Rest-Kapital-Trading – {alloc_note}")
+                signal["_capital_fit_note"] = alloc_note
+            capital = fit["margin"]
+            checks.record("capital_limit", True, alloc_note or "",
+                          free_usdt=round(free_alloc, 2))
+        qty = round((capital * lev_used) / entry, 6)
+
+        # ---- Gesamt-Risikobudget (services/risk_budget.py, Audit E1): offenes
+        # Verlustrisiko aller Positionen des Modus + dieser Trade <= X % Equity.
+        # Aufruf über den zentralen Entry-Guard (Audit 2.1, fail-open + Protokoll).
+        if not collection:
+            rb_equity = alloc_cap
+            if rb_equity is None and mode == "live":
+                try:
+                    rb_equity = await self._live_total_balance()
+                except Exception as e:
+                    logger.debug(f"{symbol}: Live-Equity nicht ermittelbar: {e}")
+            # Rest-Budget-Trading (09/2026): passt das Risiko nicht mehr ins
+            # Budget, wird die Marge verkleinert statt abgelehnt (siehe
+            # _fit_risk_budget) – dieselbe Philosophie wie capital_fit.
+            if not signal.get("_live_prefill") and not signal.get("_min_trade"):
+                fitted = await self._fit_risk_budget(
+                    signal, checks, mode, entry, sl, qty, capital, lev_used, rb_equity, fit_min_qty)
+                if fitted is None:
+                    return None
+                capital, qty = fitted
+            if signal.get("_min_trade"):
+                # Mindest-Trade umgeht das Budget bewusst (eigene Grenzen in min_trade.py)
+                rb_ok, rb_why = True, ""
+            else:
+                rb_ok, rb_why = await entry_guard.check_risk_budget(
+                    self.db, mode, symbol, abs(float(entry) - float(sl)) * qty, rb_equity, checks)
+                if not rb_ok and mode == "live" and not use_ibkr and not signal.get("_live_prefill"):
+                    mt = await self._try_min_trade(signal, checks, entry, sl, lev_used, rb_why)
+                    if mt:
+                        capital, qty = mt
+                        rb_ok, rb_why = True, ""
+            if not rb_ok:
+                logger.info(f"AutoTrade blockiert {symbol} {side}: {rb_why}")
+                signal["_reject_reason"] = rb_why
+                await self._notify_reject(symbol, side, rb_why)
+                return None
+
+        # ---- Fill-Qualitäts-Messung (Baustein B): Referenzpreis festhalten,
+        # BEVOR Maker-/Paper-Fills den Entry verändern.
+        signal_price = float(entry or 0) or None
+        fill_price_real = None
+
+        # Maker-Order-Modus: unkritische KI-Entries als Post-Only-Limit
+        # (Flag kommt vom KI-Trader; Datensammel-/manuelle Trades nie).
+        # Paper-Trades simulieren den Maker-Fill (reale Kostenbasis).
+        maker_requested = (bool(signal.get("ai_maker_ok"))
+                           and not signal.get("manual_trade"))
+        order_kind = "maker" if maker_requested else "market"
+
+        # ---- Low-Vol-Market-Block (Baustein A): liegt die ATR des Signals
+        # unter der Schwelle, sind Market-Entries für den KI-Trader gesperrt –
+        # Maker-Entry wird erzwungen, ohne Market-Fallback (siehe unten).
+        # Key-Level-Limit-Fills (ai_limit_fill) sind bereits Limit-Entries.
+        low_vol_forced = False
+        if (mode == "live" and strategy_id == "ai_trader"
+                and not signal.get("manual_trade")
+                and not signal.get("ai_limit_fill")
+                and (ai_cfg or {}).get("low_vol_market_block_enabled", True)):
+            try:
+                _lv_thr = float((ai_cfg or {}).get("low_vol_atr_threshold_pct", 0.10) or 0)
+            except (TypeError, ValueError):
+                _lv_thr = 0.10
+            atr_pct_sig = (float(atr) / float(entry) * 100.0) if (atr and entry) else 0.0
+            if atr_market_block(atr_pct_sig, _lv_thr):
+                low_vol_forced = True
+                if not maker_requested:
+                    maker_requested = True
+                    order_kind = "maker"
+                logger.info(f"{symbol}: Low-Vol-Block – ATR {atr_pct_sig:.3f}% < "
+                            f"{_lv_thr:g}% -> Maker-Entry erzwungen, "
+                            "kein Market-Fallback")
+            checks.record("low_vol_atr_block", True, forced_maker=low_vol_forced,
+                          atr_pct=round(atr_pct_sig, 4), threshold_pct=_lv_thr)
+
+        # Ehrliches Paper: Market-Entries mit simuliertem Spread + Slippage
+        # abrechnen (Live-Orderbuch bevorzugt, Fallback konservative Schätzung),
+        # damit Paper- und Live-Ergebnisse vergleichbar sind. SL/TP bleiben an
+        # den geplanten Levels – nur der Fill wird realistisch schlechter.
+        # Maker-Fills (Post-Only-Limit) füllen am Limit-Preis ohne Slippage.
+        paper_exec = None
+        if mode == "paper" and order_kind == "market":
+            try:
+                from services import paper_execution
+                adj_entry, paper_exec = await paper_execution.entry_fill(
+                    symbol, side, entry, notional_usdt=capital * lev_used)
+                if paper_exec and adj_entry > 0:
+                    entry = adj_entry
+                    qty = round((capital * lev_used) / entry, 6)
+            except Exception as e:
+                logger.debug(f"{symbol}: Paper-Fill-Simulation übersprungen: {e}")
+
+        # ---- LIVE MODE (IBKR-Forex): OCA-Brackets (Market + SL/TP je Leg) über
+        # das Client-Portal-Gateway – Leg "tp1" (tp1_close_percent) + Leg
+        # "runner" (voller TP), exakt wie der Bitunix-Partial-TP1-Flow. Das
+        # Monitoring/Verbuchen übernimmt services/ibkr_trade.run_loop().
+        # Nur bei Erfolg persistieren.
+        if mode == "live" and use_ibkr:
+            from services import ibkr_trade
+            # Rest-Kapital-Trading auch bei IBKR (services/capital_fit.py): das
+            # freie IBKR-Guthaben ist die Wahrheit, nicht das Bitunix-Guthaben.
+            if not signal.get("_live_prefill"):
+                try:
+                    ib_free = (await ibkr_trade.account_summary()).get("available_funds")
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"{symbol}: IBKR-Guthaben nicht lesbar: {e}")
+                    ib_free = None
+                if ib_free is not None:
+                    fit = capital_fit.fit_margin(capital, float(ib_free), lev_used, entry, live=True)
+                    if fit["reject"]:
+                        reason = f"IBKR: {fit['reject']}"
+                        logger.info(f"{symbol}: {reason}")
+                        signal["_reject_reason"] = reason
+                        await self._notify_reject(symbol, side, reason)
+                        return None
+                    if fit["note"]:
+                        logger.info(f"{symbol}: Rest-Kapital-Trading (IBKR) – {fit['note']}")
+                        signal["_capital_fit_note"] = fit["note"]
+                        capital = fit["margin"]
+                        qty = round((capital * lev_used) / entry, 6)
+            ib_res = await ibkr_trade.open_live_forex(
+                symbol=symbol, side=side, entry=entry, sl=sl, tp=tpf,
+                notional_usd=capital * lev_used, tp1=tp1,
+                tp1_close_percent=float(cfg.get("tp1_close_percent") or 0))
+            if not ib_res.get("ok"):
+                reason = f"IBKR: {ib_res.get('error') or 'Order abgelehnt'}"
+                logger.error(f"IBKR order REJECTED {symbol} {side}: {reason}")
+                await self._notify_reject(symbol, side, reason)
+                signal["_reject_reason"] = reason
+                return None
+            if ib_res.get("fill_price"):
+                entry = float(ib_res["fill_price"])
+            qty = float(ib_res.get("qty") or qty)
+            ib_legs = ib_res.get("legs") or []
+            if len(ib_legs) < 2:
+                tp1 = tpf  # Ein Leg (TP1 aus / Menge zu klein): ein TP (Bracket)
+            trade_extra = {"broker": "ibkr",
+                           "ibkr_conid": ib_res.get("conid"),
+                           "ibkr_order_id": ib_res.get("order_id"),
+                           "ibkr_sl_order_id": ib_res.get("sl_order_id"),
+                           "ibkr_tp_order_id": ib_res.get("tp_order_id"),
+                           "ibkr_legs": ib_legs,
+                           "bitunix_order_id": None, "bitunix_position_id": None,
+                           "bitunix_tpsl_order_id": None,
+                           # TP1 liegt als eigenes OCA-Leg an der Börse
+                           "tp1_exchange_placed": len(ib_legs) >= 2}
+        # ---- LIVE MODE: hit the exchange FIRST; only persist on success ----
+        elif mode == "live" and self.client.configured():
+            # Guard: Menge unter dem Börsen-Minimum. capital_fit hat die Marge
+            # bereits hochgezogen, wenn das freie Kapital reicht – bleibt die
+            # Menge trotzdem zu klein, wird nur dann hochgesetzt, wenn KEINE
+            # Kapitalgrenze bekannt ist (Fallback), sonst übersprungen.
+            b_sym = self.client.to_bitunix_symbol(symbol)
+            meta = self.client.contract_meta(b_sym) or {}
+            min_qty = float(meta.get("min_qty") or 0)
+            if min_qty > 0 and qty < min_qty and not signal.get("_live_prefill") \
+                    and not signal.get("_min_trade"):
+                needed_capital = (min_qty * entry) / lev_used
+                if free_alloc is None or needed_capital <= capital_fit.usable_free(free_alloc, True):
+                    logger.info(f"{symbol}: qty {qty} < min {min_qty} -> Marge auf "
+                                f"{needed_capital:.2f} USDT angehoben (Börsen-Minimum)")
+                    capital = round(needed_capital * 1.005, 6)
+                    qty = min_qty
+                else:
+                    logger.warning(
+                        f"{symbol}: qty {qty} < min {min_qty}. Needs "
+                        f"~{needed_capital:.2f} USDT capital @ {lev_used}x."
+                    )
+                    await self._notify_reject(
+                        symbol, side,
+                        f"Menge {qty} unter Bitunix-Minimum {min_qty}. "
+                        f"Erhoehe max_capital auf mind. {needed_capital:.2f} USDT."
+                    )
+                    return None
+
+            # Re-align TP/SL to the CURRENT mark price so they can't be on
+            # the wrong side by the time the order arrives (code 30027).
+            try:
+                mark = await self._current_mark(symbol)
+            except Exception:
+                mark = None
+            if mark and mark > 0:
+                # Minimum absolute distance TP/SL must keep from the mark
+                # price. Configurable via `min_tp_distance_percent` (default
+                # 0.15%). This eats a bit of edge but eliminates 30027.
+                min_dist_pct = float(cfg.get("min_tp_distance_percent", 0.15)) / 100
+                min_dist = mark * min_dist_pct
+                if side == "LONG":
+                    tpf = max(tpf, mark + min_dist)
+                    tp1 = max(tp1, mark + min_dist / 2)
+                    sl = min(sl, mark - min_dist)
+                else:
+                    tpf = min(tpf, mark - min_dist)
+                    tp1 = min(tp1, mark - min_dist / 2)
+                    sl = max(sl, mark + min_dist)
+                sl, tp1, tpf = round(sl, 6), round(tp1, 6), round(tpf, 6)
+
+            prefill = signal.get("_live_prefill") or None
+            try:
+                if not prefill:
+                    await self.client.set_leverage(symbol, max(int(round(lev_used)), 1),
+                                                   cfg["margin_mode"])
+                side_order = "BUY" if side == "LONG" else "SELL"
+                res = None
+                entry_meta = {
+                    "strategy_id": strategy_id,
+                    "strategy_name": signal.get("strategy_name"),
+                    "timeframe": tf, "mode": mode,
+                    "leverage": round(lev_used, 2),
+                    "capital": round(capital, 6),
+                    "sl": sl, "tp1": tp1, "tpf": tpf,
+                    "fee_percent": effective_fee_percent(cfg),
+                    "tp1_close_percent": cfg.get("tp1_close_percent"),
+                    "horizon": signal.get("ai_horizon") or "scalp",
+                    "ai_confidence": signal.get("ai_confidence"),
+                    "signal_id": signal.get("id"),
+                    "decision_id": signal.get("decision_id"),
+                    "applied_lessons": signal.get("applied_lessons"),
+                    "client_id": make_client_id(strategy_id),
+                }
+                if prefill:
+                    # Entry lag als echte Limit-Order an der Börse und ist
+                    # GEFÜLLT: keine neue Order senden, nur verbuchen.
+                    qty = float(prefill.get("qty") or qty)
+                    if float(prefill.get("price") or 0) > 0:
+                        entry = float(prefill["price"])
+                    if float(prefill.get("leverage") or 0) > 0:
+                        lev_used = max(1.0, float(prefill["leverage"]))
+                    capital = round(qty * entry / max(lev_used, 1.0), 6)
+                    order_kind = "limit_live"
+                    res = {"code": 0, "prefilled": True,
+                           "data": {"orderId": str(prefill.get("order_id") or "")}}
+                elif maker_requested:
+                    m = await self._maker_entry(
+                        symbol, side, qty,
+                        (mark if mark and mark > 0 else entry),
+                        int(signal.get("ai_maker_wait_sec") or 45), tpf, sl,
+                        meta=entry_meta)
+                    await self._record_maker_attempt(m.get("kind"))
+                    if m.get("kind") in ("maker", "maker_partial"):
+                        res = m["res"]
+                        order_kind = "maker"
+                        if m.get("qty"):
+                            qty = float(m["qty"])
+                        if m.get("entry"):
+                            entry = float(m["entry"])
+                    elif m.get("kind") == "orphan":
+                        # Doppel-Positions-Schutz: Limit-Order liegt evtl. noch
+                        # im Buch -> KEIN Market-Fallback. Ein späterer Fill
+                        # wird über die Registry + Watchdog korrekt als
+                        # KI-Trade übernommen (inkl. Telegram-Signal).
+                        signal["_reject_reason"] = (
+                            f"Maker-Order nicht stornierbar ({m.get('reason')}) "
+                            "– wird überwacht, kein Market-Fallback")
+                        await self._notify_reject(
+                            symbol, side,
+                            "Maker-Limit-Order konnte nicht storniert werden – "
+                            "sie bleibt im Orderbuch und wird bei einem späteren "
+                            "Fill automatisch als KI-Trade übernommen "
+                            "(kein Market-Fallback, um Doppel-Positionen zu "
+                            "vermeiden).")
+                        return None
+                    else:
+                        if low_vol_forced:
+                            # Baustein A: kein Market-Fallback im Low-Vol-Regime
+                            signal["_reject_reason"] = (
+                                f"Low-Vol-Block: Maker-Entry nicht gefüllt "
+                                f"({m.get('reason')}) – Market-Fallback bei "
+                                "ATR unter Schwelle unterdrückt")
+                            await self._notify_reject(
+                                symbol, side,
+                                "Low-Vol-Block: Volatilität (ATR) unter der "
+                                "Schwelle – Maker-Entry nicht gefüllt "
+                                f"({m.get('reason')}), Market-Fallback "
+                                "unterdrückt (Gebühren wären größer als die "
+                                "erwartbare Bewegung).")
+                            return None
+                        order_kind = "taker_fallback"
+                        logger.info(f"{symbol}: Maker-Entry nicht gefüllt "
+                                    f"({m.get('reason')}) -> Market-Fallback")
+                if res is None:
+                    res = await self.client.place_order(
+                        symbol, side_order, qty,
+                        order_type=cfg["order_type"],
+                        tp_price=tpf, sl_price=sl,
+                        client_id=entry_meta["client_id"])
+            except Exception as e:
+                # BUGFIX (ADA/DOT ohne SL): Ein Timeout/Netzfehler kann auftreten,
+                # NACHDEM Bitunix die Order bereits angenommen hat. Vorher wurde
+                # der Trade dann lokal verworfen -> die Position lief unsichtbar
+                # (nicht auf der Website) und ohne lokales Monitoring an der
+                # Börse weiter. Jetzt: nachprüfen, ob an der Börse eine nicht
+                # erfasste Menge aufgetaucht ist, und die Position übernehmen.
+                reason = f"exception: {str(e)[:160]}"
+                logger.error(f"Live order EXCEPTION {symbol}: {e}")
+                await asyncio.sleep(1.5)
+                untracked = None
+                try:
+                    untracked = await self._untracked_qty(symbol, side)
+                except Exception as e2:
+                    logger.warning(f"_untracked_qty({symbol}) failed: {e2}")
+                recovered = recovered_fill_qty(qty, untracked)
+                if recovered is not None:
+                    # AP02a (T02): NUR die tatsächlich gefundene Menge verbuchen,
+                    # nicht die geplante (60% Fill wurde vorher als 100% verbucht).
+                    if recovered < qty:
+                        logger.warning(f"{symbol}: Teil-Fill nach verlorener Antwort "
+                                       f"– Menge {recovered} statt geplant {qty}")
+                    qty = recovered
+                    logger.error(f"{symbol}: Order-Antwort verloren, aber Position "
+                                 f"an der Börse gefunden (Menge {untracked}) – "
+                                 "Trade wird übernommen statt verworfen")
+                    res = {"code": 0, "data": {}, "recovered_after_exception": True,
+                           "recovered_qty": recovered}
+                else:
+                    await self._notify_reject(symbol, side, reason)
+                    return None
+
+            ok = isinstance(res, dict) and res.get("code") == 0
+            # Rest-Kapital-Retry (services/capital_fit.py): lehnt die Börse wegen
+            # fehlender Marge ab (lokale Kapital-Sicht drifted), EINMAL mit dem
+            # frischen Börsen-Guthaben neu dimensionieren statt den Trade zu verlieren.
+            if (not ok and not prefill and order_kind in ("market", "taker_fallback")
+                    and capital_fit.looks_like_insufficient_balance(
+                        isinstance(res, dict) and (res.get("msg") or str(res)))):
+                self._avail_cache = (0.0, None)
+                fresh_avail = await self._live_available_balance()
+                new_qty = capital_fit.retry_qty(
+                    fresh_avail, lev_used, entry, qty, min_qty=min_qty,
+                    qty_step=float(meta.get("qty_step") or 0))
+                if new_qty:
+                    logger.warning(f"{symbol}: Börse meldet fehlende Marge – Retry mit "
+                                   f"Rest-Kapital {fresh_avail} USDT: Menge {qty} -> {new_qty}")
+                    qty = new_qty
+                    capital = round(qty * entry / max(lev_used, 1.0), 6)
+                    signal["_capital_fit_note"] = (f"Rest-Kapital-Retry: Menge {new_qty} "
+                                                   f"aus Börsen-Guthaben {fresh_avail}")
+                    try:
+                        res = await self.client.place_order(
+                            symbol, side_order, qty, order_type=cfg["order_type"],
+                            tp_price=tpf, sl_price=sl, client_id=entry_meta["client_id"])
+                    except Exception as e:  # noqa: BLE001
+                        res = {"code": -1, "msg": f"retry exception: {str(e)[:120]}"}
+                    ok = isinstance(res, dict) and res.get("code") == 0
+            order_id = _extract_order_id(res)
+            if ok and not order_id:
+                # code 0 ohne auffindbare orderId: Order wurde angenommen ->
+                # NICHT als Ablehnung behandeln (vorher entstand hier eine
+                # Ghost-Position ohne lokalen Trade und ggf. ohne Stop-Loss).
+                logger.warning(f"{symbol}: Order angenommen (code 0), aber keine "
+                               f"orderId in der Antwort: {str(res)[:160]}")
+            if not ok:
+                reason = (isinstance(res, dict) and (res.get("msg") or str(res))) or "unknown error"
+                code = isinstance(res, dict) and res.get("code")
+                logger.error(f"Live order REJECTED {symbol} side={side} qty={qty} "
+                             f"code={code} msg={reason}")
+                await self._notify_reject(symbol, side, f"code {code}: {reason}")
+                # No local persistence -> no ghost position.
+                return None
+
+            # Absturz-Schutz: Order sofort registrieren. Fällt das Backend
+            # zwischen Order-Annahme und DB-Insert aus (z.B. Render-Deploy),
+            # ordnet der Watchdog die Position über die Registry der richtigen
+            # Strategie zu – statt 'Manuell (Bitunix)'.
+            if order_id and not prefill:
+                try:
+                    from services import entry_order_registry
+                    await entry_order_registry.register(
+                        self.db, order_id=order_id, symbol=symbol, side=side,
+                        qty=qty, price=entry, meta=entry_meta, kind="entry")
+                except Exception as e:
+                    logger.debug(f"{symbol}: Entry-Registrierung fehlgeschlagen: {e}")
+
+            # Fill-Qualität (Baustein B): realen Fill-Preis nur für die
+            # Slippage-Messung holen – Entry/SL/TP bleiben unverändert.
+            # FIX (RCA custom_23a30b65, Ø ~5% Phantom-Slippage): kein
+            # 'price'-Fallback (Schutzpreis!), nur avg-Fill gefüllter Orders,
+            # Plausibilitäts-Grenze 2%; 1 Retry, falls der Fill noch nicht
+            # in der Order-API registriert ist.
+            if order_id and order_kind != "maker":
+                try:
+                    fi = parse_order_fill(await self.client.get_order_detail(order_id),
+                                          allow_price_fallback=False)
+                    fill_price_real = fill_price_for_slippage(fi, side, signal_price)
+                    if fill_price_real is None:
+                        await asyncio.sleep(2)
+                        fi = parse_order_fill(await self.client.get_order_detail(order_id),
+                                              allow_price_fallback=False)
+                        fill_price_real = fill_price_for_slippage(fi, side, signal_price)
+                except Exception as e:
+                    logger.debug(f"{symbol}: Fill-Preis für Slippage nicht abrufbar: {e}")
+
+            # ----------------------------------------------------------------
+            # Entry filled. Now put TP1 (partial, reduce-only) directly on the
+            # exchange – previously TP1 was only enforced by our local monitor
+            # via flash_close, so if the backend was lagging or offline the
+            # partial TP never fired.
+            # ----------------------------------------------------------------
+            position_id: Optional[str] = None
+            tp1_placed = False
+            tpsl_order_id: Optional[str] = None
+            try:
+                # small delay so the position is picked up by the position API
+                position_id = await self._resolve_new_position_id(symbol, side, qty)
+                if position_id:
+                    tp1_close_qty = round(qty * float(cfg["tp1_close_percent"]) / 100, 6)
+                    tp1_res = await self.client.place_position_tp_sl(
+                        symbol, position_id, side,
+                        tp_price=tp1, tp_qty=tp1_close_qty)
+                    tp1_ok = isinstance(tp1_res, dict) and tp1_res.get("code") == 0
+                    if tp1_ok:
+                        tp1_placed = True
+                        tpsl_order_id = _extract_order_id(tp1_res)
+                        logger.info(f"TP1 partial placed on Bitunix {symbol} "
+                                    f"@ {tp1} qty={tp1_close_qty}")
+                    else:
+                        logger.warning(f"TP1 partial place failed {symbol}: {tp1_res}")
+                else:
+                    logger.warning(f"Could not resolve positionId for {symbol}; "
+                                   "TP1 partial NOT placed (local monitor will "
+                                   "handle it as fallback).")
+            except Exception as e:
+                logger.error(f"TP1 partial exception {symbol}: {e}")
+
+            # ---- SL-VERIFIKATION (Bug-Report: Position ohne Stop-Loss) ----
+            # place_order enthält den SL zwar, aber die Börse kann ihn still
+            # verwerfen. Deshalb wird er hier verifiziert und notfalls
+            # nachgesetzt; scheitert auch das endgültig, wird die Position
+            # sofort wieder geschlossen (Nutzer-Vorgabe: Retry -> Close).
+            sl_missing = False
+            # Audit F03: ohne positionId kann der SL NICHT verifiziert werden ->
+            # einmal nachfassen; bleibt sie unbekannt, gilt der SL als
+            # UNBESTÄTIGT (sl_exchange_missing=True + Alarm), damit Watchdog/
+            # Sicherheitsstatus die Position sichtbar weiter absichern.
+            if not position_id:
+                try:
+                    await asyncio.sleep(1.5)
+                    position_id = await self._resolve_new_position_id(symbol, side, qty)
+                except Exception as e:
+                    logger.debug(f"{symbol}: positionId-Nachfassen fehlgeschlagen: {e}")
+                if not position_id:
+                    sl_missing = True
+                    logger.error(f"{symbol}: positionId unbekannt – Börsen-SL NICHT "
+                                 f"verifizierbar (sl_exchange_missing=True)")
+                    await self._notify_reject(
+                        symbol, side,
+                        "Position eröffnet, aber positionId unbekannt – Stop-Loss an der "
+                        "Börse NICHT verifizierbar. Watchdog sichert nach; bitte in "
+                        "Bitunix prüfen.")
+            sl_status = "unknown"
+            if position_id:
+                sl_ok = await self._ensure_live_sl(symbol, side, position_id, sl)
+                sl_status = sl_exchange_status_of(position_id, sl_ok)
+                if sl_ok is None:
+                    # AP02b (T03): unbestätigt ist NICHT 'vorhanden' – sichtbar
+                    # lassen, damit Watchdog/Sicherheitsstatus nachprüfen.
+                    sl_missing = True
+                    logger.warning(f"{symbol}: Börsen-SL unbestätigt (API unsicher) "
+                                   f"– sl_exchange_status=unknown")
+                elif sl_ok:
+                    sl_missing = False
+                if sl_ok is False:
+                    try:
+                        close_res = await self.client.flash_close(
+                            symbol, position_id, side, qty)
+                    except Exception as e:
+                        close_res = {"code": -1, "msg": str(e)[:140]}
+                    closed_ok = isinstance(close_res, dict) and close_res.get("code") == 0
+                    await self._notify_reject(
+                        symbol, side,
+                        "Stop-Loss konnte an der Börse NICHT gesetzt werden – "
+                        + ("Position wurde zur Sicherheit sofort geschlossen."
+                           if closed_ok else
+                           "NOTFALL-CLOSE FEHLGESCHLAGEN – bitte SOFORT manuell "
+                           "in Bitunix prüfen!"))
+                    if closed_ok:
+                        logger.error(f"{symbol}: Notfall-Close wegen fehlendem SL")
+                        # Audit F11: Registry-Eintrag auflösen, sonst adoptiert der
+                        # Watchdog später eine FREMDE Position über Symbol/Seite.
+                        if order_id:
+                            try:
+                                from services import entry_order_registry
+                                await entry_order_registry.resolve(self.db, order_id)
+                            except Exception as e:
+                                logger.debug(f"{symbol}: Registry-Auflösung nach "
+                                             f"Notfall-Close fehlgeschlagen: {e}")
+                        return None
+                    # Close fehlgeschlagen: Trade trotzdem lokal führen, damit
+                    # Monitor + Watchdog die Position weiter absichern.
+                    sl_missing = True
+
+            trade_extra = {"bitunix_order_id": order_id, "bitunix_response": res,
+                           "bitunix_position_id": position_id,
+                           "bitunix_client_id": entry_meta.get("client_id"),
+                           "bitunix_tpsl_order_id": tpsl_order_id,
+                           "tp1_exchange_placed": tp1_placed,
+                           "sl_exchange_missing": sl_missing,
+                           "sl_exchange_status": sl_status}
+        else:
+            trade_extra = {"bitunix_order_id": None,
+                           "bitunix_position_id": None,
+                           "bitunix_tpsl_order_id": None,
+                           "tp1_exchange_placed": False}
+
+        # Gebühren: Entry-Fee sofort verbuchen (Taker-Fee auf das Volumen),
+        # damit Paper-Trades die REALE Kostenbasis von Live-Trades abbilden.
+        # Gebührensatz wird am Trade gespeichert – spätere Änderungen der
+        # Haupteinstellungen betreffen nur NEUE Trades.
+        fee_pct_used = effective_fee_percent(cfg)
+        # Forex: IBKR-Kommissionsmodell (inkl. Mindestkommission je Order –
+        # bei zwei OCA-Legs zweimal) statt der Krypto-Futures-Gebühr.
+        from services import fee_model
+        fee_pct_used = fee_model.fee_percent_for(
+            symbol, fee_pct_used, notional_usd=entry * qty,
+            orders_per_side=max(1, len(trade_extra.get("ibkr_legs") or []) or 1))
+        # Maker-Entry: günstigere Maker-Fee auf die Entry-Seite; Close bleibt
+        # immer Market/Trigger -> Taker (fee_percent).
+        entry_fee_pct = (effective_maker_fee_percent(cfg)
+                         if order_kind in ("maker", "limit_live") else fee_pct_used)
+        entry_fee = round(entry * qty * entry_fee_pct / 100, 6)
+
+        # Liquidationspreis (Isolated Margin): ~ Entry * (1 ± (1/Hebel - MMR))
+        lev = max(lev_used, 1.0)
+        mmr = float(cfg.get("maintenance_margin_rate", 0.5)) / 100
+        liq_dist = max(1.0 / lev - mmr, 0.0005)
+        liq_price = round(entry * (1 - liq_dist) if side == "LONG"
+                          else entry * (1 + liq_dist), 6)
+
+        # ML-Fix 0.2: Marktzustand im Entry-Moment dauerhaft am Trade speichern
+        # (vorher wurde er nachträglich per nearest-Snapshot rekonstruiert).
+        try:
+            from services.ai_market_observer import market_observer, compute_features
+            prev_regime = (market_observer.features_for(symbol) or {}).get("regime")
+            feats = compute_features(candles, prev_regime=prev_regime)
+            entry_snap = ({"ts": datetime.now(timezone.utc).isoformat(),
+                           "source": "signal_candles", "features": feats}
+                          if feats else market_observer.entry_snapshot(symbol))
+        except Exception:
+            entry_snap = None
+
+        # ---- Fill-Qualität (Baustein B): Slippage Signalpreis -> Fill ----
+        slip_pct = compute_slippage_pct(side, signal_price, fill_price_real or entry)
+        slip_usdt = (round(slip_pct / 100.0 * signal_price * qty, 6)
+                     if (slip_pct is not None and signal_price) else None)
+
+        trade = {
+            "id": f"{symbol}-{int(time.time()*1000)}",
+            "symbol": symbol, "side": side, "mode": mode,
+            "entry": entry, "sl": sl, "tp1": tp1, "tpf": tpf, "initial_sl": sl,
+            "liq_price": liq_price, "liquidated": False,
+            "atr": atr,
+            "qty": qty, "qty_remaining": qty, "risk": round(risk, 6),
+            # R in Geld (Audit 2.3): riskiertes Kapital bis zum initialen SL.
+            # Basis für ehrliche R-Kennzahlen (pnl / risk_usdt) statt pnl / Preisdistanz.
+            "risk_usdt": round(risk * qty, 6),
+            "tp1_crv": cfg["tp1_crv"], "tp_full_crv": cfg["tp_full_crv"],
+            "tp1_close_percent": cfg["tp1_close_percent"],
+            "breakeven_enabled": cfg["breakeven_enabled"], "fee_percent": fee_pct_used,
+            "order_kind": order_kind, "entry_fee_percent": entry_fee_pct,
+            "entry_checks": checks.to_list(),
+            "low_vol_forced_maker": low_vol_forced,
+            # Audit 2.10: Kennzeichnung, wenn die ML-Skalierung die Größe änderte
+            "ml_risk_scale": (float(signal.get("ml_risk_scale"))
+                              if signal.get("ml_risk_scale") else None),
+            "signal_price": signal_price,
+            "slippage_pct": slip_pct, "slippage_usdt": slip_usdt,
+            "paper_exec": paper_exec,
+            "limit_entry": bool(signal.get("ai_limit_fill")),
+            "ai_limit_order_id": signal.get("ai_limit_order_id"),
+            "be_mode": (cfg.get("be_mode") or ("tp1" if cfg.get("breakeven_enabled", True) else "off")),
+            "be_trigger_crv": float(cfg.get("be_trigger_crv", 1.0) or 1.0),
+            "be_trigger_profit_pct": float(cfg.get("be_trigger_profit_pct", 30.0) or 30.0),
+            "leverage": round(lev_used, 2), "max_capital": round(capital, 6),
+            "auto_leverage": bool(cfg.get("auto_leverage_enabled")),
+            "leverage_source": lev_source,
+            # Risiko-Sizing-Protokoll (Budget, Skalierung, Deckel) – None im Legacy-Modus
+            "sizing": signal.get("ai_sizing_result"),
+            "status": "open", "tp1_hit": False, "breakeven_moved": False,
+            "realized_pnl": round(-entry_fee, 6), "fees_paid": entry_fee,
+            "profit_secure_enabled": bool(cfg.get("profit_secure_enabled", False)
+                                          or signal.get("ai_secure_runner")),
+            "profit_secure_trigger_pct": max(5.0, float(
+                signal.get("ai_secure_runner_trigger")
+                if signal.get("ai_secure_runner")
+                else cfg.get("profit_secure_trigger_pct", 30.0))),
+            "profit_lock_pct": float(cfg.get("profit_lock_pct", 50.0)),
+            "profit_secure_release_margin": bool(cfg.get("profit_secure_release_margin", False)
+                                                 or signal.get("ai_secure_runner")),
+            "profit_secure_max_leverage": float(
+                signal.get("ai_secure_runner_max_lev")
+                if signal.get("ai_secure_runner")
+                else (cfg.get("profit_secure_max_leverage", 100) or 100)),
+            "profit_secure_margin_reduce_pct": float(
+                cfg.get("profit_secure_margin_reduce_pct", 100.0) or 100.0),
+            "profit_secure_sl_liq_buffer_pct": float(
+                cfg.get("profit_secure_sl_liq_buffer_pct", 0.3) or 0.3),
+            "profit_secured": False,
+            "strategy_id": ("external" if signal.get("manual_trade")
+                            else signal.get("strategy_id")),
+            "strategy_name": ("Manuell (Website)" if signal.get("manual_trade")
+                              else signal.get("strategy_name")),
+            "manual_trade": bool(signal.get("manual_trade")),
+            "timeframe": tf,
+            "horizon": signal.get("ai_horizon") or "scalp",
+            "runner": bool(signal.get("ai_runner")),
+            "setup": signal.get("ai_setup"),
+            "ai_reasoning": signal.get("ai_reasoning"),
+            "ai_news_impact": signal.get("ai_news_impact"),
+            "ai_confidence": signal.get("ai_confidence"),
+            "ai_size_reason": signal.get("ai_size_reason"),
+            "ai_levels_reason": signal.get("ai_levels_reason"),
+            "ai_candidate_id": signal.get("ai_candidate_id"),
+            "signal_id": signal.get("id"),
+            "decision_id": signal.get("decision_id"),
+            "applied_lessons": signal.get("applied_lessons"),
+            "opened_at": datetime.now(timezone.utc).isoformat(),
+            "trade_date": signal.get("trade_date"),
+            "entry_market_snapshot": entry_snap,
+            # Audit 3.1: Policy-Stand, unter dem der Trade entstand (None bei manual/Strategien)
+            "policy_version": signal.get("policy_version"),
+            "events": ([f"OPEN {side} @ {entry} (Entry-Fee {entry_fee} USDT)"]
+                       + ([f"PAPER-FILL: Entry {entry} statt {paper_exec['ref_price']} "
+                           f"(Spread {paper_exec['spread_pct']}% + Slippage "
+                           f"{paper_exec['slippage_pct']}%, Quelle {paper_exec['source']})"]
+                          if paper_exec else [])
+                       + ([(f"LIMIT-FILL (Börse): echte Limit-Order @ "
+                            f"{signal.get('ai_limit_price')} auf Bitunix gefüllt")
+                           if signal.get("_live_prefill") else
+                           f"LIMIT-FILL: Key-Level-Order @ {signal.get('ai_limit_price')} ausgelöst"]
+                          if signal.get("ai_limit_fill") else [])
+                       + ([alloc_note] if alloc_note else [])
+                       + ([signal["_risk_budget_note"]] if signal.get("_risk_budget_note") else [])
+                       + ([signal["_min_trade_note"]] if signal.get("_min_trade") else [])),
+            "min_trade": bool(signal.get("_min_trade")) and mode == "live",
+            "min_trade_note": signal.get("_min_trade_note") if signal.get("_min_trade") else None,
+            **trade_extra,
+        }
+
+        # KI-Trader Gewinnschutz: interne Standard-Policy (Gewinnsicherung –
+        # SL in den Gewinn ziehen + Marge freisetzen bei Hebel-Maximierung,
+        # SL sicher vor der Liq). Aktiv OHNE Coin-Einstellungen; dynamisch über
+        # settings['ai_profit_protection'] anpass-/abschaltbar (API vorhanden).
+        if (strategy_id == "ai_trader" and not trade["manual_trade"]):
+            pol = await self.ai_protection_policy()
+            # Datensammel-Trades: nur mit explizitem Schalter und höherer Schwelle
+            coll_ok = bool(pol.get("collection_enabled", False))
+            if pol.get("enabled", True) and (not collection or coll_ok):
+                trade["ai_protection_policy"] = True
+                trade["key_level_trail"] = bool(pol.get("level_trail", True))
+                trig = float(pol.get("collection_trigger_pct", 60.0) or 60.0) if collection \
+                    else float(pol["trigger_pct"])
+                if not trade["profit_secure_enabled"]:
+                    trade.update({
+                        "profit_secure_enabled": True,
+                        "profit_secure_trigger_pct": max(5.0, trig),
+                        "profit_lock_pct": float(pol["lock_pct"]),
+                        "profit_secure_release_margin": bool(pol["release_margin"]),
+                        "profit_secure_max_leverage": float(pol["max_leverage"]),
+                        "profit_secure_margin_reduce_pct": float(pol["margin_reduce_pct"]),
+                        "profit_secure_sl_liq_buffer_pct": float(pol["sl_liq_buffer_pct"]),
+                    })
+
+        # Confluence-Markierung am Trade: separates Tracking (Stats-Vergleich)
+        if signal.get("confluence"):
+            trade["confluence"] = signal["confluence"]
+            if signal.get("capital_boost"):
+                trade["confluence_boost"] = signal["capital_boost"]
+        if collection:
+            trade["data_collection"] = True
+            if signal.get("collection_reason"):
+                trade["collection_reason"] = signal["collection_reason"]
+            if isinstance(signal.get("guard_shadow"), dict):
+                trade["guard_shadow"] = dict(signal["guard_shadow"])
+        await self.db.auto_trades.insert_one(dict(trade))
+        if mode == "live" and trade.get("bitunix_order_id"):
+            # Trade lokal verbucht -> Registry-Eintrag auflösen
+            try:
+                from services import entry_order_registry
+                await entry_order_registry.resolve(self.db, trade["bitunix_order_id"])
+            except Exception as e:
+                logger.debug(f"{symbol}: Registry-Resolve fehlgeschlagen: {e}")
+        logger.info(f"AutoTrade OPEN {side} {symbol} qty={qty} entry={entry} mode={mode}"
+                    + (" [Datensammlung]" if collection else ""))
+        trade.pop("_id", None)
+        if mode == "live" and trade.get("bitunix_position_id") and not self.is_ibkr_trade(trade):
+            await self._post_open_fill_check(dict(trade))
+        if collection:
+            # Kein Telegram-Spam durch Sammel-Trades (bis zu Dutzende pro Tag)
+            return trade
+        try:
+            from services import notifications
+            emoji = "🟢" if side == "LONG" else "🔴"
+            min_line = (f"\n🪙 {signal.get('_min_trade_note')}" if trade.get("min_trade") else "")
+            setup_line = f"\n🧩 Setup `{trade['setup']}`" if trade.get("setup") else ""
+            await notifications.telegram_notify(
+                self.db, self.telegram, "trade_opened",
+                f"{emoji} *TRADE ERÖFFNET* ({mode.upper()})\n"
+                f"💰 {symbol} · {side} · {trade.get('strategy_name') or strategy_id}\n"
+                f"Entry `{entry}` · SL `{sl}` · TP `{tpf}` · Hebel {trade['leverage']}x{setup_line}{min_line}",
+                sub=f"trade_opened_{'live' if mode == 'live' else 'paper'}")
+            if trade.get("min_trade"):
+                await notifications.telegram_notify(
+                    self.db, self.telegram, "min_trade",
+                    f"🪙 *MINDEST-TRADE* {symbol} · {side}\n{signal.get('_min_trade_note')}")
+        except Exception as e:
+            logger.warning(f"trade_opened notify failed: {e}")
+        return trade
+
+    async def monitor(self, prices: Dict[str, float]):
+        """Called periodically. Manage open trades against live prices.
+        Wird vom Scanner-Tick UND vom schnellen Preis-Wächter aufgerufen –
+        läuft bereits ein Durchlauf, wird der neue übersprungen (Lock)."""
+        if self._monitor_lock.locked():
+            return
+        async with self._monitor_lock:
+            await self._monitor_tick(prices)
+
+    async def _monitor_tick(self, prices: Dict[str, float]):
+        if self.db is None:
+            return
+        cursor = self.db.auto_trades.find({"status": "open"})
+        async for t in cursor:
+            if t.get("external_adopted"):
+                # Vom Watchdog übernommene Börsen-Position: SL/TP liegen an der
+                # Börse, der Bitunix-Sync verbucht den externen Close.
+                continue
+            # IBKR-Forex-Live läuft MIT durch _manage_trade (Break-Even/Trailing/
+            # Gewinnsicherung -> Order-Modify an IBKR); die Exits selbst (TP1/
+            # TP/SL) liegen als OCA-Brackets an der Börse und werden von
+            # services/ibkr_trade.sync_open_trades() mit echtem Fill verbucht.
+            symbol = t["symbol"]
+            price = prices.get(symbol)
+            if not price:
+                continue
+            await self._manage_trade(t, price)
+        # Bitunix-Abgleich: extern geschlossene Live-Positionen auch lokal
+        # schließen (max. 1x pro Minute, um die API nicht zu belasten).
+        now = time.time()
+        if now - self._last_pos_sync >= 60:
+            self._last_pos_sync = now
+            try:
+                await self.sync_live_positions()
+            except Exception as e:
+                logger.warning(f"Bitunix-Positions-Sync fehlgeschlagen: {e}")
+        # Funding-Wächter: aufgelaufene Funding-Kosten offener Live-Trades
+        # bewerten (Warnung / optionaler Auto-Close, alle 30 Minuten).
+        if now - getattr(self, "_last_funding_check", 0.0) >= 1800:
+            self._last_funding_check = now
+            try:
+                from services import funding_fees
+                await funding_fees.check_open_trades(self.db, self.client,
+                                                     self.telegram, self)
+            except Exception as e:
+                logger.warning(f"Funding-Wächter fehlgeschlagen: {e}")
+
+    # ------------------------------------------------------------------
+    # Bitunix-Abgleich: extern geschlossene Live-Positionen erkennen.
+    # ------------------------------------------------------------------
+    _POSITION_GONE_HINTS = ("position not exist", "position does not exist",
+                            "position not exists", "no position",
+                            "insufficient amount", "insufficient position")
+
+    def _looks_like_position_gone(self, detail: str) -> bool:
+        d = str(detail or "").lower()
+        return any(k in d for k in self._POSITION_GONE_HINTS)
+
+    async def _position_still_open(self, symbol: str, side: str) -> Optional[bool]:
+        """Existiert die Position an der Börse noch? None = API unsicher
+        (dann NICHT handeln, kein falscher Sync)."""
+        try:
+            res = await self.client.get_positions(symbol)
+        except Exception as e:
+            logger.warning(f"get_positions({symbol}) fehlgeschlagen: {e}")
+            return None
+        if not isinstance(res, dict) or res.get("code") not in (0, "0", None):
+            return None
+        data = res.get("data")
+        rows = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
+        want = str(side).upper()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            row_side = str(row.get("side") or row.get("positionSide") or "").upper()
+            match = (row_side in ("BUY", "LONG") and want == "LONG") or \
+                    (row_side in ("SELL", "SHORT") and want == "SHORT")
+            if not match:
+                continue
+            qty_raw = row.get("qty", row.get("total", row.get("amount")))
+            try:
+                if qty_raw is None or float(qty_raw) > 0:
+                    return True
+            except (TypeError, ValueError):
+                return True
+        return False
+
+    async def _untracked_qty(self, symbol: str, side: str) -> Optional[float]:
+        """Börsen-Menge (symbol+side) minus lokal erfasster offener Menge.
+        None = Börsen-API unsicher (dann keine Entscheidung treffen)."""
+        live = await self._live_position_qty({"symbol": symbol, "side": side})
+        if live is None:
+            return None
+        local = 0.0
+        async for t in self.db.auto_trades.find(
+                {"status": "open", "mode": "live", "symbol": symbol,
+                 "side": str(side).upper()}):
+            local += float(t.get("qty_remaining", t.get("qty", 0)) or 0)
+        return live - local
+
+    async def _position_has_sl(self, symbol: str, position_id: str) -> Optional[bool]:
+        """Hat die Position an der Börse einen aktiven Stop-Loss?
+        True/False = sichere Antwort, None = API unsicher (NICHT eskalieren)."""
+        try:
+            res = await self.client.get_pending_tpsl(symbol, position_id=position_id)
+        except Exception as e:
+            logger.warning(f"_position_has_sl({symbol}) failed: {e}")
+            return None
+        if not isinstance(res, dict) or res.get("code") not in (0, "0"):
+            return None
+        data = res.get("data")
+        if isinstance(data, dict):
+            data = data.get("orderList") or data.get("list") or data.get("rows") or [data]
+        rows = data if isinstance(data, list) else []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for key in ("slPrice", "slStopPrice", "stopLossPrice"):
+                try:
+                    if float(row.get(key) or 0) > 0:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+        return False
+
+    async def _ensure_live_sl(self, symbol: str, side: str, position_id: str,
+                              sl_price: float,
+                              max_attempts: int = 3) -> Optional[bool]:
+        """Sicherstellen, dass die Live-Position einen Börsen-SL hat.
+        True = SL bestätigt, False = konnte nach max_attempts NICHT gesetzt
+        werden, None = TP/SL-API unsicher (kein falscher Alarm)."""
+        last = None
+        for attempt in range(1, max_attempts + 1):
+            has = await self._position_has_sl(symbol, position_id)
+            if has is None:
+                logger.warning(f"{symbol}: SL-Verifikation unsicher (TP/SL-API "
+                               "nicht lesbar) – kein Eingriff")
+                return None
+            if has:
+                return True
+            logger.warning(f"{symbol}: KEIN Stop-Loss an der Börse – setze nach "
+                           f"(Versuch {attempt}/{max_attempts})")
+            try:
+                last = await self.client.place_position_tp_sl(
+                    symbol, position_id, side, sl_price=sl_price)
+            except Exception as e:
+                last = {"code": -1, "msg": str(e)[:140]}
+            await asyncio.sleep(1.0)
+        logger.error(f"{symbol}: Stop-Loss konnte NICHT gesetzt werden: {last}")
+        return False
+
+    async def _exchange_close_truth(self, t: Dict) -> Optional[Dict]:
+        """ECHTEN Bitunix-Abschluss (closePrice/realizedPNL) für einen Live-Trade
+        holen. None bei Paper-Trades, fehlender Position-ID oder wenn die Position
+        manuell aufgestockt war (dann wäre der Positions-PnL mehr als der Trade)."""
+        pid = t.get("bitunix_position_id")
+        if t.get("mode") != "live" or not pid or not self.client.configured():
+            return None
+        try:
+            res = await self.client.get_history_positions(position_id=pid)
+        except Exception as e:
+            logger.debug(f"Positions-Historie nicht abrufbar ({t.get('symbol')}): {e}")
+            return None
+        exact = parse_closed_position(res, pid)
+        if not exact:
+            return None
+        qty = float(t.get("qty") or 0)
+        if not t.get("external_adopted") and exact.get("max_qty") and qty > 0 \
+                and abs(exact["max_qty"] - qty) / exact["max_qty"] > 0.05:
+            return None
+        return exact
+
+    async def _book_external_close(self, t: Dict) -> Optional[Dict]:
+        """Trade lokal als extern (an der Börse) geschlossen verbuchen.
+        Für Live-Trades (inkl. manueller Bitunix-Trades) wird der ECHTE
+        Börsen-Abschluss übernommen (Positions-Historie), statt ihn per
+        Mark-Preis zu schätzen – Schätzung nur noch als Fallback."""
+        exact = await self._exchange_close_truth(t)
+        if exact:
+            price = exact["exit_price"] or float(
+                await self._current_mark(t["symbol"]) or t.get("entry") or 0)
+            realized = exact["net_pnl"]
+            fees_total = exact["fee"]
+            event = (f"EXTERN GESCHLOSSEN (Bitunix-Sync) @ {price} – echter "
+                     f"Börsen-PnL {realized:+} (inkl. Fees/Funding)")
+            if exact.get("liquidated"):
+                event = (f"LIQUIDATION an der Börse @ {price} (echter Entry "
+                         f"{exact.get('entry_price')}) – Börsen-PnL {realized:+}")
+        else:
+            price = float(await self._current_mark(t["symbol"]) or t.get("entry") or 0)
+            if price <= 0:
+                return None
+            qty_rem = float(t.get("qty_remaining", t["qty"]) or 0)
+            fee_pct = float(t.get("fee_percent", 0.06)) / 100
+            fee = qty_rem * price * fee_pct
+            pnl = ((price - t["entry"]) if t["side"] == "LONG"
+                   else (t["entry"] - price)) * qty_rem
+            realized = round(float(t.get("realized_pnl", 0.0)) + pnl - fee, 6)
+            fees_total = round(float(t.get("fees_paid", 0.0)) + fee, 6)
+            event = f"EXTERN GESCHLOSSEN (Bitunix-Sync) @ {price}"
+        result = "win" if realized > 0 else ("breakeven" if realized == 0 else "loss")
+        closed_at = datetime.now(timezone.utc).isoformat()
+        if not await self._finalize_close(t["id"], {
+            "status": "closed", "exit_price": price, "result": result,
+            "realized_pnl": realized, "qty_remaining": 0,
+            "fees_paid": fees_total,
+            "pnl_exchange_exact": bool(exact),
+            **({"liquidated": True} if exact and exact.get("liquidated") else {}),
+            "closed_by": "bitunix_sync", "live_close_failed": False,
+            "closed_at": closed_at,
+            "events": (t.get("events", []) + [event])[-20:]}):
+            return None
+        await self._after_close({**t, "status": "closed", "result": result,
+                                 "realized_pnl": realized, "exit_price": price,
+                                 "pnl_exchange_exact": bool(exact),
+                                 "closed_at": closed_at})
+        logger.info(f"Bitunix-Sync: {t['symbol']} {t['side']} extern geschlossen -> "
+                    f"lokal verbucht (PnL {realized})")
+        return {"result": result, "realized_pnl": realized, "exit_price": price}
+
+    async def _reconcile_close_error(self, t: Dict, detail: str) -> Optional[Dict]:
+        """Live-Aktion scheiterte mit einem 'Position weg'-Fehler (z.B.
+        'Position not exist' / 'Insufficient amount'): an der Börse nachprüfen
+        und den Trade ggf. SOFORT als extern geschlossen verbuchen, statt ihn
+        fälschlich offen zu lassen (Bug-Report: CLOSE/ADJUST-Fehlerschleifen)."""
+        if not self._looks_like_position_gone(detail):
+            return None
+        if await self._position_still_open(t["symbol"], t["side"]) is not False:
+            return None
+        return await self._book_external_close(t)
+
+    async def _open_position_ids(self) -> Optional[set]:
+        """Alle aktuell offenen Bitunix-Position-IDs. None = API unsicher
+        (dann keine Entscheidung treffen)."""
+        try:
+            res = await self.client.get_positions()
+        except Exception as e:
+            logger.warning(f"get_positions() fehlgeschlagen: {e}")
+            return None
+        if not isinstance(res, dict) or res.get("code") not in (0, "0", None):
+            return None
+        data = res.get("data")
+        rows = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
+        pids = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            pid = row.get("positionId") or row.get("id")
+            if pid:
+                pids.add(str(pid))
+        return pids
+
+    async def sync_live_positions(self) -> int:
+        """Offene Live-Trades gegen die echten Bitunix-Positionen abgleichen.
+
+        Wurde eine Position extern geschlossen (z.B. direkt in der Bitunix-App
+        oder durch Börsen-TP/SL, den wir nicht mitbekommen haben), wird der
+        Trade lokal zum aktuellen Kurs geschlossen und normal verbucht.
+        Multi-Positions-Fix: Trades mit bekannter Position-ID werden exakt
+        über die ID abgeglichen – der frühere Symbol+Seite-Check übersah
+        geschlossene Positionen, solange auf demselben Symbol+Seite noch eine
+        ANDERE Position offen war. Gibt die Anzahl synchronisierter Trades zurück."""
+        if self.db is None or not self.client.configured():
+            return 0
+        open_live = await self.db.auto_trades.find(
+            {"status": "open", "mode": "live",
+             "broker": {"$ne": "ibkr"}}).to_list(100)
+        if not open_live:
+            await self._record_sync(0, 0)
+            return 0
+        open_pids = await self._open_position_ids()
+        synced = 0
+        cache: Dict[str, Optional[bool]] = {}
+        for t in open_live:
+            pid = str(t.get("bitunix_position_id") or "")
+            if pid and open_pids is not None:
+                if pid in open_pids:
+                    continue
+            else:
+                key = f"{t['symbol']}|{str(t['side']).upper()}"
+                if key not in cache:
+                    cache[key] = await self._position_still_open(t["symbol"], t["side"])
+                if cache[key] is not False:
+                    continue
+            if await self._book_external_close(t):
+                synced += 1
+        await self._record_sync(synced, len(open_live))
+        return synced
+
+    async def sync_position_state(self, local: Dict, pos: Dict) -> List[str]:
+        """Externe Änderungen an einer Bitunix-Position in den lokalen Trade
+        spiegeln (wird vom Positions-Watchdog mit den geparsten Börsen-
+        Positionen aufgerufen). Behandelt:
+          1. Externe Teil-Closes (Partial-TP/SL direkt an der Börse):
+             Restmenge + realisierter PnL werden nachgebucht.
+          2. Extern geänderte Marge/Hebel (z.B. Marge reduzieren + Hebel
+             erhöhen in der Bitunix-App): Hebel, gebundene Marge und
+             Liquidationspreis werden übernommen.
+        Gibt die Liste der Änderungen zurück (leer = nichts zu tun)."""
+        changes: List[str] = []
+        if not local or local.get("status") != "open" or local.get("mode") != "live":
+            return changes
+        entry = float(local.get("entry") or 0)
+        qty_rem = float(local.get("qty_remaining", local.get("qty", 0)) or 0)
+        if entry <= 0 or qty_rem <= 0:
+            return changes
+        ex_qty = float(pos.get("qty") or 0)
+        # Manuell aufgestockte Misch-Position: nicht anfassen (Watchdog-Guard)
+        if ex_qty > qty_rem * 1.05:
+            return changes
+        updates: Dict = {}
+        events = list(local.get("events", []))
+
+        # ---- 1) Externer Teil-Close ----
+        if 0 < ex_qty < qty_rem * 0.98:
+            closed_qty = round(qty_rem - ex_qty, 8)
+            price = float(await self._current_mark(local["symbol"]) or entry)
+            fee_pct = float(local.get("fee_percent", 0.06)) / 100
+            gross = (price - entry) * closed_qty if local["side"] == "LONG" \
+                else (entry - price) * closed_qty
+            fee = closed_qty * price * fee_pct
+            updates.update({
+                "qty_remaining": round(ex_qty, 8),
+                "realized_pnl": round(float(local.get("realized_pnl", 0.0))
+                                      + gross - fee, 6),
+                "fees_paid": round(float(local.get("fees_paid", 0.0)) + fee, 6),
+            })
+            msg = (f"SYNC: extern teilgeschlossen {closed_qty} @ ~{price} "
+                   f"(PnL {round(gross - fee, 4)} USDT)")
+            events.append(msg)
+            changes.append(msg)
+            qty_rem = ex_qty
+            # ---- TP1-Erkennung: Eine externe Teilschließung IST in der Regel
+            # der an der Börse gefüllte Partial-TP1 (Fix 06/2026: vorher wurde
+            # nur der PnL nachgebucht – tp1_hit blieb False und das Break-Even-
+            # System triggerte erst beim verspäteten lokalen Preis-Touch).
+            if not local.get("tp1_hit"):
+                tp1 = float(local.get("tp1") or 0)
+                orig_qty = float(local.get("qty") or 0)
+                share = float(local.get("tp1_close_percent", 50) or 50) / 100
+                near_tp1 = tp1 > 0 and (
+                    price >= tp1 * 0.998 if local["side"] == "LONG"
+                    else price <= tp1 * 1.002)
+                qty_match = orig_qty > 0 and share > 0 and \
+                    abs(closed_qty - orig_qty * share) <= orig_qty * share * 0.25
+                if near_tp1 or (local.get("tp1_exchange_placed") and qty_match):
+                    updates["tp1_hit"] = True
+                    msg2 = "TP1 extern gefüllt (Börsen-Teilschließung als TP1-Hit verbucht)"
+                    events.append(msg2)
+                    changes.append(msg2)
+                    be_mode = local.get("be_mode") or \
+                        ("tp1" if local.get("breakeven_enabled") else "off")
+                    if be_mode != "off" and not local.get("breakeven_moved"):
+                        be = breakeven_price(entry, local["side"],
+                                             local.get("fee_percent", 0.06),
+                                             local.get("slippage_pct") or 0)
+                        cur_sl = float(local.get("sl") or 0)
+                        improved = (local["side"] == "LONG" and be > cur_sl) or \
+                                   (local["side"] == "SHORT" and (cur_sl <= 0 or be < cur_sl))
+                        if improved:
+                            updates["sl"] = be
+                        updates["breakeven_moved"] = True
+                        msg3 = f"SL -> Break-Even @ {be} (TP1 extern erkannt)"
+                        events.append(msg3)
+                        changes.append(msg3)
+                        if improved:
+                            if await self._live_move_sl(local, be, ex_qty):
+                                events.append("Exchange SL -> BE synced")
+                            else:
+                                events.append("Exchange SL move FAILED (local only)")
+
+        # ---- 2) Marge/Hebel extern geändert ----
+        notional = qty_rem * entry
+        ex_margin = float(pos.get("margin") or 0)
+        ex_lev = float(pos.get("leverage") or 0)
+        cur_margin = self.trade_bound_margin({**local, **updates})
+        new_margin = eff_lev = None
+        if ex_margin > 0 and notional > 0 and \
+                abs(ex_margin - cur_margin) > max(cur_margin * 0.02, 0.5):
+            new_margin = round(ex_margin, 4)
+            eff_lev = round(notional / ex_margin, 2)
+        elif ex_margin <= 0 and ex_lev > 0 and \
+                abs(ex_lev - float(local.get("leverage") or 0)) >= 1:
+            # Nur wenn die Börse KEINE Marge liefert: Hebel-Setting nutzen.
+            eff_lev = round(ex_lev, 2)
+            new_margin = round(notional / max(ex_lev, 0.01), 4)
+        if eff_lev is not None:
+            old_lev = float(local.get("leverage") or 0)
+            # Anzeige-Hebel = Börsen-SETTING (wie die Bitunix-App); der aus der
+            # Marge abgeleitete EFFEKTIVE Hebel (kann > Börsen-Max liegen, z.B.
+            # 333x nach Margen-Entnahme) wird separat gespeichert. Bug-Report
+            # 26.08.: Karte zeigte unmöglichen 333.33x-Hebel statt 200x.
+            shown_lev = round(ex_lev, 2) if ex_lev > 0 else eff_lev
+            liq = self.liq_price_for(local["side"], entry, eff_lev)
+            updates.update({"leverage": shown_lev, "effective_leverage": eff_lev,
+                            "margin_used": new_margin, "liq_price": liq})
+            msg = (f"SYNC: Marge/Hebel extern geändert – Hebel {old_lev}x -> "
+                   f"{shown_lev}x (effektiv {eff_lev}x), Marge "
+                   f"{round(cur_margin, 2)} -> {new_margin} USDT, Liq {liq}")
+            events.append(msg)
+            changes.append(msg)
+
+        if updates:
+            updates["events"] = events[-20:]
+            await self.db.auto_trades.update_one({"id": local["id"]},
+                                                 {"$set": updates})
+            logger.info(f"Positions-Sync {local['symbol']}: " + " | ".join(changes))
+        # ---- 3) Fill-/Liq-Abgleich (RCA POL 23.09.): echte Börsen-Liq vs. SL ----
+        try:
+            changes += await self.guard_fill_liq({**local, **updates}, pos)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Fill/Liq-Guard {local.get('symbol')} fehlgeschlagen: {e}")
+        return changes
+
+    async def guard_fill_liq(self, t: Dict, pos: Dict) -> List[str]:
+        """Echten Fill (avgOpenPrice) übernehmen und sicherstellen, dass der SL
+        VOR der echten Börsen-Liquidation liegt (services/fill_liq_guard.py).
+        Nur für reine (nicht gemischte) Live-Positionen."""
+        from services import fill_liq_guard as flg
+        changes: List[str] = []
+        if t.get("status") != "open" or t.get("mode") != "live" or self.is_ibkr_trade(t):
+            return changes
+        qty_rem = float(t.get("qty_remaining", t.get("qty", 0)) or 0)
+        ex_qty = float(pos.get("qty") or 0)
+        if qty_rem <= 0 or ex_qty <= 0 or abs(ex_qty - qty_rem) > max(qty_rem * 0.02, 1e-9) + 1:
+            return changes
+        side = str(t["side"]).upper()
+        ex_entry = float(pos.get("entry") or 0)
+        ex_liq = float(pos.get("liq_price") or 0)
+        ex_margin = float(pos.get("margin") or 0)
+        updates: Dict = {}
+        events = list(t.get("events", []))
+        dev = flg.entry_deviation_pct(t.get("entry"), ex_entry)
+        if (dev is not None and abs(dev) >= flg.ENTRY_TOL_PCT
+                and not t.get("entry_reconciled") and not t.get("tp1_hit")):
+            sl0 = float(t.get("initial_sl") or t.get("sl") or 0)
+            risk = abs(ex_entry - sl0) if sl0 else float(t.get("risk") or 0)
+            updates.update({
+                "entry": ex_entry, "entry_planned": float(t.get("entry") or 0),
+                "entry_reconciled": True, "risk": round(risk, 8),
+                "risk_usdt": round(risk * qty_rem, 6),
+                "slippage_pct": compute_slippage_pct(side, t.get("signal_price") or t.get("entry"),
+                                                     ex_entry)})
+            msg = (f"FILL-ABGLEICH: echter Börsen-Entry {ex_entry} statt {t.get('entry')} "
+                   f"({dev:+.2f}%) – Risiko neu {round(risk * qty_rem, 4)} USDT")
+            events.append(msg)
+            changes.append(msg)
+        if ex_liq > 0 and abs(ex_liq - float(t.get("liq_price") or 0)) > ex_liq * 0.0005:
+            updates["liq_price"] = ex_liq
+        entry_now = ex_entry if ex_entry > 0 else float(t.get("entry") or 0)
+        buffer_pct = float(t.get("profit_secure_sl_liq_buffer_pct") or flg.DEFAULT_BUFFER_PCT)
+        sl = float(t.get("sl") or 0)
+        if ex_liq > 0 and sl > 0 and not flg.sl_safe(side, sl, ex_liq, entry_now, buffer_pct):
+            try:
+                free = capital_fit.usable_free(await self._live_available_balance(), live=True)
+            except Exception:  # noqa: BLE001
+                free = None
+            mark = await self._current_mark(t["symbol"])
+            p = flg.plan(side, sl, entry_now, ex_liq, ex_qty, ex_margin, mark=mark,
+                         usable_free=free, buffer_pct=buffer_pct)
+            action = p["action"]
+            done = False
+            if action == "add_margin":
+                try:
+                    res = await self.client.adjust_position_margin(
+                        t["symbol"], p["amount"], position_id=t.get("bitunix_position_id"),
+                        side=side)
+                    done = isinstance(res, dict) and res.get("code") == 0
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"{t['symbol']}: Marge-Nachschuss fehlgeschlagen: {e}")
+                if done:
+                    self._avail_cache = (0.0, None)
+                    new_margin = round(ex_margin + p["amount"], 6)
+                    updates.update({"margin_used": new_margin, "liq_price": p["target_liq"],
+                                    "effective_leverage": round(ex_qty * entry_now
+                                                                / max(new_margin, 1e-9), 2)})
+                else:
+                    sl_new = flg.plan(side, sl, entry_now, ex_liq, ex_qty, ex_margin,
+                                      mark=mark, usable_free=0.0, buffer_pct=buffer_pct)
+                    p, action = sl_new, sl_new["action"]
+            if action == "move_sl":
+                done = await self._live_move_sl(t, p["new_sl"], ex_qty)
+                if done:
+                    updates["sl"] = p["new_sl"]
+            elif action == "close":
+                res = await self._live_flash_close(t, ex_qty)
+                done = bool(res.get("ok"))
+            msg = (f"LIQ-SCHUTZ ({action}{'' if done else ' FEHLGESCHLAGEN'}): {p['reason']}")
+            events.append(msg)
+            changes.append(msg)
+            updates["liq_guard"] = {"action": action, "ok": done, "reason": p["reason"],
+                                    "ts": datetime.now(timezone.utc).isoformat()}
+            await self._notify_reject(t["symbol"], side, msg)
+        if updates:
+            updates["events"] = events[-20:]
+            await self.db.auto_trades.update_one({"id": t["id"]}, {"$set": updates})
+            if changes:
+                logger.warning(f"Fill/Liq-Guard {t['symbol']}: " + " | ".join(changes))
+        return changes
+
+    async def _post_open_fill_check(self, trade: Dict) -> None:
+        """Direkt nach dem Live-Open: Börsen-Position lesen und Fill/Liq prüfen
+        (der Watchdog-Zyklus käme erst nach bis zu 120 s)."""
+        from services.position_watchdog import parse_positions
+        pid = str(trade.get("bitunix_position_id") or "")
+        if not pid:
+            return
+        try:
+            await asyncio.sleep(1.0)
+            rows = parse_positions(await self.client.get_positions(trade["symbol"]))
+            pos = next((r for r in rows if r.get("position_id") == pid), None)
+            if pos:
+                await self.guard_fill_liq(trade, pos)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"{trade.get('symbol')}: Fill/Liq-Check nach Open fehlgeschlagen: {e}")
+
+    async def _record_sync(self, synced: int, open_live: int):
+        """Zeitpunkt/Ergebnis des letzten Bitunix-Abgleichs fürs Master-Panel merken."""
+        try:
+            await self.db.settings.update_one(
+                {"_id": "bitunix_sync_status"},
+                {"$set": {"last_sync_at": datetime.now(timezone.utc).isoformat(),
+                          "last_synced": synced, "open_live": open_live}},
+                upsert=True)
+        except Exception as e:
+            logger.debug(f"Sync-Status nicht gespeichert: {e}")
+
+    async def _manage_trade(self, t: Dict, price: float):
+        side = t["side"]
+        updates = {}
+        events = list(t.get("events", []))
+        realized = t.get("realized_pnl", 0.0)
+        qty_rem = t.get("qty_remaining", t["qty"])
+        closed = False
+        exit_price = None
+        result = None
+        fee_pct = float(t.get("fee_percent", 0.06)) / 100
+        fees_paid = float(t.get("fees_paid", 0.0))
+
+        def pnl(qty, exit_p):
+            return (exit_p - t["entry"]) * qty if side == "LONG" else (t["entry"] - exit_p) * qty
+
+        def exit_fee(qty, exit_p):
+            return qty * exit_p * fee_pct
+
+        is_paper = t.get("mode") == "paper"
+
+        async def paper_fill(level: float, fill_qty: float):
+            """Ehrliches Paper: Trigger-Exits (SL/TP) füllen wie Live-Market-
+            Orders mit Spread + Slippage (größenabhängig) statt exakt am Level
+            (Trigger-Erkennung bleibt am Level, nur die Abrechnung wird realistisch)."""
+            if not is_paper:
+                return level, None
+            try:
+                from services import paper_execution
+                p, info = await paper_execution.exit_fill(
+                    t["symbol"], side, level, notional_usdt=fill_qty * level)
+                if info and p > 0:
+                    return p, info
+            except Exception as e:
+                logger.debug(f"{t['symbol']}: Paper-Exit-Simulation übersprungen: {e}")
+            return level, None
+
+        hit_tp1 = (price >= t["tp1"]) if side == "LONG" else (price <= t["tp1"])
+        hit_tpf = (price >= t["tpf"]) if side == "LONG" else (price <= t["tpf"])
+        hit_sl = (price <= t["sl"]) if side == "LONG" else (price >= t["sl"])
+
+        # IBKR-Forex-Live: TP1/TP/SL liegen als OCA-Brackets AN DER BÖRSE und
+        # werden dort gefüllt – lokal nur SL-Management (BE/Trailing/Gewinn-
+        # sicherung -> Order-Modify). Kein lokaler Exit, keine Liq-Simulation.
+        exchange_exits = self.is_ibkr_trade(t)
+        if exchange_exits:
+            hit_tp1 = hit_tpf = hit_sl = False
+
+        # ---- MFE-Tracking: besten Stand im Trade festhalten (LONG: Hoch,
+        # SHORT: Tief). Läuft im ohnehin stattfindenden Tick-Update mit –
+        # kein zusätzlicher DB-Write, kein zusätzlicher Speicher pro Trade.
+        new_peak = update_peak(side, t.get("peak_price"), t.get("entry"), price)
+        if new_peak is not None and new_peak != t.get("peak_price"):
+            updates["peak_price"] = round(new_peak, 8)
+            t["peak_price"] = updates["peak_price"]
+        # MAE-Tracking: schlechtesten Stand (Gegenlauf) ebenfalls festhalten
+        new_trough = update_trough(side, t.get("trough_price"), t.get("entry"), price)
+        if new_trough is not None and new_trough != t.get("trough_price"):
+            updates["trough_price"] = round(new_trough, 8)
+            t["trough_price"] = updates["trough_price"]
+
+        # ---- Liquidations-Check (Isolated Margin): hat Vorrang vor allem ----
+        liq = t.get("liq_price")
+        if liq and qty_rem > 0 and not exchange_exits:
+            hit_liq = (price <= liq) if side == "LONG" else (price >= liq)
+            if hit_liq:
+                fee = exit_fee(qty_rem, liq)
+                realized += pnl(qty_rem, liq) - fee
+                fees_paid += fee
+                margin = float(t.get("max_capital") or 0)
+                if margin > 0 and realized < -margin:
+                    realized = -margin  # Verlust maximal = eingesetzte Marge
+                events.append(f"LIQUIDATION @ {liq} (Marge verloren)")
+                updates.update({
+                    "fees_paid": round(fees_paid, 6),
+                    "realized_pnl": round(realized, 6),
+                    "qty_remaining": 0, "events": events[-20:],
+                    "status": "closed", "exit_price": liq, "result": "loss",
+                    "liquidated": True,
+                    "closed_at": datetime.now(timezone.utc).isoformat(),
+                })
+                if t["mode"] == "live" and self.client.configured():
+                    await self._live_flash_close(t, 0)
+                logger.info(f"AutoTrade LIQUIDATION {t['symbol']} pnl={updates['realized_pnl']}")
+                if await self._finalize_close(t["id"], updates):
+                    await self._after_close({**t, **updates})
+                return
+
+        # Break-Even Modus auflösen (Legacy: breakeven_enabled)
+        be_mode = t.get("be_mode")
+        if be_mode not in ("off", "tp1", "crv", "profit_pct", "smart"):
+            be_mode = "tp1" if t.get("breakeven_enabled") else "off"
+        if be_mode == "tp1" and t.get("breakeven_enabled") is False:
+            be_mode = "off"
+
+        def _be_price():
+            # ECHTES Break-Even inkl. Gebühren (siehe breakeven_price)
+            return breakeven_price(t["entry"], side, t.get("fee_percent", 0.06),
+                                   t.get("slippage_pct") or 0)
+
+        # TP1 partial + break-even
+        if not t.get("tp1_hit") and hit_tp1 and not hit_tpf:
+            close_qty = round(t["qty"] * t["tp1_close_percent"] / 100, 6)
+            tp1_fill, tp1_pex = await paper_fill(t["tp1"], close_qty)
+            fee = exit_fee(close_qty, tp1_fill)
+            realized += pnl(close_qty, tp1_fill) - fee
+            fees_paid += fee
+            qty_rem = round(qty_rem - close_qty, 6)
+            events.append(f"TP1 hit @ {t['tp1']} closed {t['tp1_close_percent']}% (Fee {round(fee, 6)})"
+                          + (f" [Paper-Fill {tp1_fill}]" if tp1_pex else ""))
+            updates["tp1_hit"] = True
+            be_price = None
+            if be_mode in ("tp1", "smart") and not t.get("breakeven_moved"):
+                # smart nutzt live als Fallback ebenfalls Entry+Gebühren
+                # (Swing-Struktur wird im Backtester exakt simuliert)
+                be_price = _be_price()
+                updates["sl"] = be_price
+                updates["breakeven_moved"] = True
+                events.append(f"SL -> Break-Even @ {be_price} ({be_mode})")
+            # Live sync: only flash-close if the exchange TP1 was NOT placed
+            # (otherwise Bitunix already closed 50%, no need to close again).
+            # Then push the break-even SL to the exchange so it survives even
+            # if our backend restarts.
+            if t.get("mode") == "live" and self.client.configured():
+                if not t.get("tp1_exchange_placed"):
+                    await self._live_partial_close(t, close_qty)
+                if be_price is not None and t.get("bitunix_position_id"):
+                    ok_be = await self._live_move_sl(t, be_price, qty_rem)
+                    if ok_be:
+                        events.append("Exchange SL -> BE synced")
+                    else:
+                        events.append("Exchange SL move FAILED (local only)")
+
+        # ATR trailing stop after TP1 -> lock profit while letting the runner breathe
+        if (t.get("tp1_hit") or updates.get("tp1_hit")):
+            cfg2 = self.coin_cfg(t["symbol"])
+            atr = t.get("atr") or 0
+            if cfg2.get("trail_after_tp1", True) and atr > 0:
+                cur_sl = updates.get("sl", t["sl"])
+                mult = float(cfg2.get("trail_atr_mult", 1.5))
+                trailed = None
+                if side == "LONG":
+                    new_sl = round(price - atr * mult, 6)
+                    if new_sl > cur_sl:
+                        updates["sl"] = new_sl
+                        trailed = new_sl
+                        events.append(f"TRAIL SL -> {new_sl}")
+                else:
+                    new_sl = round(price + atr * mult, 6)
+                    if new_sl < cur_sl:
+                        updates["sl"] = new_sl
+                        trailed = new_sl
+                        events.append(f"TRAIL SL -> {new_sl}")
+                # Sync trailed SL to the exchange too so a backend restart
+                # can't leave us protected only by the original SL.
+                if trailed is not None and t.get("mode") == "live":
+                    if not await self._live_move_sl(t, trailed, qty_rem):
+                        events.append(f"Exchange TRAIL-SL {trailed} FAILED (local only)")
+
+        # Break-Even bei frei wählbarem CRV oder Gewinn-% (vor TP1 möglich)
+        if not closed and qty_rem > 0 and be_mode in ("crv", "profit_pct") \
+                and not (t.get("breakeven_moved") or updates.get("breakeven_moved")):
+            risk = float(t.get("risk") or abs(t["entry"] - t.get("initial_sl", t["sl"])) or 0)
+            trigger = False
+            if be_mode == "crv" and risk > 0:
+                crv = float(t.get("be_trigger_crv", 1.0) or 1.0)
+                target = t["entry"] + risk * crv if side == "LONG" else t["entry"] - risk * crv
+                trigger = price >= target if side == "LONG" else price <= target
+            elif be_mode == "profit_pct":
+                margin = float(t.get("max_capital") or 0)
+                thr = float(t.get("be_trigger_profit_pct", 30.0) or 30.0)
+                trigger = margin > 0 and thr > 0 and pnl(qty_rem, price) / margin * 100 >= thr
+            if trigger:
+                be_p = _be_price()
+                cur = updates.get("sl", t["sl"])
+                improved = (side == "LONG" and be_p > cur) or (side == "SHORT" and be_p < cur)
+                if improved:
+                    updates["sl"] = be_p
+                updates["breakeven_moved"] = True
+                events.append(f"SL -> Break-Even @ {be_p} ({be_mode})")
+                # Exchange-SL nur syncen, wenn BE den SL wirklich verbessert –
+                # sonst würde ein bereits besserer (getrailter) SL an der Börse
+                # wieder verschlechtert werden.
+                if improved and t.get("mode") == "live":
+                    await self._live_move_sl(t, be_p, qty_rem)
+
+        # Key-Level-Trailing (KI-Gewinnschutz): SL hinter zuletzt durchbrochene
+        # Widerstände/Unterstützungen ziehen – nicht nur nach %-Gewinn.
+        if not closed and qty_rem > 0 and t.get("key_level_trail"):
+            candles = []
+            try:
+                from core import state
+                candles = ((getattr(state.scanner, "candle_buffer", {}) or {})
+                           .get(t["symbol"]) or [])[-180:]
+            except Exception as e:
+                logger.debug(f"{t['symbol']}: Key-Level-Kerzen fehlen: {e}")
+            risk_kl = float(t.get("risk")
+                            or abs(t["entry"] - t.get("initial_sl", t["sl"])) or 0)
+            new_kl_sl = key_level_trail_sl(
+                candles, side, t["entry"], updates.get("sl", t["sl"]),
+                price, risk_kl)
+            trail_note = ""
+            if new_kl_sl is not None:
+                # Rausch-/Liq-Schutz (services/runner_policy.py): Mindestabstand
+                # zum Kurs (ATR) und SL vor der verschobenen Liq nach Margen-Freisetzung
+                dec_tr = trail_decision(t, candles, price, new_kl_sl, updates.get("sl", t["sl"]))
+                new_kl_sl, trail_note = dec_tr["sl"], dec_tr["note"]
+                if new_kl_sl is None:
+                    # Ablehnung nachvollziehbar im Trade-Detail – nur bei neuem Grund
+                    if trail_note != t.get("trail_reject_note"):
+                        events.append(trail_note)
+                        updates["trail_reject_note"] = trail_note
+                elif t.get("trail_reject_note"):
+                    updates["trail_reject_note"] = None
+            if new_kl_sl is not None:
+                updates["sl"] = new_kl_sl
+                events.append(f"KEY-LEVEL-TRAIL: SL -> {new_kl_sl} "
+                              "(hinter durchbrochenem Level)"
+                              + (f" · {trail_note}" if trail_note else ""))
+                if t.get("mode") == "live":
+                    if not await self._live_move_sl(t, new_kl_sl, qty_rem):
+                        events.append(f"Exchange KEY-LEVEL-SL {new_kl_sl} FAILED (local only)")
+
+        # Gewinnsicherung: SL in den Gewinn ziehen sobald Trigger erreicht
+        if not closed and qty_rem > 0 and t.get("profit_secure_enabled") \
+                and not t.get("profit_secured"):
+            margin = float(t.get("max_capital") or 0)
+            trig = float(t.get("profit_secure_trigger_pct", 30.0) or 30.0)
+            lock = max(0.0, min(float(t.get("profit_lock_pct", 50.0) or 50.0), 95.0)) / 100
+            unreal = pnl(qty_rem, price)
+            if margin > 0 and trig > 0 and unreal / margin * 100 >= trig:
+                new_sl = round(t["entry"] + (price - t["entry"]) * lock, 6) if side == "LONG" \
+                    else round(t["entry"] - (t["entry"] - price) * lock, 6)
+                cur = updates.get("sl", t["sl"])
+                if (side == "LONG" and new_sl > cur) or (side == "SHORT" and new_sl < cur):
+                    updates["sl"] = new_sl
+                    events.append(f"GEWINNSICHERUNG: SL -> {new_sl} "
+                                  f"(+{round(unreal / margin * 100, 1)}% auf Marge, "
+                                  f"{int(lock * 100)}% gesichert)")
+                    if t.get("mode") == "live":
+                        if not await self._live_move_sl(t, new_sl, qty_rem):
+                            events.append(f"Exchange GEWINNSICHERUNG-SL {new_sl} "
+                                          "FAILED (local only)")
+                updates["profit_secured"] = True
+
+        # Marge-Freisetzung: retry-fähig (läuft, bis der Abstand SL/Liq/Kurs
+        # passt oder die Entnahme verbucht ist) – so blockiert ein zu früher
+        # Trigger die Freisetzung nicht dauerhaft.
+        if not closed and qty_rem > 0 and t.get("profit_secure_release_margin") \
+                and not t.get("profit_margin_released") and not exchange_exits \
+                and (t.get("profit_secured") or updates.get("profit_secured")):
+            await self._release_secured_margin(t, updates, events, qty_rem, price)
+
+        # Snapshot vor dem Exit: wird gebraucht, falls der Live-Close an der
+        # Börse scheitert und der Trade offen bleiben muss (kein Doppelbuchen).
+        pre_exit = {"realized": realized, "fees": fees_paid, "qty_rem": qty_rem}
+
+        # Full TP
+        if hit_tpf and qty_rem > 0:
+            tpf_fill, tpf_pex = await paper_fill(t["tpf"], qty_rem)
+            fee = exit_fee(qty_rem, tpf_fill)
+            realized += pnl(qty_rem, tpf_fill) - fee
+            fees_paid += fee
+            events.append(f"TP FULL hit @ {t['tpf']} (Fee {round(fee, 6)})"
+                          + (f" [Paper-Fill {tpf_fill}]" if tpf_pex else ""))
+            closed, exit_price, qty_rem = True, tpf_fill, 0
+
+        # Stop loss (re-read possibly moved SL)
+        cur_sl = updates.get("sl", t["sl"])
+        hit_sl = False if exchange_exits else (
+            (price <= cur_sl) if side == "LONG" else (price >= cur_sl))
+        if not closed and hit_sl and qty_rem > 0:
+            sl_fill, sl_pex = await paper_fill(cur_sl, qty_rem)
+            fee = exit_fee(qty_rem, sl_fill)
+            realized += pnl(qty_rem, sl_fill) - fee
+            fees_paid += fee
+            is_be = t.get("breakeven_moved") or updates.get("breakeven_moved")
+            events.append(f"{'BREAK-EVEN' if is_be else 'STOP'} hit @ {cur_sl} (Fee {round(fee, 6)})"
+                          + (f" [Paper-Fill {sl_fill}]" if sl_pex else ""))
+            closed, exit_price, qty_rem = True, sl_fill, 0
+
+        # Klassifizierung anhand netto realisiertem PnL (Gebühren bereits abgezogen):
+        # Alles > 0 = Win, alles < 0 = Loss, ~0 = Break-Even.
+        if closed:
+            eps = 1e-6
+            if realized > eps:
+                result = "win"
+            elif realized < -eps:
+                result = "loss"
+            else:
+                result = "breakeven"
+            # Exit-Fill (z.B. voller TP) fließt in den Best-Stand mit ein
+            peak_x = update_peak(side, t.get("peak_price"), exit_price)
+            if peak_x is not None and peak_x != t.get("peak_price"):
+                updates["peak_price"] = round(peak_x, 8)
+            trough_x = update_trough(side, t.get("trough_price"), exit_price)
+            if trough_x is not None and trough_x != t.get("trough_price"):
+                updates["trough_price"] = round(trough_x, 8)
+
+        updates["fees_paid"] = round(fees_paid, 6)
+        updates["realized_pnl"] = round(realized, 6)
+        updates["qty_remaining"] = qty_rem
+        updates["events"] = events[-20:]
+        if closed:
+            live_close_ok = True
+            if t["mode"] == "live" and self.client.configured():
+                # Audit F1: nach CLOSE_FAIL_ESCALATE_AT Fehlversuchen wird der Trade
+                # NICHT mehr lokal geschlossen (Phantom-PnL). Er bleibt offen und
+                # sichtbar als 'unklar'; weitere Versuche nur noch gedrosselt.
+                attempts_prev = int(t.get("live_close_attempts", 0) or 0)
+                if attempts_prev >= CLOSE_FAIL_ESCALATE_AT and not close_retry_due(
+                        t.get("live_close_last_try"), CLOSE_FAIL_RETRY_SEC):
+                    updates["qty_remaining"] = pre_exit["qty_rem"]
+                    updates["realized_pnl"] = round(pre_exit["realized"], 6)
+                    updates["fees_paid"] = round(pre_exit["fees"], 6)
+                    updates["events"] = t.get("events", [])[-20:]
+                    await self.db.auto_trades.update_one({"id": t["id"]}, {"$set": updates})
+                    return
+                res = await self._live_flash_close(t, qty_rem)
+                if not res.get("ok"):
+                    # Position evtl. extern bereits geschlossen (TP/SL/Bitunix-
+                    # App) -> sofort als extern geschlossen verbuchen statt
+                    # in einer CLOSE-Fehlerschleife zu hängen.
+                    booked = await self._reconcile_close_error(t, res.get("detail"))
+                    if booked:
+                        return
+                    # Position an der Börse ist NICHT zu -> Trade lokal offen
+                    # lassen und beim nächsten Monitor-Tick erneut versuchen.
+                    attempts = attempts_prev + 1
+                    events.append(f"CLOSE-VERSUCH {attempts} fehlgeschlagen (Börse): "
+                                  f"{res.get('detail')}")
+                    updates.update({"live_close_attempts": attempts,
+                                    "live_close_failed": True,
+                                    "live_close_error": res.get("detail"),
+                                    "live_close_last_try": datetime.now(timezone.utc).isoformat(),
+                                    "events": events[-20:]})
+                    if attempts == 1:
+                        await self._notify_reject(
+                            t["symbol"], t["side"],
+                            f"Exit konnte an der Börse nicht ausgeführt werden: "
+                            f"{res.get('detail')} – Position läuft weiter!")
+                    # Restmenge bleibt offen, damit der nächste Tick erneut schließt.
+                    updates["qty_remaining"] = pre_exit["qty_rem"]
+                    updates["realized_pnl"] = round(pre_exit["realized"], 6)
+                    updates["fees_paid"] = round(pre_exit["fees"], 6)
+                    live_close_ok = False
+                    if attempts == CLOSE_FAIL_ESCALATE_AT:
+                        updates["close_escalated_at"] = datetime.now(timezone.utc).isoformat()
+                        logger.error(f"AutoTrade {t['id']}: Live-Close nach {attempts} Versuchen "
+                                     f"weiter fehlgeschlagen – Trade bleibt OFFEN/UNKLAR, "
+                                     f"Retry alle {CLOSE_FAIL_RETRY_SEC}s, bitte Börse prüfen")
+                        await self._notify_reject(
+                            t["symbol"], t["side"],
+                            f"KRITISCH: Exit nach {attempts} Versuchen NICHT ausgeführt "
+                            f"({res.get('detail')}). Trade bleibt als UNKLAR offen – bitte "
+                            f"Position SOFORT in Bitunix prüfen!")
+                        try:
+                            from services import notifications
+                            await notifications.website_notify(
+                                self.db, "close_failed",
+                                f"Close fehlgeschlagen: {t['symbol']} {t['side']}",
+                                f"{attempts} Fehlversuche – Position ggf. noch offen an der "
+                                f"Börse. Trade bleibt als UNKLAR offen (kein PnL gebucht).",
+                                cooldown_min=30)
+                        except Exception as ne:
+                            logger.debug(f"close_failed notify: {ne}")
+                else:
+                    updates["live_close_failed"] = False
+                    events.append(str(res.get("detail")))
+                    updates["events"] = events[-20:]
+            if live_close_ok:
+                updates["status"] = "closed"
+                updates["exit_price"] = exit_price
+                updates["result"] = result
+                updates["closed_at"] = datetime.now(timezone.utc).isoformat()
+                logger.info(f"AutoTrade CLOSE {t['symbol']} {result} "
+                            f"pnl={updates['realized_pnl']}")
+
+        if updates.get("status") == "closed":
+            if await self._finalize_close(t["id"], updates):
+                await self._after_close({**t, **updates})
+            return
+        await self.db.auto_trades.update_one({"id": t["id"]}, {"$set": updates})
+
+    async def _finalize_close(self, trade_id: str, updates: Dict) -> bool:
+        """Atomarer Abschluss (Audit F5/F12): setzt `closed` NUR, wenn der Trade
+        noch `open` ist (Compare-and-Set). Liefert True genau für den einen
+        Aufrufer, der den Close gewonnen hat – nur der darf `_after_close`
+        (Kill-Switch-Zähler, Telegram, Reward, Signal-Sync) auslösen."""
+        res = await self.db.auto_trades.update_one(
+            {"id": trade_id, "status": "open"}, {"$set": updates})
+        matched = getattr(res, "matched_count", None)
+        if matched is None:
+            return True  # Test-Doubles ohne UpdateResult
+        if matched == 0:
+            logger.info(f"AutoTrade {trade_id}: Close bereits von anderem Pfad "
+                        f"verbucht – Hooks werden nicht doppelt ausgeführt")
+        return matched > 0
+
+    async def _after_close(self, t: Dict):
+        """Nach jedem Close: PnL-Abgleich mit der Börse, Kill-Switch-Zähler +
+        Telegram-Meldung (Toggle)."""
+        # Echten Bitunix-PnL (inkl. Fees/Funding) übernehmen, BEVOR Telegram,
+        # Rewards und Kill-Switch den Wert sehen (services/pnl_reconcile.py).
+        # Bug-Report: SL auf Break-Even, Börse füllte schlechter -> Website 0 statt −3 $.
+        try:
+            from services import pnl_reconcile
+            await pnl_reconcile.reconcile_trade(self, t)
+        except Exception as e:
+            logger.warning(f"PnL-Abgleich nach Close fehlgeschlagen: {e}")
+        # Fix 0.5: Ergebnis-Wahrheit vereinheitlichen. Der Trade kennt das
+        # KANONISCHE Ergebnis (Vorzeichen realized_pnl inkl. Fees) -> ans
+        # verknüpfte Signal zurückschreiben. TP1-Touch-Labels (pipeline.
+        # evaluate_open_signals) dürfen das nie mehr überschreiben.
+        try:
+            if t.get("signal_id") and t.get("result"):
+                await self.db.signals.update_one(
+                    {"id": t["signal_id"]},
+                    {"$set": {"result": t["result"], "status": "closed",
+                              "result_source": "trade_pnl",
+                              "trade_id": t.get("id"),
+                              "result_ts": t.get("closed_at")
+                              or datetime.now(timezone.utc).isoformat()}})
+        except Exception as e:
+            logger.warning(f"signal result sync (trade_pnl) failed: {e}")
+        try:
+            from services import notifications, trade_guard
+            pnl = float(t.get("realized_pnl") or 0)
+            cap = float(t.get("max_capital") or 0)
+            pct = f" ({round(pnl / cap * 100, 2):+}%)" if cap else ""
+            emoji = "✅" if t.get("result") == "win" else ("⚪" if t.get("result") == "breakeven" else "❌")
+            await notifications.telegram_notify(
+                self.db, self.telegram, "trade_closed",
+                f"{emoji} *TRADE GESCHLOSSEN* ({str(t.get('mode', '')).upper()})\n"
+                f"💰 {t['symbol']} · {t['side']} · {t.get('strategy_name') or t.get('strategy_id')}\n"
+                f"Ergebnis: {t.get('result')} · PnL `{round(pnl, 4)} USDT`{pct}",
+                sub=f"trade_closed_{'live' if t.get('mode') == 'live' else 'paper'}")
+            try:
+                from services import ai_rewards
+                await ai_rewards.on_trade_closed(self.db, t)
+            except Exception as re_:
+                logger.warning(f"reward hook failed: {re_}")
+            await trade_guard.on_trade_closed(self.db, self.telegram, t)
+        except Exception as e:
+            logger.warning(f"after_close hook failed: {e}")
+        # Wächter-Schattentrade: Urteil (Block richtig/falsch) + Autotune
+        try:
+            if t.get("guard_shadow"):
+                from services import guard_shadow
+                await guard_shadow.on_trade_closed(self.db, t)
+        except Exception as e:
+            logger.warning(f"guard_shadow hook failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Live-Ausführung: eine gemeinsame, VERIFIZIERTE Quelle für alle
+    # Schließ-/Anpassungs-Wege (Monitor, manuelles UI, KI-Trade-Manager).
+    # Vorher wurden flash_close-Antworten ignoriert -> die Website zeigte den
+    # Trade als geschlossen, an der Börse lief die Position weiter.
+    # ------------------------------------------------------------------
+    async def _bound_position_ids(self, symbol: str, side: str,
+                                  except_id: Optional[str] = None) -> set:
+        """Bitunix-Position-IDs, die bereits an OFFENE lokale Live-Trades auf
+        Symbol+Seite gebunden sind (für die Zuordnung neuer Positionen)."""
+        out: set = set()
+        try:
+            rows = await self.db.auto_trades.find(
+                {"status": "open", "mode": "live", "symbol": symbol, "side": side}).to_list(50)
+        except Exception as e:
+            logger.debug(f"_bound_position_ids({symbol}) failed: {e}")
+            return out
+        for t in rows:
+            if except_id and t.get("id") == except_id:
+                continue
+            if t.get("bitunix_position_id"):
+                out.add(str(t["bitunix_position_id"]))
+        return out
+
+    async def _resolve_new_position_id(self, symbol: str, side: str,
+                                       qty: Optional[float] = None) -> Optional[str]:
+        """positionId der soeben eröffneten Position (siehe pick_new_position):
+        bereits gebundene Positionen werden übersprungen, sonst Menge/Alter.
+        Fallback: klassisches resolve_position_id."""
+        try:
+            res = await self.client.get_positions(symbol)
+            data = res.get("data") if isinstance(res, dict) else None
+            rows = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
+            pid = pick_new_position(rows, side, qty=qty,
+                                    exclude=await self._bound_position_ids(symbol, side))
+            if pid:
+                return pid
+        except Exception as e:
+            logger.debug(f"_resolve_new_position_id({symbol}) fallback: {e}")
+        return await self.client.resolve_position_id(symbol, side)
+
+    async def _resolve_position(self, t: Dict, refresh: bool = False) -> Optional[str]:
+        """positionId der Live-Position (bei Bedarf nachladen und persistieren)."""
+        pid = t.get("bitunix_position_id")
+        if pid and not refresh:
+            return str(pid)
+        try:
+            pid = await self.client.resolve_position_id(t["symbol"], t["side"])
+        except Exception as e:
+            logger.error(f"_resolve_position({t.get('symbol')}) failed: {e}")
+            return t.get("bitunix_position_id")
+        if pid:
+            t["bitunix_position_id"] = str(pid)
+            try:
+                await self.db.auto_trades.update_one(
+                    {"id": t["id"]}, {"$set": {"bitunix_position_id": str(pid)}})
+            except Exception:
+                pass
+            return str(pid)
+        return t.get("bitunix_position_id")
+
+    async def _live_position_qty(self, t: Dict) -> Optional[float]:
+        """Offene Menge der Position an der Börse. None = nicht ermittelbar."""
+        try:
+            res = await self.client.get_positions(t["symbol"])
+        except Exception as e:
+            logger.warning(f"_live_position_qty({t.get('symbol')}) failed: {e}")
+            return None
+        data = res.get("data") if isinstance(res, dict) else None
+        rows = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
+        want = str(t.get("side", "")).upper()
+        total = 0.0
+        matched = 0
+        found = False
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            row_side = str(row.get("side") or row.get("positionSide") or "").upper()
+            if row_side in ("BUY", "LONG") and want != "LONG":
+                continue
+            if row_side in ("SELL", "SHORT") and want != "SHORT":
+                continue
+            matched += 1
+            for key in ("qty", "positionAmt", "amount", "size", "total", "available"):
+                if row.get(key) not in (None, ""):
+                    try:
+                        total += abs(float(row[key]))
+                        found = True
+                        break
+                    except (TypeError, ValueError):
+                        continue
+        if isinstance(data, list) and matched == 0:
+            # Keine Position in unserer Richtung mehr offen
+            return 0.0
+        return total if found else None
+
+    async def close_live_position(self, t: Dict, qty: float, full: bool = True) -> Dict:
+        """Position an der Börse wirklich schließen – mit positionId-Auflösung,
+        Retry und Verifikation. Rückgabe: {"ok": bool, "detail": str}."""
+        if t.get("mode") != "live" or not self.client.configured():
+            return {"ok": True, "detail": "kein Live-Trade"}
+        last = "unbekannter Fehler"
+        for attempt in (1, 2):
+            pid = await self._resolve_position(t, refresh=(attempt == 2))
+            if not pid:
+                remaining = await self._live_position_qty(t)
+                if remaining is not None and remaining <= 1e-12:
+                    return {"ok": True, "detail": "Position existiert an der Börse nicht mehr"}
+                last = "positionId an der Börse nicht gefunden"
+                await asyncio.sleep(1.0)
+                continue
+            # BUGFIX ('Insufficient amount'): lokale qty_remaining kann größer
+            # sein als die echte Börsen-Menge (Rundung, externe Teil-Closes,
+            # TP1-Fills). Vor dem Close die reale Menge abgleichen.
+            live_qty = await self._live_position_qty(t)
+            if live_qty is not None:
+                if live_qty <= 1e-12:
+                    return {"ok": True,
+                            "detail": "Position existiert an der Börse nicht mehr"}
+                # BUGFIX ('Insufficient amount'-Endlosschleife, Bug-Report DOT):
+                # An der Börse liegt nur noch Dust unter dem handelbaren
+                # Minimum (z.B. 0.08 USDT Rest) – jeder Close wird abgelehnt.
+                # Solche Reste gelten als geschlossen statt 5x zu scheitern.
+                min_qty = 0.0
+                try:
+                    b_sym = self.client.to_bitunix_symbol(t["symbol"])
+                    min_qty = float((self.client.contract_meta(b_sym) or {})
+                                    .get("min_qty") or 0)
+                except Exception:
+                    min_qty = 0.0
+                if min_qty > 0 and live_qty < min_qty:
+                    logger.info(f"{t.get('symbol')}: Börsen-Rest {live_qty} unter "
+                                f"Minimum {min_qty} (Dust) – gilt als geschlossen")
+                    return {"ok": True,
+                            "detail": f"Restmenge {live_qty} unter Börsen-Minimum "
+                                      f"{min_qty} (Dust) – Position gilt als geschlossen"}
+                if qty > live_qty:
+                    # Nie mehr schließen als real offen ist; bei mehreren lokalen
+                    # Trades auf einer Börsen-Position max. die eigene Menge.
+                    logger.info(f"{t.get('symbol')}: Close-Menge {qty} auf reale "
+                                f"Börsen-Menge {live_qty} begrenzt")
+                    qty = live_qty
+                elif full and live_qty > qty:
+                    # Rest-Schutz (Bug-Report POL): beim VOLL-Close die komplette
+                    # Börsen-Menge schließen, wenn KEIN anderer lokaler Trade sich
+                    # die Position teilt – sonst bleiben Rundungs-/Fill-Reste an
+                    # der Börse zurück, die der Watchdog später fälschlich als
+                    # eigene Position übernimmt.
+                    try:
+                        others = await self.db.auto_trades.count_documents({
+                            "symbol": t["symbol"], "status": "open", "mode": "live",
+                            "id": {"$ne": t.get("id")}})
+                    except Exception:
+                        others = 1
+                    if others == 0:
+                        logger.info(f"{t.get('symbol')}: Voll-Close von {qty} auf komplette "
+                                    f"Börsen-Menge {live_qty} erweitert (Rest-Schutz)")
+                        qty = live_qty
+            try:
+                res = await self.client.flash_close(t["symbol"], pid, t["side"], qty,
+                                                    full=full)
+            except Exception as e:
+                last = f"Exception: {str(e)[:140]}"
+                await asyncio.sleep(1.0)
+                continue
+            ok = isinstance(res, dict) and res.get("code") == 0
+            if ok:
+                if not full:
+                    return {"ok": True, "detail": "Börse: Teil-Close ausgeführt", "response": res}
+                # Erwartete Restmenge: 0, außer weitere lokale Trades teilen sich
+                # dieselbe Börsen-Position (live_qty > eigene Menge).
+                expected_left = max((live_qty or qty) - qty, 0.0)
+                verified = await self._verify_flat(t, expected_left=expected_left)
+                if verified["ok"]:
+                    return {"ok": True, "detail": verified["detail"], "response": res}
+                last = verified["detail"]
+            else:
+                last = (isinstance(res, dict) and (res.get("msg") or str(res)[:140])) \
+                    or "unbekannte Börsen-Antwort"
+                logger.error(f"flash_close {t.get('symbol')} rejected: {res}")
+            await asyncio.sleep(1.0)
+        logger.error(f"Live-Close FEHLGESCHLAGEN {t.get('symbol')} ({t.get('id')}): {last}")
+        return {"ok": False, "detail": last}
+
+    async def _verify_flat(self, t: Dict, expected_left: float = 0.0) -> Dict:
+        """Prüft an der Börse nach, ob die (eigene) Menge wirklich weg ist."""
+        remaining = None
+        tol = max(float(expected_left), 0.0) + 1e-12
+        for _ in range(3):
+            await asyncio.sleep(0.8)
+            remaining = await self._live_position_qty(t)
+            if remaining is None:
+                return {"ok": True, "detail": "Börse: Order akzeptiert "
+                                              "(Positions-API liefert keine Menge)"}
+            if remaining <= tol:
+                return {"ok": True, "detail": "Börse: Position geschlossen (verifiziert)"}
+        return {"ok": False,
+                "detail": f"Börse meldet weiterhin eine offene Menge ({remaining})"}
+
+    async def _list_position_tpsl(self, t: Dict, pid: str) -> Optional[List[Dict]]:
+        """Offene TP/SL-Orders der Position als Liste. None = API nicht lesbar."""
+        try:
+            res = await self.client.get_pending_tpsl(t["symbol"], position_id=pid)
+        except Exception as e:
+            logger.warning(f"_list_position_tpsl({t.get('symbol')}) failed: {e}")
+            return None
+        if not isinstance(res, dict) or res.get("code") not in (0, "0"):
+            return None
+        data = res.get("data")
+        if isinstance(data, dict):
+            data = data.get("orderList") or data.get("list") or data.get("rows") or [data]
+        if not isinstance(data, list):
+            return None
+        return [r for r in data if isinstance(r, dict)]
+
+    def _levels_applied(self, t: Dict, rows: List[Dict],
+                        sl: Optional[float], tp: Optional[float]) -> bool:
+        """Read-Back-Verifikation: stehen die angefragten Level wirklich an der
+        Börse? Toleranz = 1.5 Ticks (Rundung durch _fmt_price)."""
+        b_sym = self.client.to_bitunix_symbol(t["symbol"])
+        tick = float((self.client.contract_meta(b_sym) or {}).get("price_tick") or 0)
+
+        def _ok(key: str, want) -> bool:
+            if want is None:
+                return True
+            tol = max(tick * 1.5, abs(float(want)) * 1e-6)
+            for r in rows:
+                v = r.get(key)
+                if v in (None, ""):
+                    continue
+                try:
+                    if abs(float(v) - float(want)) <= tol:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+            return False
+
+        return _ok("slPrice", sl) and _ok("tpPrice", tp)
+
+    async def _cancel_position_tpsl(self, t: Dict, pid: str) -> int:
+        """Alle offenen TP/SL-Orders der Position stornieren (gegen Duplikate).
+
+        BUGFIX: Vorher wurde bei jedem SL/TP-Update eine NEUE TP/SL-Order
+        platziert, wenn das Modify scheiterte oder keine Order-ID bekannt war –
+        an der Börse stapelten sich identische SL-Orders, deren Mengen in Summe
+        die Position überstiegen ('TP/SL amount must be less than the size of
+        the position')."""
+        cancelled = 0
+        rows = await self._list_position_tpsl(t, pid) or []
+        for row in rows:
+            oid = row.get("id") or row.get("orderId")
+            if not oid:
+                continue
+            try:
+                c = await self.client.cancel_tpsl_order(t["symbol"], oid)
+                if isinstance(c, dict) and c.get("code") == 0:
+                    cancelled += 1
+                else:
+                    logger.info(f"cancel_tpsl_order {t.get('symbol')}/{oid}: {c}")
+            except Exception as e:
+                logger.warning(f"cancel_tpsl_order {t.get('symbol')}/{oid} failed: {e}")
+        if cancelled:
+            logger.info(f"{t.get('symbol')}: {cancelled} alte TP/SL-Order(s) storniert")
+        return cancelled
+
+    async def _modify_existing_tpsl(self, t: Dict, pid: str, rows: List[Dict],
+                                    sl: Optional[float], tp: Optional[float],
+                                    qty_rem: float) -> bool:
+        """Bestehende TP/SL-Orders per Order-ID gezielt ändern (kein Cancel-
+        Replace-Churn). False = mindestens ein Schritt abgelehnt -> Fallback."""
+        def _fv(row, key):
+            try:
+                v = float(row.get(key) or 0)
+                return v if v > 0 else None
+            except (TypeError, ValueError):
+                return None
+
+        sl_rows = [r for r in rows if _fv(r, "slPrice")]
+        tp_rows = [r for r in rows if _fv(r, "tpPrice")]
+        if len(sl_rows) > 1 or len(tp_rows) > 1:
+            return False  # gestapelte Orders -> aufräumen via Cancel+Replace
+        sl_row = sl_rows[0] if sl_rows else None
+        tp_row = tp_rows[0] if tp_rows else None
+        ok = True
+        tp_handled = False
+        if sl is not None:
+            if sl_row:
+                combined = tp_row is sl_row
+                keep_tp = (tp if (tp is not None and combined)
+                           else (_fv(sl_row, "tpPrice") if combined else None))
+                res = await self.client.modify_tpsl_order(
+                    t["symbol"], sl_row.get("id") or sl_row.get("orderId"),
+                    side=t["side"], sl_price=sl, sl_qty=qty_rem,
+                    tp_price=keep_tp, tp_qty=(qty_rem if keep_tp else None))
+                tp_handled = combined
+            else:
+                res = await self.client.place_position_tp_sl(
+                    t["symbol"], pid, t["side"], sl_price=sl, sl_qty=qty_rem)
+            ok = ok and isinstance(res, dict) and res.get("code") in (0, "0")
+        if tp is not None and not tp_handled:
+            if tp_row:
+                keep_sl = _fv(tp_row, "slPrice")
+                res = await self.client.modify_tpsl_order(
+                    t["symbol"], tp_row.get("id") or tp_row.get("orderId"),
+                    side=t["side"], tp_price=tp, tp_qty=qty_rem,
+                    sl_price=keep_sl, sl_qty=(qty_rem if keep_sl else None))
+            else:
+                res = await self.client.place_position_tp_sl(
+                    t["symbol"], pid, t["side"], tp_price=tp, tp_qty=qty_rem)
+            ok = ok and isinstance(res, dict) and res.get("code") in (0, "0")
+        return ok
+
+    async def sync_live_levels(self, t: Dict, sl: Optional[float] = None,
+                               tp: Optional[float] = None) -> Dict:
+        """SL und/oder TP der Live-Position an der Börse aktualisieren.
+
+        BUGFIX (XRP-Trail): `tpsl/position/modify_order` meldete code 0,
+        änderte die realen TP/SL-Orders aber NICHT (Silent-No-Op). Jetzt wird
+        die bestehende Order per Order-ID über `tpsl/modify_order` geändert
+        und das Ergebnis per Read-Back VERIFIZIERT. Erst wenn das scheitert,
+        greift der Fallback: alle alten TP/SL-Orders stornieren und EINE neue
+        setzen (Menge auf reale Börsen-Menge begrenzt)."""
+        if t.get("mode") != "live" or not self.client.configured():
+            return {"ok": True, "detail": "kein Live-Trade"}
+        pid = await self._resolve_position(t)
+        if not pid:
+            return {"ok": False, "detail": "positionId an der Börse nicht gefunden"}
+        qty_rem = float(t.get("qty_remaining", t.get("qty", 0)) or 0)
+        # Reale Börsen-Menge hat Vorrang vor der lokalen Buchhaltung.
+        live_qty = await self._live_position_qty(t)
+        if live_qty is not None:
+            if live_qty <= 1e-12:
+                return {"ok": False, "detail": "Position existiert an der Börse nicht mehr"}
+            if qty_rem <= 0 or qty_rem > live_qty:
+                logger.info(f"{t.get('symbol')}: TP/SL-Menge {qty_rem} auf reale "
+                            f"Börsen-Menge {live_qty} korrigiert")
+                qty_rem = live_qty
+        last = "abgelehnt"
+        rows = await self._list_position_tpsl(t, pid)
+        if rows is not None:
+            try:
+                modified = await self._modify_existing_tpsl(t, pid, rows, sl, tp, qty_rem)
+            except Exception as e:
+                modified = False
+                last = f"Exception: {str(e)[:120]}"
+            if modified:
+                # Read-Back: nie mehr blind einem code 0 vertrauen.
+                after = await self._list_position_tpsl(t, pid)
+                if after is None or self._levels_applied(t, after, sl, tp):
+                    return {"ok": True, "detail": "Börse: SL/TP geändert (verifiziert)"}
+                last = "Börse meldete Erfolg, Level aber nicht übernommen"
+                logger.warning(f"sync_live_levels {t.get('symbol')}: {last} "
+                               "– Fallback Cancel+Replace")
+        # Alte Orders wegräumen, damit sich keine SL-Duplikate stapeln und die
+        # Mengen-Summe die Position nicht mehr übersteigt.
+        await self._cancel_position_tpsl(t, pid)
+        # Nach dem Aufräumen BEIDE Seiten neu setzen: die nicht angefragte Seite
+        # kommt aus dem Trade, damit die Position nie ohne SL bzw. TP dasteht.
+        eff_sl = sl if sl is not None else (float(t.get("sl") or 0) or None)
+        eff_tp = tp if tp is not None else (float(t.get("tpf") or 0) or None)
+        res = None
+        for use_qty in (True, False):
+            try:
+                res = await self.client.place_position_tp_sl(
+                    t["symbol"], pid, t["side"],
+                    tp_price=eff_tp, tp_qty=(qty_rem if (eff_tp and use_qty) else None),
+                    sl_price=eff_sl, sl_qty=(qty_rem if (eff_sl and use_qty) else None))
+            except Exception as e:
+                return {"ok": False, "detail": f"Exception: {str(e)[:140]}"}
+            if isinstance(res, dict) and res.get("code") == 0:
+                break
+            msg = (isinstance(res, dict) and (res.get("msg") or "")) or ""
+            # Letzter Ausweg: ohne Mengen-Angabe (gilt für die ganze Position)
+            if use_qty and "size of the position" in str(msg).lower():
+                logger.info(f"{t.get('symbol')}: TP/SL mit Menge abgelehnt ({msg}) "
+                            "– Retry ohne Mengen-Angabe (ganze Position)")
+                continue
+            break
+        if isinstance(res, dict) and res.get("code") == 0:
+            new_id = _extract_order_id(res)
+            if new_id:
+                try:
+                    await self.db.auto_trades.update_one(
+                        {"id": t["id"]}, {"$set": {"bitunix_tpsl_order_id": new_id}})
+                    t["bitunix_tpsl_order_id"] = new_id
+                except Exception:
+                    pass
+            # Read-Back auch im Fallback: code 0 allein reicht nicht (Silent-No-Op).
+            after = await self._list_position_tpsl(t, pid)
+            if after is not None and not self._levels_applied(t, after, sl, tp):
+                logger.warning(f"sync_live_levels {t.get('symbol')}: Replace bestätigt, "
+                               "aber Level laut Read-Back nicht übernommen")
+                return {"ok": False,
+                        "detail": "Börse bestätigte, Level aber nicht übernommen "
+                                  "(Read-Back-Verifikation fehlgeschlagen)"}
+            return {"ok": True, "detail": "Börse: SL/TP aktualisiert", "response": res}
+        detail = (isinstance(res, dict) and (res.get("msg") or str(res)[:140])) or last
+        logger.warning(f"sync_live_levels {t.get('symbol')} rejected: {res}")
+        return {"ok": False, "detail": detail}
+
+    @staticmethod
+    def is_ibkr_trade(t: Dict) -> bool:
+        """Live-Trade, dessen Orders bei Interactive Brokers liegen."""
+        return bool(t) and t.get("broker") == "ibkr" and t.get("mode") == "live"
+
+    def live_exchange_ready(self, t: Dict) -> bool:
+        """Live-Trade mit erreichbarem Broker (Bitunix-Keys ODER IBKR-Gateway)."""
+        if t.get("mode") != "live":
+            return False
+        if self.is_ibkr_trade(t):
+            from services.ibkr_client import ibkr_client
+            return ibkr_client.configured()
+        return self.client.configured()
+
+    async def _live_partial_close(self, t, qty):
+        res = await self.close_live_position(t, qty, full=False)
+        return bool(res.get("ok"))
+
+    async def _live_move_sl(self, t, new_sl_price: float, qty_rem: float) -> bool:
+        """Neuen SL für die Restposition an die Börse schicken (Break-Even, Trailing).
+        Bitunix: `sync_live_levels` (löst die positionId bei Bedarf nach);
+        IBKR: Order-Modify der STP-Orders aller offenen OCA-Legs."""
+        if self.is_ibkr_trade(t):
+            from services import ibkr_trade
+            res = await ibkr_trade.move_stop(t, new_sl_price)
+        else:
+            res = await self.sync_live_levels(t, sl=new_sl_price)
+        if not res.get("ok"):
+            logger.warning(f"_live_move_sl {t.get('symbol')} -> {new_sl_price}: "
+                           f"{res.get('detail') or res.get('error')}")
+        return bool(res.get("ok"))
+
+    async def _live_flash_close(self, t, qty):
+        """Voll-Close an der Börse (verifiziert). Rückgabe: Ergebnis-Dict.
+        IBKR-Forex-Trades werden über das IBKR-Gateway geschlossen (offene
+        Bracket-Kinder stornieren + Gegen-Market-Order über die ECHTE Rest-
+        position); `exit_price` = Fill, sofern schon bekannt."""
+        if t.get("broker") == "ibkr":
+            from services import ibkr_trade
+            res = await ibkr_trade.close_live_forex(t)
+            return {"ok": bool(res.get("ok")),
+                    "detail": res.get("error") or res.get("detail") or "IBKR-Close gesendet",
+                    "exit_price": res.get("exit_price")}
+        return await self.close_live_position(
+            t, qty or t.get("qty_remaining") or t.get("qty"), full=True)
+
+    async def manual_close(self, trade_id: str, price: float):
+        """Trade schließen (manuell oder durch die KI).
+
+        WICHTIG: Bei Live-Trades wird die Position an der Börse ZUERST wirklich
+        geschlossen und verifiziert. Schlägt das fehl, bleibt der Trade offen und
+        es wird ein Fehler zurückgegeben – vorher wurde er lokal als geschlossen
+        markiert, während die Bitunix-Position weiterlief."""
+        t = await self.db.auto_trades.find_one({"id": trade_id, "status": "open"})
+        if not t:
+            return None
+        side = t["side"]
+        qty_rem = t.get("qty_remaining", t["qty"])
+        live_note = ""
+        if self.live_exchange_ready(t):
+            res = await self._live_flash_close(t, qty_rem)
+            if not res.get("ok"):
+                # Position existiert an der Börse evtl. gar nicht mehr
+                # (extern/TP/SL geschlossen) -> sofort abgleichen statt den
+                # Trade fälschlich offen zu lassen.
+                booked = await self._reconcile_close_error(t, res.get("detail"))
+                if booked:
+                    return {**booked, "live_verified": True, "external": True,
+                            "note": "Position war an der Börse bereits geschlossen – "
+                                    "Trade wurde als extern geschlossen verbucht."}
+                await self.db.auto_trades.update_one({"id": trade_id}, {"$set": {
+                    "live_close_failed": True,
+                    "live_close_error": res.get("detail"),
+                    "events": (t.get("events", []) +
+                               [f"CLOSE FEHLGESCHLAGEN (Börse): {res.get('detail')}"])[-20:]}})
+                await self._notify_reject(
+                    t["symbol"], side,
+                    f"Live-Position konnte NICHT geschlossen werden: {res.get('detail')}")
+                broker_name = "IBKR" if self.is_ibkr_trade(t) else "Bitunix"
+                return {"error": "Live-Position konnte an der Börse nicht geschlossen werden: "
+                                 f"{res.get('detail')}. Der Trade bleibt offen – bitte erneut "
+                                 f"versuchen oder direkt bei {broker_name} prüfen."}
+            live_note = f" [{res.get('detail')}]"
+            # IBKR liefert den echten Fill-Preis der Gegen-Market-Order
+            if res.get("exit_price"):
+                price = float(res["exit_price"])
+                live_note += f" [IBKR-Fill {price}]"
+        # Ehrliches Paper: manueller/KI-Close ist eine Market-Order -> Spread +
+        # Slippage auch hier anrechnen (Live zahlt sie an der Börse real).
+        if t["mode"] == "paper":
+            try:
+                from services import paper_execution
+                p_adj, p_info = await paper_execution.exit_fill(
+                    t["symbol"], side, price, notional_usdt=qty_rem * price)
+                if p_info and p_adj > 0:
+                    live_note += f" [Paper-Fill {p_adj} statt {price}]"
+                    price = p_adj
+            except Exception as e:
+                logger.debug(f"{t['symbol']}: Paper-Exit-Simulation übersprungen: {e}")
+        fee_pct = float(t.get("fee_percent", 0.06)) / 100
+        if self.is_ibkr_trade(t):
+            # Forex: PnL/Notional in USD (Quote-Währung ggf. umrechnen, USDJPY)
+            from services import ibkr_trade
+            fee = ibkr_trade.notional_usd(t["symbol"], price, qty_rem) * fee_pct
+            pnl = ibkr_trade.pnl_usd(t["symbol"], side, t["entry"], price, qty_rem)
+        else:
+            fee = qty_rem * price * fee_pct
+            pnl = (price - t["entry"]) * qty_rem if side == "LONG" else (t["entry"] - price) * qty_rem
+        realized = round(t.get("realized_pnl", 0.0) + pnl - fee, 6)
+        result = "win" if realized > 0 else ("breakeven" if realized == 0 else "loss")
+        peak_mc = update_peak(side, t.get("peak_price"), t.get("entry"), price)
+        trough_mc = update_trough(side, t.get("trough_price"), t.get("entry"), price)
+        closed_at = datetime.now(timezone.utc).isoformat()
+        won = await self._finalize_close(trade_id, {
+            "status": "closed", "exit_price": price, "result": result,
+            **({"peak_price": round(peak_mc, 8)} if peak_mc is not None else {}),
+            **({"trough_price": round(trough_mc, 8)} if trough_mc is not None else {}),
+            "realized_pnl": realized, "qty_remaining": 0,
+            "fees_paid": round(float(t.get("fees_paid", 0.0)) + fee, 6),
+            "live_close_failed": False,
+            "closed_at": closed_at,
+            "events": (t.get("events", []) +
+                       [f"MANUAL CLOSE @ {price} (Fee {round(fee, 6)}){live_note}"])[-20:]})
+        if not won:
+            return {"result": result, "realized_pnl": realized, "already_closed": True,
+                    "live_verified": bool(live_note) or t["mode"] != "live"}
+        await self._after_close({**t, "status": "closed", "result": result,
+                                 "realized_pnl": realized, "exit_price": price,
+                                 "closed_at": closed_at})
+        return {"result": result, "realized_pnl": realized,
+                "live_verified": bool(live_note) or t["mode"] != "live"}
+
+    # ------------------------------------------------------------------
+    # Trade-Steuerung im laufenden Trade (Teil-Close, SL/TP, Margin, Hebel).
+    # Wird von der manuellen Bedienung UND vom KI-Trade-Manager
+    # (services/ai_trade_manager.py) genutzt – eine Quelle für die Logik.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def liq_price_for(side: str, entry: float, leverage: float,
+                      mmr_percent: float = 0.5) -> float:
+        """Liquidationspreis für Entry/Hebel (gleiche Formel wie beim Öffnen)."""
+        mmr = float(mmr_percent) / 100
+        liq_dist = max(1.0 / max(float(leverage), 0.01) - mmr, 0.0005)
+        return round(entry * (1 - liq_dist) if side == "LONG"
+                     else entry * (1 + liq_dist), 6)
+
+    def _coin_max_lev(self, symbol: str) -> float:
+        """Max. Hebel des Coins (Bitunix-Katalog); 200, wenn unbekannt."""
+        try:
+            return float(self.client.max_leverage_for(symbol))
+        except (AttributeError, TypeError, ValueError):
+            return 200.0
+
+    async def _open_trade(self, trade_id: str) -> Optional[Dict]:
+        return await self.db.auto_trades.find_one({"id": trade_id, "status": "open"})
+
+    async def partial_close(self, trade_id: str, percent: float,
+                            price: Optional[float] = None) -> Optional[Dict]:
+        """Teilweise schließen (percent = 1..99 der RESTMENGE)."""
+        t = await self._open_trade(trade_id)
+        if not t:
+            return None
+        pct = max(1.0, min(99.0, float(percent)))
+        qty_rem = float(t.get("qty_remaining", t["qty"]))
+        price = float(price or await self._current_mark(t["symbol"]) or t["entry"])
+        # Ehrliches Paper: Teil-Close = Market-Order -> Spread + Slippage anrechnen
+        if t["mode"] == "paper":
+            try:
+                from services import paper_execution
+                p_adj, p_info = await paper_execution.exit_fill(
+                    t["symbol"], t["side"], price,
+                    notional_usdt=qty_rem * pct / 100 * price)
+                if p_info and p_adj > 0:
+                    price = p_adj
+            except Exception as e:
+                logger.debug(f"{t['symbol']}: Paper-Exit-Simulation übersprungen: {e}")
+        qty = round(qty_rem * pct / 100, 8)
+        if qty <= 0:
+            return {"error": "Menge zu klein"}
+        left = round(qty_rem - qty, 8)
+        dust_note = None
+        # Dust-Schutz (Live): würde eine Restmenge unter dem Börsen-Minimum übrig
+        # bleiben, wird stattdessen komplett geschlossen – sonst bleiben verwaiste
+        # Cent-Positionen zurück, die niemand mehr schließen kann.
+        if left > 0 and t["mode"] == "live" and self.client.configured():
+            try:
+                b_sym = self.client.to_bitunix_symbol(t["symbol"])
+                min_qty = float((self.client.contract_meta(b_sym) or {})
+                                .get("min_qty") or 0)
+            except Exception:
+                min_qty = 0.0
+            if min_qty > 0 and left < min_qty:
+                dust_note = (f"Restmenge {left} wäre unter Börsen-Minimum {min_qty} "
+                             f"(Dust) – Trade wird komplett geschlossen")
+                qty = qty_rem
+                left = 0.0
+        fee = qty * price * (float(t.get("fee_percent", 0.06)) / 100)
+        pnl = ((price - t["entry"]) if t["side"] == "LONG" else (t["entry"] - price)) * qty
+        realized = round(float(t.get("realized_pnl", 0.0)) + pnl - fee, 6)
+        if t["mode"] == "live" and self.client.configured():
+            res = await self.close_live_position(t, qty, full=(left <= 0))
+            if not res.get("ok"):
+                booked = await self._reconcile_close_error(t, res.get("detail"))
+                if booked:
+                    return {"closed_qty": 0, "qty_remaining": 0, "external": True,
+                            **booked,
+                            "note": "Position war an der Börse bereits geschlossen – "
+                                    "Trade wurde komplett als extern geschlossen verbucht."}
+                await self.db.auto_trades.update_one({"id": trade_id}, {"$set": {
+                    "events": (t.get("events", []) +
+                               [f"PARTIAL CLOSE FEHLGESCHLAGEN (Börse): "
+                                f"{res.get('detail')}"])[-20:]}})
+                return {"error": "Teil-Close an der Börse fehlgeschlagen: "
+                                 f"{res.get('detail')} – Trade unverändert."}
+        stage = 1 + sum(1 for ev in t.get("events", [])
+                        if "TEIL-EXIT" in str(ev) or "PARTIAL CLOSE" in str(ev))
+        stage_tag = "TP-Staffel" if (pnl - fee) > 0 else "Teil-Absicherung"
+        upd = {
+            "qty_remaining": left, "realized_pnl": realized,
+            "fees_paid": round(float(t.get("fees_paid", 0.0)) + fee, 6),
+            "events": (t.get("events", []) +
+                       [f"TEIL-EXIT Stufe {stage} ({stage_tag}) {pct:.0f}% "
+                        f"({qty}) @ {price} (PnL {round(pnl - fee, 4)})"]
+                       + ([dust_note] if dust_note else []))[-20:]}
+        if left <= 0:
+            upd.update({"status": "closed", "exit_price": price,
+                        "result": "win" if realized > 0 else
+                                  ("loss" if realized < 0 else "breakeven"),
+                        "closed_at": datetime.now(timezone.utc).isoformat()})
+        if left <= 0:
+            if await self._finalize_close(trade_id, upd):
+                await self._after_close({**t, **upd})
+        else:
+            await self.db.auto_trades.update_one({"id": trade_id}, {"$set": upd})
+        return {"closed_qty": qty, "qty_remaining": left, "price": price,
+                "realized_pnl": realized,
+                **({"note": dust_note} if dust_note else {})}
+
+    async def adjust_levels(self, trade_id: str, sl: Optional[float] = None,
+                            tp1: Optional[float] = None,
+                            tpf: Optional[float] = None) -> Optional[Dict]:
+        """SL / TP1 / Final-TP im laufenden Trade verschieben."""
+        t = await self._open_trade(trade_id)
+        if not t:
+            return None
+        price = float(await self._current_mark(t["symbol"]) or t["entry"])
+        long_side = t["side"] == "LONG"
+        updates: Dict = {}
+        events: List[str] = []
+        if sl is not None:
+            sl = float(sl)
+            if (long_side and sl >= price) or (not long_side and sl <= price):
+                return {"error": f"SL {sl} liegt auf der falschen Seite des Preises {price}"}
+            updates["sl"] = round(sl, 8)
+            events.append(f"SL {t.get('sl')} -> {round(sl, 8)}")
+        for key, val in (("tp1", tp1), ("tpf", tpf)):
+            if val is None:
+                continue
+            val = float(val)
+            if (long_side and val <= price) or (not long_side and val >= price):
+                return {"error": f"{key.upper()} {val} liegt auf der falschen "
+                                 f"Seite des Preises {price}"}
+            updates[key] = round(val, 8)
+            events.append(f"{key.upper()} {t.get(key)} -> {round(val, 8)}")
+        if not updates:
+            return {"error": "Keine Level angegeben"}
+        # Live: neue Level ZUERST an die Börse schicken. Ohne diesen Schritt
+        # stimmte nur die Website-Anzeige, die echte Order behielt ihre alten
+        # SL/TP-Werte.
+        if t["mode"] == "live" and self.client.configured():
+            exch_tp = updates.get("tpf") or updates.get("tp1")
+            res = await self.sync_live_levels(t, sl=updates.get("sl"), tp=exch_tp)
+            if not res.get("ok"):
+                booked = await self._reconcile_close_error(t, res.get("detail"))
+                if booked:
+                    return {"external": True, **booked,
+                            "note": "Position existiert an der Börse nicht mehr – "
+                                    "Trade wurde als extern geschlossen verbucht, "
+                                    "Level-Anpassung entfällt."}
+                await self.db.auto_trades.update_one({"id": trade_id}, {"$set": {
+                    "events": (t.get("events", []) +
+                               [f"ADJUST FEHLGESCHLAGEN (Börse): {res.get('detail')}"])[-20:]}})
+                return {"error": "Börse hat die neuen Level abgelehnt: "
+                                 f"{res.get('detail')} – Level unverändert."}
+            events.append("Börse bestätigt")
+        updates["events"] = (t.get("events", []) + ["ADJUST " + ", ".join(events)])[-20:]
+        await self.db.auto_trades.update_one({"id": trade_id}, {"$set": updates})
+        return {"sl": updates.get("sl", t.get("sl")), "tp1": updates.get("tp1", t.get("tp1")),
+                "tpf": updates.get("tpf", t.get("tpf")), "price": price}
+
+    async def _free_capital_ok(self, trade: Dict, extra_margin: float) -> bool:
+        """Zusätzliche Margin nur aus dem freien Kapital-Kontingent (Paper & Live)."""
+        try:
+            fc = await self.free_capital(trade.get("mode", "paper"))
+            if fc["free"] is None:
+                return True
+            return fc["free"] >= float(extra_margin)
+        except Exception as e:
+            logger.warning(f"_free_capital_ok failed: {e}")
+            return True
+
+    async def _release_secured_margin(self, t: Dict, updates: Dict, events: List,
+                                      qty_rem: float, price: float = 0.0):
+        """Gewinnsicherung: gebundene Marge freisetzen. Die Position bleibt
+        gleich groß, der Hebel steigt Richtung profit_secure_max_leverage
+        (anteilig per profit_secure_margin_reduce_pct) und die Liq rückt
+        Richtung Entry. Der SL wird dabei automatisch mit Abstand HINTER die
+        neue Liquidation gezogen; läge er dadurch zu nah am aktuellen Kurs,
+        wird die Freisetzung verschoben (Retry im nächsten Zyklus)."""
+        lev_now = float(t.get("leverage", 1) or 1)
+        target_lev = min(float(t.get("profit_secure_max_leverage", 100) or 100),
+                         self._coin_max_lev(t["symbol"]))
+        plan = profit_release_plan(
+            qty_rem, float(t["entry"]), lev_now, target_lev,
+            reduce_pct=float(t.get("profit_secure_margin_reduce_pct", 100) or 100))
+        if not plan:
+            updates["profit_margin_released"] = True  # nichts freizusetzen
+            return
+        cur_sl = updates.get("sl", t.get("sl"))
+        needed_sl, liq, ok = sl_liq_guard(
+            t["side"], float(t["entry"]), plan["new_leverage"], float(price or 0),
+            cur_sl, buffer_pct=float(t.get("profit_secure_sl_liq_buffer_pct", 0.3) or 0.3))
+        if not ok:
+            logger.info(f"{t['symbol']}: Gewinnsicherung verschoben – SL müsste "
+                        f"auf {needed_sl} (hinter Liq {liq}), läge aber zu nah "
+                        f"am Kurs {price} (Retry)")
+            return
+        if t.get("mode") == "live" and self.client.configured():
+            try:
+                res = await self.client.adjust_position_margin(
+                    t["symbol"], -plan["release"],
+                    position_id=t.get("bitunix_position_id"), side=t["side"])
+                if not (isinstance(res, dict) and res.get("code") == 0):
+                    events.append("GEWINNSICHERUNG: Marge-Freisetzung von der "
+                                  f"Börse abgelehnt: {str(res)[:120]}")
+                    updates["profit_margin_released"] = True  # keine Endlos-Schleife
+                    return
+            except Exception as e:
+                events.append(f"GEWINNSICHERUNG: Marge-Freisetzung fehlgeschlagen: "
+                              f"{str(e)[:120]}")
+                updates["profit_margin_released"] = True
+                return
+        updates["leverage"] = plan["new_leverage"]
+        updates["margin_used"] = plan["new_margin"]
+        updates["liq_price"] = liq
+        updates["profit_margin_released"] = True
+        events.append(f"GEWINNSICHERUNG: Marge -{round(plan['release'], 4)} USDT "
+                      f"freigesetzt – Hebel {round(lev_now, 2)}x -> "
+                      f"{plan['new_leverage']}x, Liq {liq}")
+        if needed_sl is not None:
+            updates["sl"] = needed_sl
+            events.append(f"GEWINNSICHERUNG: SL automatisch hinter die neue Liq "
+                          f"gezogen -> {needed_sl} (Liq {liq})")
+            if t.get("mode") == "live":
+                await self._live_move_sl(t, needed_sl, qty_rem)
+
+    async def adjust_margin(self, trade_id: str, amount: float) -> Optional[Dict]:
+        """Margin hinzufügen (amount > 0) oder entnehmen (amount < 0).
+        Positionsgröße bleibt gleich -> effektiver Hebel und Liquidationspreis
+        verschieben sich entsprechend."""
+        t = await self._open_trade(trade_id)
+        if not t:
+            return None
+        amount = float(amount)
+        if amount == 0:
+            return {"error": "Betrag 0"}
+        qty_rem = float(t.get("qty_remaining", t["qty"]))
+        notional = qty_rem * float(t["entry"])
+        lev_now = float(t.get("leverage", 1) or 1)
+        margin_now = notional / max(lev_now, 0.01)
+        new_margin = margin_now + amount
+        if new_margin < notional / 200:
+            return {"error": "Margin zu klein (max. Hebel 200x erreicht)"}
+        if new_margin > notional:
+            new_margin = notional          # Hebel 1x ist das Minimum
+        new_lev = round(notional / new_margin, 2)
+        if amount > 0 and not await self._free_capital_ok(t, amount):
+            return {"error": "Zu wenig freies Kapital für zusätzliche Margin"}
+        # SL/Liq-Schutz: bei Margen-ENTNAHME rückt die Liq Richtung Kurs – der
+        # SL muss davor bleiben (mit Abstand), sonst wäre er wirkungslos.
+        needed_sl = None
+        if amount < 0:
+            mark = float(await self._current_mark(t["symbol"]) or t["entry"])
+            needed_sl, _liq, ok = sl_liq_guard(
+                t["side"], float(t["entry"]), new_lev, mark, t.get("sl"))
+            if not ok:
+                return {"error": f"Abgelehnt: der SL müsste auf {needed_sl} hinter "
+                                 f"die neue Liquidation gezogen werden und läge "
+                                 f"damit zu nah am aktuellen Kurs ({mark})"}
+        live_note = ""
+        if t["mode"] == "live" and self.client.configured():
+            try:
+                res = await self.client.adjust_position_margin(
+                    t["symbol"], amount, position_id=t.get("bitunix_position_id"),
+                    side=t["side"])
+                if not (isinstance(res, dict) and res.get("code") == 0):
+                    return {"error": f"Börse hat Margin-Anpassung abgelehnt: {res}"}
+            except Exception as e:
+                return {"error": f"Margin-Anpassung fehlgeschlagen: {str(e)[:160]}"}
+            live_note = " (Börse bestätigt)"
+        liq = self.liq_price_for(t["side"], float(t["entry"]), new_lev)
+        sl_set = {}
+        sl_note = []
+        if needed_sl is not None:
+            sl_set["sl"] = needed_sl
+            sl_note = [f"SL automatisch hinter die neue Liq gezogen -> {needed_sl}"]
+            if t["mode"] == "live" and self.client.configured():
+                await self._live_move_sl(t, needed_sl,
+                                         float(t.get("qty_remaining", t["qty"])))
+        await self.db.auto_trades.update_one({"id": trade_id}, {"$set": {
+            "leverage": new_lev, "margin_used": round(new_margin, 4),
+            "liq_price": liq, **sl_set,
+            "events": (t.get("events", []) +
+                       [f"MARGIN {'+' if amount > 0 else ''}{round(amount, 4)} USDT{live_note}: "
+                        f"Hebel {lev_now}x -> {new_lev}x, Liq {liq}"] + sl_note)[-20:]}})
+        return {"margin": round(new_margin, 4), "leverage": new_lev, "liq_price": liq,
+                **({"sl": needed_sl} if needed_sl is not None else {})}
+
+    async def adjust_leverage(self, trade_id: str, leverage: float) -> Optional[Dict]:
+        """Hebel im laufenden Trade ändern – Positionsgröße bleibt erhalten,
+        die gebundene Margin ändert sich."""
+        t = await self._open_trade(trade_id)
+        if not t:
+            return None
+        new_lev = max(1.0, min(self._coin_max_lev(t["symbol"]), float(leverage)))
+        qty_rem = float(t.get("qty_remaining", t["qty"]))
+        notional = qty_rem * float(t["entry"])
+        lev_now = float(t.get("leverage", 1) or 1)
+        if abs(new_lev - lev_now) < 0.01:
+            return {"error": "Hebel unverändert"}
+        extra = notional / new_lev - notional / max(lev_now, 0.01)
+        if extra > 0 and not await self._free_capital_ok(t, extra):
+            return {"error": "Zu wenig freies Kapital für den niedrigeren Hebel "
+                             f"(zusätzlich {round(extra, 2)} USDT Margin nötig)"}
+        # SL/Liq-Schutz: bei Hebel-ERHÖHUNG rückt die Liq Richtung Kurs – der
+        # SL wird ggf. automatisch mit Abstand hinter die neue Liq gezogen.
+        needed_sl = None
+        if new_lev > lev_now:
+            mark = float(await self._current_mark(t["symbol"]) or t["entry"])
+            needed_sl, _liq, ok = sl_liq_guard(
+                t["side"], float(t["entry"]), new_lev, mark, t.get("sl"))
+            if not ok:
+                return {"error": f"Abgelehnt: der SL müsste auf {needed_sl} hinter "
+                                 f"die neue Liquidation gezogen werden und läge "
+                                 f"damit zu nah am aktuellen Kurs ({mark})"}
+        if t["mode"] == "live" and self.client.configured():
+            try:
+                res = await self.client.set_leverage(t["symbol"], int(round(new_lev)))
+                if not (isinstance(res, dict) and res.get("code") == 0):
+                    return {"error": f"Börse hat Hebeländerung abgelehnt: {res}"}
+            except Exception as e:
+                return {"error": f"Hebeländerung fehlgeschlagen: {str(e)[:160]}"}
+        liq = self.liq_price_for(t["side"], float(t["entry"]), new_lev)
+        sl_set = {}
+        sl_note = []
+        if needed_sl is not None:
+            sl_set["sl"] = needed_sl
+            sl_note = [f"SL automatisch hinter die neue Liq gezogen -> {needed_sl}"]
+            if t["mode"] == "live" and self.client.configured():
+                await self._live_move_sl(t, needed_sl, qty_rem)
+        await self.db.auto_trades.update_one({"id": trade_id}, {"$set": {
+            "leverage": round(new_lev, 2), "margin_used": round(notional / new_lev, 4),
+            "liq_price": liq, **sl_set,
+            "events": (t.get("events", []) +
+                       [f"HEBEL {lev_now}x -> {round(new_lev, 2)}x "
+                        f"(Margin {round(notional / new_lev, 2)} USDT, Liq {liq})"]
+                       + sl_note)[-20:]}})
+        return {"leverage": round(new_lev, 2), "margin": round(notional / new_lev, 4),
+                "liq_price": liq,
+                **({"sl": needed_sl} if needed_sl is not None else {})}
