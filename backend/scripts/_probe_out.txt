@@ -1,1 +1,0 @@
-ra_d41ad11b Regime Krypto 1h det=kombi mode=9 horizons=[6.48, 16.199, 40.498, 89.095, 194.39]

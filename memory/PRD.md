@@ -1,3 +1,25 @@
+# PRD – Session 24.09.2026 (Branch conflict_230926_1951)
+
+## Original-Auftrag (Kurz)
+Produktive, extern auf Render deployte Daytrading-Website verbessern (Struktur unverändert): POL-Liquidation vor SL fixen,
+Copilot-Shadow-Widerspruch fixen, Freigabe-Fragen beantworten, Regime-Lab (Benchmarks, Qualität, Ziel-Phase 4–14 d,
+Timeframes) prüfen, Ablation beschleunigen. Prod-DB nur lesend, Tests gegen lokale DB.
+
+## Umgesetzt (2026-09-24)
+- Fill/Liq-Guard (services/fill_liq_guard.py + bitunix_trade.guard_fill_liq): echter Fill (avgOpenPrice) übernommen, SL vs. echte Börsen-Liq -> Marge nachschießen / SL vor Liq / schließen; nach Open + jeder Watchdog-Sync; Liquidationen aus Historie (liqQty) markiert
+- Shadow-Zählung je Analyse (shadow_by_aid, orphan_shadow), Copilot-Kontext/Prompt korrigiert, Struktur-Cache beim Löschen geleert, „✓ N behalten“ am Knopf
+- Referenz v2 (fixes 7-d-Fenster, Merge 2 d, balanciert, Skill vs. Mehrheits-Baseline, Richtungs-Phase) in Analyse, Qualitätsnote, Benchmark, Autopilot-Score, Ablation-Verdikt, Freigabe-Delta; UI-Kennzahlen
+- Ablation lokal auf dem Worker (Worker 1.14.0, fn="ablation")
+- Bericht: /app/REGIME_LAB_PRUEFBERICHT_2409.md; Tests: backend/tests/test_pruefung_2409.py (15), Testing-Agent iteration_23 grün
+
+## Backlog
+- P1: Autopilot neu laufen lassen (Scores v2), dann Analyse + lokale Ablation; ggf. Referenz-Fenster je Ziel-Band einstellbar in der UI
+- P1: 15m-Horizonte skalieren mit dem Zeitraum (Warmup 22 811 Kerzen) -> an Timeframe koppeln
+- P2: Optional Ablation/Analyse automatisch als Folgejob nach dem Autopilot (Schalter)
+- P2: Kombi-Kalibrierung (run_kombi_calibrate) ebenfalls auf Referenz v2 umstellen
+
+---
+
 # PRD – KI-Trader Verbesserungen (Session 06/2026, Branch conflict_230926_1748)
 
 ## Ausgangslage

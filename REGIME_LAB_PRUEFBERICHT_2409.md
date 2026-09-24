@@ -77,7 +77,8 @@ Beispiel „Regime Krypto 1h“: angezeigt 12 Tage – die **Richtung** (auf/sei
 
 **Nachmessung deiner besten Analyse mit Referenz v2** (`ra_d41ad11b`, kombi, BTC 1h, Holdout):
 Live=Final 94 % · Roh-Referenz 72 % · **balanciert 44 %** · Baseline „immer seitwärts“ 81 % → **Skill −45 %** ·
-Lag 2,5 d · 40 % verpasste Phasen. Ehrlich bewertet ist sie **schwach** für ein 4–14-Tage-Ziel (zu träge in der
+Lag 2,5 d · 40 % verpasste Phasen. ETH analog: balanciert 43 %, Skill −33 %, 39 % verpasst
+(38 Richtungswechsel in 810 Tagen ≈ Ø 21 Tage). Ehrlich bewertet ist sie **schwach** für ein 4–14-Tage-Ziel (zu träge in der
 Richtung). Die Autopilot-Läufe davor haben sie trotzdem gewählt, weil der Score zu 50 % aus Live=Final
 (~93–98 % bei allen Varianten, kaum Trennkraft) und zu 50 % aus der verzerrten Referenz bestand.
 
