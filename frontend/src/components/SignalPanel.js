@@ -1,8 +1,9 @@
 import React from 'react';
 import { CheckCircle, Circle, Info, TrendUp, TrendDown } from '@phosphor-icons/react';
+import { ActiveSignalCard } from './ActiveSignalCard';
 import './SignalPanel.css';
 
-const SignalPanel = ({ symbol, ruleState, latestSignal, strategyMeta, onShowInChart }) => {
+const SignalPanel = ({ symbol, ruleState, activeSignals = [], strategyMeta, onShowInChart }) => {
   const rules = ruleState?.rules || [];
   const bias = ruleState?.bias;
   const longCount = ruleState?.long_count || 0;
@@ -106,51 +107,21 @@ const SignalPanel = ({ symbol, ruleState, latestSignal, strategyMeta, onShowInCh
         </div>
       )}
 
-      {latestSignal && (
-        <div
-          className={`current-signal clickable ${latestSignal.type === 'LONG' ? 'signal-long' : 'signal-short'}`}
-          data-testid="latest-signal"
-          onClick={() => onShowInChart && onShowInChart(latestSignal)}
-          title="Anklicken: Signal mit Entry/SL/TP-Linien und allen Regeln (inkl. Timeframe je Regel) im Chart anzeigen"
-        >
-          <div className="signal-header">
-            <span className={`badge ${latestSignal.type === 'LONG' ? 'badge-long' : 'badge-short'}`}>
-              {latestSignal.signal_class === 'PRE_SIGNAL' ? 'PRE-' : ''}{latestSignal.type} SIGNAL
-            </span>
-            {latestSignal.confluence && (
-              <span
-                className="badge badge-confluence"
-                data-testid="confluence-badge"
-                title={`Confluence: ${latestSignal.confluence.count} Strategien zeigen dieselbe Richtung (${(latestSignal.confluence.strategies || []).map(s => s.name).join(' + ')})`}
-              >
-                ⚡ CONF ×{latestSignal.confluence.count}
-              </span>
-            )}
-            {latestSignal.confluence && (
-              <span
-                className="badge badge-confluence"
-                data-testid="confluence-badge"
-                title={`Confluence: ${latestSignal.confluence.count} Strategien zeigen dieselbe Richtung (${(latestSignal.confluence.strategies || []).map(s => s.name).join(' + ')})`}
-              >
-                ⚡ CONF ×{latestSignal.confluence.count}
-              </span>
-            )}
-            <span className="mono text-muted" style={{ fontSize: '11px' }}>
-              {new Date(latestSignal.timestamp).toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin' })}
-            </span>
-          </div>
-          <div className="signal-prices">
-            <div className="price-item"><span className="price-label">ENTRY</span><span className="price-value mono">${latestSignal.entry_price}</span></div>
-            <div className="price-item"><span className="price-label">STOP LOSS</span><span className="price-value mono text-short">${latestSignal.stop_loss}</span></div>
-            <div className="price-item"><span className="price-label">TP1</span><span className="price-value mono text-long">${latestSignal.take_profit_1}</span></div>
-            <div className="price-item"><span className="price-label">TP FULL</span><span className="price-value mono text-long">${latestSignal.take_profit_full}</span></div>
-          </div>
-          <div className="signal-crv"><span className="crv-label">CRV</span><span className="crv-value mono">{latestSignal.crv}</span></div>
+      {activeSignals.length > 0 && (
+        <div className="active-signals" data-testid="active-signals">
+          {activeSignals.length > 1 && (
+            <div className="active-signals-head" data-testid="active-signals-count">
+              {activeSignals.length} AKTIVE SIGNALE · {symbol?.replace('USDT', '')}
+            </div>
+          )}
+          {activeSignals.map(s => (
+            <ActiveSignalCard key={s.id || `${s.type}-${s.timestamp}`} s={s} onShowInChart={onShowInChart} />
+          ))}
         </div>
       )}
 
-      {!latestSignal && rules.length > 0 && (
-        <div className="no-signal-hint text-muted">Kein aktives Signal heute · warte auf Regel-Alignment</div>
+      {activeSignals.length === 0 && rules.length > 0 && (
+        <div className="no-signal-hint text-muted" data-testid="no-active-signal">Kein aktives Signal · warte auf Regel-Alignment</div>
       )}
     </div>
   );

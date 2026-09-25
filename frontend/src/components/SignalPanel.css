@@ -276,3 +276,43 @@
   margin-left: 6px;
   font-weight: 700;
 }
+
+/* Aktive Signale (mehrere Setups je Asset) */
+.active-signals { display: flex; flex-direction: column; }
+.active-signals-head {
+  margin: 14px 16px 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #A1A4B0;
+}
+.active-signals .current-signal { margin: 12px 16px 0; }
+.active-signals .current-signal:last-child { margin-bottom: 16px; }
+.active-signal-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.as-time { font-size: 11px; }
+.as-mode {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+}
+.as-mode.live { color: #FF5C7A; }
+.as-mode.paper { color: #9AA4B8; }
+.as-mode.collection { color: #C9A0FF; }
+.as-mode.notrade { color: #FFB020; }
+.as-setup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: -4px 0 14px;
+  padding: 8px 10px;
+  background: rgba(255, 214, 10, 0.06);
+  border-left: 2px solid #FFD60A;
+}
+.as-setup-k { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: #5C6070; }
+.as-setup-v { font-size: 13px; font-weight: 700; color: #FFD60A; word-break: break-all; }
+.as-setup-l { font-size: 12px; color: #A1A4B0; }
+.as-reason { font-size: 12px; color: #FFB020; margin: -6px 0 12px; line-height: 1.4; }

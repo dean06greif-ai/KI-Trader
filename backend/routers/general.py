@@ -116,6 +116,21 @@ async def get_signals(limit: int = 50, strategy_id: str = None):
     return {"signals": [_clean(s) for s in signals]}
 
 
+@router.get("/api/signals/active")
+async def get_active_signals(symbol: str, strategy_id: str = None):
+    """Alle aktiven Signale eines Assets (mehrere Setups möglich) inkl. Setup + Trade-Modus."""
+    from services import active_signals, ai_playbook, notifications
+    cfg = await notifications.get_config(state.db)
+    try:
+        library = ai_playbook.all_setups()
+    except Exception:  # noqa: BLE001
+        library = {}
+    rows = await active_signals.load_active(state.db, symbol, strategy_id,
+                                            bool(cfg.get("signals_only_traded", True)), library)
+    return {"symbol": symbol, "strategy_id": strategy_id, "signals": [_clean(s) for s in rows],
+            "only_traded": bool(cfg.get("signals_only_traded", True))}
+
+
 @router.get("/api/rule-states")
 async def get_rule_states(symbol: str = None):
     if symbol:

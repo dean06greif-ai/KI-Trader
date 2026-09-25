@@ -5,6 +5,7 @@ import Header from './components/Header';
 import CoinSidebar from './components/CoinSidebar';
 import MainChart from './components/MainChart';
 import SignalPanel from './components/SignalPanel';
+import { useActiveSignals } from './hooks/useActiveSignals';
 import StrategyTabs from './components/StrategyTabs';
 import PerformanceAnalytics from './components/PerformanceAnalytics';
 import AlertModal from './components/AlertModal';
@@ -315,7 +316,7 @@ function App() {
 
   const strategyMeta = strategies.find(s => s.id === selectedStrategy);
   const ruleState = ruleStates[selectedCoin]?.[selectedStrategy];
-  const latestSignal = signals.find(s => s.symbol === selectedCoin && s.strategy_id === selectedStrategy);
+  const activeSignals = useActiveSignals(selectedCoin, selectedStrategy, signals[0]?.id);
   return (
     <ErrorBoundary onReset={() => window.location.reload()}>
     <div className="App">
@@ -377,7 +378,7 @@ function App() {
           <SignalPanel
             symbol={selectedCoin}
             ruleState={ruleState}
-            latestSignal={latestSignal}
+            activeSignals={activeSignals}
             strategyMeta={strategyMeta}
             onShowInChart={(sig) => setChartSignal(prev => (prev && prev.id === sig.id ? null : sig))}
           />
