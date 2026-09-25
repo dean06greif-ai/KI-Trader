@@ -95,3 +95,11 @@ Umgesetzt:
 - Bericht `REGIME_LAB_PRUEFBERICHT_2509.md`; Tests `test_regime_jump.py`, `test_event_setups_and_signal_notify.py`; Testing-Agent Iteration 26: 100 %.
 - Lokaler Worker: unverändert (bereits adaptiv: RAM − 1 GB, alle Kerne).
 Backlog: P1 Autopilot mit "jump" auf Prod + neue Analyse/Ablation, dann Shadow-Freigabe · P2 veraltete Unit-Tests reparieren.
+
+
+## Iteration 25.09.2026 (2) – ORDER-ABGEBROCHEN-Spam, Coin-Master-Schalter, Signal-Modus in Master-Steuerung
+- RCA (Prod-DB nur lesend): HYPE Coin-Schalter enabled=false, aber custom_23a30b65_HYPEUSDT=paper/ai_trader_HYPEUSDT=live überstimmten ihn; Anti-Spam-Schlüssel enthielt Hebel-Zahl -> jede Minute neue Meldung.
+- Fix: `AutoTradeManager.coin_master_off` (explizit gespeichert enabled=false) blockiert alle automatischen Signale/Trades/Datensammlung (pipeline, _on_signal_impl, KI-Universum via `core.state.ai_symbol_allowed`); manuelle Trades erlaubt.
+- `notifications.reject_notify_key`: Zahlen raus, interne Stopps coin-übergreifend max. 1/h; Coin "Alerts aus" -> keine Abbruch-Meldung.
+- Master-Steuerung: Karte "Signal-Benachrichtigungen" (Nur ausgeführte Trades / Jedes Signal inkl. Wächter-Grund) – `SignalNotifyModeCard.js`.
+- Tests: `test_order_reject_and_coin_master.py`; Testing-Agent Iteration 27: 100 %.
