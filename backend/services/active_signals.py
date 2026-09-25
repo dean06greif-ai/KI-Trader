@@ -29,7 +29,7 @@ def setup_label(setup: Optional[str], library: Optional[Dict] = None) -> Optiona
     if not setup:
         return None
     desc = str((library or {}).get(setup) or "")
-    head = desc.split(":", 1)[0].strip()
+    head = desc.split(":", 1)[0].split("(", 1)[0].strip()
     return head[:48] if head and len(head) < len(desc) else None
 
 
