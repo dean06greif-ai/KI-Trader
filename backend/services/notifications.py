@@ -85,6 +85,23 @@ def is_internal_reject(reason) -> bool:
     return str(reason or "").strip().lower().startswith(_INTERNAL_REJECT_PREFIXES)
 
 
+REJECT_COOLDOWN_S = 1800          # Börsen-Ablehnung: je Coin/Seite/Grund 30 min
+REJECT_INTERNAL_COOLDOWN_S = 3600  # interne Stopps: coin-übergreifend 1 h
+
+
+def reject_notify_key(symbol: str, side: str, reason, internal: bool):
+    """(Schlüssel, Cooldown-Sekunden) für die Anti-Spam-Bremse der
+    "ORDER ABGEBROCHEN"-Meldung (rein). Zahlen fliegen raus (Hebel/Marge
+    schwanken minütlich); interne Stopps zählen coin-übergreifend je Ursache."""
+    import re
+    raw = str(reason or "").strip()
+    if internal:
+        kind = raw.lower().split(":", 1)[0].strip()[:40]
+        return f"internal:{kind}", REJECT_INTERNAL_COOLDOWN_S
+    core = re.sub(r"\d+(?:[.,]\d+)?", "#", raw)[:80]
+    return f"{symbol}:{side}:{core}", REJECT_COOLDOWN_S
+
+
 # Deutsche Rollen-Namen (identisch zum KI-Team im Frontend) für Meldungstexte
 ROLE_LABELS = {
     "analyst": "Analyst",

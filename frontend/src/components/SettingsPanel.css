@@ -827,6 +827,37 @@
   line-height: 1.5;
 }
 
+/* Master-Steuerung: Modus der Signal-Benachrichtigungen */
+.signal-mode-switch {
+  display: flex;
+  flex-shrink: 0;
+  border: 1px solid #2A2D3A;
+  border-radius: 999px;
+  padding: 3px;
+  background: #12141A;
+  gap: 2px;
+}
+.signal-mode-opt {
+  border: 0;
+  background: transparent;
+  color: #A1A4B0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.2s, color 0.2s;
+}
+.signal-mode-opt:hover:not(:disabled) { color: #FFFFFF; }
+.signal-mode-opt.active { background: #00E5A0; color: #0B0D12; }
+.signal-mode-opt:disabled { cursor: default; }
+@media (max-width: 640px) {
+  .control-card-header:has(.signal-mode-switch) { flex-direction: column; align-items: stretch; }
+  .signal-mode-opt { flex: 1; white-space: normal; }
+}
+
+
 /* Guard-Status-Banner in der Master-Steuerung */
 .guard-alert {
   border: 1px solid #FF3366;

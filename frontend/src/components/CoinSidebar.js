@@ -58,7 +58,7 @@ const CoinSidebar = ({ selectedCoin, onSelectCoin, performance, notifications = 
             <button
               className={`auto-toggle ${autoOn ? 'auto-on' : ''}`}
               onClick={(e) => { e.stopPropagation(); onToggleAutoTrade && onToggleAutoTrade(coin, !autoOn); }}
-              title={autoOn ? 'Auto-Trade AKTIV – klicken zum Deaktivieren' : 'Auto-Trade INAKTIV – klicken zum Aktivieren'}
+              title={autoOn ? 'Auto-Trade AKTIV – klicken zum Deaktivieren' : (autotradeCoins[coin] ? 'Auto-Trade AUS – für diesen Coin keine automatischen Signale/Trades (alle Strategien, KI-Trader, Datensammlung). Klicken zum Aktivieren' : 'Auto-Trade INAKTIV – klicken zum Aktivieren')}
               data-testid={`autotrade-btn-${coin}`}
             >
               <Lightning size={14} weight={autoOn ? 'fill' : 'regular'} />

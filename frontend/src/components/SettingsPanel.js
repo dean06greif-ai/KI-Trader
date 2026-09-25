@@ -8,6 +8,7 @@ import TIMEFRAMES, { RULE_TIMEFRAMES, TF_MINUTES } from '../constants/timeframes
 import './SettingsPanel.css';
 import NumInput from './NumInput';
 import TelegramNotifySettings from './TelegramNotifySettings';
+import SignalNotifyModeCard from './SignalNotifyModeCard';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -1141,6 +1142,9 @@ const SettingsPanel = ({ onClose, focusStrategy, mode = 'all', controlState, onC
                     </button>
                   </div>
                 </div>
+                <SignalNotifyModeCard />
+
+
 
                 <div className="control-card" data-testid="control-slippage-card">
                   <div className="control-card-header">

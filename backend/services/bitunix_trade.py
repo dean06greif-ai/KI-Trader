@@ -1575,18 +1575,28 @@ class AutoTradeManager:
     async def _notify_reject(self, symbol: str, side: str, reason: str) -> None:
         if not self.telegram:
             return
-        # Anti-Spam: identische Ablehnung (Symbol+Seite+Meldungskern) höchstens
-        # alle 30 Minuten melden. Bug-Report: eine manuell eröffnete QQQ-Position
-        # (nicht per OpenAPI handelbar) erzeugte bei jedem Zyklus eine
-        # "ORDER ABGEBROCHEN"-Telegram-Nachricht.
+        from services import notifications
+        internal = notifications.is_internal_reject(reason)
+        # Coin in der Seitenleiste auf "Alerts aus" -> auch keine Abbruch-Meldungen
+        try:
+            from core.state import scanner
+            if not scanner.is_notify_enabled(symbol):
+                logger.info(f"Reject-Notify {symbol} unterdrückt: Alerts für den Coin aus")
+                return
+        except Exception:
+            pass
+        # Anti-Spam (Bug-Report 25.09.): der Schlüssel enthielt Zahlen wie den
+        # Hebel (51.93x/51.98x) -> jede Minute eine "neue" Meldung. Jetzt ohne
+        # Zahlen; interne Stopps (Risikobudget, Kapital, Mindest-Trade) gelten
+        # coin-übergreifend als EINE Ursache -> höchstens 1 Meldung/Stunde.
         try:
             sent = getattr(self, "_reject_sent", None)
             if sent is None:
                 sent = self._reject_sent = {}
-            key = f"{symbol}:{side}:{str(reason)[:80]}"
+            key, cooldown = notifications.reject_notify_key(symbol, side, reason, internal)
             now = time.time()
-            if now - sent.get(key, 0) < 1800:
-                logger.info(f"Reject-Notify unterdrückt (30min-Cooldown): {key}")
+            if now - sent.get(key, 0) < cooldown:
+                logger.info(f"Reject-Notify unterdrückt (Cooldown): {key}")
                 return
             sent[key] = now
             if len(sent) > 200:
@@ -1595,8 +1605,6 @@ class AutoTradeManager:
         except Exception:
             pass
         try:
-            from services import notifications
-            internal = notifications.is_internal_reject(reason)
             if not await notifications.enabled(
                     self.db, "order_rejected", "order_rejected_internal" if internal else None):
                 return
@@ -1604,6 +1612,14 @@ class AutoTradeManager:
                                                **({"internal": True} if internal else {}))
         except Exception as e:
             logger.error(f"telegram reject notify failed: {e}")
+
+    def coin_master_off(self, symbol: Optional[str]) -> bool:
+        """Coin in den Coin-Einstellungen (Seitenleiste) explizit auf Auto-Trade AUS
+        (gespeichert enabled=False) -> KEINE automatischen Signale/Trades für diesen
+        Coin – über alle Strategien, KI-Trader und Datensammlung. Coins ohne
+        gespeicherten Eintrag bleiben unberührt (Strategie-Coin-Configs gelten)."""
+        c = (self.config.get("coins") or {}).get(symbol) if symbol else None
+        return isinstance(c, dict) and c.get("enabled") is False
 
     async def _current_mark(self, symbol: str) -> Optional[float]:
         """Try to get the freshest mark price. Falls back to None."""
@@ -1921,6 +1937,10 @@ class AutoTradeManager:
             logger.info(f"AutoTrade blockiert {symbol} ({strategy_id}): "
                         "Master-Schalter 'Stop All Trades' aktiv")
             signal["_reject_reason"] = "Master-Schalter 'Stop All Trades' aktiv"
+            return None
+        if self.coin_master_off(symbol) and not signal.get("manual_trade"):
+            signal["_reject_reason"] = f"{symbol} in den Coin-Einstellungen auf Auto-Trade AUS"
+            logger.info(f"AutoTrade blockiert {symbol} ({strategy_id}): Coin-Schalter AUS")
             return None
         # Effective mode: strategy_coin_config > strategy override > global.
         # 'off' means this strategy is disabled -> no trade.

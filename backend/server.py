@@ -27,12 +27,12 @@ from core.instruments import fetch_live_candles
 from core.pipeline import emit_ai_signal
 from core.scheduler import daily_reset_loop, start_scanner
 from core.state import (
+    ai_symbol_allowed,
     autotrader,
     feed,
     scanner,
     strategy_coin_toggles,
     telegram,
-    toggle_enabled,
     trade_client,
 )
 from routers import ALL_ROUTERS
@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
 
     # ---- KI Trader engine ----
     ai_engine.setup(db=app.mongodb, scanner=scanner, signal_cb=emit_ai_signal,
-                    toggle_check=toggle_enabled, symbols=list(ALL_SYMBOLS))
+                    toggle_check=ai_symbol_allowed, symbols=list(ALL_SYMBOLS))
     await ai_engine.load_config()
     # ---- KI-Ökosystem: Gedächtnis, Forschungs-Analyst, ML-Labor, Markt-Beobachter ----
     from services.ai_closed_loop import closed_loop

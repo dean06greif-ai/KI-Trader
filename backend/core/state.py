@@ -41,3 +41,9 @@ def toggle_enabled(strategy_id: str, symbol: str) -> bool:
     if not strategy_id or not symbol:
         return True
     return strategy_coin_toggles.get((strategy_id, symbol), True)
+
+
+def ai_symbol_allowed(strategy_id: str, symbol: str) -> bool:
+    """KI-Analyse-Universum: (Strategie, Coin)-Schalter UND Coin-Master-Schalter
+    (Seitenleiste "Auto-Trade AUS") – ausgeschaltete Coins kosten keine Tokens."""
+    return toggle_enabled(strategy_id, symbol) and not autotrader.coin_master_off(symbol)

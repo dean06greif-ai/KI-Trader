@@ -85,6 +85,10 @@ class TelegramNotifier:
             trade_lines = f"🏷 *Trade:* {info.get('mode_label')}\n"
             if info.get('setup'):
                 trade_lines += f"🧩 *Setup:* `{info['setup']}`\n"
+        elif signal.get('_no_trade_reason'):
+            action = "🚫 *Kein Trade eröffnet* (nur Info)"
+            why = str(signal['_no_trade_reason']).replace('`', "'")[:220]
+            trade_lines = f"🛡 *Grund:* `{why}`\n"
 
         message = f"""{title}
 

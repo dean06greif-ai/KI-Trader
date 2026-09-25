@@ -70,6 +70,10 @@ async def process_signal(signal: Dict, candles: List[Dict]):
     # remain unaffected.
     if not toggle_enabled(signal.get("strategy_id"), signal.get("symbol")):
         return
+    # Coin-Master-Schalter (Seitenleiste "Auto-Trade AUS"): keine automatischen
+    # Signale/Trades/Datensammlung für diesen Coin – manuelle Trades bleiben möglich.
+    if not signal.get("manual_trade") and autotrader.coin_master_off(signal.get("symbol")):
+        return
 
     strategy_id = signal.get("strategy_id")
     symbol = signal["symbol"]
@@ -214,6 +218,9 @@ async def _notify_signal(signal: Dict, trade, notify: bool, strategy_enabled: bo
         info = signal_notify.trade_info(trade, signal)
         if info:
             msg_signal["_trade_info"] = info
+        elif signal.get("signal_class") != "PRE_SIGNAL":
+            # Modus "jedes Signal": zeigen, WARUM kein Trade eröffnet wurde
+            msg_signal["_no_trade_reason"] = signal.get("_reject_reason") or "kein Auto-Trade für diese Strategie/Coin"
         sent = await telegram.send_signal(msg_signal)
         if sent:
             logger.info(f"Telegram notification sent for {symbol} {signal['type']}")
