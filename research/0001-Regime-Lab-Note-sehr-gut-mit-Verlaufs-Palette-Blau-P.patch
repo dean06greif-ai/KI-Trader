@@ -1,0 +1,43 @@
+From 938a28e66323c6aa9099a8418b1ac38f3129ce1f Mon Sep 17 00:00:00 2001
+From: E1 <e1@emergent>
+Date: Mon, 28 Sep 2026 23:30:34 +0000
+Subject: [PATCH] =?UTF-8?q?Regime-Lab:=20Note=20'sehr=20gut'=20mit=20Verla?=
+ =?UTF-8?q?ufs-Palette=20(Blau-Petrol-Gr=C3=BCn)=20f=C3=BCr=20Label=20und?=
+ =?UTF-8?q?=20Umrandung?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ frontend/src/components/RegimeLab.css | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/frontend/src/components/RegimeLab.css b/frontend/src/components/RegimeLab.css
+index ab5914a4..5ba8ddf5 100644
+--- a/frontend/src/components/RegimeLab.css
++++ b/frontend/src/components/RegimeLab.css
+@@ -95,9 +95,18 @@
+ .rl-quality-pill.good { border-color: rgba(0, 229, 160, 0.45); }
+ .rl-quality-pill.mid { border-color: rgba(255, 165, 2, 0.45); }
+ .rl-quality-pill.bad { border-color: rgba(255, 71, 87, 0.45); }
+-.rl-quality.vgood { border-color: rgba(124, 255, 178, 0.75); box-shadow: 0 0 0 1px rgba(124, 255, 178, 0.18) inset; }
+-.rl-quality.vgood .rl-quality-grade { background: rgba(124, 255, 178, 0.28); color: #b9ffd6; }
+-.rl-quality-pill.vgood { border-color: rgba(124, 255, 178, 0.75); }
++/* „sehr gut“: Verlaufs-Palette Blau → Petrol → Grün, hebt sich klar von „gut“ ab */
++.rl-quality.vgood, .rl-quality-pill.vgood {
++  border: 1px solid transparent;
++  background: linear-gradient(#12141d, #12141d) padding-box,
++              linear-gradient(90deg, #4f8dff 0%, #4fb0b4 50%, #5cc98a 100%) border-box;
++}
++.rl-quality.vgood { box-shadow: 0 0 18px -6px rgba(79, 141, 255, 0.45), 0 0 18px -8px rgba(92, 201, 138, 0.4); }
++.rl-quality.vgood .rl-quality-grade {
++  background: linear-gradient(90deg, #4f8dff 0%, #4fb0b4 50%, #5cc98a 100%);
++  color: #0b1220; box-shadow: 0 0 10px -2px rgba(79, 176, 180, 0.55);
++}
++.rl-quality-pill.vgood { color: #9fd8c4; }
+ .rl-benchmark { margin-top: 8px; border-top: 1px dashed #2a2e3f; padding-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+ .rl-benchmark-row { display: inline-flex; gap: 5px; align-items: baseline; font-size: 11px; }
+ .rl-benchmark-row.ok b { color: #7CFFB2; }
+-- 
+2.39.5
+

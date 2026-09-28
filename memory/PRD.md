@@ -17,6 +17,10 @@ Originalstruktur muss erhalten bleiben; erst Analyse, dann Entscheidung des User
 - Unabhängige Nachmessung mit Bitunix-1h-Kerzen (13 Coins, 720/1080 d): /app/research/regime_study.py, effn.py
 - Bericht: /app/research/REGIME_LAB_ANALYSE_2809.md
 
+- User: Regime-Lab bleibt vorerst so (nichts kritisch)
+- 28.09.: Note „sehr gut“ (Label + Umrandung) mit Verlaufs-Palette Blau→Petrol→Grün in
+  frontend/src/components/RegimeLab.css (Karte + Klassen-Pill), Commit in /app/ki_trader, Patch in /app/research/
+
 ## Backlog (User entscheidet)
 - P0-1 Walk-Forward-Benchmark + naive Baseline
 - P0-2 Abschnitts-Gate auf unabhängige Marktphasen
