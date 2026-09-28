@@ -1,0 +1,1514 @@
+{
+ "kombi_2509_m9": {
+  "per_coin": {
+   "BTCUSDT": {
+    "hold_f1": 66.4,
+    "hold_kappa": 43.1,
+    "train_f1": 54.6,
+    "win90_f1_min": 38.6,
+    "win90_f1_med": 56.4,
+    "win90_f1_max": 61.6,
+    "final_vs_ref_f1": 60.0,
+    "dir_phase_days": 5.81
+   },
+   "ETHUSDT": {
+    "hold_f1": 56.4,
+    "hold_kappa": 29.3,
+    "train_f1": 55.3,
+    "win90_f1_min": 47.2,
+    "win90_f1_med": 53.1,
+    "win90_f1_max": 65.2,
+    "final_vs_ref_f1": 57.6,
+    "dir_phase_days": 5.22
+   },
+   "BNBUSDT": {
+    "hold_f1": 65.6,
+    "hold_kappa": 41.7,
+    "train_f1": 60.1,
+    "win90_f1_min": 43.4,
+    "win90_f1_med": 50.3,
+    "win90_f1_max": 56.0,
+    "final_vs_ref_f1": 62.3,
+    "dir_phase_days": 5.98
+   },
+   "SOLUSDT": {
+    "hold_f1": 57.6,
+    "hold_kappa": 34.7,
+    "train_f1": 52.7,
+    "win90_f1_min": 45.1,
+    "win90_f1_med": 51.6,
+    "win90_f1_max": 54.3,
+    "final_vs_ref_f1": 57.6,
+    "dir_phase_days": 5.26
+   },
+   "XRPUSDT": {
+    "hold_f1": 47.6,
+    "hold_kappa": 20.1,
+    "train_f1": 58.7,
+    "win90_f1_min": 29.3,
+    "win90_f1_med": 57.0,
+    "win90_f1_max": 66.5,
+    "final_vs_ref_f1": 59.5,
+    "dir_phase_days": 5.76
+   },
+   "DOGEUSDT": {
+    "hold_f1": 60.9,
+    "hold_kappa": 38.8,
+    "train_f1": 54.6,
+    "win90_f1_min": 36.4,
+    "win90_f1_med": 56.7,
+    "win90_f1_max": 63.2,
+    "final_vs_ref_f1": 60.0,
+    "dir_phase_days": 5.54
+   },
+   "ADAUSDT": {
+    "hold_f1": 52.0,
+    "hold_kappa": 26.4,
+    "train_f1": 59.9,
+    "win90_f1_min": 51.1,
+    "win90_f1_med": 54.7,
+    "win90_f1_max": 66.3,
+    "final_vs_ref_f1": 61.5,
+    "dir_phase_days": 5.41
+   },
+   "AVAXUSDT": {
+    "hold_f1": 55.3,
+    "hold_kappa": 29.7,
+    "train_f1": 53.8,
+    "win90_f1_min": 38.3,
+    "win90_f1_med": 47.0,
+    "win90_f1_max": 62.0,
+    "final_vs_ref_f1": 57.0,
+    "dir_phase_days": 5.45
+   },
+   "POLUSDT": {
+    "hold_f1": 51.5,
+    "hold_kappa": 24.1,
+    "train_f1": 57.5,
+    "win90_f1_min": 40.2,
+    "win90_f1_med": 57.6,
+    "win90_f1_max": 65.2,
+    "final_vs_ref_f1": 59.1,
+    "dir_phase_days": 4.97
+   },
+   "DOTUSDT": {
+    "hold_f1": 51.5,
+    "hold_kappa": 25.5,
+    "train_f1": 52.1,
+    "win90_f1_min": 38.5,
+    "win90_f1_med": 44.9,
+    "win90_f1_max": 59.2,
+    "final_vs_ref_f1": 55.4,
+    "dir_phase_days": 5.0
+   },
+   "HYPEUSDT": {
+    "hold_f1": 57.1,
+    "hold_kappa": 31.1,
+    "train_f1": 46.1,
+    "win90_f1_min": 32.2,
+    "win90_f1_med": 42.6,
+    "win90_f1_max": 62.3,
+    "final_vs_ref_f1": 51.8,
+    "dir_phase_days": 4.38
+   },
+   "LINKUSDT": {
+    "hold_f1": 51.7,
+    "hold_kappa": 27.5,
+    "train_f1": 52.6,
+    "win90_f1_min": 40.2,
+    "win90_f1_med": 53.8,
+    "win90_f1_max": 56.1,
+    "final_vs_ref_f1": 55.8,
+    "dir_phase_days": 4.71
+   },
+   "SUIUSDT": {
+    "hold_f1": 63.4,
+    "hold_kappa": 43.7,
+    "train_f1": 58.7,
+    "win90_f1_min": 43.1,
+    "win90_f1_med": 57.7,
+    "win90_f1_max": 68.3,
+    "final_vs_ref_f1": 62.6,
+    "dir_phase_days": 5.85
+   }
+  },
+  "summary": {
+   "hold_f1": 56.7,
+   "hold_kappa": 32.0,
+   "train_f1": 55.1,
+   "win90_f1_min": 40.3,
+   "win90_f1_med": 52.6,
+   "win90_f1_max": 62.0,
+   "final_vs_ref_f1": 58.5,
+   "dir_phase_days": 5.3
+  },
+  "utility": {
+   "train": {
+    "fwd3_down": [
+     0.46366366071592785,
+     -0.17841825841142037,
+     1.0055145887628443
+    ],
+    "mom24_down": [
+     -0.3828986900678828,
+     -0.5692711063742205,
+     -0.18123818507399603
+    ],
+    "share_down": 13.4,
+    "fwd3_side": [
+     -0.46640877035590556,
+     -0.7605275172029428,
+     -0.14225737464026392
+    ],
+    "mom24_side": [
+     0.10700552592737499,
+     0.04173288688834801,
+     0.17082897961749158
+    ],
+    "share_side": 71.9,
+    "fwd3_up": [
+     0.6666086621178482,
+     -0.1117917549714718,
+     1.5425122785559462
+    ],
+    "mom24_up": [
+     0.27379430182269987,
+     0.07171591944481256,
+     0.5010401115017619
+    ],
+    "share_up": 12.8,
+    "sign_hit3d": 47.7,
+    "strat_ann_ret_pct": -5.3,
+    "strat_sharpe": -0.1,
+    "sub_axis": {
+     "sub0_fwd_vol": 3.8,
+     "sub0_share": 37.0,
+     "sub0_down_fwd3": -0.201,
+     "sub0_down_n": 7222,
+     "sub0_up_fwd3": 0.23,
+     "sub0_up_n": 10818,
+     "sub1_fwd_vol": 4.361,
+     "sub1_share": 30.9,
+     "sub1_down_fwd3": 0.023,
+     "sub1_down_n": 6624,
+     "sub1_up_fwd3": -1.387,
+     "sub1_up_n": 3702,
+     "sub2_fwd_vol": 4.598,
+     "sub2_share": 30.2,
+     "sub2_down_fwd3": 1.461,
+     "sub2_down_n": 7740,
+     "sub2_up_fwd3": 2.671,
+     "sub2_up_n": 6151
+    }
+   },
+   "holdout": {
+    "fwd3_down": [
+     -0.29055396501373987,
+     -1.1158346386423033,
+     0.5848969016587836
+    ],
+    "mom24_down": [
+     0.4547947090942401,
+     0.12376900126345869,
+     0.7781324670231062
+    ],
+    "share_down": 9.7,
+    "fwd3_side": [
+     0.44220736477654193,
+     0.09453399758913061,
+     0.7530741016274509
+    ],
+    "mom24_side": [
+     -0.09515526173841403,
+     -0.1933151446388056,
+     -0.019066029099185075
+    ],
+    "share_side": 76.5,
+    "fwd3_up": [
+     0.5657832311883851,
+     -0.1899155517177287,
+     1.3344937846510199
+    ],
+    "mom24_up": [
+     0.03009679062699505,
+     -0.24532618089329802,
+     0.2894257779339251
+    ],
+    "share_up": 13.8,
+    "sign_hit3d": 49.2,
+    "strat_ann_ret_pct": 24.7,
+    "strat_sharpe": 0.6,
+    "sub_axis": {
+     "sub0_fwd_vol": 2.753,
+     "sub0_share": 51.5,
+     "sub0_down_fwd3": -0.215,
+     "sub0_down_n": 2416,
+     "sub0_up_fwd3": 1.612,
+     "sub0_up_n": 3752,
+     "sub1_fwd_vol": 3.18,
+     "sub1_share": 27.9,
+     "sub1_down_fwd3": -1.047,
+     "sub1_down_n": 1489,
+     "sub1_up_fwd3": 0.345,
+     "sub1_up_n": 2528,
+     "sub2_fwd_vol": 3.686,
+     "sub2_share": 18.9,
+     "sub2_down_fwd3": 0.418,
+     "sub2_down_n": 1333,
+     "sub2_up_fwd3": -4.007,
+     "sub2_up_n": 736
+    }
+   }
+  }
+ },
+ "kombi_2509_m5": {
+  "per_coin": {
+   "BTCUSDT": {
+    "hold_f1": 66.4,
+    "hold_kappa": 43.1,
+    "train_f1": 54.6,
+    "win90_f1_min": 38.6,
+    "win90_f1_med": 56.4,
+    "win90_f1_max": 61.6,
+    "final_vs_ref_f1": 60.0,
+    "dir_phase_days": 5.81
+   },
+   "ETHUSDT": {
+    "hold_f1": 56.4,
+    "hold_kappa": 29.3,
+    "train_f1": 55.3,
+    "win90_f1_min": 47.2,
+    "win90_f1_med": 53.1,
+    "win90_f1_max": 65.2,
+    "final_vs_ref_f1": 57.6,
+    "dir_phase_days": 5.22
+   },
+   "BNBUSDT": {
+    "hold_f1": 65.6,
+    "hold_kappa": 41.7,
+    "train_f1": 60.1,
+    "win90_f1_min": 43.4,
+    "win90_f1_med": 50.3,
+    "win90_f1_max": 56.0,
+    "final_vs_ref_f1": 62.3,
+    "dir_phase_days": 5.98
+   },
+   "SOLUSDT": {
+    "hold_f1": 57.6,
+    "hold_kappa": 34.7,
+    "train_f1": 52.7,
+    "win90_f1_min": 45.1,
+    "win90_f1_med": 51.6,
+    "win90_f1_max": 54.3,
+    "final_vs_ref_f1": 57.6,
+    "dir_phase_days": 5.26
+   },
+   "XRPUSDT": {
+    "hold_f1": 47.6,
+    "hold_kappa": 20.1,
+    "train_f1": 58.7,
+    "win90_f1_min": 29.3,
+    "win90_f1_med": 57.0,
+    "win90_f1_max": 66.5,
+    "final_vs_ref_f1": 59.5,
+    "dir_phase_days": 5.76
+   },
+   "DOGEUSDT": {
+    "hold_f1": 60.9,
+    "hold_kappa": 38.8,
+    "train_f1": 54.6,
+    "win90_f1_min": 36.4,
+    "win90_f1_med": 56.7,
+    "win90_f1_max": 63.2,
+    "final_vs_ref_f1": 60.0,
+    "dir_phase_days": 5.54
+   },
+   "ADAUSDT": {
+    "hold_f1": 52.0,
+    "hold_kappa": 26.4,
+    "train_f1": 59.9,
+    "win90_f1_min": 51.1,
+    "win90_f1_med": 54.7,
+    "win90_f1_max": 66.3,
+    "final_vs_ref_f1": 61.5,
+    "dir_phase_days": 5.41
+   },
+   "AVAXUSDT": {
+    "hold_f1": 55.3,
+    "hold_kappa": 29.7,
+    "train_f1": 53.8,
+    "win90_f1_min": 38.3,
+    "win90_f1_med": 47.0,
+    "win90_f1_max": 62.0,
+    "final_vs_ref_f1": 57.0,
+    "dir_phase_days": 5.45
+   },
+   "POLUSDT": {
+    "hold_f1": 51.5,
+    "hold_kappa": 24.1,
+    "train_f1": 57.5,
+    "win90_f1_min": 40.2,
+    "win90_f1_med": 57.6,
+    "win90_f1_max": 65.2,
+    "final_vs_ref_f1": 59.1,
+    "dir_phase_days": 4.97
+   },
+   "DOTUSDT": {
+    "hold_f1": 51.5,
+    "hold_kappa": 25.5,
+    "train_f1": 52.1,
+    "win90_f1_min": 38.5,
+    "win90_f1_med": 44.9,
+    "win90_f1_max": 59.2,
+    "final_vs_ref_f1": 55.4,
+    "dir_phase_days": 5.0
+   },
+   "HYPEUSDT": {
+    "hold_f1": 57.1,
+    "hold_kappa": 31.1,
+    "train_f1": 46.1,
+    "win90_f1_min": 32.2,
+    "win90_f1_med": 42.6,
+    "win90_f1_max": 62.3,
+    "final_vs_ref_f1": 51.8,
+    "dir_phase_days": 4.38
+   },
+   "LINKUSDT": {
+    "hold_f1": 51.7,
+    "hold_kappa": 27.5,
+    "train_f1": 52.6,
+    "win90_f1_min": 40.2,
+    "win90_f1_med": 53.8,
+    "win90_f1_max": 56.1,
+    "final_vs_ref_f1": 55.8,
+    "dir_phase_days": 4.71
+   },
+   "SUIUSDT": {
+    "hold_f1": 63.4,
+    "hold_kappa": 43.7,
+    "train_f1": 58.7,
+    "win90_f1_min": 43.1,
+    "win90_f1_med": 57.7,
+    "win90_f1_max": 68.3,
+    "final_vs_ref_f1": 62.6,
+    "dir_phase_days": 5.85
+   }
+  },
+  "summary": {
+   "hold_f1": 56.7,
+   "hold_kappa": 32.0,
+   "train_f1": 55.1,
+   "win90_f1_min": 40.3,
+   "win90_f1_med": 52.6,
+   "win90_f1_max": 62.0,
+   "final_vs_ref_f1": 58.5,
+   "dir_phase_days": 5.3
+  },
+  "utility": {
+   "train": {
+    "fwd3_down": [
+     0.46366366071592785,
+     -0.17841825841142037,
+     1.0055145887628443
+    ],
+    "mom24_down": [
+     -0.3828986900678828,
+     -0.5692711063742205,
+     -0.18123818507399603
+    ],
+    "share_down": 13.4,
+    "fwd3_side": [
+     -0.46640877035590556,
+     -0.7605275172029428,
+     -0.14225737464026392
+    ],
+    "mom24_side": [
+     0.10700552592737499,
+     0.04173288688834801,
+     0.17082897961749158
+    ],
+    "share_side": 71.9,
+    "fwd3_up": [
+     0.6666086621178482,
+     -0.1117917549714718,
+     1.5425122785559462
+    ],
+    "mom24_up": [
+     0.27379430182269987,
+     0.07171591944481256,
+     0.5010401115017619
+    ],
+    "share_up": 12.8,
+    "sign_hit3d": 47.7,
+    "strat_ann_ret_pct": -5.3,
+    "strat_sharpe": -0.1,
+    "sub_axis": {
+     "sub0_fwd_vol": 4.119,
+     "sub0_share": 88.9,
+     "sub0_down_fwd3": 0.487,
+     "sub0_down_n": 15589,
+     "sub0_up_fwd3": 0.17,
+     "sub0_up_n": 11923,
+     "sub1_fwd_vol": 5.23,
+     "sub1_share": 9.1,
+     "sub1_down_fwd3": 0.403,
+     "sub1_down_n": 5997,
+     "sub1_up_fwd3": 1.343,
+     "sub1_up_n": 8748
+    }
+   },
+   "holdout": {
+    "fwd3_down": [
+     -0.29055396501373987,
+     -1.1158346386423033,
+     0.5848969016587836
+    ],
+    "mom24_down": [
+     0.4547947090942401,
+     0.12376900126345869,
+     0.7781324670231062
+    ],
+    "share_down": 9.7,
+    "fwd3_side": [
+     0.44220736477654193,
+     0.09453399758913061,
+     0.7530741016274509
+    ],
+    "mom24_side": [
+     -0.09515526173841403,
+     -0.1933151446388056,
+     -0.019066029099185075
+    ],
+    "share_side": 76.5,
+    "fwd3_up": [
+     0.5657832311883851,
+     -0.1899155517177287,
+     1.3344937846510199
+    ],
+    "mom24_up": [
+     0.03009679062699505,
+     -0.24532618089329802,
+     0.2894257779339251
+    ],
+    "share_up": 13.8,
+    "sign_hit3d": 49.2,
+    "strat_ann_ret_pct": 24.7,
+    "strat_sharpe": 0.6,
+    "sub_axis": {
+     "sub0_fwd_vol": 2.944,
+     "sub0_share": 90.5,
+     "sub0_down_fwd3": -0.044,
+     "sub0_down_n": 3673,
+     "sub0_up_fwd3": 0.861,
+     "sub0_up_n": 4393,
+     "sub1_fwd_vol": 4.325,
+     "sub1_share": 7.8,
+     "sub1_down_fwd3": -0.868,
+     "sub1_down_n": 1565,
+     "sub1_up_fwd3": 0.072,
+     "sub1_up_n": 2623
+    }
+   }
+  }
+ },
+ "jump_default_m9": {
+  "per_coin": {
+   "BTCUSDT": {
+    "hold_f1": 64.1,
+    "hold_kappa": 40.2,
+    "train_f1": 56.4,
+    "win90_f1_min": 44.0,
+    "win90_f1_med": 52.4,
+    "win90_f1_max": 69.2,
+    "final_vs_ref_f1": 68.2,
+    "dir_phase_days": 7.5
+   },
+   "ETHUSDT": {
+    "hold_f1": 59.4,
+    "hold_kappa": 36.2,
+    "train_f1": 57.8,
+    "win90_f1_min": 53.0,
+    "win90_f1_med": 55.1,
+    "win90_f1_max": 69.3,
+    "final_vs_ref_f1": 59.0,
+    "dir_phase_days": 6.49
+   },
+   "BNBUSDT": {
+    "hold_f1": 66.6,
+    "hold_kappa": 48.5,
+    "train_f1": 59.2,
+    "win90_f1_min": 38.7,
+    "win90_f1_med": 48.5,
+    "win90_f1_max": 55.9,
+    "final_vs_ref_f1": 66.6,
+    "dir_phase_days": 6.96
+   },
+   "SOLUSDT": {
+    "hold_f1": 63.0,
+    "hold_kappa": 41.9,
+    "train_f1": 56.0,
+    "win90_f1_min": 46.5,
+    "win90_f1_med": 52.0,
+    "win90_f1_max": 60.3,
+    "final_vs_ref_f1": 56.6,
+    "dir_phase_days": 6.92
+   },
+   "XRPUSDT": {
+    "hold_f1": 54.3,
+    "hold_kappa": 30.1,
+    "train_f1": 61.0,
+    "win90_f1_min": 32.7,
+    "win90_f1_med": 64.0,
+    "win90_f1_max": 80.8,
+    "final_vs_ref_f1": 64.2,
+    "dir_phase_days": 8.37
+   },
+   "DOGEUSDT": {
+    "hold_f1": 67.8,
+    "hold_kappa": 49.8,
+    "train_f1": 57.2,
+    "win90_f1_min": 45.8,
+    "win90_f1_med": 55.4,
+    "win90_f1_max": 68.2,
+    "final_vs_ref_f1": 62.1,
+    "dir_phase_days": 7.27
+   },
+   "ADAUSDT": {
+    "hold_f1": 56.5,
+    "hold_kappa": 33.3,
+    "train_f1": 62.8,
+    "win90_f1_min": 55.0,
+    "win90_f1_med": 59.1,
+    "win90_f1_max": 70.8,
+    "final_vs_ref_f1": 54.0,
+    "dir_phase_days": 6.86
+   },
+   "AVAXUSDT": {
+    "hold_f1": 55.1,
+    "hold_kappa": 29.7,
+    "train_f1": 55.9,
+    "win90_f1_min": 44.1,
+    "win90_f1_med": 49.3,
+    "win90_f1_max": 63.9,
+    "final_vs_ref_f1": 55.9,
+    "dir_phase_days": 6.49
+   },
+   "POLUSDT": {
+    "hold_f1": 53.9,
+    "hold_kappa": 30.0,
+    "train_f1": 60.6,
+    "win90_f1_min": 44.3,
+    "win90_f1_med": 58.6,
+    "win90_f1_max": 69.7,
+    "final_vs_ref_f1": 48.0,
+    "dir_phase_days": 7.83
+   },
+   "DOTUSDT": {
+    "hold_f1": 54.1,
+    "hold_kappa": 28.4,
+    "train_f1": 55.2,
+    "win90_f1_min": 41.9,
+    "win90_f1_med": 51.6,
+    "win90_f1_max": 61.3,
+    "final_vs_ref_f1": 38.4,
+    "dir_phase_days": 5.76
+   },
+   "HYPEUSDT": {
+    "hold_f1": 61.5,
+    "hold_kappa": 40.8,
+    "train_f1": 52.4,
+    "win90_f1_min": 42.7,
+    "win90_f1_med": 46.25,
+    "win90_f1_max": 62.1,
+    "final_vs_ref_f1": 56.8,
+    "dir_phase_days": 7.29
+   },
+   "LINKUSDT": {
+    "hold_f1": 58.3,
+    "hold_kappa": 40.2,
+    "train_f1": 59.7,
+    "win90_f1_min": 38.5,
+    "win90_f1_med": 59.1,
+    "win90_f1_max": 71.1,
+    "final_vs_ref_f1": 52.1,
+    "dir_phase_days": 6.73
+   },
+   "SUIUSDT": {
+    "hold_f1": 69.1,
+    "hold_kappa": 51.7,
+    "train_f1": 58.7,
+    "win90_f1_min": 45.3,
+    "win90_f1_med": 60.0,
+    "win90_f1_max": 73.2,
+    "final_vs_ref_f1": 66.7,
+    "dir_phase_days": 7.5
+   }
+  },
+  "summary": {
+   "hold_f1": 60.3,
+   "hold_kappa": 38.5,
+   "train_f1": 57.9,
+   "win90_f1_min": 44.0,
+   "win90_f1_med": 54.7,
+   "win90_f1_max": 67.4,
+   "final_vs_ref_f1": 57.6,
+   "dir_phase_days": 7.1
+  },
+  "utility": {
+   "train": {
+    "fwd3_down": [
+     -0.059864926359136254,
+     -0.573671156454388,
+     0.4670708149082039
+    ],
+    "mom24_down": [
+     -0.5314605711250072,
+     -0.7053420925549124,
+     -0.35802571441695497
+    ],
+    "share_down": 11.5,
+    "fwd3_side": [
+     -0.6029076591800371,
+     -0.8970628135350639,
+     -0.320063945561871
+    ],
+    "mom24_side": [
+     0.12068184425683792,
+     0.05835480893004464,
+     0.18532515664211743
+    ],
+    "share_side": 69.8,
+    "fwd3_up": [
+     -0.1536214105793431,
+     -0.7983410888264936,
+     0.539618326717422
+    ],
+    "mom24_up": [
+     0.01977262221487394,
+     -0.1811962177852965,
+     0.20983135599706818
+    ],
+    "share_up": 10.5,
+    "sign_hit3d": 49.3,
+    "strat_ann_ret_pct": -16.8,
+    "strat_sharpe": -0.34,
+    "sub_axis": {
+     "sub0_fwd_vol": 3.735,
+     "sub0_share": 37.1,
+     "sub0_down_fwd3": -0.27,
+     "sub0_down_n": 6413,
+     "sub0_up_fwd3": 0.67,
+     "sub0_up_n": 9984,
+     "sub1_fwd_vol": 4.439,
+     "sub1_share": 25.6,
+     "sub1_down_fwd3": -0.461,
+     "sub1_down_n": 5957,
+     "sub1_up_fwd3": -1.853,
+     "sub1_up_n": 3435,
+     "sub2_fwd_vol": 4.592,
+     "sub2_share": 29.2,
+     "sub2_down_fwd3": 0.54,
+     "sub2_down_n": 6224,
+     "sub2_up_fwd3": -0.813,
+     "sub2_up_n": 3614
+    }
+   },
+   "holdout": {
+    "fwd3_down": [
+     -1.2700672016156034,
+     -2.1644937237640027,
+     -0.5187734559366641
+    ],
+    "mom24_down": [
+     0.6399900216757874,
+     0.176365535254665,
+     1.060539899359024
+    ],
+    "share_down": 7.7,
+    "fwd3_side": [
+     0.42462760058396026,
+     0.09830379482416483,
+     0.7383462267089511
+    ],
+    "mom24_side": [
+     -0.13126525574473222,
+     -0.211980963822287,
+     -0.043946681913112226
+    ],
+    "share_side": 80.1,
+    "fwd3_up": [
+     1.2508286476697583,
+     0.3380807396389548,
+     2.065144263832866
+    ],
+    "mom24_up": [
+     0.2548063896081694,
+     -0.09788115874870668,
+     0.5681410542414034
+    ],
+    "share_up": 12.2,
+    "sign_hit3d": 53.9,
+    "strat_ann_ret_pct": 50.2,
+    "strat_sharpe": 1.24,
+    "sub_axis": {
+     "sub0_fwd_vol": 2.797,
+     "sub0_share": 55.6,
+     "sub0_down_fwd3": -2.019,
+     "sub0_down_n": 1997,
+     "sub0_up_fwd3": 2.262,
+     "sub0_up_n": 3660,
+     "sub1_fwd_vol": 3.142,
+     "sub1_share": 30.8,
+     "sub1_down_fwd3": -0.85,
+     "sub1_down_n": 1760,
+     "sub1_up_fwd3": -0.839,
+     "sub1_up_n": 1781,
+     "sub2_fwd_vol": 4.024,
+     "sub2_share": 11.9,
+     "sub2_down_fwd3": 0.582,
+     "sub2_down_n": 409,
+     "sub2_up_fwd3": 1.286,
+     "sub2_up_n": 634
+    }
+   }
+  }
+ },
+ "jump_default_m5": {
+  "per_coin": {
+   "BTCUSDT": {
+    "hold_f1": 66.3,
+    "hold_kappa": 43.5,
+    "train_f1": 55.5,
+    "win90_f1_min": 37.5,
+    "win90_f1_med": 58.4,
+    "win90_f1_max": 67.7,
+    "final_vs_ref_f1": 61.9,
+    "dir_phase_days": 7.35
+   },
+   "ETHUSDT": {
+    "hold_f1": 61.1,
+    "hold_kappa": 38.1,
+    "train_f1": 56.7,
+    "win90_f1_min": 53.2,
+    "win90_f1_med": 56.4,
+    "win90_f1_max": 69.7,
+    "final_vs_ref_f1": 57.9,
+    "dir_phase_days": 6.61
+   },
+   "BNBUSDT": {
+    "hold_f1": 70.0,
+    "hold_kappa": 52.3,
+    "train_f1": 60.3,
+    "win90_f1_min": 39.0,
+    "win90_f1_med": 47.6,
+    "win90_f1_max": 57.8,
+    "final_vs_ref_f1": 66.3,
+    "dir_phase_days": 8.33
+   },
+   "SOLUSDT": {
+    "hold_f1": 62.1,
+    "hold_kappa": 41.7,
+    "train_f1": 56.6,
+    "win90_f1_min": 46.3,
+    "win90_f1_med": 54.8,
+    "win90_f1_max": 60.8,
+    "final_vs_ref_f1": 54.4,
+    "dir_phase_days": 6.79
+   },
+   "XRPUSDT": {
+    "hold_f1": 54.6,
+    "hold_kappa": 30.0,
+    "train_f1": 60.4,
+    "win90_f1_min": 33.4,
+    "win90_f1_med": 64.4,
+    "win90_f1_max": 78.4,
+    "final_vs_ref_f1": 63.1,
+    "dir_phase_days": 7.2
+   },
+   "DOGEUSDT": {
+    "hold_f1": 69.9,
+    "hold_kappa": 53.2,
+    "train_f1": 56.1,
+    "win90_f1_min": 43.2,
+    "win90_f1_med": 55.2,
+    "win90_f1_max": 71.0,
+    "final_vs_ref_f1": 56.4,
+    "dir_phase_days": 6.61
+   },
+   "ADAUSDT": {
+    "hold_f1": 58.2,
+    "hold_kappa": 36.2,
+    "train_f1": 61.7,
+    "win90_f1_min": 52.8,
+    "win90_f1_med": 59.1,
+    "win90_f1_max": 67.9,
+    "final_vs_ref_f1": 50.7,
+    "dir_phase_days": 5.71
+   },
+   "AVAXUSDT": {
+    "hold_f1": 57.0,
+    "hold_kappa": 32.9,
+    "train_f1": 56.6,
+    "win90_f1_min": 45.7,
+    "win90_f1_med": 51.2,
+    "win90_f1_max": 62.4,
+    "final_vs_ref_f1": 51.5,
+    "dir_phase_days": 6.05
+   },
+   "POLUSDT": {
+    "hold_f1": 54.7,
+    "hold_kappa": 31.0,
+    "train_f1": 60.7,
+    "win90_f1_min": 48.7,
+    "win90_f1_med": 57.2,
+    "win90_f1_max": 70.5,
+    "final_vs_ref_f1": 55.4,
+    "dir_phase_days": 7.13
+   },
+   "DOTUSDT": {
+    "hold_f1": 55.6,
+    "hold_kappa": 30.5,
+    "train_f1": 55.8,
+    "win90_f1_min": 39.9,
+    "win90_f1_med": 49.6,
+    "win90_f1_max": 64.2,
+    "final_vs_ref_f1": 38.3,
+    "dir_phase_days": 5.76
+   },
+   "HYPEUSDT": {
+    "hold_f1": 56.1,
+    "hold_kappa": 32.5,
+    "train_f1": 53.3,
+    "win90_f1_min": 38.1,
+    "win90_f1_med": 46.75,
+    "win90_f1_max": 59.8,
+    "final_vs_ref_f1": 52.9,
+    "dir_phase_days": 7.2
+   },
+   "LINKUSDT": {
+    "hold_f1": 58.5,
+    "hold_kappa": 40.4,
+    "train_f1": 59.4,
+    "win90_f1_min": 44.2,
+    "win90_f1_med": 59.7,
+    "win90_f1_max": 68.6,
+    "final_vs_ref_f1": 47.3,
+    "dir_phase_days": 6.37
+   },
+   "SUIUSDT": {
+    "hold_f1": 69.2,
+    "hold_kappa": 52.0,
+    "train_f1": 57.7,
+    "win90_f1_min": 43.0,
+    "win90_f1_med": 60.2,
+    "win90_f1_max": 72.9,
+    "final_vs_ref_f1": 65.4,
+    "dir_phase_days": 6.43
+   }
+  },
+  "summary": {
+   "hold_f1": 61.0,
+   "hold_kappa": 39.6,
+   "train_f1": 57.8,
+   "win90_f1_min": 43.5,
+   "win90_f1_med": 55.4,
+   "win90_f1_max": 67.1,
+   "final_vs_ref_f1": 55.5,
+   "dir_phase_days": 6.7
+  },
+  "utility": {
+   "train": {
+    "fwd3_down": [
+     0.09543520133859242,
+     -0.41294828457285576,
+     0.6059313674141373
+    ],
+    "mom24_down": [
+     -0.5092709941398879,
+     -0.6854446317974524,
+     -0.3336332618044966
+    ],
+    "share_down": 12.1,
+    "fwd3_side": [
+     -0.6556828042050933,
+     -0.942380962056433,
+     -0.36919198060159936
+    ],
+    "mom24_side": [
+     0.11139058530912807,
+     0.055648084239268474,
+     0.17674598547416337
+    ],
+    "share_side": 69.0,
+    "fwd3_up": [
+     -0.0326717533907639,
+     -0.5741643317276257,
+     0.5592939223816478
+    ],
+    "mom24_up": [
+     0.09515978525035275,
+     -0.1040695645420269,
+     0.2873775569958391
+    ],
+    "share_up": 10.8,
+    "sign_hit3d": 48.9,
+    "strat_ann_ret_pct": -14.6,
+    "strat_sharpe": -0.29,
+    "sub_axis": {
+     "sub0_fwd_vol": 4.127,
+     "sub0_share": 83.7,
+     "sub0_down_fwd3": 0.064,
+     "sub0_down_n": 13909,
+     "sub0_up_fwd3": -0.389,
+     "sub0_up_n": 9871,
+     "sub1_fwd_vol": 4.982,
+     "sub1_share": 8.2,
+     "sub1_down_fwd3": 0.171,
+     "sub1_down_n": 5720,
+     "sub1_up_fwd3": 0.435,
+     "sub1_up_n": 7530
+    }
+   },
+   "holdout": {
+    "fwd3_down": [
+     -1.31942017908853,
+     -2.1395752285661707,
+     -0.6163703921572935
+    ],
+    "mom24_down": [
+     0.6214685955985703,
+     0.15404928113665972,
+     1.0410692208810048
+    ],
+    "share_down": 7.7,
+    "fwd3_side": [
+     0.4396651157338439,
+     0.1283676544165097,
+     0.7265710295009672
+    ],
+    "mom24_side": [
+     -0.12336053632098433,
+     -0.21519031862672197,
+     -0.04510566743846657
+    ],
+    "share_side": 79.9,
+    "fwd3_up": [
+     1.1598208017567855,
+     0.24138004262104948,
+     2.002055038450413
+    ],
+    "mom24_up": [
+     0.2087940032339831,
+     -0.1313732443816809,
+     0.5348893891836641
+    ],
+    "share_up": 12.4,
+    "sign_hit3d": 54.0,
+    "strat_ann_ret_pct": 48.3,
+    "strat_sharpe": 1.2,
+    "sub_axis": {
+     "sub0_fwd_vol": 2.928,
+     "sub0_share": 89.8,
+     "sub0_down_fwd3": -1.504,
+     "sub0_down_n": 2720,
+     "sub0_up_fwd3": 2.043,
+     "sub0_up_n": 3094,
+     "sub1_fwd_vol": 4.378,
+     "sub1_share": 8.5,
+     "sub1_down_fwd3": -0.97,
+     "sub1_down_n": 1439,
+     "sub1_up_fwd3": 0.286,
+     "sub1_up_n": 3126
+    }
+   }
+  }
+ },
+ "ema_034_m5": {
+  "per_coin": {
+   "BTCUSDT": {
+    "hold_f1": 48.1,
+    "hold_kappa": 11.7,
+    "train_f1": 45.6,
+    "win90_f1_min": 27.5,
+    "win90_f1_med": 43.4,
+    "win90_f1_max": 52.8,
+    "final_vs_ref_f1": 56.1,
+    "dir_phase_days": 10.43
+   },
+   "ETHUSDT": {
+    "hold_f1": 46.5,
+    "hold_kappa": 13.4,
+    "train_f1": 40.1,
+    "win90_f1_min": 31.0,
+    "win90_f1_med": 39.8,
+    "win90_f1_max": 49.8,
+    "final_vs_ref_f1": 51.0,
+    "dir_phase_days": 9.6
+   },
+   "BNBUSDT": {
+    "hold_f1": 39.8,
+    "hold_kappa": 11.2,
+    "train_f1": 48.7,
+    "win90_f1_min": 32.1,
+    "win90_f1_med": 37.2,
+    "win90_f1_max": 49.8,
+    "final_vs_ref_f1": 59.1,
+    "dir_phase_days": 9.97
+   },
+   "SOLUSDT": {
+    "hold_f1": 48.6,
+    "hold_kappa": 24.5,
+    "train_f1": 42.9,
+    "win90_f1_min": 31.3,
+    "win90_f1_med": 36.6,
+    "win90_f1_max": 45.8,
+    "final_vs_ref_f1": 55.1,
+    "dir_phase_days": 10.29
+   },
+   "XRPUSDT": {
+    "hold_f1": 38.7,
+    "hold_kappa": 9.1,
+    "train_f1": 50.8,
+    "win90_f1_min": 29.8,
+    "win90_f1_med": 43.0,
+    "win90_f1_max": 63.0,
+    "final_vs_ref_f1": 59.6,
+    "dir_phase_days": 13.33
+   },
+   "DOGEUSDT": {
+    "hold_f1": 46.5,
+    "hold_kappa": 17.7,
+    "train_f1": 42.8,
+    "win90_f1_min": 27.9,
+    "win90_f1_med": 40.0,
+    "win90_f1_max": 53.1,
+    "final_vs_ref_f1": 58.0,
+    "dir_phase_days": 10.0
+   },
+   "ADAUSDT": {
+    "hold_f1": 39.2,
+    "hold_kappa": 8.2,
+    "train_f1": 44.8,
+    "win90_f1_min": 32.0,
+    "win90_f1_med": 38.8,
+    "win90_f1_max": 44.5,
+    "final_vs_ref_f1": 52.3,
+    "dir_phase_days": 10.59
+   },
+   "AVAXUSDT": {
+    "hold_f1": 44.5,
+    "hold_kappa": 13.7,
+    "train_f1": 44.6,
+    "win90_f1_min": 30.1,
+    "win90_f1_med": 36.5,
+    "win90_f1_max": 49.7,
+    "final_vs_ref_f1": 58.6,
+    "dir_phase_days": 10.0
+   },
+   "POLUSDT": {
+    "hold_f1": 33.8,
+    "hold_kappa": -0.4,
+    "train_f1": 39.9,
+    "win90_f1_min": 27.2,
+    "win90_f1_med": 38.4,
+    "win90_f1_max": 52.3,
+    "final_vs_ref_f1": 52.2,
+    "dir_phase_days": 9.86
+   },
+   "DOTUSDT": {
+    "hold_f1": 37.8,
+    "hold_kappa": 3.7,
+    "train_f1": 39.4,
+    "win90_f1_min": 20.3,
+    "win90_f1_med": 34.8,
+    "win90_f1_max": 43.8,
+    "final_vs_ref_f1": 49.5,
+    "dir_phase_days": 9.86
+   },
+   "HYPEUSDT": {
+    "hold_f1": 43.4,
+    "hold_kappa": 6.4,
+    "train_f1": 35.2,
+    "win90_f1_min": 26.0,
+    "win90_f1_med": 32.15,
+    "win90_f1_max": 47.3,
+    "final_vs_ref_f1": 48.0,
+    "dir_phase_days": 9.43
+   },
+   "LINKUSDT": {
+    "hold_f1": 45.8,
+    "hold_kappa": 19.2,
+    "train_f1": 41.7,
+    "win90_f1_min": 24.7,
+    "win90_f1_med": 36.6,
+    "win90_f1_max": 46.5,
+    "final_vs_ref_f1": 54.4,
+    "dir_phase_days": 9.6
+   },
+   "SUIUSDT": {
+    "hold_f1": 46.4,
+    "hold_kappa": 17.0,
+    "train_f1": 46.8,
+    "win90_f1_min": 32.9,
+    "win90_f1_med": 43.5,
+    "win90_f1_max": 57.1,
+    "final_vs_ref_f1": 57.8,
+    "dir_phase_days": 10.59
+   }
+  },
+  "summary": {
+   "hold_f1": 43.0,
+   "hold_kappa": 12.0,
+   "train_f1": 43.3,
+   "win90_f1_min": 28.7,
+   "win90_f1_med": 38.5,
+   "win90_f1_max": 50.4,
+   "final_vs_ref_f1": 54.7,
+   "dir_phase_days": 10.3
+  },
+  "utility": {
+   "train": {
+    "fwd3_down": [
+     -0.14233762054036223,
+     -0.7506611954467878,
+     0.35699002451822354
+    ],
+    "mom24_down": [
+     -0.21662342335652862,
+     -0.38302067251698696,
+     -0.02944053871890181
+    ],
+    "share_down": 14.5,
+    "fwd3_side": [
+     -0.5018819226927865,
+     -0.8198361067934361,
+     -0.20102851139514136
+    ],
+    "mom24_side": [
+     0.12563802167135932,
+     0.060549144211220464,
+     0.19002408270220203
+    ],
+    "share_side": 68.3,
+    "fwd3_up": [
+     0.9951340283134301,
+     0.30743875957438943,
+     1.807970225022166
+    ],
+    "mom24_up": [
+     0.06871919780958533,
+     -0.12055027223937473,
+     0.2660280819608845
+    ],
+    "share_up": 14.6,
+    "sign_hit3d": 49.9,
+    "strat_ann_ret_pct": -2.5,
+    "strat_sharpe": -0.05,
+    "sub_axis": {
+     "sub0_fwd_vol": 4.141,
+     "sub0_share": 88.9,
+     "sub0_down_fwd3": -0.189,
+     "sub0_down_n": 17297,
+     "sub0_up_fwd3": 1.08,
+     "sub0_up_n": 16069,
+     "sub1_fwd_vol": 5.158,
+     "sub1_share": 8.4,
+     "sub1_down_fwd3": -0.008,
+     "sub1_down_n": 6065,
+     "sub1_up_fwd3": 0.814,
+     "sub1_up_n": 7493
+    }
+   },
+   "holdout": {
+    "fwd3_down": [
+     0.22586233817642412,
+     -0.6757604238735017,
+     1.5103971918765555
+    ],
+    "mom24_down": [
+     0.24218641800820334,
+     -0.06909238716621943,
+     0.5774459756621964
+    ],
+    "share_down": 11.6,
+    "fwd3_side": [
+     0.6172207534512674,
+     0.18937855284630004,
+     0.9737715128073445
+    ],
+    "mom24_side": [
+     -0.0010597702069990646,
+     -0.09805950405372572,
+     0.09408581957162636
+    ],
+    "share_side": 73.6,
+    "fwd3_up": [
+     -0.7464682445118404,
+     -1.4808035751121882,
+     -0.009720228726897191
+    ],
+    "mom24_up": [
+     -0.3559000026507062,
+     -0.5967473345417331,
+     -0.15205494804905814
+    ],
+    "share_up": 14.8,
+    "sign_hit3d": 44.3,
+    "strat_ann_ret_pct": 3.7,
+    "strat_sharpe": 0.09,
+    "sub_axis": {
+     "sub0_fwd_vol": 2.994,
+     "sub0_share": 91.7,
+     "sub0_down_fwd3": 0.541,
+     "sub0_down_n": 4663,
+     "sub0_up_fwd3": -0.834,
+     "sub0_up_n": 5235,
+     "sub1_fwd_vol": 3.895,
+     "sub1_share": 6.5,
+     "sub1_down_fwd3": -0.709,
+     "sub1_down_n": 1571,
+     "sub1_up_fwd3": -0.512,
+     "sub1_up_n": 1946
+    }
+   }
+  }
+ },
+ "naive_mom7d": {
+  "per_coin": {
+   "BTCUSDT": {
+    "hold_f1": 53.0,
+    "hold_kappa": 26.2,
+    "train_f1": 51.9,
+    "win90_f1_min": 38.1,
+    "win90_f1_med": 49.3,
+    "win90_f1_max": 58.5,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 1.03
+   },
+   "ETHUSDT": {
+    "hold_f1": 59.4,
+    "hold_kappa": 34.8,
+    "train_f1": 52.8,
+    "win90_f1_min": 45.8,
+    "win90_f1_med": 55.0,
+    "win90_f1_max": 61.5,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 1.08
+   },
+   "BNBUSDT": {
+    "hold_f1": 47.2,
+    "hold_kappa": 19.9,
+    "train_f1": 55.8,
+    "win90_f1_min": 43.5,
+    "win90_f1_med": 47.8,
+    "win90_f1_max": 48.0,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 0.87
+   },
+   "SOLUSDT": {
+    "hold_f1": 55.3,
+    "hold_kappa": 31.4,
+    "train_f1": 52.2,
+    "win90_f1_min": 45.4,
+    "win90_f1_med": 51.2,
+    "win90_f1_max": 57.6,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 0.92
+   },
+   "XRPUSDT": {
+    "hold_f1": 50.6,
+    "hold_kappa": 22.0,
+    "train_f1": 56.2,
+    "win90_f1_min": 37.1,
+    "win90_f1_med": 52.9,
+    "win90_f1_max": 60.9,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 0.79
+   },
+   "DOGEUSDT": {
+    "hold_f1": 62.0,
+    "hold_kappa": 39.3,
+    "train_f1": 55.0,
+    "win90_f1_min": 38.6,
+    "win90_f1_med": 58.1,
+    "win90_f1_max": 67.2,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 0.98
+   },
+   "ADAUSDT": {
+    "hold_f1": 47.0,
+    "hold_kappa": 17.1,
+    "train_f1": 57.0,
+    "win90_f1_min": 37.9,
+    "win90_f1_med": 54.6,
+    "win90_f1_max": 63.7,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 0.97
+   },
+   "AVAXUSDT": {
+    "hold_f1": 53.1,
+    "hold_kappa": 27.6,
+    "train_f1": 52.0,
+    "win90_f1_min": 41.0,
+    "win90_f1_med": 47.2,
+    "win90_f1_max": 58.3,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 1.04
+   },
+   "POLUSDT": {
+    "hold_f1": 53.4,
+    "hold_kappa": 25.5,
+    "train_f1": 55.7,
+    "win90_f1_min": 42.8,
+    "win90_f1_med": 51.7,
+    "win90_f1_max": 69.6,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 0.87
+   },
+   "DOTUSDT": {
+    "hold_f1": 49.1,
+    "hold_kappa": 20.5,
+    "train_f1": 51.5,
+    "win90_f1_min": 36.7,
+    "win90_f1_med": 48.4,
+    "win90_f1_max": 59.9,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 0.9
+   },
+   "HYPEUSDT": {
+    "hold_f1": 55.0,
+    "hold_kappa": 30.9,
+    "train_f1": 45.6,
+    "win90_f1_min": 35.4,
+    "win90_f1_med": 42.75,
+    "win90_f1_max": 62.2,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 0.81
+   },
+   "LINKUSDT": {
+    "hold_f1": 55.0,
+    "hold_kappa": 31.3,
+    "train_f1": 51.3,
+    "win90_f1_min": 41.2,
+    "win90_f1_med": 46.2,
+    "win90_f1_max": 59.4,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 1.06
+   },
+   "SUIUSDT": {
+    "hold_f1": 52.5,
+    "hold_kappa": 26.3,
+    "train_f1": 52.7,
+    "win90_f1_min": 39.5,
+    "win90_f1_med": 53.1,
+    "win90_f1_max": 65.2,
+    "final_vs_ref_f1": null,
+    "dir_phase_days": 1.01
+   }
+  },
+  "summary": {
+   "hold_f1": 53.3,
+   "hold_kappa": 27.1,
+   "train_f1": 53.1,
+   "win90_f1_min": 40.2,
+   "win90_f1_med": 50.6,
+   "win90_f1_max": 60.9,
+   "final_vs_ref_f1": null,
+   "dir_phase_days": 0.9
+  },
+  "utility": {
+   "train": {
+    "fwd3_down": [
+     0.42494841384566306,
+     -0.056981853516965345,
+     0.909481693454537
+    ],
+    "mom24_down": [
+     -0.15126108334451438,
+     -0.3175282360974266,
+     0.023053004392651517
+    ],
+    "share_down": 17.3,
+    "fwd3_side": [
+     -0.5376400731598526,
+     -0.8328336160482543,
+     -0.23875610782746057
+    ],
+    "mom24_side": [
+     0.07065895974683475,
+     0.014968755822353972,
+     0.1363509993308004
+    ],
+    "share_side": 64.8,
+    "fwd3_up": [
+     0.5374692939780982,
+     -0.07192628928616908,
+     1.1824330104220235
+    ],
+    "mom24_up": [
+     0.22580914472323924,
+     0.0656207982155182,
+     0.408275054808699
+    ],
+    "share_up": 16.5,
+    "sign_hit3d": 48.3,
+    "strat_ann_ret_pct": -8.5,
+    "strat_sharpe": -0.14,
+    "sub_axis": {
+     "sub0_fwd_vol": 4.224,
+     "sub0_share": 98.6,
+     "sub0_down_fwd3": 0.425,
+     "sub0_down_n": 27922,
+     "sub0_up_fwd3": 0.537,
+     "sub0_up_n": 26710
+    }
+   },
+   "holdout": {
+    "fwd3_down": [
+     -0.24307286214345322,
+     -1.2011192327082292,
+     0.4551028420938243
+    ],
+    "mom24_down": [
+     0.06580614403663466,
+     -0.20454702836126137,
+     0.4008372537657181
+    ],
+    "share_down": 15.5,
+    "fwd3_side": [
+     0.5291453715561327,
+     0.20527564971368936,
+     0.8500372854949578
+    ],
+    "mom24_side": [
+     -0.11609898854974714,
+     -0.21796558555951998,
+     -0.030495619649546862
+    ],
+    "share_side": 66.4,
+    "fwd3_up": [
+     0.40215934319309454,
+     -0.3895662699455816,
+     1.097576028140684
+    ],
+    "mom24_up": [
+     0.2429038208919143,
+     0.00577579978752477,
+     0.5326379365655528
+    ],
+    "share_up": 18.1,
+    "sign_hit3d": 48.0,
+    "strat_ann_ret_pct": 11.4,
+    "strat_sharpe": 0.25,
+    "sub_axis": {
+     "sub0_fwd_vol": 3.054,
+     "sub0_share": 98.3,
+     "sub0_down_fwd3": -0.243,
+     "sub0_down_n": 8335,
+     "sub0_up_fwd3": 0.402,
+     "sub0_up_n": 8940
+    }
+   }
+  }
+ }
+}
