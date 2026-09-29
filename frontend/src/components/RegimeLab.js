@@ -435,8 +435,13 @@ function BuildAndTest({ analysis, scope, symbol, strategies, jobBlocked, executi
             {(wf.dynamic_test?.trades ?? 0) < 10
               ? <span style={{ color: '#FFB74D' }}> · ⚠ nur {wf.dynamic_test?.trades ?? 0} Trades im Holdout – wenig belastbar</span>
               : null}
+            {(wf.dataset_excluded || []).length > 0 && (
+              <span style={{ color: '#FFB74D' }} data-testid={`regime-wf-excluded-${scope}`}
+                title={(wf.dataset_excluded || []).map(x => x.reason).join('\n')}>
+                {' '}· ⚠ ausgeschlossen (Daten nicht exakt reproduzierbar): <b>{wf.dataset_excluded.map(x => x.symbol).join(', ')}</b>
+              </span>
+            )}
           </div>
-          <div className="opt-compare">
             <div className={`opt-card ${wf.verdict?.dynamic_better ? 'best' : ''}`}>
               <div className="opt-card-title">DYNAMISCH (HOLDOUT · {wf.switches} Phasenwechsel)</div>
               <M m={wf.dynamic_test} />

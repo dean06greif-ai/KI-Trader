@@ -82,6 +82,38 @@ async def fetch_histories(symbols: List[str], days: int, timeframe: str,
     histories: Dict[str, List[Dict]] = {}
     p0, p1 = progress_span
     now_ms = int(_time.time() * 1000)
+    bucket_ms = tf_minutes(timeframe) * 60000
+
+    async def _load(session, sym: str) -> List[Dict]:
+        sym_days = days
+        anchor = (start_ts or {}).get(sym)
+        if anchor:
+            # Fenster-ANFANG fixieren: Tage ab JETZT zurück bis vor den Anker
+            sym_days = int(min(max((now_ms - int(anchor)) / 86400000 + 2,
+                                   days), 5500))
+        raw = await fetch_history(session, sym, sym_days, job=job)
+        raw_start = int(raw[0]["timestamp"]) if len(raw) else None
+        candles = aggregate_candles(raw, timeframe, drop_partial=True)
+        del raw
+        # R06-Fix: nur VOLLSTÄNDIGE Buckets behalten.
+        # (a) Ende: drop_partial behält den letzten Bucket schon, sobald
+        #     dessen letzte 1m-Kerze existiert – die ist aber noch in
+        #     Bildung -> Close/Volumen ändern sich Minuten später.
+        # (b) Anfang: die 1m-Historie beginnt mitten im ersten Bucket (Tage
+        #     ab JETZT, nicht am Raster) -> der erste Bucket war nur teilweise
+        #     gefüllt und bekam bei späterem Nachladen andere Werte.
+        # Beides ließ die Manifest-Checksum kippen ("Datensatz nicht
+        # reproduzierbar") und die Regime-Suche direkt nach einer frischen
+        # Analyse abbrechen.
+        candles = [c for c in candles
+                   if int(c["timestamp"]) + bucket_ms <= now_ms
+                   and (raw_start is None or int(c["timestamp"]) >= raw_start)]
+        if anchor:
+            candles = [c for c in candles if c["timestamp"] >= int(anchor)]
+        if end_ts and end_ts.get(sym):
+            candles = [c for c in candles if c["timestamp"] <= end_ts[sym]]
+        return candles
+
     async with aiohttp.ClientSession() as session:
         for i, sym in enumerate(symbols):
             if job:
@@ -91,49 +123,61 @@ async def fetch_histories(symbols: List[str], days: int, timeframe: str,
             if job:
                 job["phase"] = f"Lade Daten: {sym}"
                 job["progress"] = p0 + round(i / max(len(symbols), 1) * (p1 - p0))
-            sym_days = days
-            anchor = (start_ts or {}).get(sym)
-            if anchor:
-                # Fenster-ANFANG fixieren: Tage ab JETZT zurück bis vor den Anker
-                sym_days = int(min(max((now_ms - int(anchor)) / 86400000 + 2,
-                                       days), 5500))
-            raw = await fetch_history(session, sym, sym_days, job=job)
-            raw_start = int(raw[0]["timestamp"]) if len(raw) else None
-            candles = aggregate_candles(raw, timeframe, drop_partial=True)
-            del raw
-            # R06-Fix: nur VOLLSTÄNDIGE Buckets behalten.
-            # (a) Ende: drop_partial behält den letzten Bucket schon, sobald
-            #     dessen letzte 1m-Kerze existiert – die ist aber noch in
-            #     Bildung -> Close/Volumen ändern sich Minuten später.
-            # (b) Anfang: die 1m-Historie beginnt mitten im ersten Bucket (Tage
-            #     ab JETZT, nicht am Raster) -> der erste Bucket war nur teilweise
-            #     gefüllt und bekam bei späterem Nachladen andere Werte.
-            # Beides ließ die Manifest-Checksum kippen ("Datensatz nicht
-            # reproduzierbar") und die Regime-Suche direkt nach einer frischen
-            # Analyse abbrechen.
-            bucket_ms = tf_minutes(timeframe) * 60000
-            candles = [c for c in candles
-                       if int(c["timestamp"]) + bucket_ms <= now_ms
-                       and (raw_start is None or int(c["timestamp"]) >= raw_start)]
-            if anchor:
-                candles = [c for c in candles if c["timestamp"] >= int(anchor)]
-            if end_ts and end_ts.get(sym):
-                candles = [c for c in candles if c["timestamp"] <= end_ts[sym]]
+            candles = await _load(session, sym)
             if len(candles) > MIN_HISTORY_BARS:
                 histories[sym] = candles
             elif skipped is not None:
                 skipped[sym] = {"bars": len(candles),
                                 "reason": f"zu wenig Daten: {len(candles)} Kerzen ({timeframe}), "
                                           f"mind. {MIN_HISTORY_BARS + 1} nötig"}
-    if dataset:
-        from services import research_dataset
-        problems = research_dataset.verify_histories(histories, dataset)
-        if problems:
-            raise RuntimeError(
-                "Datensatz nicht reproduzierbar – die Quelle liefert nicht mehr "
-                "exakt die Kerzen der gespeicherten Analyse: "
-                + " · ".join(problems[:4]))
+        if dataset:
+            await _verify_or_repair(session, histories, dataset, job, _load, bucket_ms)
     return histories
+
+
+async def _verify_or_repair(session, histories: Dict[str, List[Dict]], dataset: Dict,
+                            job: Optional[Dict], load, bucket_ms: int):
+    """R06: Manifest prüfen. Abweichende Symbole zuerst reparieren (Lücken im
+    1m-Cache gezielt nachladen, z.B. beim lokalen Worker), dann erneut prüfen.
+    Bleiben Abweichungen, werden diese Symbole ERKLÄRT ausgeschlossen, solange
+    genug Symbole exakt reproduziert sind – sonst Abbruch wie bisher."""
+    from services import candle_cache, research_dataset as rd
+    per = (dataset or {}).get("per_symbol") or {}
+    if not isinstance(per, dict) or not per:
+        return
+    bad = {s: p for s, w in per.items() if (p := rd.verify_symbol(s, histories.get(s), w))}
+    for sym in list(bad):
+        want = per[sym]
+        if job:
+            job["phase"] = f"Repariere Kerzen-Lücken: {sym}"
+        try:
+            added = await candle_cache.repair_gaps(
+                session, sym, int(want.get("start_ts") or 0),
+                int(want.get("end_ts") or 0) + bucket_ms - 60000, job=job)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"regime_lab: Lücken-Reparatur {sym} fehlgeschlagen: {e}")
+            added = 0
+        if added:
+            histories[sym] = await load(session, sym)
+            problem = rd.verify_symbol(sym, histories.get(sym), want)
+            if problem is None:
+                bad.pop(sym)
+                logger.info(f"regime_lab: {sym} nach Reparatur (+{added} 1m-Kerzen) reproduzierbar")
+            else:
+                bad[sym] = problem
+    if not bad:
+        return
+    ok = len(per) - len(bad)
+    if ok < rd.min_verified(len(per)):
+        raise RuntimeError(
+            "Datensatz nicht reproduzierbar – die Quelle liefert nicht mehr "
+            "exakt die Kerzen der gespeicherten Analyse: "
+            + " · ".join(list(bad.values())[:4]))
+    for sym, problem in bad.items():
+        histories.pop(sym, None)
+        logger.warning(f"regime_lab: {sym} ausgeschlossen – {problem}")
+    if job is not None:
+        job["dataset_excluded"] = [{"symbol": s, "reason": p} for s, p in bad.items()]
 
 
 def _downsample(candles: List[Dict], max_pts: int = CHART_MAX_POINTS) -> List[List]:

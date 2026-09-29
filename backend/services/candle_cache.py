@@ -330,6 +330,44 @@ async def get_candles(session, symbol: str, days: int, job: Dict = None) -> Cand
     return cached.slice_from_ts(start)
 
 
+async def repair_gaps(session, symbol: str, start_ms: int, end_ms: int,
+                      min_gap_ms: int = 5 * 60000, max_gaps: int = 60,
+                      job: Dict = None) -> int:
+    """Interne Lücken im gecachten 1m-Bestand [start, end] gezielt nachladen.
+    Der Cache wird sonst nur an Kopf/Ende erweitert – eine Lücke mittendrin (z.B.
+    abgebrochener Download beim lokalen Worker) blieb dauerhaft. Rückgabe: Anzahl
+    neu eingefügter Kerzen (0 = keine Lücke oder Quelle hat dort selbst nichts)."""
+    entry = _MEM.get(symbol)
+    if entry is None or not len(entry["candles"]):
+        return 0
+    cached: CandleArray = entry["candles"]
+    seg = cached.slice_range(start_ms, end_ms)
+    if not len(seg):
+        return 0
+    edges = np.concatenate([[start_ms - 60000], seg.ts, [end_ms + 60000]])
+    idx = np.where(np.diff(edges) > min_gap_ms)[0][:max_gaps]
+    if not len(idx):
+        return 0
+    parts = []
+    for i in idx:
+        a, b = int(edges[i]) + 60000, int(edges[i + 1]) - 60000
+        if b >= a:
+            got = await _fetch_range(session, symbol, a, b, job=job)
+            if len(got):
+                parts.append(got)
+    if not parts:
+        return 0
+    merged = CandleArray.concat([cached, *parts]).dedup_sorted()
+    added = len(merged) - len(cached)
+    async with _LOCK:
+        entry["candles"] = merged
+        entry["used_at"] = time.time()
+    if added > 0:
+        await asyncio.to_thread(_save_disk, symbol, merged)
+        logger.info(f"candle_cache REPAIR {symbol}: {len(idx)} Lücke(n), +{added} Kerzen")
+    return max(added, 0)
+
+
 def stats() -> Dict:
     return {
         "symbols": len(_MEM),

@@ -573,6 +573,9 @@ async def run_walkforward(job_id: str, body: Dict, registry, settings: Dict,
                       db, f"walkforward:{doc['id']}:{lab.scope_key(scope, symbol)}",
                       "walkforward"),
                   "points": points[:8000],
+                  # Symbole, deren Kerzen nicht mehr exakt zum Manifest passten
+                  # (erklärt ausgeschlossen statt Abbruch des ganzen Laufs)
+                  "dataset_excluded": list(job.get("dataset_excluded") or []),
                   "created_at": datetime.now(timezone.utc).isoformat()}
         key = lab.scope_key(scope, symbol)
         if db is not None:
