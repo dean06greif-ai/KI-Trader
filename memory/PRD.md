@@ -103,3 +103,10 @@ Backlog: P1 Autopilot mit "jump" auf Prod + neue Analyse/Ablation, dann Shadow-F
 - `notifications.reject_notify_key`: Zahlen raus, interne Stopps coin-übergreifend max. 1/h; Coin "Alerts aus" -> keine Abbruch-Meldung.
 - Master-Steuerung: Karte "Signal-Benachrichtigungen" (Nur ausgeführte Trades / Jedes Signal inkl. Wächter-Grund) – `SignalNotifyModeCard.js`.
 - Tests: `test_order_reject_and_coin_master.py`; Testing-Agent Iteration 27: 100 %.
+
+## Session 28./29.09.2026 (E1)
+- Regime-Lab-Analyse (nur Bericht, keine Code-Änderung); "sehr gut"-Label mit Verlaufs-Palette (RegimeLab.css)
+- Repo nach /app-Root gespiegelt (Save-to-GitHub-kompatibel, Struktur unverändert)
+- NEU: Strategie tradex_vwap_scalping (Horst v2), services/market_positioning.py, Backtester: Zeit-Exit/Limit-Entry/TP-Limit/Richtung, Optimizer-Gruppen time_exit/entry_order/direction, Live: Zeit-Exit, Maker-Entry, TP-Limit, Richtungsfilter
+- Bericht: TRADEX_STRATEGIE_BERICHT.md; Tests: backend/tests/test_tradex_vwap_scalping.py (+ iter28)
+- Backlog: Walk-Forward-Benchmark Regime-Lab, Segment-Gate, Vola als Risiko-Parameter, TradeX nur BTC im Paper-Shadow beobachten
