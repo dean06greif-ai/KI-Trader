@@ -62,6 +62,13 @@ automatisch übernommen. Kerzendaten liegen standardmäßig in `./worker_data`.
   `worker_config.json` bleiben erhalten; die Verbindung (Server-URL + Token)
   liegt zusätzlich in `~/.ki_trader_worker/worker_config.json`.
 
+## Neu in 1.16.0 (Regime-Walk-Forward robust)
+
+- Passt ein Symbol nicht mehr exakt zum Datensatz-Manifest einer Analyse (z.B.
+  Lücke im lokalen 1m-Cache), werden die fehlenden Kerzen gezielt nachgeladen.
+  Bleibt die Abweichung, wird nur dieses Symbol erklärt ausgeschlossen, statt dass
+  der ganze Walk-Forward abbricht (Abbruch nur, wenn < 75 % der Symbole passen).
+
 ## Neu in 1.13.0 (Dauerbetrieb)
 
 - Der Worker beendet sich bei unerwarteten Fehlern in der Verbindungsschleife
