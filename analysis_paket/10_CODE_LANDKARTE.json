@@ -1,0 +1,6098 @@
+{
+  "generated_at": "2026-09-15T12:54:59.841741+00:00",
+  "repository": "https://github.com/dean06greif-ai/KI-Trader",
+  "branch": "conflict_150926_0200",
+  "commit": "792ff0ac44861df447d3e619042ecef1704c37c5",
+  "tracked_source_diff_empty": true,
+  "python_files_backend": 532,
+  "test_files_backend": 280,
+  "focus_files": [
+    {
+      "path": "backend/server.py",
+      "sha256": "5ca25d6a3807c9d20874d562e3743b16e4322a15d2d345f5e83e9db5645a5017",
+      "lines": 473,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "lifespan",
+          "start": 37,
+          "end": 454,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_warm_playbook_status",
+          "start": 348,
+          "end": 355,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/core/pipeline.py",
+      "sha256": "26e80c0c559efe013f9f8c298e1d3c50f55e51fe2536d354c1a6bfefedbf540e",
+      "lines": 232,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "broadcast",
+          "start": 21,
+          "end": 30,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "update_performance",
+          "start": 33,
+          "end": 61,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "process_signal",
+          "start": 64,
+          "end": 178,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "evaluate_open_signals",
+          "start": 181,
+          "end": 220,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "emit_ai_signal",
+          "start": 223,
+          "end": 232,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/core/scheduler.py",
+      "sha256": "0fc716ef9d1671bcf59e72f3b07d68fc10028f2f3e66fd77758cbe26ea778acc",
+      "lines": 212,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_needs_backfill",
+          "start": 26,
+          "end": 32,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_is_stale",
+          "start": 35,
+          "end": 41,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "feed_lag_warning",
+          "start": 50,
+          "end": 65,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "start_scanner",
+          "start": 68,
+          "end": 145,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "daily_reset_loop",
+          "start": 148,
+          "end": 158,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "perform_daily_reset",
+          "start": 161,
+          "end": 212,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/regime.py",
+      "sha256": "af6ef98072a031f9969e9d1f505b7441defd8d988ad8ee597fa28415f415befe",
+      "lines": 384,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "bars_per_day",
+          "start": 34,
+          "end": 35,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "compute_features",
+          "start": 39,
+          "end": 80,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_kmeans",
+          "start": 84,
+          "end": 105,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_silhouette",
+          "start": 108,
+          "end": 116,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_label_de",
+          "start": 119,
+          "end": 137,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "is_v2",
+          "start": 140,
+          "end": 141,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "relabel_regimes",
+          "start": 144,
+          "end": 181,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "detect_regimes",
+          "start": 184,
+          "end": 198,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_detect_regimes_kmeans",
+          "start": 201,
+          "end": 269,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "classify_point",
+          "start": 273,
+          "end": 286,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "classify_matrix",
+          "start": 289,
+          "end": 310,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "classify_series",
+          "start": 313,
+          "end": 337,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "segments_from_labels",
+          "start": 340,
+          "end": 354,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "current_regime",
+          "start": 357,
+          "end": 384,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/regime_core.py",
+      "sha256": "2f6562ee75f5d0b76a10d6273859af011ff77ee20f7721ba83ce35278a398372",
+      "lines": 60,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": []
+    },
+    {
+      "path": "backend/services/regime_engine.py",
+      "sha256": "a3d797b0c78371c341f910451145704ef8fb665b22d30f683a9bc0c3cf7cf579",
+      "lines": 1605,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_grp",
+          "start": 352,
+          "end": 354,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "norm_mode",
+          "start": 391,
+          "end": 396,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "sub_states",
+          "start": 399,
+          "end": 406,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "regime_id",
+          "start": 409,
+          "end": 419,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "split_id",
+          "start": 422,
+          "end": 429,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "regime_label",
+          "start": 432,
+          "end": 441,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "regime_key",
+          "start": 444,
+          "end": 450,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "nnfx_regime",
+          "start": 453,
+          "end": 459,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "taxonomy",
+          "start": 466,
+          "end": 487,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "adaptive_overrides",
+          "start": 491,
+          "end": 517,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "resolve_config",
+          "start": 520,
+          "end": 684,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "compute_matrix",
+          "start": 688,
+          "end": 782,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_bands",
+          "start": 785,
+          "end": 881,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_raw_state",
+          "start": 884,
+          "end": 892,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_desired_state",
+          "start": 895,
+          "end": 919,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "classify_arrays",
+          "start": 922,
+          "end": 979,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_hold_override",
+          "start": 982,
+          "end": 988,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "classify_series",
+          "start": 991,
+          "end": 997,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "final_labels",
+          "start": 1000,
+          "end": 1010,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "reactive_payload",
+          "start": 1013,
+          "end": 1019,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "segments_from_labels",
+          "start": 1022,
+          "end": 1035,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_regime_stats",
+          "start": 1039,
+          "end": 1058,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build_model",
+          "start": 1061,
+          "end": 1156,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_profile_quality",
+          "start": 1159,
+          "end": 1234,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "early_warning",
+          "start": 1238,
+          "end": 1324,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_warning_text",
+          "start": 1327,
+          "end": 1340,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "current_regime",
+          "start": 1344,
+          "end": 1397,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_reason_text",
+          "start": 1400,
+          "end": 1406,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "ideal_labels",
+          "start": 1410,
+          "end": 1418,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "validate_labels",
+          "start": 1421,
+          "end": 1548,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "agreement_with_ideal",
+          "start": 1551,
+          "end": 1564,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "engine_defaults",
+          "start": 1567,
+          "end": 1580,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "summarize",
+          "start": 1583,
+          "end": 1605,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "clip",
+          "start": 499,
+          "end": 500,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_f",
+          "start": 547,
+          "end": 548,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/regime_features.py",
+      "sha256": "2c4f3bd971ac0195d6cb9715cb0feaea04c2d6cd6684b91aefb7a4f0f2e0a1a8",
+      "lines": 295,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "bars_per_day",
+          "start": 23,
+          "end": 24,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "ohlc",
+          "start": 27,
+          "end": 38,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_prefix",
+          "start": 41,
+          "end": 42,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "rolling_sum",
+          "start": 45,
+          "end": 53,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "rolling_mean",
+          "start": 56,
+          "end": 57,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "rolling_std",
+          "start": 60,
+          "end": 70,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "ols_stats",
+          "start": 73,
+          "end": 108,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "wilder",
+          "start": 111,
+          "end": 116,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "true_range",
+          "start": 119,
+          "end": 123,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "adx_di",
+          "start": 126,
+          "end": 147,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "atr_pct",
+          "start": 150,
+          "end": 155,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "realized_vol_pct",
+          "start": 158,
+          "end": 163,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "efficiency_ratio",
+          "start": 166,
+          "end": 179,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "rolling_zscore",
+          "start": 182,
+          "end": 207,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "rolling_max",
+          "start": 210,
+          "end": 213,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "rolling_min",
+          "start": 216,
+          "end": 219,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "range_position",
+          "start": 222,
+          "end": 230,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "variance_ratio",
+          "start": 233,
+          "end": 257,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_length",
+          "start": 260,
+          "end": 273,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "donchian_lagged",
+          "start": 276,
+          "end": 289,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "ema",
+          "start": 292,
+          "end": 295,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/regime_reactive.py",
+      "sha256": "fcaf173416341b7640bbd4e62aaa0a3224da98c9219b1c6d6480fbd64d7f018c",
+      "lines": 1031,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_ffill",
+          "start": 28,
+          "end": 39,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_leg_label",
+          "start": 42,
+          "end": 64,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_merged_last",
+          "start": 67,
+          "end": 116,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "detect",
+          "start": 119,
+          "end": 126,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_detect_ema",
+          "start": 129,
+          "end": 250,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_detect_reactive",
+          "start": 253,
+          "end": 787,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_absorb_short",
+          "start": 790,
+          "end": 811,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_strength_axis",
+          "start": 815,
+          "end": 874,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_sub_axis",
+          "start": 877,
+          "end": 888,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_ids",
+          "start": 891,
+          "end": 898,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "classify",
+          "start": 901,
+          "end": 929,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "final_ids_from",
+          "start": 932,
+          "end": 936,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_ts",
+          "start": 939,
+          "end": 946,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "report",
+          "start": 949,
+          "end": 967,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "full_payload",
+          "start": 970,
+          "end": 975,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "early_warning",
+          "start": 979,
+          "end": 1031,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_slope_n",
+          "start": 152,
+          "end": 159,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_labels",
+          "start": 167,
+          "end": 179,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/regime_kombi.py",
+      "sha256": "7eb4925ffdcf70999be0f7facd571ee53728bc8e1745759839c4effac61df4b1",
+      "lines": 280,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_hyst_labels",
+          "start": 38,
+          "end": 53,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_pivot_scan",
+          "start": 56,
+          "end": 118,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_dominance_merge",
+          "start": 121,
+          "end": 141,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "detect_kombi",
+          "start": 144,
+          "end": 280,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_slope_n",
+          "start": 161,
+          "end": 168,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/regime_truth.py",
+      "sha256": "a2ea95be5f5a798010aaa4ca4239abd3755a68dd249497846ae8657a27299d0f",
+      "lines": 550,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_roll_sums",
+          "start": 33,
+          "end": 45,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_centered_t",
+          "start": 48,
+          "end": 71,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_centered_mean",
+          "start": 74,
+          "end": 86,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_segments",
+          "start": 89,
+          "end": 100,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_merge_short",
+          "start": 103,
+          "end": 123,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_fill_nan",
+          "start": 126,
+          "end": 130,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_fill_edges",
+          "start": 133,
+          "end": 140,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_majority_smooth",
+          "start": 143,
+          "end": 160,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_sub_axis",
+          "start": 163,
+          "end": 185,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "centered_labels",
+          "start": 189,
+          "end": 249,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_hmm_states",
+          "start": 253,
+          "end": 308,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "hmm_labels",
+          "start": 311,
+          "end": 355,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "truth_labels",
+          "start": 358,
+          "end": 375,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_trend_arr",
+          "start": 379,
+          "end": 381,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_switches",
+          "start": 384,
+          "end": 386,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "agreement",
+          "start": 389,
+          "end": 408,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "detection_lag_days",
+          "start": 411,
+          "end": 430,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_uniq_clip",
+          "start": 434,
+          "end": 436,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "calibrate",
+          "start": 439,
+          "end": 550,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_drift_z",
+          "start": 217,
+          "end": 221,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "emis",
+          "start": 264,
+          "end": 267,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "features_for",
+          "start": 463,
+          "end": 469,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "evaluate",
+          "start": 471,
+          "end": 496,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/regime_lab.py",
+      "sha256": "3804ad4823d54611440fb28b6051df8fca8168900ced2646807fc8e2a4f494d6",
+      "lines": 927,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "create_job",
+          "start": 36,
+          "end": 45,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "running_job",
+          "start": 48,
+          "end": 52,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "fetch_histories",
+          "start": 55,
+          "end": 79,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_downsample",
+          "start": 82,
+          "end": 88,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_ema_payload",
+          "start": 91,
+          "end": 117,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_segments_payload",
+          "start": 120,
+          "end": 127,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_validation_payload",
+          "start": 130,
+          "end": 139,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_ideal_payload",
+          "start": 142,
+          "end": 155,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_current_payload",
+          "start": 158,
+          "end": 166,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_validation_summary",
+          "start": 169,
+          "end": 182,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_regime_usage",
+          "start": 185,
+          "end": 196,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_coin_similarity",
+          "start": 199,
+          "end": 221,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_live_agreement",
+          "start": 224,
+          "end": 252,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_symbol_payload",
+          "start": 255,
+          "end": 287,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_analysis",
+          "start": 290,
+          "end": 446,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_ema_compare",
+          "start": 450,
+          "end": 556,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_kombi_calibrate",
+          "start": 560,
+          "end": 692,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_calibration",
+          "start": 696,
+          "end": 743,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "transition_matrix",
+          "start": 747,
+          "end": 842,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "persist_analysis",
+          "start": 846,
+          "end": 853,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "persist_worker_result",
+          "start": 856,
+          "end": 876,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "model_for",
+          "start": 880,
+          "end": 883,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "scope_key",
+          "start": 886,
+          "end": 887,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "regime_ranges",
+          "start": 890,
+          "end": 910,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "segments_from_ranges",
+          "start": 913,
+          "end": 927,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_count",
+          "start": 773,
+          "end": 799,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/regime_opt.py",
+      "sha256": "6012a628af00c444201ecabeff2902994b02fcd4b44b1fdc69e2cd1f387bbf8a",
+      "lines": 551,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_stop_fn",
+          "start": 24,
+          "end": 27,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_load_doc",
+          "start": 30,
+          "end": 38,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_make_seg_pool",
+          "start": 41,
+          "end": 61,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_close_seg_pool",
+          "start": 64,
+          "end": 71,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_guarded",
+          "start": 74,
+          "end": 76,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_build_regime_segments",
+          "start": 79,
+          "end": 95,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "allowed_sides_for",
+          "start": 98,
+          "end": 112,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_regime_optimizer",
+          "start": 115,
+          "end": 361,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_assignment_items",
+          "start": 365,
+          "end": 378,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_walkforward",
+          "start": 381,
+          "end": 551,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "stop",
+          "start": 25,
+          "end": 26,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/regime_gate.py",
+      "sha256": "409a93443e4313a7ef64d020a74de4cc47698d2266d06fa6f638a0793f9a1833",
+      "lines": 123,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "phase_from_label",
+          "start": 34,
+          "end": 47,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_cached",
+          "start": 50,
+          "end": 54,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_detect",
+          "start": 57,
+          "end": 80,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "current_phase",
+          "start": 83,
+          "end": 95,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "blocked_phases",
+          "start": 98,
+          "end": 102,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "check_signal_allowed",
+          "start": 105,
+          "end": 123,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/dynamic_strategy.py",
+      "sha256": "35e96d0202d91cc367d51ab77a3227b06586d4f57ed028b625b5fcc892b9766a",
+      "lines": 854,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_iso",
+          "start": 34,
+          "end": 35,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "metrics_from_rows",
+          "start": 38,
+          "end": 62,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build_segments",
+          "start": 65,
+          "end": 80,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_provider_for",
+          "start": 83,
+          "end": 88,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "prepare_providers",
+          "start": 91,
+          "end": 104,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "reset_bench",
+          "start": 114,
+          "end": 116,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "set_pool",
+          "start": 119,
+          "end": 122,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "register_segments",
+          "start": 125,
+          "end": 138,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "with_strategy_params",
+          "start": 141,
+          "end": 149,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_rows_for",
+          "start": 152,
+          "end": 187,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_def_key",
+          "start": 190,
+          "end": 206,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "provider_for_seg",
+          "start": 209,
+          "end": 234,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "simulate_segment",
+          "start": 237,
+          "end": 247,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "eval_regime_config",
+          "start": 250,
+          "end": 259,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "eval_dynamic",
+          "start": 262,
+          "end": 280,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_score",
+          "start": 283,
+          "end": 290,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "sample_config",
+          "start": 293,
+          "end": 298,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "split_segments",
+          "start": 301,
+          "end": 329,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "validation_passed",
+          "start": 332,
+          "end": 335,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_guarded_score",
+          "start": 338,
+          "end": 342,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "discover_regime_strategy",
+          "start": 345,
+          "end": 470,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_deep_regime_search",
+          "start": 474,
+          "end": 650,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "optimize_regime",
+          "start": 653,
+          "end": 697,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "optimize_static",
+          "start": 700,
+          "end": 759,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "optimize_regime_rules",
+          "start": 762,
+          "end": 822,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "build_verdict",
+          "start": 825,
+          "end": 854,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "validate",
+          "start": 383,
+          "end": 388,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "mk",
+          "start": 489,
+          "end": 495,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "score_of",
+          "start": 497,
+          "end": 511,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/dynamic_live.py",
+      "sha256": "a95aeb5eb85d3237be75df98130f36258d3159cce9947600662fd63ba023ec3d",
+      "lines": 403,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now_iso",
+          "start": 26,
+          "end": 27,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "detect_current",
+          "start": 30,
+          "end": 70,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "refresh_state",
+          "start": 74,
+          "end": 126,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "log_switches",
+          "start": 129,
+          "end": 158,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "apply_configs",
+          "start": 161,
+          "end": 195,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_set_toggle",
+          "start": 198,
+          "end": 204,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_apply_strategy_params",
+          "start": 207,
+          "end": 218,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "apply_regime_strategies",
+          "start": 221,
+          "end": 270,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "apply_active",
+          "start": 273,
+          "end": 278,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_switched_symbols",
+          "start": 281,
+          "end": 291,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "transition_protect",
+          "start": 294,
+          "end": 328,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "check_one",
+          "start": 331,
+          "end": 369,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_due",
+          "start": 372,
+          "end": 384,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "watch_loop",
+          "start": 387,
+          "end": 403,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/backtester.py",
+      "sha256": "d008b7545354cedcb02173164f861adcba997234bf5a6d405e8fa196b6cbe673",
+      "lines": 1017,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "JobCancelled",
+          "start": 43,
+          "end": 44,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_clip_history",
+          "start": 47,
+          "end": 53,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "fetch_history",
+          "start": 56,
+          "end": 60,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_parse_hhmm",
+          "start": 64,
+          "end": 69,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "parse_sessions",
+          "start": 72,
+          "end": 88,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "make_session_checker",
+          "start": 91,
+          "end": 115,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "compute_levels",
+          "start": 118,
+          "end": 188,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "resolve_be_mode",
+          "start": 191,
+          "end": 198,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "effective_leverage",
+          "start": 201,
+          "end": 221,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "simulate_pair",
+          "start": 224,
+          "end": 535,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "create_job",
+          "start": 538,
+          "end": 552,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "resolve_timeframe",
+          "start": 555,
+          "end": 560,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_range_ms",
+          "start": 567,
+          "end": 579,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_effective_strategy",
+          "start": 582,
+          "end": 590,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_pair_trade_cfg",
+          "start": 593,
+          "end": 599,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_pair_settings",
+          "start": 602,
+          "end": 608,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_simulate_all_sequential",
+          "start": 611,
+          "end": 716,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_simulate_all_parallel",
+          "start": 719,
+          "end": 828,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_build_benchmark",
+          "start": 831,
+          "end": 862,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_backtest",
+          "start": 865,
+          "end": 1017,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "in_session",
+          "start": 98,
+          "end": 113,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "close_trade",
+          "start": 262,
+          "end": 275,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "be_price",
+          "start": 277,
+          "end": 280,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "move_be",
+          "start": 282,
+          "end": 286,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_iso",
+          "start": 482,
+          "end": 483,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/fast_sim.py",
+      "sha256": "e68fec4909d654655dddcdd2a5240bf0ec35772e1fe887634e4739f950bf295a",
+      "lines": 643,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_nan",
+          "start": 21,
+          "end": 22,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "FastSeries",
+          "start": 25,
+          "end": 356,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_token_series",
+          "start": 359,
+          "end": 376,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_rule_cond_htf",
+          "start": 379,
+          "end": 397,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_rule_cond",
+          "start": 400,
+          "end": 448,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "provider_for",
+          "start": 451,
+          "end": 466,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build_signal_provider",
+          "start": 469,
+          "end": 517,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build_builtin_signal_provider",
+          "start": 533,
+          "end": 587,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_cross_up",
+          "start": 590,
+          "end": 595,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_cross_down",
+          "start": 598,
+          "end": 603,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "sweep_arrays",
+          "start": 606,
+          "end": 643,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "start": 28,
+          "end": 46,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_fingerprint",
+          "start": 48,
+          "end": 51,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "base_tf_ms",
+          "start": 53,
+          "end": 62,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "htf",
+          "start": 64,
+          "end": 80,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "get",
+          "start": 82,
+          "end": 182,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_compute",
+          "start": 184,
+          "end": 350,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_cached_ema",
+          "start": 352,
+          "end": 356,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "provider",
+          "start": 502,
+          "end": 515,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "provider",
+          "start": 557,
+          "end": 585,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/history_sources.py",
+      "sha256": "40b5ff2ac67dbb12e5b84c7f647bc490d2fc1dc7699f46644cc8f9d2327c2ce7",
+      "lines": 303,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "HistoryUnavailable",
+          "start": 49,
+          "end": 50,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_resolve",
+          "start": 53,
+          "end": 57,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_progress",
+          "start": 60,
+          "end": 65,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "activity_volume",
+          "start": 68,
+          "end": 78,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_get_json",
+          "start": 81,
+          "end": 84,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "RateLimited",
+          "start": 87,
+          "end": 92,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_get_json_checked",
+          "start": 95,
+          "end": 112,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "fetch_binance",
+          "start": 126,
+          "end": 170,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "fetch_bitunix",
+          "start": 176,
+          "end": 214,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "fetch_yahoo",
+          "start": 220,
+          "end": 267,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "pace_for",
+          "start": 277,
+          "end": 278,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_check_cancel",
+          "start": 281,
+          "end": 284,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "fetch_blocks",
+          "start": 287,
+          "end": 295,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "supports_parallel",
+          "start": 298,
+          "end": 299,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "source_of",
+          "start": 302,
+          "end": 303,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "start": 90,
+          "end": 92,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/candle_cache.py",
+      "sha256": "c3323470d7fd56e26c565d21a77b2213f56c40ce39878a2bb0c2dbf0aba2f116",
+      "lines": 357,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_default_max_candles",
+          "start": 37,
+          "end": 42,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_npy_path",
+          "start": 54,
+          "end": 55,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_legacy_path",
+          "start": 58,
+          "end": 59,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_ensure_dir",
+          "start": 62,
+          "end": 67,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_load_disk",
+          "start": 70,
+          "end": 101,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_save_disk",
+          "start": 104,
+          "end": 120,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_total_candles",
+          "start": 123,
+          "end": 124,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_evict_if_needed",
+          "start": 127,
+          "end": 133,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_evict_if_needed_async",
+          "start": 136,
+          "end": 142,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_merge_tail",
+          "start": 145,
+          "end": 152,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_fetch_range",
+          "start": 155,
+          "end": 172,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_fetch_range_parallel",
+          "start": 175,
+          "end": 198,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_candles",
+          "start": 201,
+          "end": 258,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "stats",
+          "start": 261,
+          "end": 270,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "clear",
+          "start": 273,
+          "end": 274,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "download_stats",
+          "start": 280,
+          "end": 281,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "cached_meta",
+          "start": 285,
+          "end": 290,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "disk_meta",
+          "start": 293,
+          "end": 305,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "persist_symbol",
+          "start": 308,
+          "end": 313,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "persist_symbol_async",
+          "start": 316,
+          "end": 321,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "remove_symbol",
+          "start": 324,
+          "end": 331,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "list_disk_symbols",
+          "start": 334,
+          "end": 357,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/timeframes.py",
+      "sha256": "68263c28a4a4649bff02f0803ef31469a2f8956b974efe251dd80d9dbeee23df",
+      "lines": 106,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "tf_minutes",
+          "start": 23,
+          "end": 24,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "normalize_rule_tf",
+          "start": 27,
+          "end": 33,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "valid_rule_tf",
+          "start": 36,
+          "end": 39,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "rule_tf_options",
+          "start": 42,
+          "end": 47,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_aggregate_array",
+          "start": 50,
+          "end": 72,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "aggregate_candles",
+          "start": 75,
+          "end": 106,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/ai_engine.py",
+      "sha256": "7192764dd08c9a638f5e2595ea7e67b32c8383e4f7f706eb978b0476aa7b3933",
+      "lines": 3086,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_prompt_hash",
+          "start": 510,
+          "end": 511,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "prompt_version_info",
+          "start": 520,
+          "end": 535,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_now_iso",
+          "start": 557,
+          "end": 558,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_is_rate_limit_error",
+          "start": 561,
+          "end": 564,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "live_gate_bypass_ok",
+          "start": 567,
+          "end": 579,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "AIEngine",
+          "start": 582,
+          "end": 3083,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "start": 584,
+          "end": 624,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "key",
+          "start": 627,
+          "end": 640,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_provider_key",
+          "start": 643,
+          "end": 644,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_available_providers",
+          "start": 646,
+          "end": 648,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "setup",
+          "start": 650,
+          "end": 657,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "load_config",
+          "start": 660,
+          "end": 764,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "update_config",
+          "start": 766,
+          "end": 1022,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_snapshot",
+          "start": 1025,
+          "end": 1163,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_safe_lev",
+          "start": 1166,
+          "end": 1170,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_apply_crv_frame",
+          "start": 1172,
+          "end": 1184,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_frame_leverage",
+          "start": 1186,
+          "end": 1200,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_parse_json",
+          "start": 1203,
+          "end": 1206,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_trigger_hint",
+          "start": 1209,
+          "end": 1224,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "is_fresh",
+          "start": 1226,
+          "end": 1234,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "generate_for_role",
+          "start": 1236,
+          "end": 1267,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "current_window",
+          "start": 1269,
+          "end": 1276,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_track_tokens",
+          "start": 1278,
+          "end": 1292,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_check_token_alert",
+          "start": 1298,
+          "end": 1313,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_generate_json",
+          "start": 1315,
+          "end": 1319,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_analysis_groups",
+          "start": 1321,
+          "end": 1338,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_should_skip_group",
+          "start": 1340,
+          "end": 1371,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_analysis",
+          "start": 1373,
+          "end": 1873,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_open_ai_trades_count",
+          "start": 1875,
+          "end": 1883,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_today_risk",
+          "start": 1885,
+          "end": 1903,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_diversification_gate",
+          "start": 1905,
+          "end": 1953,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_setup_live_gate",
+          "start": 1956,
+          "end": 2034,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_stale_limit_for",
+          "start": 2036,
+          "end": 2050,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_momentum_brake_block",
+          "start": 2052,
+          "end": 2067,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_dup_entry_block",
+          "start": 2069,
+          "end": 2087,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_emit_signal",
+          "start": 2089,
+          "end": 2436,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_maker_suspended",
+          "start": 2439,
+          "end": 2452,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_maker_check_performance",
+          "start": 2454,
+          "end": 2492,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_deep_analysis",
+          "start": 2497,
+          "end": 2707,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_check_deep_schedule",
+          "start": 2709,
+          "end": 2739,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_loop",
+          "start": 2742,
+          "end": 2860,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "chat_history",
+          "start": 2863,
+          "end": 2887,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "chat_stream",
+          "start": 2889,
+          "end": 2953,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "clear_chat",
+          "start": 2955,
+          "end": 2956,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "current_interval",
+          "start": 2958,
+          "end": 2963,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_check_heatmap_review",
+          "start": 2965,
+          "end": 3016,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "status",
+          "start": 3018,
+          "end": 3059,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_fomc_status_safe",
+          "start": 3062,
+          "end": 3067,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_econ_status_safe",
+          "start": 3070,
+          "end": 3075,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_key_credits_safe",
+          "start": 3078,
+          "end": 3083,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/ai_engine_context.py",
+      "sha256": "b9e6be05790bca09b42e085c2adc9a2ddc828730492229afbec733e5e8ba70d1",
+      "lines": 940,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now_iso",
+          "start": 40,
+          "end": 41,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "AIEngineContextMixin",
+          "start": 44,
+          "end": 939,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_user_directives",
+          "start": 45,
+          "end": 50,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_resolve_coins",
+          "start": 52,
+          "end": 64,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_open_trades_text",
+          "start": 66,
+          "end": 136,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_today_activity_block",
+          "start": 138,
+          "end": 185,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_context_brief",
+          "start": 187,
+          "end": 296,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_ai_coin_settings_text",
+          "start": 299,
+          "end": 320,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "resolve_group_blocks",
+          "start": 322,
+          "end": 340,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_btc_corr_block",
+          "start": 342,
+          "end": 365,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_macro_block",
+          "start": 367,
+          "end": 453,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_liquidity_block",
+          "start": 455,
+          "end": 552,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_strategy_performance_text",
+          "start": 554,
+          "end": 646,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_deep_report_block",
+          "start": 648,
+          "end": 663,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_other_strategy_params_text",
+          "start": 666,
+          "end": 686,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_role_context_block",
+          "start": 688,
+          "end": 702,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_capital_risk_block",
+          "start": 704,
+          "end": 745,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_analysis_extra_blocks",
+          "start": 747,
+          "end": 939,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/ai_engine_governance.py",
+      "sha256": "c98fbbf04d98c36d6c095d7fc57dad0f9a04f62e9433db194d997ba2ffe4569f",
+      "lines": 627,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now_iso",
+          "start": 38,
+          "end": 39,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "AIEngineGovernanceMixin",
+          "start": 42,
+          "end": 627,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_current_cfg_values",
+          "start": 44,
+          "end": 57,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_apply_changes",
+          "start": 59,
+          "end": 83,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_insert_proposal",
+          "start": 85,
+          "end": 110,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_macro_gate",
+          "start": 112,
+          "end": 156,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_evidence_trade_ts",
+          "start": 158,
+          "end": 174,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_macro_sample",
+          "start": 176,
+          "end": 184,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_tuning_guard",
+          "start": 186,
+          "end": 240,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_normalize_auto_tuned",
+          "start": 242,
+          "end": 288,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_handle_config_changes",
+          "start": 290,
+          "end": 439,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_close_proposal",
+          "start": 442,
+          "end": 451,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "review_parked_proposals",
+          "start": 453,
+          "end": 546,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "actionable_proposals",
+          "start": 548,
+          "end": 561,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "comment_on_user_change",
+          "start": 563,
+          "end": 597,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "list_proposals",
+          "start": 599,
+          "end": 604,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "decide_proposal",
+          "start": 606,
+          "end": 627,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/ai_engine_housekeeping.py",
+      "sha256": "aa0318136e52e54fe0c5a49a11a18013034e0866e215a79cffa8eaab0207be9b",
+      "lines": 444,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now_iso",
+          "start": 35,
+          "end": 36,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "AIEngineHousekeepingMixin",
+          "start": 39,
+          "end": 444,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_persist_housekeeping",
+          "start": 41,
+          "end": 52,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_cleanup_old_analyses",
+          "start": 54,
+          "end": 72,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_collect_daily_facts",
+          "start": 74,
+          "end": 125,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_statistical_summary",
+          "start": 127,
+          "end": 152,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_llm_daily_summary",
+          "start": 154,
+          "end": 187,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_daily_reset",
+          "start": 189,
+          "end": 342,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_run_housekeeping",
+          "start": 344,
+          "end": 428,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "force_daily_summary",
+          "start": 430,
+          "end": 444,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/ai_market_observer.py",
+      "sha256": "3f1128bfc056b62b766d68e6aceb813a76634c8a4b9a5fe513066567149bf2a9",
+      "lines": 394,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now_iso",
+          "start": 48,
+          "end": 49,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_vol_percentile_rank",
+          "start": 67,
+          "end": 76,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "compute_features",
+          "start": 79,
+          "end": 136,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "classify_regime",
+          "start": 139,
+          "end": 151,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "classify_regime_v2",
+          "start": 154,
+          "end": 185,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "snapshot_to_text",
+          "start": 188,
+          "end": 200,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "MarketObserver",
+          "start": 203,
+          "end": 391,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "start": 206,
+          "end": 215,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "setup",
+          "start": 217,
+          "end": 218,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "db",
+          "start": 221,
+          "end": 222,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_cfg",
+          "start": 224,
+          "end": 226,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_symbols",
+          "start": 228,
+          "end": 229,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "collect",
+          "start": 232,
+          "end": 255,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "features_for",
+          "start": 257,
+          "end": 259,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "entry_snapshot",
+          "start": 261,
+          "end": 274,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_check",
+          "start": 276,
+          "end": 291,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_llm_summary",
+          "start": 293,
+          "end": 333,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "context_text",
+          "start": 335,
+          "end": 344,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "status",
+          "start": 346,
+          "end": 356,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "tick",
+          "start": 359,
+          "end": 370,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_prune",
+          "start": 372,
+          "end": 391,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/ai_trade_manager.py",
+      "sha256": "8588b2f5a725df10bc196766dacdf2781d76aa48af9895afa531a15349e0695d",
+      "lines": 948,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now_iso",
+          "start": 119,
+          "end": 120,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "trades_text",
+          "start": 123,
+          "end": 152,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "exposure_text",
+          "start": 155,
+          "end": 173,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "resolve_price",
+          "start": 176,
+          "end": 195,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "clamp_level",
+          "start": 198,
+          "end": 225,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "min_sl_gap",
+          "start": 228,
+          "end": 244,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "check_limits",
+          "start": 247,
+          "end": 326,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "AITradeManager",
+          "start": 329,
+          "end": 945,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "start": 332,
+          "end": 342,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "setup",
+          "start": 344,
+          "end": 346,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "db",
+          "start": 349,
+          "end": 350,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_role_cfg",
+          "start": 352,
+          "end": 354,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "load_state",
+          "start": 356,
+          "end": 364,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "update_settings",
+          "start": 366,
+          "end": 384,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "apply_action",
+          "start": 387,
+          "end": 537,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_audit",
+          "start": 539,
+          "end": 585,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "open_trade",
+          "start": 588,
+          "end": 732,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "review",
+          "start": 735,
+          "end": 829,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "review_single",
+          "start": 833,
+          "end": 915,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "recent_actions",
+          "start": 917,
+          "end": 922,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "status",
+          "start": 924,
+          "end": 928,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "tick",
+          "start": 930,
+          "end": 945,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/ai_learning.py",
+      "sha256": "e6bf7b8aced279d6e04023ec85c5386220659de61ec6dc510c51b94f5cce854b",
+      "lines": 927,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now_iso",
+          "start": 106,
+          "end": 107,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "aggregate_performance",
+          "start": 110,
+          "end": 181,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "performance_to_text",
+          "start": 184,
+          "end": 226,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "merge_lessons",
+          "start": 229,
+          "end": 237,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "AILearning",
+          "start": 240,
+          "end": 927,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "start": 241,
+          "end": 248,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "db",
+          "start": 251,
+          "end": 252,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "load_state",
+          "start": 254,
+          "end": 268,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "sync_outcomes",
+          "start": 271,
+          "end": 324,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "gather_stats",
+          "start": 327,
+          "end": 336,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "performance_text",
+          "start": 338,
+          "end": 342,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "invalidate_lessons",
+          "start": 345,
+          "end": 347,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "get_lessons",
+          "start": 349,
+          "end": 356,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_risk_sizing",
+          "start": 358,
+          "end": 359,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "lessons_text",
+          "start": 361,
+          "end": 362,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "lesson_candidates",
+          "start": 365,
+          "end": 375,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_bump_lesson_candidate",
+          "start": 377,
+          "end": 399,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_candidates_prompt_block",
+          "start": 401,
+          "end": 411,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "summary",
+          "start": 413,
+          "end": 419,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_reeval_apply",
+          "start": 422,
+          "end": 467,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "reevaluate_lessons",
+          "start": 469,
+          "end": 532,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "tick",
+          "start": 535,
+          "end": 546,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_recent_outcomes_text",
+          "start": 549,
+          "end": 586,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_setup_context_text",
+          "start": 588,
+          "end": 599,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_learning",
+          "start": 601,
+          "end": 927,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/ai_validation.py",
+      "sha256": "6f1d62908f1d95ec8acf6811ff172aff857942c4c05a1c236fd4f0c8c37cab90",
+      "lines": 282,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "is_macro_key",
+          "start": 57,
+          "end": 58,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "clamp_step",
+          "start": 61,
+          "end": 89,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "real_confirmations",
+          "start": 92,
+          "end": 112,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "evaluate_macro",
+          "start": 115,
+          "end": 136,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "sample_size",
+          "start": 140,
+          "end": 150,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "evaluate_change",
+          "start": 153,
+          "end": 168,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "evaluate_lesson",
+          "start": 171,
+          "end": 185,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "ValidationGate",
+          "start": 188,
+          "end": 279,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "start": 191,
+          "end": 193,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "setup",
+          "start": 195,
+          "end": 196,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "load",
+          "start": 198,
+          "end": 211,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "update",
+          "start": 213,
+          "end": 229,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "change",
+          "start": 231,
+          "end": 232,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "lesson",
+          "start": 234,
+          "end": 235,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "macro",
+          "start": 237,
+          "end": 238,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "clamp",
+          "start": 240,
+          "end": 242,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "prompt_block",
+          "start": 244,
+          "end": 276,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "status",
+          "start": 278,
+          "end": 279,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/ai_playbook.py",
+      "sha256": "6bbc952ec4001ad0d7b3244d93254b22fe21eca331e8f6f1b8fe7ff734e4ae05",
+      "lines": 1585,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now_iso",
+          "start": 151,
+          "end": 152,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "all_setups",
+          "start": 155,
+          "end": 160,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "class_setups",
+          "start": 163,
+          "end": 171,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "set_custom_cache",
+          "start": 174,
+          "end": 176,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "normalize_setup",
+          "start": 179,
+          "end": 189,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "valid_custom_setup",
+          "start": 192,
+          "end": 203,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_feed",
+          "start": 206,
+          "end": 211,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "propose_custom_setup",
+          "start": 214,
+          "end": 252,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "retire_custom_setup",
+          "start": 255,
+          "end": 266,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_clamp_trade_target",
+          "start": 269,
+          "end": 275,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "revision_allowed",
+          "start": 278,
+          "end": 297,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "revise_setup",
+          "start": 300,
+          "end": 347,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_blocked_text",
+          "start": 350,
+          "end": 355,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "live_block_reason",
+          "start": 358,
+          "end": 368,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "verdict_for",
+          "start": 371,
+          "end": 380,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "live_ready",
+          "start": 383,
+          "end": 398,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "cached_setup_stats",
+          "start": 405,
+          "end": 410,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "variant_setup_stats",
+          "start": 413,
+          "end": 422,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "class_stats",
+          "start": 426,
+          "end": 429,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "class_live_stats",
+          "start": 432,
+          "end": 436,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "asset_stats",
+          "start": 439,
+          "end": 442,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "revision_versions",
+          "start": 445,
+          "end": 454,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_corr_group",
+          "start": 461,
+          "end": 466,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "diversification_check",
+          "start": 469,
+          "end": 532,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "disabled_reason",
+          "start": 535,
+          "end": 546,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_stats_row",
+          "start": 549,
+          "end": 557,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_stats_match",
+          "start": 560,
+          "end": 576,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "setup_stats",
+          "start": 588,
+          "end": 600,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "setup_stats_since_map",
+          "start": 603,
+          "end": 626,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "setup_symbol_stats",
+          "start": 629,
+          "end": 643,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "live_divergent",
+          "start": 646,
+          "end": 659,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "demotion_candidates",
+          "start": 662,
+          "end": 681,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "migrate_disabled",
+          "start": 684,
+          "end": 699,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "migrate_to_classes",
+          "start": 706,
+          "end": 744,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "tf_stats",
+          "start": 747,
+          "end": 761,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "best_tf_per_setup",
+          "start": 764,
+          "end": 774,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "tf_context_lines",
+          "start": 777,
+          "end": 786,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_custom_unproven",
+          "start": 789,
+          "end": 796,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_refresh_scope",
+          "start": 799,
+          "end": 1028,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "refresh",
+          "start": 1035,
+          "end": 1146,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "invalidate_cache",
+          "start": 1149,
+          "end": 1153,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_refresh_cached",
+          "start": 1156,
+          "end": 1162,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "live_ready_for",
+          "start": 1165,
+          "end": 1193,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_perf_lines",
+          "start": 1196,
+          "end": 1214,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "backtest_context_lines",
+          "start": 1217,
+          "end": 1239,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "context_text",
+          "start": 1242,
+          "end": 1335,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "alias_check_text",
+          "start": 1338,
+          "end": 1348,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "maturity_overview",
+          "start": 1351,
+          "end": 1470,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "status",
+          "start": 1478,
+          "end": 1505,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_status_recompute",
+          "start": 1508,
+          "end": 1515,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_status_uncached",
+          "start": 1518,
+          "end": 1585,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/setup_lifecycle.py",
+      "sha256": "85c214d70d078a00fa0fa5027bd5c66aca23ee41bb45c945d053fa18768e394c",
+      "lines": 427,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "inactivity_reason",
+          "start": 52,
+          "end": 79,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_now_iso",
+          "start": 82,
+          "end": 83,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_wr",
+          "start": 86,
+          "end": 88,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "wilson_interval",
+          "start": 95,
+          "end": 106,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "is_uncertain",
+          "start": 109,
+          "end": 111,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "promotion_ok",
+          "start": 117,
+          "end": 130,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "demotion_reason",
+          "start": 133,
+          "end": 149,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "breadth_ok",
+          "start": 156,
+          "end": 173,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "trade_params",
+          "start": 176,
+          "end": 192,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "profile_from_trades",
+          "start": 195,
+          "end": 214,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "clamp_step",
+          "start": 217,
+          "end": 225,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "materially_different",
+          "start": 228,
+          "end": 233,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "is_strong_change",
+          "start": 236,
+          "end": 250,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "version_stats",
+          "start": 253,
+          "end": 263,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "should_rollback",
+          "start": 266,
+          "end": 274,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "evolve_versions",
+          "start": 277,
+          "end": 348,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "phase_of",
+          "start": 351,
+          "end": 356,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "profile_line",
+          "start": 359,
+          "end": 370,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "context_lines",
+          "start": 373,
+          "end": 380,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "refresh_profiles",
+          "start": 386,
+          "end": 427,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/policy_fingerprint.py",
+      "sha256": "23e99fa1868ed5045856541a4917747a63282eb761b846b7b628551bffb6da65",
+      "lines": 71,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "short_hash",
+          "start": 29,
+          "end": 32,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "lessons_hash",
+          "start": 35,
+          "end": 41,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "sizing_hash",
+          "start": 44,
+          "end": 47,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build",
+          "start": 50,
+          "end": 66,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "group_key",
+          "start": 69,
+          "end": 71,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/policy_lab.py",
+      "sha256": "07771009e91d7d4fa88cbecfb286e67cd4f9e99c2c548d1fd2e0e1cc173f0e7f",
+      "lines": 514,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now_iso",
+          "start": 45,
+          "end": 46,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "validate_candidate",
+          "start": 51,
+          "end": 69,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "candidate_fingerprint",
+          "start": 72,
+          "end": 82,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "net_pnl_pct",
+          "start": 85,
+          "end": 90,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "trial_stats",
+          "start": 93,
+          "end": 108,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "should_shadow",
+          "start": 111,
+          "end": 112,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "PolicyLab",
+          "start": 117,
+          "end": 511,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "start": 118,
+          "end": 126,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "setup",
+          "start": 128,
+          "end": 129,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "db",
+          "start": 132,
+          "end": 133,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "load_state",
+          "start": 135,
+          "end": 146,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "update_settings",
+          "start": 148,
+          "end": 184,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "create_candidate",
+          "start": 186,
+          "end": 199,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "discard_candidate",
+          "start": 201,
+          "end": 213,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "begin_cycle",
+          "start": 217,
+          "end": 223,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "shadow_group",
+          "start": 225,
+          "end": 290,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "tick",
+          "start": 294,
+          "end": 305,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_evaluate_trials",
+          "start": 307,
+          "end": 346,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_notify",
+          "start": 350,
+          "end": 362,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_champion_rs",
+          "start": 364,
+          "end": 372,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "promotion_report",
+          "start": 374,
+          "end": 387,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_check_promotion",
+          "start": 389,
+          "end": 408,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "promote",
+          "start": 410,
+          "end": 448,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_check_rollback",
+          "start": 450,
+          "end": 465,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "rollback",
+          "start": 467,
+          "end": 486,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "candidate_stats",
+          "start": 490,
+          "end": 496,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "status",
+          "start": 498,
+          "end": 506,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "recent_trials",
+          "start": 508,
+          "end": 511,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/policy_promotion.py",
+      "sha256": "da43433e01c68be04d28042abea4e106e9055f60dea050e1310ed8af7b9adfc8",
+      "lines": 127,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "trial_r",
+          "start": 30,
+          "end": 41,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "max_drawdown",
+          "start": 44,
+          "end": 52,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_mean",
+          "start": 55,
+          "end": 56,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "bootstrap_diff_lower",
+          "start": 59,
+          "end": 72,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "promotion_check",
+          "start": 75,
+          "end": 110,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "rollback_check",
+          "start": 113,
+          "end": 127,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/risk_budget.py",
+      "sha256": "279928c6f6d16afe3008cc1d1b97d0c0d392a243a9c9ed3b7ad7aadf583574b2",
+      "lines": 146,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "trade_risk_usdt",
+          "start": 33,
+          "end": 44,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "cluster_of",
+          "start": 47,
+          "end": 49,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "open_risk",
+          "start": 52,
+          "end": 65,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "check",
+          "start": 68,
+          "end": 92,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "get_config",
+          "start": 95,
+          "end": 106,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "update_config",
+          "start": 109,
+          "end": 125,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "usage",
+          "start": 128,
+          "end": 137,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "check_new_trade",
+          "start": 140,
+          "end": 146,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/position_sizing.py",
+      "sha256": "dca945c7016cf9997eee1e10c81bc29a32938fb604348863b59d75694edd89a1",
+      "lines": 183,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "clamp_updates",
+          "start": 43,
+          "end": 56,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "conviction_scale",
+          "start": 59,
+          "end": 69,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "combined_scale",
+          "start": 72,
+          "end": 81,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "risk_leverage",
+          "start": 84,
+          "end": 99,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build_params",
+          "start": 102,
+          "end": 120,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "compute",
+          "start": 123,
+          "end": 183,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/bitunix_trade.py",
+      "sha256": "6701d11b4ae684ddcb4a59869ff1e3ff197e7208da72fdb85be59c0425070aff",
+      "lines": 4469,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "effective_fee_percent",
+          "start": 45,
+          "end": 57,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "effective_maker_fee_percent",
+          "start": 60,
+          "end": 67,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "parse_order_fill",
+          "start": 70,
+          "end": 103,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "fill_price_for_slippage",
+          "start": 106,
+          "end": 122,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "profit_release_plan",
+          "start": 125,
+          "end": 144,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "sl_liq_guard",
+          "start": 147,
+          "end": 174,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "fee_guard_min_sl_pct",
+          "start": 177,
+          "end": 189,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "trade_fee_percent",
+          "start": 192,
+          "end": 202,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "planned_notional",
+          "start": 205,
+          "end": 213,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "fee_guard_check",
+          "start": 216,
+          "end": 282,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_sha256",
+          "start": 294,
+          "end": 295,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_nonce",
+          "start": 298,
+          "end": 299,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_millis",
+          "start": 302,
+          "end": 303,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "sign_request",
+          "start": 306,
+          "end": 312,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_round_step",
+          "start": 315,
+          "end": 332,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_precision_to_step",
+          "start": 335,
+          "end": 351,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "update_peak",
+          "start": 354,
+          "end": 368,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "update_trough",
+          "start": 371,
+          "end": 375,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "atr_market_block",
+          "start": 378,
+          "end": 389,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "compute_slippage_pct",
+          "start": 392,
+          "end": 402,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "BitunixTradeClient",
+          "start": 405,
+          "end": 851,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "ai_leverage_override",
+          "start": 860,
+          "end": 866,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "ai_capital_base",
+          "start": 869,
+          "end": 875,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "close_retry_due",
+          "start": 891,
+          "end": 903,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "parse_ticker_prices",
+          "start": 906,
+          "end": 926,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "breakeven_price",
+          "start": 929,
+          "end": 936,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "parse_closed_position",
+          "start": 1009,
+          "end": 1057,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "find_swing_levels",
+          "start": 1060,
+          "end": 1078,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "key_level_trail_sl",
+          "start": 1081,
+          "end": 1107,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "make_client_id",
+          "start": 1110,
+          "end": 1114,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "pick_new_position",
+          "start": 1117,
+          "end": 1165,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_extract_order_id",
+          "start": 1168,
+          "end": 1179,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "AutoTradeManager",
+          "start": 1182,
+          "end": 4469,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_fv",
+          "start": 83,
+          "end": 87,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "start": 413,
+          "end": 426,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_http",
+          "start": 428,
+          "end": 433,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "configured",
+          "start": 435,
+          "end": 436,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "to_bitunix_symbol",
+          "start": 439,
+          "end": 454,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "contract_meta",
+          "start": 456,
+          "end": 457,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "max_leverage_for",
+          "start": 459,
+          "end": 464,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "load_trading_pairs",
+          "start": 466,
+          "end": 513,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_post",
+          "start": 516,
+          "end": 528,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_get",
+          "start": 530,
+          "end": 542,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_fmt_qty",
+          "start": 545,
+          "end": 568,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_fmt_price",
+          "start": 570,
+          "end": 582,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "place_order",
+          "start": 584,
+          "end": 613,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "flash_close",
+          "start": 615,
+          "end": 624,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "place_position_tp_sl",
+          "start": 626,
+          "end": 653,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "modify_position_tp_sl",
+          "start": 655,
+          "end": 675,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "modify_tpsl_order",
+          "start": 677,
+          "end": 703,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_pending_tpsl",
+          "start": 705,
+          "end": 710,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "cancel_tpsl_order",
+          "start": 712,
+          "end": 716,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_order_detail",
+          "start": 718,
+          "end": 721,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_pending_orders",
+          "start": 723,
+          "end": 726,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "cancel_orders",
+          "start": 728,
+          "end": 733,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "adjust_position_margin",
+          "start": 735,
+          "end": 748,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "set_leverage",
+          "start": 750,
+          "end": 754,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_positions",
+          "start": 756,
+          "end": 758,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_history_positions",
+          "start": 760,
+          "end": 767,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "resolve_position_id",
+          "start": 769,
+          "end": 794,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_balance",
+          "start": 796,
+          "end": 797,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_all_mark_prices",
+          "start": 799,
+          "end": 811,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_mark_price",
+          "start": 813,
+          "end": 851,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_key",
+          "start": 1162,
+          "end": 1164,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "__init__",
+          "start": 1188,
+          "end": 1197,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "set_db",
+          "start": 1199,
+          "end": 1200,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "set_telegram",
+          "start": 1202,
+          "end": 1203,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "set_config",
+          "start": 1205,
+          "end": 1221,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "capital_allocation",
+          "start": 1223,
+          "end": 1227,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "ai_protection_policy",
+          "start": 1244,
+          "end": 1259,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_live_total_balance",
+          "start": 1261,
+          "end": 1279,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_live_available_balance",
+          "start": 1281,
+          "end": 1299,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "free_capital",
+          "start": 1301,
+          "end": 1321,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "allocated_capital",
+          "start": 1323,
+          "end": 1341,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "trade_bound_margin",
+          "start": 1344,
+          "end": 1373,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "used_margin",
+          "start": 1375,
+          "end": 1385,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "coin_cfg",
+          "start": 1387,
+          "end": 1390,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "strategy_override",
+          "start": 1392,
+          "end": 1395,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "effective_cfg",
+          "start": 1397,
+          "end": 1420,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "effective_mode",
+          "start": 1422,
+          "end": 1439,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "is_enabled",
+          "start": 1441,
+          "end": 1442,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "ai_manage_allowed",
+          "start": 1444,
+          "end": 1457,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_levels",
+          "start": 1459,
+          "end": 1530,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_notify_reject",
+          "start": 1532,
+          "end": 1557,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_current_mark",
+          "start": 1559,
+          "end": 1566,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_maker_entry",
+          "start": 1568,
+          "end": 1701,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_cancel_pending_entry_orders",
+          "start": 1703,
+          "end": 1735,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_record_maker_attempt",
+          "start": 1737,
+          "end": 1748,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "on_signal",
+          "start": 1750,
+          "end": 1772,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_on_signal_impl",
+          "start": 1774,
+          "end": 2740,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "monitor",
+          "start": 2742,
+          "end": 2749,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_monitor_tick",
+          "start": 2751,
+          "end": 2787,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_looks_like_position_gone",
+          "start": 2796,
+          "end": 2798,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_position_still_open",
+          "start": 2800,
+          "end": 2827,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_untracked_qty",
+          "start": 2829,
+          "end": 2840,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_position_has_sl",
+          "start": 2842,
+          "end": 2865,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_ensure_live_sl",
+          "start": 2867,
+          "end": 2891,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_exchange_close_truth",
+          "start": 2893,
+          "end": 2912,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_book_external_close",
+          "start": 2914,
+          "end": 2956,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_reconcile_close_error",
+          "start": 2958,
+          "end": 2967,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_open_position_ids",
+          "start": 2969,
+          "end": 2988,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "sync_live_positions",
+          "start": 2990,
+          "end": 3025,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "sync_position_state",
+          "start": 3027,
+          "end": 3144,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_record_sync",
+          "start": 3146,
+          "end": 3155,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_manage_trade",
+          "start": 3157,
+          "end": 3537,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_finalize_close",
+          "start": 3539,
+          "end": 3552,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_after_close",
+          "start": 3554,
+          "end": 3598,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_bound_position_ids",
+          "start": 3606,
+          "end": 3622,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_resolve_new_position_id",
+          "start": 3624,
+          "end": 3639,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_resolve_position",
+          "start": 3641,
+          "end": 3659,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_live_position_qty",
+          "start": 3661,
+          "end": 3694,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "close_live_position",
+          "start": 3696,
+          "end": 3782,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_verify_flat",
+          "start": 3784,
+          "end": 3797,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_list_position_tpsl",
+          "start": 3799,
+          "end": 3813,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_levels_applied",
+          "start": 3815,
+          "end": 3837,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_cancel_position_tpsl",
+          "start": 3839,
+          "end": 3863,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_modify_existing_tpsl",
+          "start": 3865,
+          "end": 3910,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "sync_live_levels",
+          "start": 3912,
+          "end": 3998,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "is_ibkr_trade",
+          "start": 4001,
+          "end": 4003,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "live_exchange_ready",
+          "start": 4005,
+          "end": 4012,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_live_partial_close",
+          "start": 4014,
+          "end": 4016,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_live_move_sl",
+          "start": 4018,
+          "end": 4030,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_live_flash_close",
+          "start": 4032,
+          "end": 4044,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "manual_close",
+          "start": 4046,
+          "end": 4130,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "liq_price_for",
+          "start": 4138,
+          "end": 4144,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_coin_max_lev",
+          "start": 4146,
+          "end": 4151,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_open_trade",
+          "start": 4153,
+          "end": 4154,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "partial_close",
+          "start": 4156,
+          "end": 4236,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "adjust_levels",
+          "start": 4238,
+          "end": 4288,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_free_capital_ok",
+          "start": 4290,
+          "end": 4299,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_release_secured_margin",
+          "start": 4301,
+          "end": 4354,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "adjust_margin",
+          "start": 4356,
+          "end": 4416,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "adjust_leverage",
+          "start": 4418,
+          "end": 4469,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/ibkr_trade.py",
+      "sha256": "90e0a885cc3aaa511b362ff7a8f1843c0049ba3cfbdb4537fdabfda3ffcbe680",
+      "lines": 552,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "ibkr_ready",
+          "start": 35,
+          "end": 43,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "pnl_usd",
+          "start": 46,
+          "end": 56,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "notional_usd",
+          "start": 59,
+          "end": 62,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "plan_legs",
+          "start": 65,
+          "end": 76,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "be_price",
+          "start": 79,
+          "end": 84,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "parse_order_status",
+          "start": 87,
+          "end": 109,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_child_side",
+          "start": 112,
+          "end": 113,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "open_live_forex",
+          "start": 116,
+          "end": 165,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_open_legs",
+          "start": 168,
+          "end": 175,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "move_stop",
+          "start": 178,
+          "end": 207,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "close_live_forex",
+          "start": 210,
+          "end": 236,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_exit_from_trades",
+          "start": 239,
+          "end": 255,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_exit_fee",
+          "start": 258,
+          "end": 260,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_book_partial",
+          "start": 263,
+          "end": 301,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_book_close",
+          "start": 304,
+          "end": 332,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_check_tp1_leg",
+          "start": 335,
+          "end": 350,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "sync_open_trades",
+          "start": 353,
+          "end": 395,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "GatewayWatch",
+          "start": 398,
+          "end": 433,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "_gateway_alerts",
+          "start": 453,
+          "end": 471,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_loop",
+          "start": 474,
+          "end": 501,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "account_summary",
+          "start": 504,
+          "end": 525,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "status",
+          "start": 528,
+          "end": 552,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "__init__",
+          "start": 405,
+          "end": 409,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "evaluate",
+          "start": 411,
+          "end": 433,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/position_watchdog.py",
+      "sha256": "ce37da8d953e34aebb141738b2816e67155b525a4681fca2ef17c4116de9ea28",
+      "lines": 807,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_f",
+          "start": 57,
+          "end": 61,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "parse_positions",
+          "start": 64,
+          "end": 99,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "position_age_sec",
+          "start": 102,
+          "end": 107,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "emergency_sl",
+          "start": 110,
+          "end": 127,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "PositionWatchdog",
+          "start": 130,
+          "end": 804,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "__init__",
+          "start": 131,
+          "end": 141,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "setup",
+          "start": 143,
+          "end": 147,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "load_state",
+          "start": 149,
+          "end": 168,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "update_settings",
+          "start": 170,
+          "end": 189,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "clear_data",
+          "start": 191,
+          "end": 206,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_reverse_map",
+          "start": 208,
+          "end": 210,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_notify",
+          "start": 212,
+          "end": 217,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_loop",
+          "start": 219,
+          "end": 234,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "check",
+          "start": 236,
+          "end": 286,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_dedupe_bound",
+          "start": 288,
+          "end": 321,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_find_local",
+          "start": 323,
+          "end": 375,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_adoption_allowed",
+          "start": 377,
+          "end": 400,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_check_position",
+          "start": 402,
+          "end": 553,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_sync_sl_drift",
+          "start": 555,
+          "end": 598,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_emergency_close",
+          "start": 600,
+          "end": 626,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_adopt",
+          "start": 628,
+          "end": 725,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_adopt_from_registry",
+          "start": 727,
+          "end": 795,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_record",
+          "start": 797,
+          "end": 804,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/entry_order_registry.py",
+      "sha256": "0416c1db01644e0ce47cb331b2683a3758107a147807fbb99a1528a9ce7bcf41",
+      "lines": 80,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now_iso",
+          "start": 23,
+          "end": 24,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_cutoff_iso",
+          "start": 27,
+          "end": 28,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "register",
+          "start": 31,
+          "end": 39,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "resolve",
+          "start": 42,
+          "end": 44,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "mark_orphan",
+          "start": 47,
+          "end": 52,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "find_match",
+          "start": 55,
+          "end": 62,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "cleanup",
+          "start": 65,
+          "end": 80,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/entry_inflight.py",
+      "sha256": "ced3d1c85870543e4f3f537e497f7b1234e782121fbfcbffc3ee1a40a675a946",
+      "lines": 156,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_key",
+          "start": 36,
+          "end": 37,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "begin",
+          "start": 40,
+          "end": 52,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "end",
+          "start": 55,
+          "end": 61,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "started_iso",
+          "start": 64,
+          "end": 66,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "is_inflight",
+          "start": 69,
+          "end": 78,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "active",
+          "start": 81,
+          "end": 83,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "clear",
+          "start": 86,
+          "end": 87,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "is_watchdog_adoption",
+          "start": 90,
+          "end": 93,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "duplicate_of",
+          "start": 96,
+          "end": 118,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "remove_duplicate_adoptions",
+          "start": 121,
+          "end": 156,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/pnl_reconcile.py",
+      "sha256": "0dcc2c49e94108559c3441d674f844af67a2fc71d9a23689eb177ca156b02ac6",
+      "lines": 161,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_f",
+          "start": 37,
+          "end": 41,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "result_for",
+          "start": 44,
+          "end": 49,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "build_updates",
+          "start": 52,
+          "end": 73,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "reconcile_trade",
+          "start": 76,
+          "end": 112,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "reconcile_pending",
+          "start": 115,
+          "end": 150,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_loop",
+          "start": 153,
+          "end": 161,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/trade_guard.py",
+      "sha256": "8ca18ac19f846071c2f9b4f890d0fe76955af24cbe0c279ab83f07d222c6f7bf",
+      "lines": 340,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "normalize_mode",
+          "start": 50,
+          "end": 51,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "state_id_for",
+          "start": 54,
+          "end": 55,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_current_mode",
+          "start": 58,
+          "end": 65,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_default_state_mode",
+          "start": 68,
+          "end": 71,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "is_risk_trade",
+          "start": 74,
+          "end": 76,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "pause_until",
+          "start": 79,
+          "end": 86,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "get_config",
+          "start": 89,
+          "end": 101,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "update_config",
+          "start": 104,
+          "end": 120,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_state",
+          "start": 123,
+          "end": 140,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "resume",
+          "start": 143,
+          "end": 150,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_next_midnight_utc",
+          "start": 153,
+          "end": 156,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_today_utc",
+          "start": 159,
+          "end": 160,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_trigger",
+          "start": 163,
+          "end": 192,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_forced_learning",
+          "start": 195,
+          "end": 224,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_kick_forced_learning",
+          "start": 227,
+          "end": 238,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "check_open_allowed",
+          "start": 241,
+          "end": 281,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_reference_capital",
+          "start": 284,
+          "end": 299,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "on_trade_closed",
+          "start": 302,
+          "end": 340,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/services/local_exec.py",
+      "sha256": "8091847d68a6ddab20fd60aacb82d64b275be193833a22f3dc5bc94fc719d430",
+      "lines": 756,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_now",
+          "start": 63,
+          "end": 64,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_iso",
+          "start": 67,
+          "end": 68,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_ver",
+          "start": 76,
+          "end": 80,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "worker_online",
+          "start": 83,
+          "end": 84,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "worker_supports_dynamic",
+          "start": 87,
+          "end": 99,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "worker_supports_regime_lab",
+          "start": 102,
+          "end": 110,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "worker_supports_explore",
+          "start": 113,
+          "end": 121,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "heartbeat",
+          "start": 124,
+          "end": 133,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "workers_public",
+          "start": 136,
+          "end": 158,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "get_settings",
+          "start": 162,
+          "end": 170,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "save_settings",
+          "start": 173,
+          "end": 197,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_settings_for_worker",
+          "start": 200,
+          "end": 208,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "set_worker_data_dir",
+          "start": 211,
+          "end": 219,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_token",
+          "start": 222,
+          "end": 239,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "refresh_token",
+          "start": 245,
+          "end": 257,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "regenerate_token",
+          "start": 260,
+          "end": 267,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_get_job",
+          "start": 271,
+          "end": 278,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_bg_task",
+          "start": 291,
+          "end": 295,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_persist_meta_bg",
+          "start": 298,
+          "end": 313,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_delete_meta_bg",
+          "start": 316,
+          "end": 327,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "restore_job",
+          "start": 330,
+          "end": 360,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "restore_running_jobs",
+          "start": 363,
+          "end": 392,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "enqueue_compute",
+          "start": 395,
+          "end": 408,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "create_data_job",
+          "start": 411,
+          "end": 425,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "claim",
+          "start": 428,
+          "end": 479,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "cancel_ids",
+          "start": 482,
+          "end": 490,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "cancel_data_job",
+          "start": 493,
+          "end": 506,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "apply_progress",
+          "start": 510,
+          "end": 547,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "apply_result",
+          "start": 550,
+          "end": 651,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_mark_error",
+          "start": 655,
+          "end": 664,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_revive_if_conn_lost",
+          "start": 667,
+          "end": 675,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_finalize_cancel",
+          "start": 678,
+          "end": 685,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "check_stale",
+          "start": 688,
+          "end": 724,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_watchdog_loop",
+          "start": 727,
+          "end": 733,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "ensure_watchdog",
+          "start": 736,
+          "end": 742,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "data_jobs_public",
+          "start": 746,
+          "end": 752,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "queue_public",
+          "start": 755,
+          "end": 756,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_write",
+          "start": 304,
+          "end": 312,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_delete",
+          "start": 322,
+          "end": 326,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/routers/regime_lab.py",
+      "sha256": "24e651c9221a628868e9def4673136ed20b1baf25e2e3f280046870727f1ef3b",
+      "lines": 573,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "_guard_no_running",
+          "start": 27,
+          "end": 31,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_regime_id_or_400",
+          "start": 34,
+          "end": 38,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_get_doc",
+          "start": 41,
+          "end": 45,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_slim_doc",
+          "start": 48,
+          "end": 50,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_enqueue_local",
+          "start": 53,
+          "end": 61,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_check_local_available",
+          "start": 64,
+          "end": 76,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "start_analysis",
+          "start": 80,
+          "end": 107,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "start_calibration",
+          "start": 111,
+          "end": 132,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "start_ema_compare",
+          "start": 136,
+          "end": 151,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "start_kombi_calibrate",
+          "start": 155,
+          "end": 171,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "job_status",
+          "start": 175,
+          "end": 188,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "active_job",
+          "start": 192,
+          "end": 194,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "cancel_job",
+          "start": 198,
+          "end": 207,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "list_analyses",
+          "start": 211,
+          "end": 226,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "engine_defaults",
+          "start": 230,
+          "end": 234,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_result",
+          "start": 238,
+          "end": 245,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_analysis",
+          "start": 249,
+          "end": 262,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "get_transitions",
+          "start": 266,
+          "end": 278,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "delete_analysis",
+          "start": 282,
+          "end": 286,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "keep_regime",
+          "start": 290,
+          "end": 299,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "start_regime_optimize",
+          "start": 303,
+          "end": 336,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "assign_regime_strategy",
+          "start": 340,
+          "end": 372,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "build_dynamic",
+          "start": 376,
+          "end": 449,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "build_nnfx",
+          "start": 453,
+          "end": 550,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "start_walkforward",
+          "start": 554,
+          "end": 573,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/routers/dynamic.py",
+      "sha256": "fc9ec5bcee1933af1edbed855ee44d1c855350584c6c833d7528d5eed9d194ff",
+      "lines": 196,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "current_market_regime",
+          "start": 33,
+          "end": 48,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "dynamic_save",
+          "start": 52,
+          "end": 77,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "dynamic_list",
+          "start": 81,
+          "end": 90,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "dynamic_delete",
+          "start": 94,
+          "end": 99,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_get_doc",
+          "start": 102,
+          "end": 106,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "dynamic_refresh",
+          "start": 110,
+          "end": 117,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "dynamic_apply",
+          "start": 121,
+          "end": 128,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "dynamic_settings",
+          "start": 132,
+          "end": 158,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "dynamic_confirm",
+          "start": 162,
+          "end": 174,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "dynamic_dismiss",
+          "start": 178,
+          "end": 182,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "dynamic_log",
+          "start": 186,
+          "end": 190,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "learning_summary",
+          "start": 194,
+          "end": 196,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "backend/routers/local_worker.py",
+      "sha256": "5f09212081422c69ee686ffb534a1eb824eb6102a7c074d6a4197c64fa141774",
+      "lines": 248,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "require_worker",
+          "start": 39,
+          "end": 50,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "worker_poll",
+          "start": 55,
+          "end": 66,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "worker_progress",
+          "start": 70,
+          "end": 71,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "worker_result",
+          "start": 75,
+          "end": 92,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_status",
+          "start": 97,
+          "end": 106,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_get_settings",
+          "start": 110,
+          "end": 111,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_set_settings",
+          "start": 115,
+          "end": 120,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_worker_data_dir",
+          "start": 124,
+          "end": 129,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_token",
+          "start": 133,
+          "end": 134,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_token_regenerate",
+          "start": 138,
+          "end": 139,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_data_download",
+          "start": 144,
+          "end": 152,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_data_update",
+          "start": 156,
+          "end": 160,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_data_delete",
+          "start": 164,
+          "end": 171,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_data_cancel",
+          "start": 175,
+          "end": 178,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "_worker_files",
+          "start": 188,
+          "end": 199,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_package_manifest",
+          "start": 202,
+          "end": 211,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "localworker_package_manifest",
+          "start": 215,
+          "end": 217,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "localworker_package",
+          "start": 221,
+          "end": 248,
+          "kind": "AsyncFunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "local_worker/worker.py",
+      "sha256": "a7de9a5abd733264e122ec971d4cbfafabd6bba621fb6319aa9f2b42bae0c1fc",
+      "lines": 539,
+      "inventory_is_not_full_review_coverage": true,
+      "definitions": [
+        {
+          "name": "load_config",
+          "start": 40,
+          "end": 71,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "log",
+          "start": 82,
+          "end": 83,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "api",
+          "start": 86,
+          "end": 87,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "hdrs",
+          "start": 90,
+          "end": 91,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "apply_settings",
+          "start": 101,
+          "end": 145,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "auto_ram_mb",
+          "start": 148,
+          "end": 154,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "http_session",
+          "start": 157,
+          "end": 170,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "make_registry",
+          "start": 173,
+          "end": 180,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "new_job_dict",
+          "start": 183,
+          "end": 191,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "JobCancelledLocal",
+          "start": 194,
+          "end": 195,
+          "kind": "ClassDef"
+        },
+        {
+          "name": "progress_reporter",
+          "start": 198,
+          "end": 232,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "upload_result",
+          "start": 235,
+          "end": 252,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_backtest_job",
+          "start": 256,
+          "end": 279,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_optimizer_job",
+          "start": 282,
+          "end": 305,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "run_regime_job",
+          "start": 308,
+          "end": 343,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "_download_symbols",
+          "start": 347,
+          "end": 360,
+          "kind": "AsyncFunctionDef"
+        },
+        {
+          "name": "run_data_job",
+          "start": 363,
+          "end": 400,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "resources",
+          "start": 404,
+          "end": 413,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "gpu_info",
+          "start": 416,
+          "end": 421,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "data_info",
+          "start": 424,
+          "end": 431,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "cleanup_finished",
+          "start": 434,
+          "end": 437,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "dispatch",
+          "start": 440,
+          "end": 458,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "find_job_dict",
+          "start": 461,
+          "end": 468,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "maybe_auto_update",
+          "start": 471,
+          "end": 482,
+          "kind": "FunctionDef"
+        },
+        {
+          "name": "main",
+          "start": 485,
+          "end": 532,
+          "kind": "FunctionDef"
+        }
+      ]
+    },
+    {
+      "path": "frontend/src/components/RegimeLab.js",
+      "sha256": "832dbb0fff96db4d6c05cb0e797ab5ca2456205a9f6d00eee41e54d1acd79b45",
+      "lines": 1284,
+      "inventory_is_not_full_review_coverage": true
+    },
+    {
+      "path": "frontend/src/components/AITradingPanel.js",
+      "sha256": "47290fcfc60a014ff5bc177e013aec57eac4f70b6b4aa938bece2001730da936",
+      "lines": 2467,
+      "inventory_is_not_full_review_coverage": true
+    },
+    {
+      "path": "frontend/src/components/DynamicPanel.js",
+      "sha256": "8e62011cec02f017d151e318f3edac5b29c7728ef56dcd563f4d0f5ebc1c001e",
+      "lines": 418,
+      "inventory_is_not_full_review_coverage": true
+    }
+  ]
+}
