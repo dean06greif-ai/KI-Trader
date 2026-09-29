@@ -110,3 +110,4 @@ Backlog: P1 Autopilot mit "jump" auf Prod + neue Analyse/Ablation, dann Shadow-F
 - NEU: Strategie tradex_vwap_scalping (Horst v2), services/market_positioning.py, Backtester: Zeit-Exit/Limit-Entry/TP-Limit/Richtung, Optimizer-Gruppen time_exit/entry_order/direction, Live: Zeit-Exit, Maker-Entry, TP-Limit, Richtungsfilter
 - Bericht: TRADEX_STRATEGIE_BERICHT.md; Tests: backend/tests/test_tradex_vwap_scalping.py (+ iter28)
 - Backlog: Walk-Forward-Benchmark Regime-Lab, Segment-Gate, Vola als Risiko-Parameter, TradeX nur BTC im Paper-Shadow beobachten
+- 29.09.: NEU Strategie vol_squeeze_breakout (1h, Squeeze + Donchian-Ausbruch + EMA200-Trend + Volumen, 3xATR-Stop, TP1 1.5R + Trailing, Zeit-Exit 72h); Walk-Forward 9 Coins: Train +1157$ / Test +1199$ (6/9 Coins). Bericht VOL_SQUEEZE_BREAKOUT_BERICHT.md, Tests tests/test_vol_squeeze_breakout.py

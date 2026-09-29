@@ -12,6 +12,7 @@ from strategies.bollinger_squeeze_strategy import BollingerSqueezeStrategy
 from strategies.vwap_reversion_strategy import VWAPReversionStrategy
 from strategies.horst_vwap_obv_strategy import HorstVWAPOBVStrategy
 from strategies.tradex_vwap_scalping_strategy import TradeXVWAPScalpingStrategy
+from strategies.vol_squeeze_breakout_strategy import VolSqueezeBreakoutStrategy
 from strategies.stochastic_reversal_strategy import StochasticReversalStrategy
 from strategies.pbd_model_strategy import PBDModelStrategy
 from strategies.ai_trader_strategy import AITraderStrategy
@@ -44,6 +45,7 @@ class StrategyRegistry:
         self.register(VWAPReversionStrategy())
         self.register(HorstVWAPOBVStrategy())
         self.register(TradeXVWAPScalpingStrategy())
+        self.register(VolSqueezeBreakoutStrategy())
         self.register(StochasticReversalStrategy())
         self.register(PBDModelStrategy())
         self.register(AITraderStrategy())
