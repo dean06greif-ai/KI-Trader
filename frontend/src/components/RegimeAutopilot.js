@@ -17,12 +17,21 @@ const STOP = { stopped_by_user: 'per „Suche beenden“ gestoppt', time_limit: 
   plateau: 'keine Verbesserung mehr (Plateau-Stopp)', space_exhausted: 'Suchraum ausgeschöpft (nur noch bekannte Varianten)' };
 const REASON = {
   holdout_regressed: 'der Holdout (finaler Test) ist gegenüber der Ausgangslage gefallen',
+  inner_regressed: 'die Selbst-Übereinstimmung (innere Val.) ist um mehr als 5 Punkte eingebrochen – Live-Erkennung würde flackern',
   worse: 'liegt unter der aktiven Kalibrierung desselben Grundgerüsts (gleicher Timeframe)',
   no_config: 'keine Konfiguration im Ergebnis',
 };
 const SETTINGS_KEY = 'regime_autopilot_v1';
 const APPLIED_KEY = 'regime_autopilot_applied_v1';
-const loadSettings = () => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { return {}; } };
+// phaseV 2: Sweet Spot = Benchmark „sehr gut“ (5–15 Tage); alte 4/14-Werte werden einmalig ersetzt
+const PHASE_V = 2;
+const loadSettings = () => {
+  try {
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
+    if (s.phaseV !== PHASE_V) { delete s.minPhase; delete s.maxPhase; }
+    return s;
+  } catch { return {}; }
+};
 
 /** Kompakte Kennzahlen-Zeile einer Autopilot-Konfiguration. */
 function BestLine({ best, testId }) {
@@ -54,8 +63,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [targetPct, setTargetPct] = useState(saved.targetPct ?? 0);
   const [maxRounds, setMaxRounds] = useState(saved.maxRounds ?? 0);
   const [plateau, setPlateau] = useState(saved.plateau ?? 300);
-  const [minPhase, setMinPhase] = useState(saved.minPhase ?? 4);
-  const [maxPhase, setMaxPhase] = useState(saved.maxPhase ?? 14);
+  const [minPhase, setMinPhase] = useState(saved.minPhase ?? 5);
+  const [maxPhase, setMaxPhase] = useState(saved.maxPhase ?? 15);
   const [searchDet, setSearchDet] = useState(saved.searchDet ?? true);
   const [autoChain, setAutoChain] = useState(saved.autoChain ?? true);
   const [banner, setBanner] = useState(null);
@@ -65,7 +74,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [lastDecision, setLastDecision] = useState(null);
 
   useEffect(() => {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, autoChain })); } catch { /* quota */ }
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, autoChain, phaseV: PHASE_V })); } catch { /* quota */ }
   }, [maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, autoChain]);
 
   const loadRuns = () => fetch(`${API_URL}/api/regime-lab/autopilot/runs`).then(r => r.json())
@@ -130,11 +139,13 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
         : kept
           ? `Autopilot: Score verbessert, aber NICHT übernommen – ${REASON[decision.reason] || decision.reason}`
           : 'Autopilot: keine bessere Erkennung als deine Ausgangswerte gefunden – Einstellungen bleiben',
-      detail: `${lastResult.tested} Varianten · ${lastResult.improvements} Verbesserungen · innere Val. ${fmt(b.inner_direction_pct)}% → ${fmt(m.inner_direction_pct)}%`
+      detail: `${lastResult.tested} Varianten · ${lastResult.improvements} Verbesserungen · Score ${fmt(lastResult.baseline?.score)} → ${fmt(lastResult.best?.score)}`
         + (m.holdout_reference_f1_pct != null
           ? ` · Holdout-F1 ${fmt(b.holdout_reference_f1_pct)}% → ${fmt(m.holdout_reference_f1_pct)}%`
           : ` · Holdout ${fmt(b.holdout_direction_pct)}% → ${fmt(m.holdout_direction_pct)}%`)
-        + ` · Ø Phase ${fmt(m.avg_live_phase_days)}d`
+        + ` · Selbst-Übereinstimmung (innere Val.) ${fmt(b.inner_direction_pct)}% → ${fmt(m.inner_direction_pct)}%`
+        + ` · Ø Richtungs-Phase ${fmt(m.live_direction_phase_days)}d · Ø Live-Phase ${fmt(m.avg_live_phase_days)}d`
+        + (lastResult.guard_rejected ? ` · ${lastResult.guard_rejected} Varianten verworfen (innere Val. > ${fmt(lastResult.max_inner_drop_pp, 0)} Pkt. eingebrochen)` : '')
         + ` · Ende: ${STOP[lastResult.stop_reason] || lastResult.stop_reason || '–'}`
         + (lastResult.evidence === 'insufficient_evidence' ? ' · ⚠ zu wenig Holdout-Daten' : '')
         + (decision.adopt && chained ? ' – „Regime suchen & speichern“ wurde automatisch in die Warteschlange gestellt' : '')
@@ -234,7 +245,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
         </label>
         <label className="opt-field" title="Sweet Spot oben: liegt die Ø Live-Phasendauer darüber, gibt es Strafpunkte (bis 15) – zu lang = träge, verpasst Phasen. 0 = keine Obergrenze (altes Verhalten)">
           Max. Ø Phase (Tage · 0 = aus)
-          <NumInput min={0} max={120} step={0.5} value={maxPhase} onCommit={(v) => setMaxPhase(v ?? 0)}
+          <NumInput min={0} max={120} step={0.5} value={maxPhase} onCommit={(v) => setMaxPhase(v ?? 15)}
             data-testid="autopilot-max-phase" style={{ width: 55 }} />
         </label>
         <label className="opt-check" title="Auch andere Grundgerüste (Umkehrpunkte / EMA-Steigung / Kombi) ausprobieren, nicht nur die Feineinstellungen des aktuellen">

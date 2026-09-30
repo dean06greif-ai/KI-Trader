@@ -129,7 +129,7 @@ def test_autopilot_best_score_never_drifts_down(monkeypatch):
     jid = lab.create_job("autopilot", {})
     asyncio.run(ap.run_autopilot(jid, {"symbols": ["BTCUSDT"], "max_rounds": 30,
                                        "engine_config": {"detector": "reactive"},
-                                       "plateau_rounds": 0}, None))
+                                       "plateau_rounds": 0, "min_phase_days_target": 3.0}, None))
     job = lab.JOBS[jid]
     assert job["status"] == "done", job.get("error")
     best = job["result"]["best"]["score"]

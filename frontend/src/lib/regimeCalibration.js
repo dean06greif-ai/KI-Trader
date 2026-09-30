@@ -80,6 +80,7 @@ export function autopilotReport(result) {
     detector: best.detector || cfg.detector || 'reactive', best_config: cfg,
     baseline: result.baseline?.metrics || {}, best: best.metrics || {},
     improved: !!result.improved, holdout_regressed: !!result.holdout_regressed,
+    inner_regressed: !!result.inner_regressed,
     metric: autopilotMetric(best.metrics, result.baseline?.metrics),
     truth_source: autopilotMetric(best.metrics, result.baseline?.metrics) === METRIC_AUTOPILOT_REF
       ? 'reference_v2' : 'live_final',
@@ -103,6 +104,7 @@ export function autopilotDecision(current, result) {
   const regressed = result.holdout_regressed
     || (basePct !== null && newPct !== null && newPct + 1e-9 < basePct);
   if (regressed) return { adopt: false, reason: 'holdout_regressed', report, newPct, curPct: basePct };
+  if (result.inner_regressed) return { adopt: false, reason: 'inner_regressed', report, newPct, curPct: basePct };
   const d = calibrationDecision(current, report, report.detector);
   return { ...d, report };
 }

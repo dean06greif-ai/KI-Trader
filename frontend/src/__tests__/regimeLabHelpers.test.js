@@ -59,6 +59,12 @@ describe('autopilotDecision – Autopilot überschreibt nie mit einem schlechter
   test('ohne Score-Verbesserung nie übernehmen', () => {
     expect(autopilotDecision(null, result(97, 96.4, false)).reason).toBe('not_improved');
   });
+  test('innere Val. 80,9 → 65,8 wird trotz besserem Holdout NICHT übernommen (Rohstoffe 30.09.)', () => {
+    const d = autopilotDecision(null, { ...result(98), inner_regressed: true });
+    expect(d.adopt).toBe(false);
+    expect(d.reason).toBe('inner_regressed');
+  });
+
   test('besserer Holdout ohne aktive Kalibrierung wird übernommen', () => {
     expect(autopilotDecision(null, result(97.1))).toMatchObject({ adopt: true, reason: 'first' });
   });

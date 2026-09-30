@@ -52,6 +52,7 @@ def autopilot_row(run: Dict) -> Optional[Dict]:
               "baseline_score": base.get("score"), "best_score": best.get("score"),
               "improved": bool(res.get("improved")),
               "holdout_regressed": bool(res.get("holdout_regressed")),
+              "inner_regressed": bool(res.get("inner_regressed")),
               "metric": METRIC_AUTOPILOT, "truth_source": "live_final",
               "total_days": res.get("days"), "evals": res.get("tested"),
               "changes": [{"key": k, "to": v} for k, v in (best.get("changes") or {}).items()]}

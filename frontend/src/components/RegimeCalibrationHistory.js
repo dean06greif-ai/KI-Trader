@@ -25,6 +25,7 @@ function HistoryRow({ row, isActive, detector, onApply }) {
         {metricLabel(rep)} <b>{fmt(calibBaselinePct(rep))}%</b> → <b>{fmt(calibPct(rep))}%</b>
         {rep.improved === false ? ' (keine Verbesserung)' : ''}
         {rep.holdout_regressed ? ' · ⚠ Holdout gefallen' : ''}
+        {rep.inner_regressed ? ' · ⚠ innere Val. eingebrochen' : ''}
       </span>
       {isActive && <span className="rl-cal-active" data-testid={`regime-calibration-active-${row.id}`}>✓ aktiv</span>}
       <span style={{ flex: 1 }} />

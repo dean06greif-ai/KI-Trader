@@ -110,8 +110,8 @@ def test_regime_advice_plausible_returns_ok():
             "timeframe": "1h",
             "days": 720,
             "n_symbols": 5,
-            "min_days": 4,
-            "max_days": 14,
+            "min_days": 5,
+            "max_days": 15,
         },
         headers={"Authorization": f"Bearer {tok}"},
         timeout=90,
@@ -121,4 +121,4 @@ def test_regime_advice_plausible_returns_ok():
     assert isinstance(data.get("advice"), list)
     assert data["advice"] == [], f"expected empty advice, got {data['advice']}"
     band = data.get("recommended_band")
-    assert band == [4, 14] or band == (4, 14), f"expected [4,14], got {band}"
+    assert list(band) == [5, 15], f"expected [5,15], got {band}"

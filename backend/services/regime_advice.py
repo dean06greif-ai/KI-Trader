@@ -8,9 +8,11 @@ Referenz-Treffer derselben Detektoren liegen typischerweise bei ~50-60 %.
 """
 from typing import Dict, List, Optional
 
+from services.regime_quality import SWEET_SPOT_DAYS
+
 # Sweet Spot der Ø Live-Phase für Daytrading-Strategien auf Regime-Basis:
 # kurz genug für Reaktion (<= ~2 Wochen), lang genug für genug Trades je Phase.
-RECOMMENDED_BAND = (4.0, 14.0)
+RECOMMENDED_BAND = SWEET_SPOT_DAYS  # eine Quelle: Benchmark „sehr gut“ (5–15 Tage)
 MIN_DAYS_FOR_PHASES = 540          # >= ~1,5 Jahre: Bull, Bär und Seitwärts enthalten
 SATURATED_PCT = 97.0
 

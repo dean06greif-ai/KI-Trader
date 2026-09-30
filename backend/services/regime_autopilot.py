@@ -27,6 +27,7 @@ from services import regime_engine as eng
 from services import regime_lab as lab
 from services import regime_advice
 from services import research_validation
+from services.regime_quality import SWEET_SPOT_DAYS
 from services.backtester import JobCancelled
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,9 @@ PHASE_PENALTY_MAX = 15.0      # Punkte Abzug bei viel zu kurzen/langen Phasen
 REFERENCE_WEIGHT = 0.5
 PLATEAU_ROUNDS_DEFAULT = 300   # Plan 1.5b: so viele Runden ohne Verbesserung -> Stopp
 RESTART_AFTER_STALE = 120      # Plan 1.5d: dann aus einer Top-10-Variante weitersuchen
+# Schutz (Fix 30.09.): Live=Final der inneren Val. darf ggü. der Ausgangslage höchstens so
+# viele Punkte fallen – sonst „flackert“ die Live-Erkennung (Regime wird später umgedeutet).
+MAX_INNER_DROP_PP = 5.0
 
 
 def config_key(cfg: Dict) -> str:
@@ -426,11 +430,26 @@ def holdout_regressed(best_m: Optional[Dict], base_m: Optional[Dict]) -> bool:
         return False
 
 
+def inner_regressed(m: Optional[Dict], base_m: Optional[Dict]) -> bool:
+    """Ist die Selbst-Übereinstimmung (innere Val., Live=Final) mehr als
+    MAX_INNER_DROP_PP Punkte unter die Ausgangslage gefallen?"""
+    try:
+        b = (m or {}).get("inner_direction_pct")
+        a = (base_m or {}).get("inner_direction_pct")
+        if a is None or b is None:
+            return False
+        return float(b) + MAX_INNER_DROP_PP < float(a) - 1e-9
+    except (TypeError, ValueError):
+        return False
+
+
 def adopt_recommended(result: Dict) -> bool:
-    """Automatische Übernahme nur, wenn der Score verbessert wurde UND der
-    Holdout nicht gefallen ist (nie ein schlechteres Ergebnis übernehmen)."""
-    return bool(result.get("improved")) and not holdout_regressed(
-        (result.get("best") or {}).get("metrics"), (result.get("baseline") or {}).get("metrics"))
+    """Automatische Übernahme nur, wenn der Score verbessert wurde UND weder der
+    Holdout noch die innere Val. eingebrochen ist (nie ein schlechteres Ergebnis)."""
+    best_m = (result.get("best") or {}).get("metrics")
+    base_m = (result.get("baseline") or {}).get("metrics")
+    return (bool(result.get("improved")) and not holdout_regressed(best_m, base_m)
+            and not inner_regressed(best_m, base_m))
 
 
 # ---------------- Vollautomatik: Autopilot -> Regime-Analyse ----------------
@@ -511,7 +530,7 @@ async def run_autopilot(job_id: str, body: Dict, db):
         max_rounds = max(int(body.get("max_rounds") or 0), 0)
         search_detectors = bool(body.get("search_detectors", True))
         plateau_rounds = max(int(body.get("plateau_rounds", PLATEAU_ROUNDS_DEFAULT) or 0), 0)
-        target_min_days = min(max(float(body.get("min_phase_days_target") or 3.0), 0.0), 30.0)
+        target_min_days = min(max(float(body.get("min_phase_days_target") or SWEET_SPOT_DAYS[0]), 0.0), 30.0)
         # Sweet Spot nach oben (0 = aus, Rückwärtskompatibilität für alte Aufrufer)
         target_max_days = min(max(float(body.get("max_phase_days_target") or 0.0), 0.0), 120.0)
         if target_max_days and target_max_days < target_min_days:
@@ -561,7 +580,7 @@ async def run_autopilot(job_id: str, body: Dict, db):
         job["best"] = _public_best(best, baseline)
         job["progress"] = round(min(max(float(best.get("score") or 0), 0.0), 100.0), 1)
         history: List[Dict] = []
-        tested = improved = stale = duplicates = restarts = 0
+        tested = improved = stale = duplicates = restarts = guard_rejected = 0
         seen = {config_key(start_cfg)}
         dup_run = 0
         t0 = time.time()
@@ -645,6 +664,10 @@ async def run_autopilot(job_id: str, body: Dict, db):
             if sc is None:
                 stale += 1
                 continue
+            if inner_regressed(m, base_m):
+                guard_rejected += 1
+                stale += 1
+                continue
             history.append({"engine_config": cand, "metrics": m, "score": sc,
                             "changes": changes, "detector": detector_of(cand),
                             "round": tested})
@@ -684,6 +707,8 @@ async def run_autopilot(job_id: str, body: Dict, db):
                   "improved": improved > 0, "improvements": improved, "tested": tested,
                   "holdout_regressed": holdout_regressed(best["metrics"], base_m),
                   "holdout_metric": holdout_metric(best["metrics"], base_m),
+                  "inner_regressed": inner_regressed(best["metrics"], base_m),
+                  "guard_rejected": guard_rejected, "max_inner_drop_pp": MAX_INNER_DROP_PP,
                   "history": history, "stop_reason": stop_reason,
                   "duplicates_skipped": duplicates, "restarts": restarts,
                   "plateau_rounds": plateau_rounds,
