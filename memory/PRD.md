@@ -111,3 +111,15 @@ Bericht: `REGIME_DYNAMIK_PRUEFBERICHT_3009.md`. Produktiv-DB nur lesend geprüft
 - Tests: `test_regime_followups_3009.py`; iteration_34 (Backend 33/33), iteration_35 (Frontend 3/3).
 - Testagent-Dateien dieser Sitzung (test_iter33_regime_lab_e2e, test_iter34_followups, pytest/iter33/34.xml) entfernt.
 - Backlog: P2 React-Warnung `<span>` in `<option>` bereinigen; P2 Code-Splitting.
+
+## MarketMaker (MM) · Verlauf · Lektionen · Regime-Copilot (01.10.2026, Branch conflict_300926_1955)
+Anforderung: Lektionen prüfen + fixen; Verlauf-Reiter aufräumen (Mindest-Trade weg, ein Welt-Reiter für Chart +
+Setup-Reife inkl. „Live-Logik gesamt“, doppelte Karten weg, Maus-Drag-Scroll); Umbenennung MarketMaker (MM);
+Regime-Copilot mit aktuellem Regime-Wissen (Taxonomie, Freigabe, KI-Trader-Anbindung, dynamische Strategien).
+- Bericht: `PRUEFBERICHT_LEKTIONEN_VERLAUF_0110.md`.
+- Backend neu: `services/setup_world_stats.py` (Setup-Reife je Welt, `worlds` je Zeile), `services/regime_copilot_knowledge.py`
+  (Wissen aus Code-Konstanten + Live-Ist-Stand). Fixes: Gegenprobe-Warteschlange (no_frame), Gegenprobe-Gebühr (Forex/konfiguriert),
+  Bilanz-Beitrag bei wenigen angewendeten Trades, Equity-Kurve nur `closed` + ohne 5000-Kappung, `regime_key` 9er-Seitwärts eindeutig.
+- Frontend: AIEquityPanel (ein Welt-Reiter), SetupMaturityTable (worldStats), `.drag-scroll-x`, MinTradeOverview entfernt, Branding.
+- Tests: `backend/tests/test_mm_verlauf_regime_copilot_0110.py` (16), iteration_36 (Backend + Frontend 100 %).
+- Backlog: P1 Lektions-Bilanz-Vergleichsgruppe zusätzlich nach Struktur-Regime; P2 Code-Splitting; P2 veraltete Alt-Tests aufräumen.
