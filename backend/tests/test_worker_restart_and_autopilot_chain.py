@@ -134,7 +134,6 @@ def test_required_version_bumped():
 # ---------------- worker.py (Quelltext-Verträge) ----------------
 def test_worker_source_contracts():
     src = WORKER_PY.read_text(encoding="utf-8")
-    import re
     ver = tuple(int(x) for x in re.search(r'VERSION = "(\d+)\.(\d+)\.(\d+)"', src).groups())
     assert ver >= (1, 15, 0)  # 1.15: lokale Neubewertung (fn="reevaluate")
     # absturzsichere Poll-Schleife: Catch-all nach RequestException/KeyboardInterrupt

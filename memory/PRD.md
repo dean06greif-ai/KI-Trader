@@ -123,3 +123,11 @@ Regime-Copilot mit aktuellem Regime-Wissen (Taxonomie, Freigabe, KI-Trader-Anbin
 - Frontend: AIEquityPanel (ein Welt-Reiter), SetupMaturityTable (worldStats), `.drag-scroll-x`, MinTradeOverview entfernt, Branding.
 - Tests: `backend/tests/test_mm_verlauf_regime_copilot_0110.py` (16), iteration_36 (Backend + Frontend 100 %).
 - Backlog: P1 Lektions-Bilanz-Vergleichsgruppe zusätzlich nach Struktur-Regime; P2 Code-Splitting; P2 veraltete Alt-Tests aufräumen.
+
+## Regime-Filter Lektionen, Regime-Risiko Shadow, Autopilot-Warmstart, Manifest-Fix (01.10.2026)
+- Lektionen-Bilanz: Vergleichsgruppe nur im gleichen Struktur-Regime (`lesson_impact.regime_matched_control`, Fallback Klasse/Zeitraum, `control_basis`).
+- Regime-Risiko Shadow: `services/regime_risk_shadow.py`, `GET /api/ai/regime-risk/shadow`, Panel `RegimeRiskShadow` im Verlauf – nur Beobachtung.
+- Autopilot-Warmstart: `services/regime_warmstart.py` sammelt Seeds (frühere Läufe/Analysen), `regime_autopilot.warm_seeds`, Schalter im UI.
+- Bug „Kerzenanzahl ≠ Manifest“ (HYPEUSDT 8632 vs 8759): Ursache = Tages-Deckel 365 d ab JETZT schnitt den Anfang gespeicherter Fenster ab.
+  Fix: `candle_cache.get_candles(start_ms=…)` / `backtester.fetch_history(start_ms=…)`; `regime_lab.fetch_histories` reicht den Anker durch. Manifest-Prüfung bleibt streng.
+- Worker 1.17.2 (Paket neu laden). Tests: tests/test_manifest_anchor_0110.py; Testagent iteration_37: 100 %.
