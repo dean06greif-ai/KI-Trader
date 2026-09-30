@@ -302,5 +302,13 @@ def regime_strategy_of(doc: Dict, rid: int) -> Optional[str]:
 
 
 def targets_for_refine(doc: Dict, regime_ids: List[int], mode: str) -> Dict[int, Dict]:
-    return {int(rid): {"mode": mode, "strategy_id": regime_strategy_of(doc, int(rid))}
-            for rid in regime_ids}
+    """Regime mit eigenen Discovery-Regeln haben keine Registry-Strategie für
+    reine Parameter-Suche -> dort 'combo' (Regeln + Parameter); übernommen wird
+    trotzdem nur, was die bestehende Zuordnung schlägt."""
+    out = {}
+    for rid in regime_ids:
+        sid = regime_strategy_of(doc, int(rid))
+        own = bool((doc.get("sub_strategies") or {}).get(str(rid)))
+        out[int(rid)] = {"mode": "combo" if (mode == "params" and own) else mode,
+                         "strategy_id": sid}
+    return out

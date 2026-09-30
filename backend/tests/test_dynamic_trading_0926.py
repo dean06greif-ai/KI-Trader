@@ -160,3 +160,11 @@ def test_workbench_helpers():
     assert wb.scope_of({"settings": {}}) == ("combined", None)
     t = wb.targets_for_refine(DOC, [0, 2], "params")
     assert t[0]["strategy_id"] == "nnfx_trend" and t[2]["strategy_id"] == "nnfx_trend"
+
+
+def test_refine_own_rules_regime_uses_combo():
+    doc = {**DOC, "regime_strategies": {}, "strategy_id": "custom_x",
+           "sub_strategies": {"1": {"rules": ["r"], "definition": {"long_rules": [{}]}}}}
+    t = wb.targets_for_refine(doc, [0, 1], "params")
+    assert t[0]["mode"] == "params" and t[0]["strategy_id"] == "custom_x"
+    assert t[1]["mode"] == "combo" and t[1]["strategy_id"] is None
