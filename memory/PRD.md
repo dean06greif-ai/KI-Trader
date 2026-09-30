@@ -86,3 +86,18 @@ Auswahl bleibt beim Reiter-Wechsel erhalten; dynamische Strategien im Backtester
 - Tests: `backend/tests/test_dynamic_backtest_workbench.py` (13 unit).
 - Offen/Backlog: lokaler Worker kennt den Dynamik-Backtest nicht (Cloud-only); Workbench-Result nach Server-Neustart
   nur im RAM (JOBS).
+
+## Prüfung Regime-Lab ↔ dynamische Strategien + Worker-Log (30.09.2026, Branch conflict_300926_1710)
+Bericht: `REGIME_DYNAMIK_PRUEFBERICHT_3009.md`. Produktiv-DB nur lesend geprüft, Preview mit lokaler Test-DB.
+- D1 (kritisch): Live-Regime dynamischer Strategien auf 30 statt 142 Tagen Warmup → 51–65 % andere Regime als im Test.
+  Fix `dynamic_live.history_days` (Detektor-Warmup wie KI-Trader) in `refresh_state` (Runtime, Watcher, manuell).
+- D2: Regime-Suche/Werkbank trainierte auf Rückblick-Phasen. Neu `label_basis` (Standard `live` = kausale
+  `live_segments`, `final` = alt), UI-Auswahl in RegimeOptimizePanel + Werkbank (`LabelBasisSelect`).
+- D3: Walk-Forward handelt nur noch bestätigte Regime (`untraded_bars`).
+- D4: Bau immer expliziter Multi-Modus (`strategy_plan.regime_strategy_map`), Legacy-Apply schaltet Regeln um.
+- D5: Dynamischer Backtest lädt Detektor-Warmup vor dem Fenster.
+- Worker 1.16.2: gemeinsamer Verbindungszustand + 20 s Gnadenfrist + kurze Gründe; Manifest-Ausschluss/Dukascopy-Abbrüche
+  gedrosselt (6 h). Verhalten unverändert.
+- Tests: `backend/tests/test_regime_dynamic_consistency_3009.py` (18), iteration_33 (53/53 Unit, 5/5 E2E, Frontend ok).
+- Backlog: P1 bestehende gemischte Dynamik-Dokumente optional migrieren; P1 Werkbank: Regime mit negativem Walk-Forward
+  automatisch „nicht handeln“ vorschlagen; P2 Render-RAM beobachten (142 d Historie je Dynamik-Symbol, geteilt mit KI-Trader).
