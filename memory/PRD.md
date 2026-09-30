@@ -131,3 +131,13 @@ Regime-Copilot mit aktuellem Regime-Wissen (Taxonomie, Freigabe, KI-Trader-Anbin
 - Bug „Kerzenanzahl ≠ Manifest“ (HYPEUSDT 8632 vs 8759): Ursache = Tages-Deckel 365 d ab JETZT schnitt den Anfang gespeicherter Fenster ab.
   Fix: `candle_cache.get_candles(start_ms=…)` / `backtester.fetch_history(start_ms=…)`; `regime_lab.fetch_histories` reicht den Anker durch. Manifest-Prüfung bleibt streng.
 - Worker 1.17.2 (Paket neu laden). Tests: tests/test_manifest_anchor_0110.py; Testagent iteration_37: 100 %.
+
+## Dynamik-Werkbank: Asset-Auswahl + effizientere Suche (01.10.2026)
+- Asset-Chips klickbar in allen 3 Reitern (`AssetToggle`, mind. 1 aktiv, Analyse-Wahl = alle aktiv, Refine-Default = Assets der Strategie).
+- Teilmengen getrennt gespeichert: `subset_assignments` / `subset_walkforward` (Schlüssel `combined@BTCUSDT+ETHUSDT`, `lab.area_key/area_fields/norm_subset/dataset_for`);
+  Manifest-Prüfung nur für gewählte Assets; gebaute Strategie: `symbols` = Teilmenge, `settings.subset_symbols`.
+- Effizienz: Kerzen je Werkbank-Lauf einmal laden (`regime_opt._HISTORY_SLOT`, reuse_key = Job-ID, Freigabe am Job-Ende);
+  Regime ohne Daten/fehlgeschlagene Suche bricht den Lauf nicht mehr ab; Plateau-Steuerung (2 Runden ohne Verbesserung → nur jede 4. Runde, früheres Ende ohne Endlos);
+  Walk-Forward nutzt frisch gespeicherte Zuordnungen (vorher beim lokalen Worker veraltet); Warnhinweis bei unrealistischem Min. Trades.
+- Worker 1.18.0 für Teilmengen lokal (`WB_SUBSET_WORKER`, 409 bei älteren). Tests: tests/test_workbench_assets_0110.py; Testagent iteration_38: 100 %.
+- Backlog: Regime parallel rechnen (RAM auf Render beachten); Code-Splitting.
