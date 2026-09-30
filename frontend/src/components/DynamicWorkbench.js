@@ -21,7 +21,7 @@ const loadState = () => { try { return JSON.parse(localStorage.getItem(STATE_KEY
 const DEFAULT_OPTS = {
   iterations: 40, min_trades: 10, max_rules: 4, rounds: 1, endless: false, walkforward: true,
   result_backtest: true, regime_walk_forward: true, regime_train_pct: 75, direction_bias: 'off',
-  label_basis: 'live',
+  label_basis: 'live', skip_losing: true,
   objective: 'combo', timeframe: '', days: '', sessions: '', max_capital: 100, leverage: 10,
   fee_percent: 0.06, execution: 'cloud', name: '',
 };
@@ -121,7 +121,7 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
       leverage: Number(opts.leverage), fee_percent: Number(opts.fee_percent),
       optimize: optFlags, indicators: mode !== 'params' ? indicators : undefined,
       regime_walk_forward: opts.regime_walk_forward, regime_train_pct: Number(opts.regime_train_pct),
-      direction_bias: opts.direction_bias, label_basis: opts.label_basis,
+      direction_bias: opts.direction_bias, label_basis: opts.label_basis, skip_losing: opts.skip_losing,
     };
     if (tab === 'refine') Object.assign(body, { dynamic_id: cur.source, regime_ids: cur.regimes });
     else if (tab === 'create') Object.assign(body, { analysis_id: cur.source, scope: 'combined', mapping: cur.mapping });

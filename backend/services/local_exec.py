@@ -136,7 +136,14 @@ def worker_supports_regime_lab() -> bool:
     return False
 
 
+def worker_min_version(need: tuple) -> bool:
+    """Ist ein online Worker mit mindestens Version `need` verbunden?"""
+    return any(_now() - w.get("last_seen", 0) < WORKER_TIMEOUT and _ver(w.get("version")) >= need
+               for w in WORKERS.values())
+
+
 FN_MIN_VERSION = {"calibrate": (1, 7), "autopilot": (1, 12), "ablation": (1, 14), "reevaluate": (1, 15)}
+DATA_REPAIR_MIN_VERSION = (1, 17)
 
 
 def worker_supports_fn(fn: str) -> bool:

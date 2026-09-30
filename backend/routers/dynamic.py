@@ -359,6 +359,19 @@ async def dynamic_trade_plan(did: str):
             "verdict": doc.get("verdict") or {}}
 
 
+@router.get("/api/dynamic/{did}/regime-performance")
+async def dynamic_regime_performance(did: str, mode: str = "all"):
+    """Gehandelte dynamische Strategie: Gewinn/Trefferquote je Regime (Live/Paper)
+    neben den Walk-Forward-Zahlen je Regime."""
+    from services import dynamic_performance
+    doc = await _get_doc(did)
+    doc.pop("_id", None)
+    strat = strategy_registry.get(did)
+    regimes = strat.regimes() if strat is not None and getattr(strat, "IS_DYNAMIC", False) else \
+        [{"id": r["id"], "label": r.get("label")} for r in (doc.get("model") or {}).get("regimes") or []]
+    return await dynamic_performance.regime_performance(state.db, doc, regimes, mode)
+
+
 @router.post("/api/dynamic/{did}/runtime-refresh")
 async def dynamic_runtime_refresh(did: str, _: bool = Depends(require_admin)):
     """Live-Regime der handelbaren dynamischen Strategie sofort neu bestimmen."""
@@ -438,7 +451,7 @@ async def workbench_start(body: Dict, _: bool = Depends(require_admin)):
                                   "timeframe", "days", "max_capital", "leverage", "fee_percent",
                                   "sessions", "optimize", "indicators", "regime_walk_forward",
                                   "regime_train_pct", "deep_test", "result_backtest",
-                                  "label_basis")}
+                                  "label_basis", "skip_losing")}
     mode = body.get("mode") or ("discovery" if kind == "discover" else "params")
     if mode not in ("params", "discovery", "combo"):
         raise HTTPException(status_code=400, detail="mode muss params|discovery|combo sein")

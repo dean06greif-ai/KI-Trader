@@ -62,6 +62,16 @@ automatisch übernommen. Kerzendaten liegen standardmäßig in `./worker_data`.
   `worker_config.json` bleiben erhalten; die Verbindung (Server-URL + Token)
   liegt zusätzlich in `~/.ki_trader_worker/worker_config.json`.
 
+## Neu in 1.17.0 (Lücken reparieren)
+
+- Website → Lokal → Daten: neuer Knopf 🔧 je Symbol „Lücken reparieren“. Der Worker
+  lädt fehlende 1m-Kerzen erst erneut aus der Primärquelle und danach aus einer
+  zweiten Quelle nach (Krypto: Binance ↔ Bitunix, FX/Metalle/Indizes: Dukascopy,
+  auf das Preisniveau der Primärquelle skaliert). Ergebnis: Lücken vorher → nachher.
+- Hinweis: stammen Server- und Worker-Kerzen aus verschiedenen Quellen, kann eine
+  Analyse trotz gleicher Kerzenanzahl an der Candle-Checksum scheitern – dann die
+  Analyse in der Cloud rechnen bzw. neu erstellen.
+
 ## Neu in 1.16.2 (ruhigeres Log – Verhalten unverändert)
 
 - Kurze Verbindungsaussetzer (< 20 s, z.B. DNS-Wackler des eigenen Internets oder

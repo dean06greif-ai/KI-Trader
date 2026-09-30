@@ -31,6 +31,9 @@ Wackler oder Render-Neustart) werden nicht mehr gemeldet, Poll-Schleife und
 Fortschritts-Meldungen teilen sich EINEN Verbindungszustand (keine doppelten
 „nicht erreichbar/wiederhergestellt“-Zeilen je Job), kurze Fehlergründe statt
 langer Tracebacks, Zeitstempel auch für Meldungen der Rechen-Module.
+Neu in 1.17.0: Daten-Job „Lücken reparieren“ (kind="data_repair") – fehlende
+1m-Kerzen eines Symbols erst erneut aus der Primärquelle, dann aus einer zweiten
+Quelle (Binance ↔ Bitunix, FX/Metalle/Indizes: Dukascopy) nachladen.
 """
 import argparse
 import asyncio
@@ -44,7 +47,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "1.16.2"
+VERSION = "1.17.0"
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = SCRIPT_DIR / "worker_config.json"
 # Zweiter Speicherort im Benutzerordner: überlebt das Neu-Entpacken des Pakets
@@ -558,6 +561,14 @@ def run_data_job(job_id, kind, params):
         elif kind == "data_delete":
             candle_cache.remove_symbol(params.get("symbol"))
             summary = {"symbol": params.get("symbol")}
+        elif kind == "data_repair":
+            async def _repair():
+                async with http_session() as session:
+                    return await candle_cache.repair_symbol(session, params.get("symbol"), job=jobd)
+            summary = asyncio.run(_repair())
+            log(f"Lücken-Reparatur {summary['symbol']}: {summary['before']['gaps']} → "
+                f"{summary['after']['gaps']} Lücken (+{summary['added_primary']} Primärquelle, "
+                f"+{summary['added_secondary']} {summary.get('secondary_source') or 'keine zweite Quelle'})")
         else:
             raise RuntimeError(f"Unbekannter Daten-Job: {kind}")
     except JobCancelledLocal:
@@ -615,7 +626,7 @@ def dispatch(job):
         target, args = run_optimizer_job, (jid, payload)
     elif kind == "regime_lab":
         target, args = run_regime_job, (jid, payload)
-    elif kind in ("data_download", "data_update", "data_delete"):
+    elif kind in ("data_download", "data_update", "data_delete", "data_repair"):
         target, args = run_data_job, (jid, kind, payload)
     else:
         log(f"Unbekannter Job-Typ: {kind}")

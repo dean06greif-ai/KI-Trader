@@ -330,13 +330,42 @@ async def get_candles(session, symbol: str, days: int, job: Dict = None) -> Cand
     return cached.slice_from_ts(start)
 
 
+async def _fetch_secondary_range(session, symbol: str, a: int, b: int, cached: CandleArray,
+                                 job: Dict = None) -> CandleArray:
+    """Lücke [a, b] aus der ZWEITEN Quelle; Dukascopy-Serien werden auf das
+    Preisniveau der Primärquelle direkt nach der Lücke skaliert (Index-Perps)."""
+    from services import history_sources as hs
+    blocks = await hs.fetch_secondary(session, symbol, a, b, job=job)
+    if not blocks:
+        return CandleArray.empty()
+    m = np.concatenate(blocks)
+    if hs.secondary_source(symbol) == "dukascopy":
+        after = cached.slice_range(b + 1, None)
+        if len(after):
+            m = m[m[:, 0] <= b]
+            if m.shape[0]:
+                m = hs.scale_to_anchor(m, float(after.cl[0]))
+    return CandleArray.from_matrix(m).dedup_sorted().slice_range(a, b)
+
+
+def gap_stats(symbol: str, min_gap_ms: int = 5 * 60000) -> Dict:
+    """Interne Lücken im gecachten 1m-Bestand (Anzahl, fehlende Minuten)."""
+    entry = _MEM.get(symbol)
+    if entry is None or len(entry["candles"]) < 2:
+        return {"gaps": 0, "missing_minutes": 0}
+    d = np.diff(entry["candles"].ts)
+    big = d[d > min_gap_ms]
+    return {"gaps": int(len(big)), "missing_minutes": int((big // 60000 - 1).sum())}
+
+
 async def repair_gaps(session, symbol: str, start_ms: int, end_ms: int,
                       min_gap_ms: int = 5 * 60000, max_gaps: int = 60,
-                      job: Dict = None) -> int:
+                      job: Dict = None, source: str = "primary") -> int:
     """Interne Lücken im gecachten 1m-Bestand [start, end] gezielt nachladen.
     Der Cache wird sonst nur an Kopf/Ende erweitert – eine Lücke mittendrin (z.B.
     abgebrochener Download beim lokalen Worker) blieb dauerhaft. Rückgabe: Anzahl
-    neu eingefügter Kerzen (0 = keine Lücke oder Quelle hat dort selbst nichts)."""
+    neu eingefügter Kerzen (0 = keine Lücke oder Quelle hat dort selbst nichts).
+    source="secondary": aus der zweiten Quelle (history_sources.secondary_source)."""
     entry = _MEM.get(symbol)
     if entry is None or not len(entry["candles"]):
         return 0
@@ -349,10 +378,13 @@ async def repair_gaps(session, symbol: str, start_ms: int, end_ms: int,
     if not len(idx):
         return 0
     parts = []
-    for i in idx:
+    for n, i in enumerate(idx):
         a, b = int(edges[i]) + 60000, int(edges[i + 1]) - 60000
         if b >= a:
-            got = await _fetch_range(session, symbol, a, b, job=job)
+            if job is not None:
+                job["phase"] = f"{symbol}: Lücke {n + 1}/{len(idx)} ({'zweite Quelle' if source == 'secondary' else 'Primärquelle'})"
+            got = (await _fetch_secondary_range(session, symbol, a, b, cached, job=job)
+                   if source == "secondary" else await _fetch_range(session, symbol, a, b, job=job))
             if len(got):
                 parts.append(got)
     if not parts:
@@ -366,6 +398,33 @@ async def repair_gaps(session, symbol: str, start_ms: int, end_ms: int,
         await asyncio.to_thread(_save_disk, symbol, merged)
         logger.info(f"candle_cache REPAIR {symbol}: {len(idx)} Lücke(n), +{added} Kerzen")
     return max(added, 0)
+
+
+async def repair_symbol(session, symbol: str, job: Dict = None) -> Dict:
+    """Lücken-Reparatur für EIN Symbol (lokaler Worker, Knopf „Lücken reparieren“):
+    erst Primärquelle erneut, dann die zweite Quelle für das, was fehlt."""
+    from services import history_sources as hs
+    now_ms = int(time.time() * 1000)
+    first = (disk_meta(symbol) or {}).get("first_ts") or now_ms
+    days = max(int((now_ms - first) / 86400000) + 1, 2)
+    if job is not None:
+        job["phase"] = f"{symbol}: lade lokale Kerzen"
+    await get_candles(session, symbol, days, job=job)
+    entry = _MEM.get(symbol)
+    if entry is None or not len(entry["candles"]):
+        raise RuntimeError(f"{symbol}: keine lokalen Kerzen vorhanden")
+    start, end = int(entry["candles"].ts[0]), int(entry["candles"].ts[-1])
+    before = gap_stats(symbol)
+    added_p = await repair_gaps(session, symbol, start, end, max_gaps=500, job=job)
+    second = hs.secondary_source(symbol)
+    added_s = 0
+    if second:
+        added_s = await repair_gaps(session, symbol, start, end, max_gaps=500, job=job,
+                                    source="secondary")
+    return {"symbol": symbol, "before": before, "after": gap_stats(symbol),
+            "added_primary": added_p, "added_secondary": added_s,
+            "primary_source": hs.source_of(symbol), "secondary_source": second}
+
 
 
 def stats() -> Dict:

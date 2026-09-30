@@ -152,6 +152,12 @@ export function RobustnessRow({ opts, set, tab, holdout }) {
           data-testid="dwb-walkforward" title="Am Ende auf dem unangetasteten Holdout der Analyse prüfen – nur dann gilt die neue Strategie als validiert">
           {opts.walkforward ? '☑' : '☐'} Finaler Walk-Forward (Holdout){holdout === false ? ' · Analyse ohne Holdout' : ''}
         </button>
+        {opts.walkforward && (
+          <button className={`opt-chip ${opts.skip_losing ? 'on' : ''}`} onClick={() => set('skip_losing', !opts.skip_losing)}
+            data-testid="dwb-skip-losing" title="Regime mit negativem Walk-Forward (ab 5 Trades) werden in der gebauten Strategie auf „nicht handeln“ gestellt">
+            {opts.skip_losing ? '☑' : '☐'} Verlust-Regime abschalten
+          </button>
+        )}
         <button className={`opt-chip ${opts.result_backtest ? 'on' : ''}`} onClick={() => set('result_backtest', !opts.result_backtest)}
           data-testid="dwb-result-backtest" title="Fertige dynamische Strategie über den gesamten Zeitraum simulieren: Gesamt, je Regime, Empfehlung, Equity">
           {opts.result_backtest ? '☑' : '☐'} Ergebnis-Backtest je Regime

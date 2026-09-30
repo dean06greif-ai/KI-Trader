@@ -173,6 +173,21 @@ async def localworker_data_delete(body: Dict, _: bool = Depends(require_admin)):
     return {"status": "queued", "job": job}
 
 
+@router.post("/api/localworker/data/repair")
+async def localworker_data_repair(body: Dict, _: bool = Depends(require_admin)):
+    """Lücken im lokalen 1m-Bestand eines Symbols reparieren (Primär- + zweite Quelle)."""
+    symbol = body.get("symbol")
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol erforderlich")
+    if not local_exec.worker_online():
+        raise HTTPException(status_code=503, detail="Kein lokaler Worker verbunden")
+    if not local_exec.worker_min_version(local_exec.DATA_REPAIR_MIN_VERSION):
+        raise HTTPException(status_code=409,
+                            detail="Lücken-Reparatur braucht Worker ≥ 1.17.0 – bitte das Worker-Paket neu herunterladen")
+    job = local_exec.create_data_job("data_repair", {"symbol": symbol})
+    return {"status": "queued", "job": job}
+
+
 @router.post("/api/localworker/data/cancel/{job_id}")
 async def localworker_data_cancel(job_id: str, _: bool = Depends(require_admin)):
     if not local_exec.cancel_data_job(job_id):

@@ -33,6 +33,33 @@ POLL_S = 2.0
 PASSTHROUGH_KEYS = ("timeframe", "days", "max_capital", "leverage", "fee_percent", "sessions",
                     "optimize", "indicators", "regime_walk_forward", "regime_train_pct",
                     "deep_test", "label_basis")
+# Verlust-Regime: erst ab so vielen Walk-Forward-Trades gilt ein negativer PnL als belegt
+MIN_TRADES_SKIP = 5
+
+
+def losing_regimes(wf: Optional[Dict], min_trades: int = MIN_TRADES_SKIP) -> List[Dict]:
+    """Regime mit belegt negativem Walk-Forward (PnL < 0 bei >= min_trades) – rein."""
+    out = []
+    for r in (wf or {}).get("per_regime") or []:
+        m = r.get("metrics") or {}
+        if r.get("regime") is None or int(m.get("trades") or 0) < min_trades:
+            continue
+        if float(m.get("pnl") or 0) < 0:
+            out.append({"regime": int(r["regime"]), "label": r.get("label"),
+                        "pnl": round(float(m["pnl"]), 2), "trades": int(m["trades"])})
+    return out
+
+
+def kept_after_skip(wf: Optional[Dict], skipped: List[Dict]) -> Optional[Dict]:
+    """Walk-Forward-Summe der weiter gehandelten Regime (nur Info: die Auswahl nutzt
+    den Holdout, der Wert ist daher KEIN unabhängiger Test mehr)."""
+    if not wf or not skipped:
+        return None
+    skip = {s["regime"] for s in skipped}
+    rows = [r for r in wf.get("per_regime") or [] if r.get("regime") not in skip]
+    return {"pnl": round(sum(float((r.get("metrics") or {}).get("pnl") or 0) for r in rows), 2),
+            "trades": sum(int((r.get("metrics") or {}).get("trades") or 0) for r in rows),
+            "regimes": len(rows), "independent": False}
 
 
 def _now_iso() -> str:
@@ -292,16 +319,28 @@ async def run(job_id: str, p: Dict, deps: Dict):
             except RuntimeError as e:
                 _log(job, f"Walk-Forward nicht möglich: {e}")
         _log(job, "Dynamische Strategie wird gebaut ...")
+        skipped = losing_regimes(wf, int(p.get("min_trades_skip") or MIN_TRADES_SKIP)) \
+            if wf and p.get("skip_losing", True) else []
+        if skipped and len(skipped) >= len(found):
+            _log(job, "Alle Regime im Walk-Forward negativ – nichts wird abgeschaltet, "
+                      "Strategie bitte nicht freigeben")
+            skipped = []
+        for s in skipped:
+            _log(job, f"Regime '{s['label']}' wird NICHT gehandelt: Walk-Forward PnL {s['pnl']} "
+                      f"über {s['trades']} Trades")
         built = await deps["build"](aid, {"scope": scope, "symbol": symbol,
                                           "strategy_id": base_sid,
-                                          "name": p.get("name")})
+                                          "name": p.get("name"),
+                                          "skip_regimes": [s["regime"] for s in skipped]})
         job["result"] = {"dynamic_id": built.get("id"), "analysis_id": aid,
                          "regimes": job["regimes"],
                          "walkforward": {"verdict": (wf or {}).get("verdict"),
                                          "dynamic_test": (wf or {}).get("dynamic_test"),
                                          "best_single": (wf or {}).get("best_single"),
                                          "per_regime": (wf or {}).get("per_regime"),
-                                         "switches": (wf or {}).get("switches")} if wf else None,
+                                         "switches": (wf or {}).get("switches"),
+                                         "skipped_regimes": skipped,
+                                         "kept_after_skip": kept_after_skip(wf, skipped)} if wf else None,
                          "rounds": job["round"], "source_dynamic_id": p.get("dynamic_id")}
         if p.get("result_backtest", True) and built.get("id"):
             job["result"]["backtest"] = await _result_backtest(job, built["id"], p, deps)

@@ -39,7 +39,24 @@ function WalkforwardBox({ wf }) {
           </tbody>
         </table>
       </div>
+      <SkippedRegimes wf={wf} />
     </>
+  );
+}
+
+function SkippedRegimes({ wf }) {
+  const sk = wf.skipped_regimes || [];
+  if (!sk.length) return null;
+  const k = wf.kept_after_skip;
+  return (
+    <div className="dyn-verdict warn" style={{ marginTop: 10 }} data-testid="dwb-result-skipped">
+      <b>Automatisch abgeschaltet (Walk-Forward negativ) – diese Regime werden nicht gehandelt:</b>
+      <ul>{sk.map(s => (
+        <li key={s.regime} data-testid={`dwb-skipped-${s.regime}`}>{s.label || `#${s.regime + 1}`}: PnL <span className="neg">{fmt(s.pnl)}</span> über {s.trades} Trades</li>
+      ))}</ul>
+      {k && <div className="opt-small">Rest-Regime auf dem Holdout: PnL <b className={k.pnl >= 0 ? 'pos' : 'neg'}>{fmt(k.pnl)}</b> ({k.trades} Trades) –
+        nur Orientierung: die Auswahl nutzt den Holdout, daher kein unabhängiger Test mehr (vor Live-Freigabe Forward-/Paper-Phase abwarten).</div>}
+    </div>
   );
 }
 

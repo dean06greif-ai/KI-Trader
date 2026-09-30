@@ -6,6 +6,7 @@ import { authHeaders, isAdmin } from '../auth';
 import useInstruments, { assetLabel } from '../hooks/useInstruments';
 import { fmtDate, fmtDateTime } from '../lib/time';
 import NumInput from './NumInput';
+import DynamicRegimePerformance from './DynamicRegimePerformance';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const fmt = (v, d = 2) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
@@ -122,6 +123,7 @@ export default function DynamicPanel() {
   const [refreshDays, setRefreshDays] = useState(30);
   const [logs, setLogs] = useState({});
   const [evidence, setEvidence] = useState({});
+  const [perfOpen, setPerfOpen] = useState({});
 
   const loadEvidence = async (id) => {
     if (evidence[id]) { setEvidence(ev => ({ ...ev, [id]: null })); return; }
@@ -340,6 +342,10 @@ export default function DynamicPanel() {
                     title="Wechsel-Protokoll: alle Regime-Wechsel mit Datum, Sicherheit und Begründung">
                     Protokoll
                   </button>
+                  <button className="opt-chip" onClick={() => setPerfOpen(p => ({ ...p, [s.id]: !p[s.id] }))} data-testid={`dyn-perf-toggle-${s.id}`}
+                    title="Gewinn und Trefferquote der gehandelten Trades je Regime neben den Walk-Forward-Zahlen">
+                    Ergebnis je Regime
+                  </button>
                   <button className="opt-chip" onClick={() => loadEvidence(s.id)} data-testid={`dyn-evidence-${s.id}`}
                     title="Beweispaket für die gestufte Abnahme: Datensatz, Release, Walk-Forward, Anwendung und Runtime-Health mit Klartext-Blockern – Empfehlung, kein automatischer Live-Schalter">
                     Beweispaket
@@ -437,6 +443,7 @@ export default function DynamicPanel() {
                     </button>
                   </div>
                 )}
+                {perfOpen[s.id] && <DynamicRegimePerformance did={s.id} />}
                 {evidence[s.id] && (
                   <div className="dyn-regime-state" data-testid={`dyn-evidence-body-${s.id}`}>
                     <b>Beweispaket (Abnahme-Empfehlung)</b>

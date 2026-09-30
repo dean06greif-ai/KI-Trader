@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Desktop, DownloadSimple, ArrowsClockwise, Trash, Copy, Key, Database, Gear, FloppyDisk } from '@phosphor-icons/react';
+import { X, Desktop, DownloadSimple, ArrowsClockwise, Trash, Copy, Key, Database, Gear, FloppyDisk, Wrench } from '@phosphor-icons/react';
 import { toast } from '../lib/toast';
 import { authHeaders, isAdmin } from '../auth';
 import SafeOverlay from './SafeOverlay';
@@ -17,6 +17,24 @@ const fmtBytes = (b) => {
 };
 const fmtTs = (ts) => fmtDate(ts);
 const fmtSpan = (a, b) => (a && b ? `${fmtTs(a)} – ${fmtTs(b)}` : '–');
+
+
+/** Ergebnis der letzten Lücken-Reparatur (Worker ≥ 1.17.0). */
+function RepairSummary({ job }) {
+  if (!job) return null;
+  const s = job.summary;
+  if (job.status !== 'done' || !s) {
+    return <div className="lw-hint" data-testid="lw-repair-summary">Lücken-Reparatur {job.params?.symbol}: {job.status === 'error' ? `Fehler – ${job.error}` : job.status}</div>;
+  }
+  return (
+    <div className="lw-hint" data-testid="lw-repair-summary">
+      Lücken-Reparatur <b>{s.symbol}</b>: {s.before?.gaps} → <b>{s.after?.gaps}</b> Lücken
+      ({s.before?.missing_minutes} → {s.after?.missing_minutes} fehlende Minuten) ·
+      +{s.added_primary} aus {s.primary_source} · +{s.added_secondary} aus {s.secondary_source || 'keine zweite Quelle'}
+      {s.after?.gaps > 0 && ' – verbleibende Lücken hat keine Quelle (z.B. Börsen-Wartung / Wochenende bei FX)'}
+    </div>
+  );
+}
 
 const DL_DAYS = [7, 14, 30, 60, 90, 180, 360, 540, 720, 1080, 1440, 1800, 2160, 2880, 3600, 4320, 5400];
 
@@ -79,6 +97,7 @@ export default function LocalWorkerPanel({ onClose }) {
   const data = worker?.data || {};
   const dataJob = status?.data_jobs?.active;
   const queuedData = status?.data_jobs?.queued || [];
+  const lastRepair = (status?.data_jobs?.recent || []).find(j => j.kind === 'data_repair');
 
   const saveSettings = async () => {
     if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
@@ -130,6 +149,19 @@ export default function LocalWorkerPanel({ onClose }) {
       const d = await r.json();
       if (!r.ok) { toast.error(d.detail || 'Löschen fehlgeschlagen'); return; }
       toast.success(`${sym} wird gelöscht`);
+      load();
+    } catch { toast.error('Verbindungsfehler'); }
+  };
+
+  const repairSymbol = async (sym) => {
+    try {
+      const r = await fetch(`${API_URL}/api/localworker/data/repair`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ symbol: sym }),
+      });
+      const d = await r.json();
+      if (!r.ok) { toast.error(d.detail || 'Reparatur fehlgeschlagen'); return; }
+      toast.success(`${sym}: Lücken werden repariert (Primär- + zweite Quelle)`);
       load();
     } catch { toast.error('Verbindungsfehler'); }
   };
@@ -393,6 +425,7 @@ export default function LocalWorkerPanel({ onClose }) {
             )}
           </div>
         )}
+        <RepairSummary job={lastRepair} />
 
         <div className="lw-download" data-testid="lw-download">
           <div className="lw-chips">
@@ -442,6 +475,11 @@ export default function LocalWorkerPanel({ onClose }) {
                 <td>{fmtBytes(s.bytes)}</td>
                 <td>{fmtShort(s.updated)}</td>
                 <td>
+                  <button className="lw-mini" onClick={() => repairSymbol(s.symbol)}
+                    disabled={!online || !!dataJob} title="Lücken reparieren: fehlende Kerzen aus Primär- und zweiter Quelle nachladen"
+                    data-testid={`lw-data-repair-${s.symbol}`} style={{ marginRight: 4 }}>
+                    <Wrench size={12} weight="bold" />
+                  </button>
                   <button className="lw-mini danger" onClick={() => deleteSymbol(s.symbol)}
                     disabled={!online || !!dataJob} title="Lokale Daten löschen"
                     data-testid={`lw-data-delete-${s.symbol}`}>

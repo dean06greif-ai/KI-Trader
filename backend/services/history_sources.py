@@ -434,6 +434,29 @@ def has_backup(symbol: str) -> bool:
     return (symbol or "").upper() in DUKA_REFS
 
 
+# Zweite Quelle für gezielte Lücken-Reparatur: Krypto-Perps gibt es bei Binance
+# UND Bitunix (gleiches Symbol), FX/Metalle/Indizes zusätzlich bei Dukascopy.
+SECONDARY_OF = {"binance": "bitunix", "bitunix": "binance"}
+
+
+def secondary_source(symbol: str) -> Optional[str]:
+    prim = source_of(symbol)
+    if prim in SECONDARY_OF:
+        return SECONDARY_OF[prim]
+    return "dukascopy" if has_backup(symbol) else None
+
+
+async def fetch_secondary(session, symbol: str, start_ms: int, end_ms: int,
+                          job: Dict = None) -> List[np.ndarray]:
+    """Rohblöcke der ZWEITEN Quelle für [start, end] (leer = keine zweite Quelle)."""
+    src = secondary_source(symbol)
+    if src == "dukascopy":
+        return await fetch_backup(session, symbol, start_ms, end_ms, job=job)
+    if src is None:
+        return []
+    return await SOURCES[src](session, (symbol or "").upper(), start_ms, end_ms, job=job)
+
+
 def decode_duka_day(raw: bytes, day_start_ms: int, point: float) -> Optional[np.ndarray]:
     """Dukascopy-Tagesdatei -> Matrix (N,6) [ts, o, h, l, c, vol] (rein, testbar)."""
     if not raw:

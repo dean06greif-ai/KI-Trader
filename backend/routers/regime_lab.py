@@ -813,6 +813,11 @@ async def build_dynamic(aid: str, body: Dict, _: bool = Depends(require_admin)):
     assignments = regime_opt._assignment_items(doc, scope, symbol)
     if not assignments:
         raise HTTPException(status_code=400, detail="Keine bestätigten Regime-Strategien")
+    # Werkbank „Verlust-Regime abschalten“: diese Regime bleiben unbelegt -> kein Handel
+    skip_ids = {int(x) for x in (body.get("skip_regimes") or [])}
+    assignments = {rid: a for rid, a in assignments.items() if rid not in skip_ids}
+    if not assignments:
+        raise HTTPException(status_code=400, detail="Alle Regime abgeschaltet – nichts zu bauen")
     sid = body.get("strategy_id")
     needs_base = any(not a.get("definition") for a in assignments.values())
     strategy = strategy_registry.get(sid or "")
@@ -865,7 +870,10 @@ async def build_dynamic(aid: str, body: Dict, _: bool = Depends(require_admin)):
                             "auto_check_enabled": False, "auto_apply_enabled": False,
                             "check_interval_minutes": 60, "check_days": 30,
                             "source": "regime_lab", "analysis_id": aid,
-                            "scope_key": lab.scope_key(scope, symbol)},
+                            "scope_key": lab.scope_key(scope, symbol),
+                            **({"skipped_regimes": sorted(skip_ids),
+                                "skipped_reason": "Walk-Forward negativ (Werkbank)"}
+                               if skip_ids else {})},
                "verdict": wf.get("verdict") or {},
                "created_at": datetime.now(timezone.utc).isoformat(),
                "last_state": {}}
