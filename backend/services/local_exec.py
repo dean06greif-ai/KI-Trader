@@ -142,6 +142,27 @@ def worker_min_version(need: tuple) -> bool:
                for w in WORKERS.values())
 
 
+def ui_data_info(d: Optional[Dict]) -> Dict:
+    """Daten-Info des Workers in die Form der Oberfläche bringen (rein).
+    Der Worker meldet {symbols: [Namen], detail: [{symbol, bytes, mtime, …}],
+    data_dir}; die Daten-Tabelle erwartet symbols als Zeilen-Objekte und `dir`.
+    Vorher blieb die Tabelle deshalb leer (Zeilen ohne Symbol)."""
+    d = dict(d or {})
+    detail = {r.get("symbol"): r for r in (d.get("detail") or []) if isinstance(r, dict)}
+    rows = []
+    for s in d.get("symbols") or []:
+        r = dict(s) if isinstance(s, dict) else dict(detail.get(s) or {"symbol": s})
+        if not r.get("updated") and r.get("mtime"):
+            r["updated"] = datetime.fromtimestamp(float(r["mtime"]), timezone.utc).isoformat()
+        rows.append(r)
+    d["symbols"] = rows
+    if not d.get("dir") and d.get("data_dir"):
+        d["dir"] = d["data_dir"]
+    if d.get("total_bytes") is None and rows:
+        d["total_bytes"] = sum(int(r.get("bytes") or 0) for r in rows)
+    return d
+
+
 FN_MIN_VERSION = {"calibrate": (1, 7), "autopilot": (1, 12), "ablation": (1, 14), "reevaluate": (1, 15)}
 DATA_REPAIR_MIN_VERSION = (1, 17)
 
@@ -262,7 +283,7 @@ def workers_public() -> List[Dict]:
             "last_seen": w.get("last_seen_iso"),
             "resources": w.get("resources") or {},
             "gpu": w.get("gpu") or {},
-            "data": w.get("data") or {},
+            "data": ui_data_info(w.get("data")),
             "sim_workers": w.get("sim_workers"),
             "running_jobs": w.get("running_jobs") or [],
             "outdated": _ver(w.get("version")) < REQUIRED_WORKER_VERSION,

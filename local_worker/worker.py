@@ -202,6 +202,7 @@ SETTINGS = {}
 _BAD_DIRS = set()     # vom Server gemeldete, lokal nicht anlegbare Ordner
 _last_ram_budget = None
 _last_auto_update = 0.0
+_META_CACHE = {}      # (symbol, mtime) -> Kerzen-Metadaten der Platten-Datei
 
 
 def apply_settings(settings):
@@ -606,7 +607,13 @@ def data_info():
     try:
         from services import candle_cache
         syms = candle_cache.list_disk_symbols()
-        return {"symbols": [s.get("symbol") for s in syms], "detail": syms[:50],
+        detail = []
+        for s in syms[:200]:
+            key = (s.get("symbol"), s.get("mtime"))
+            if key not in _META_CACHE:   # nur bei geänderter Datei neu lesen (Poll alle 2 s)
+                _META_CACHE[key] = candle_cache.disk_meta(s.get("symbol")) or {}
+            detail.append({**s, **_META_CACHE[key]})
+        return {"symbols": [s.get("symbol") for s in syms], "detail": detail,
                 "data_dir": CONFIG.get("data_dir")}
     except Exception:  # noqa: BLE001
         return {"symbols": [], "data_dir": CONFIG.get("data_dir")}

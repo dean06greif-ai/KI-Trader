@@ -58,6 +58,19 @@ def test_worker_min_version(monkeypatch):
 
 
 # ---------------- Verlust-Regime abschalten ----------------
+def test_ui_data_info_normalizes_worker_payload():
+    d = local_exec.ui_data_info({"symbols": ["HYPEUSDT", "BTCUSDT"], "data_dir": "/w",
+                                 "detail": [{"symbol": "HYPEUSDT", "bytes": 100, "mtime": 1_700_000_000,
+                                             "candles": 4298, "first_ts": 1, "last_ts": 2}]})
+    assert d["dir"] == "/w" and d["total_bytes"] == 100
+    assert d["symbols"][0]["symbol"] == "HYPEUSDT" and d["symbols"][0]["candles"] == 4298
+    assert d["symbols"][0]["updated"].startswith("2023-11-14")
+    assert d["symbols"][1] == {"symbol": "BTCUSDT"}
+    # altes Objekt-Format bleibt unverändert nutzbar
+    assert local_exec.ui_data_info({"symbols": [{"symbol": "X", "bytes": 1}]})["symbols"][0]["symbol"] == "X"
+    assert local_exec.ui_data_info(None)["symbols"] == []
+
+
 WF = {"per_regime": [
     {"regime": 0, "label": "Ab", "metrics": {"trades": 56, "pnl": -100.09}},
     {"regime": 1, "label": "Seit", "metrics": {"trades": 3, "pnl": -50.0}},      # zu wenig Trades
