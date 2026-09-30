@@ -54,3 +54,13 @@ Bestehende, produktive Daytrading-Website (extern auf Render, Repo `dean06greif-
 - 5-Regime-Variante: Richtungs-Phase Ø 5,36 T (Median 4,0) → knapp am unteren Rand, 64 % ein Seitwärts-Topf.
 - Hinweis: Walk-Forward der Strategie-Zuordnung (NNFX überall) negativ (−659, Gebühren 1450) – betrifft Zuordnung, nicht Erkennung.
 - Keine Codeänderung.
+
+## Autopilot-Schutz innere Val. (30.09.2026)
+- Bug: Rohstoff-Autopilot übernahm Jump-Modell mit innerer Val. 80,9 → 65,8 % (Score zählt Live=Final nur ~25 %).
+- Fix: `regime_autopilot.MAX_INNER_DROP_PP = 5` – Varianten mit Einbruch > 5 Pkt. werden in der Suche verworfen
+  (`guard_rejected`) und nie automatisch übernommen (`inner_regressed`, Backend + `autopilotDecision`).
+- Sweet Spot vereinheitlicht auf Benchmark 5–15 Tage (`regime_quality.SWEET_SPOT_DAYS` = `RECOMMENDED_BAND`, UI-Default 5/15,
+  einmalige Migration alter 4/14-Einstellungen via `phaseV`).
+- Banner: Score vorher → nachher, „Selbst-Übereinstimmung (innere Val.)“, Ø Richtungs-/Live-Phase, verworfene Varianten.
+- Tests: tests/test_autopilot_inner_guard_3009.py, jest regimeLabHelpers (iteration_31: 100 %).
+- Backlog: Render-Deploy nötig; Nutzer setzt Rohstoff-Kalibrierung selbst zurück und startet Autopilot neu.
