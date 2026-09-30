@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 
 JOBS: Dict[str, Dict] = {}
 POLL_S = 2.0
+# Einstellungen, die 1:1 an regime_opt.run_regime_optimizer weitergereicht werden
+PASSTHROUGH_KEYS = ("timeframe", "days", "max_capital", "leverage", "fee_percent", "sessions",
+                    "optimize", "indicators", "regime_walk_forward", "regime_train_pct",
+                    "deep_test")
 
 
 def _now_iso() -> str:
@@ -149,11 +153,46 @@ def _search_body(p: Dict, aid: str, rid: int, mode: str, strategy_id: Optional[s
             "direction_bias": p.get("direction_bias") or "off",
             "optimize_strategy_params": bool(p.get("optimize_strategy_params", True)),
             "execution": p.get("execution") or "cloud"}
+    # Optionale Einstellungen wie im klassischen Optimizer – nur setzen, wenn
+    # angegeben (regime_opt behält sonst seine bisherigen Defaults)
+    for k in PASSTHROUGH_KEYS:
+        if p.get(k) is not None:
+            body[k] = p[k]
     if strategy_id:
         body["strategy_id"] = strategy_id
         if mode in ("discovery", "combo") and p.get("start_from_current"):
             body["base_strategy_id"] = strategy_id
     return body
+
+
+async def _result_backtest(job: Dict, built_id: str, p: Dict, deps: Dict) -> Optional[Dict]:
+    """Ergebnis-Backtest der fertigen dynamischen Strategie über den vollen
+    Analyse-Zeitraum: Gesamt + je Regime + Empfehlung (services.dynamic_backtest).
+    Fehler hier brechen den Job nicht ab – die Strategie ist bereits gebaut."""
+    from services import dynamic_backtest
+    from services.bitunix_trade import DEFAULT_COIN_CFG
+    db = deps["db"]
+    doc = await db.dynamic_strategies.find_one({"id": built_id}, {"_id": 0})
+    if not doc:
+        return None
+    analysis = await db.regime_analyses.find_one({"id": p["analysis_id"]}, {"days": 1})
+    days = int(p.get("days") or (analysis or {}).get("days") or 180)
+    cfg = dict(deps.get("default_cfg") or DEFAULT_COIN_CFG)
+    for k in ("max_capital", "leverage", "fee_percent", "sessions"):
+        if p.get(k) is not None:
+            cfg[k] = p[k]
+    try:
+        _log(job, "Ergebnis-Backtest: Gesamt und je Regime ...")
+        res = await dynamic_backtest.simulate_dynamic(
+            doc, list(doc.get("symbols") or []), days, cfg, deps["settings"], deps["registry"],
+            job, lambda: bool(job.get("cancel")), timeframe=p.get("timeframe"),
+            progress=(90, 100))
+        return {**res["breakdown"], "days": days,
+                "config": {k: cfg.get(k) for k in ("max_capital", "leverage", "fee_percent")}}
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"workbench result backtest failed: {e}")
+        _log(job, f"Ergebnis-Backtest nicht möglich: {str(e)[:160]}")
+        return {"error": str(e)[:200]}
 
 
 async def run(job_id: str, p: Dict, deps: Dict):
@@ -260,8 +299,12 @@ async def run(job_id: str, p: Dict, deps: Dict):
                          "regimes": job["regimes"],
                          "walkforward": {"verdict": (wf or {}).get("verdict"),
                                          "dynamic_test": (wf or {}).get("dynamic_test"),
-                                         "best_single": (wf or {}).get("best_single")} if wf else None,
+                                         "best_single": (wf or {}).get("best_single"),
+                                         "per_regime": (wf or {}).get("per_regime"),
+                                         "switches": (wf or {}).get("switches")} if wf else None,
                          "rounds": job["round"], "source_dynamic_id": p.get("dynamic_id")}
+        if p.get("result_backtest", True) and built.get("id"):
+            job["result"]["backtest"] = await _result_backtest(job, built["id"], p, deps)
         job["status"] = "done"
         job["progress"] = 100
         _log(job, "Fertig – neue dynamische Strategie angelegt")

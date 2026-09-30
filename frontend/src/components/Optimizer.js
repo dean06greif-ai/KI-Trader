@@ -16,7 +16,9 @@ import DynamicWorkbench from './DynamicWorkbench';
 import DynamicPanel from './DynamicPanel';
 import LearningPanel from './LearningPanel';
 import StrategyCopilot from './StrategyCopilot';
-import { INDICATOR_GROUPS, INDICATOR_POOL } from '../lib/indicatorPool';
+import { INDICATOR_POOL } from '../lib/indicatorPool';
+import IndicatorPicker from './IndicatorPicker';
+import { OBJECTIVES, OPT_GROUPS, DAY_OPTIONS } from '../constants/optimizerOptions';
 import './Optimizer.css';
 import NumInput from './NumInput';
 import { OutlierVariant, RecommendationBadge } from './OptimizerOutliers';
@@ -101,36 +103,14 @@ const MODES = [
   { id: 'params', title: 'Parameter-Optimierung', desc: 'Testet viele Parameter-Kombinationen einer bestehenden Strategie und findet die besten Einstellungen (inkl. TP/SL).' },
   { id: 'discovery', title: 'Strategie-Discovery', desc: 'Baut eine neue Strategie: fügt Regel für Regel den Indikator hinzu, der die Winrate am stärksten verbessert.' },
   { id: 'combo', title: 'Discovery + Optimierung', desc: 'Erst neue Strategie entdecken, dann die Schwellenwerte per Feintuning weiter optimieren.' },
-  { id: 'dynamic', title: 'Dynamische Strategie', desc: 'Erkennt Marktregime automatisch (ohne Lookahead) und sucht pro Marktphase eine eigene Strategie – wahlweise nur eigene Trade-Parameter oder komplett eigene Regeln. Jede Phase wird per Walk-Forward geprüft; Vergleich gegen die statische Benchmark ist immer aktiv.' },
+  { id: 'dynamic', title: 'Dynamische Strategie', desc: 'Dynamik-Werkbank (Regime-Lab × Optimizer): eine Regime-Erkennung aus dem Regime-Lab wählen und je Marktphase eine Strategie zuordnen, optimieren oder komplett neu suchen – mit Walk-Forward je Regime, finalem Holdout-Test und Ergebnis je Regime inkl. Empfehlung.' },
   { id: 'explore', title: 'Endlos-Suche', desc: 'Sucht im Hintergrund so lange neue Indikator-Kombinationen (mit frischem Zufalls-Seed je Lauf), bis genug Kombis Training UND Walk-Forward mit ähnlich gutem Ergebnis bestehen. Positive Kombis werden feinjustiert, Champions in der Top-5 gesammelt. Jederzeit stoppbar – das Beste bleibt erhalten.' },
-];
-
-const OBJECTIVES = [
-  { v: 'combo', l: 'Kombi (PnL × Winrate)' },
-  { v: 'win_rate', l: 'Höchste Win-Rate' },
-  { v: 'pnl', l: 'Höchster PnL' },
 ];
 
 const ALGORITHMS = [
   { v: 'random', l: 'Random Search' },
   { v: 'bayes', l: 'Bayes (TPE) – schneller zum Optimum' },
 ];
-
-const OPT_GROUPS = [
-  { k: 'tpsl', l: 'TP/SL optimieren', d: 'TP1/Full-CRV, SL-Modus (Struktur/ATR/Fest), SL-Lookback, ATR-Puffer, TP1-%' },
-  { k: 'breakeven', l: 'Break-Even optimieren', d: 'BE-Modus (TP1/CRV/Gewinn-%) + Trigger' },
-  { k: 'trail', l: 'Trail-SL optimieren', d: 'ATR-Trailing nach TP1: An/Aus + Trail-Abstand (1.0–4.0 ATR) – findet den Sweetspot, wenn der Trail zu eng sitzt' },
-  { k: 'profit_secure', l: 'Gewinnsicherung optimieren', d: 'An/Aus, Auslöser-%, gesicherter Anteil' },
-  { k: 'leverage', l: 'Hebel optimieren', d: 'Fester Hebel 3x–50x' },
-  { k: 'auto_leverage', l: 'Auto-Leverage optimieren', d: 'An/Aus, Modus (% oder Ticks hinter Stop), Abstand, Max-Hebel' },
-  { k: 'sessions', l: 'Zeitfenster optimieren', d: '24/7 vs. typische Handelsfenster' },
-  { k: 'time_exit', l: 'Zeit-Exit optimieren', d: 'Trade nach 30 min – 12 h automatisch schließen (aus/30/60/120/240/360/720 min)' },
-  { k: 'entry_order', l: 'Entry-Ordertyp optimieren', d: 'Market (Taker-Fee) vs. Limit (Maker-Fee, verfällt nach n Kerzen)' },
-  { k: 'direction', l: 'Richtung optimieren', d: 'Beide Seiten vs. nur Long vs. nur Short' },
-];
-
-const DAY_OPTIONS = [1, 2, 3, 5, 7, 14, 30, 60, 90, 180, 360, 540, 720, 900, 1080, 1440,
-  1800, 2160, 2520, 2880, 3240, 3600, 3960, 4320, 4680, 5040, 5400];
 
 const CT_CHUNK_OPTIONS = [7, 15, 30, 50, 90];
 
@@ -349,9 +329,6 @@ export default function Optimizer({ onClose }) {
 
   const toggleCoin = (c) =>
     setSelCoins(selCoins.includes(c) ? selCoins.filter(x => x !== c) : [...selCoins, c]);
-
-  const toggleInd = (id) =>
-    setIndicators(indicators.includes(id) ? indicators.filter(x => x !== id) : [...indicators, id]);
 
   const toggleOpt = (k) =>
     setOptFlags(prev => ({ ...prev, [k]: !prev[k] }));
@@ -794,15 +771,11 @@ export default function Optimizer({ onClose }) {
           ))}
         </div>
 
-        {mode === 'dynamic' && <DynamicWorkbench />}
-        {mode === 'dynamic' && (
-          <div className="opt-section-title" data-testid="dyn-classic-title" style={{ marginTop: 4 }}>
-            KLASSISCH · eigene Regime-Erkennung im Optimizer (eine Basis-Strategie je Regime parametrisieren)
-          </div>
-        )}
+        {mode === 'dynamic' && <DynamicWorkbench lwOnline={lwOnline} onManageLocal={() => setShowLW(true)} />}
 
+        {mode !== 'dynamic' && (<>
         <div className="opt-setup">
-          {(mode === 'params' || mode === 'dynamic') && (
+          {mode === 'params' && (
             <label className="opt-field">Strategie
               <select value={selStrategy} onChange={e => setSelStrategy(e.target.value)} data-testid="opt-strategy">
                 {strategies.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1159,52 +1132,8 @@ export default function Optimizer({ onClose }) {
           )}
         </div>
 
-        {(mode === 'discovery' || mode === 'combo' || mode === 'explore' || (mode === 'dynamic' && (dynRuleVariants || dynPerRegime))) && (
-          <div className="opt-row">
-            <div className="opt-label">
-              {mode === 'dynamic'
-                ? 'INDIKATOREN FÜR DIE REGEL-VARIANTEN (Häkchen = wird pro Regime getestet)'
-                : 'INDIKATOREN FÜR DIE SUCHE (Häkchen = wird getestet · über die Erklärung hovern)'}
-            </div>
-            <div className="opt-ind-master">
-              <button className="opt-chip" data-testid="opt-ind-all-on"
-                onClick={() => setIndicators(INDICATOR_POOL.map(i => i.id))}>
-                Alle anhaken
-              </button>
-              <button className="opt-chip" data-testid="opt-ind-all-off"
-                onClick={() => setIndicators([])}>
-                Alle abwählen
-              </button>
-              <span className="opt-small" style={{ alignSelf: 'center' }}>
-                Gruppen zeigen den typischen Einsatzzweck – beim Deep-Test / der Endlos-Suche dürfen alle Gruppen gleichzeitig aktiv sein.
-              </span>
-            </div>
-            {INDICATOR_GROUPS.map(g => {
-              const ids = g.items.map(i => i.id);
-              const allOn = ids.every(id => indicators.includes(id));
-              return (
-                <div key={g.key} className="opt-ind-group" data-testid={`opt-ind-group-${g.key}`}>
-                  <div className="opt-ind-group-head">
-                    <span className="opt-ind-group-title" title={g.hint}>{g.label}</span>
-                    <button className="opt-ind-group-toggle" data-testid={`opt-ind-group-toggle-${g.key}`}
-                      onClick={() => setIndicators(allOn
-                        ? indicators.filter(x => !ids.includes(x))
-                        : [...new Set([...indicators, ...ids])])}>
-                      {allOn ? 'abwählen' : 'alle'}
-                    </button>
-                  </div>
-                  <div className="opt-chips">
-                    {g.items.map(i => (
-                      <button key={i.id} className={`opt-chip ${indicators.includes(i.id) ? 'on' : ''}`}
-                        onClick={() => toggleInd(i.id)} title={i.desc} data-testid={`opt-ind-${i.id}`}>
-                        {i.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {(mode === 'discovery' || mode === 'combo' || mode === 'explore') && (
+          <IndicatorPicker indicators={indicators} setIndicators={setIndicators} testPrefix="opt" />
         )}
 
         <div className="opt-exec-row" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '10px 0 4px' }}>
@@ -1228,7 +1157,6 @@ export default function Optimizer({ onClose }) {
             </button>
           </div>
         </div>
-        {showLW && <LocalWorkerPanel onClose={() => setShowLW(false)} />}
 
         <button className="opt-run" onClick={() => run()} disabled={running} data-testid="opt-run">
           <Play size={15} weight="fill" /> {running ? 'Optimiert...' : 'Optimierung starten'}
@@ -1239,6 +1167,8 @@ export default function Optimizer({ onClose }) {
             : 'Diesen Suchauftrag in die Warteschlange einreihen – Aufträge laufen automatisch nacheinander, alle Ergebnisse bleiben gespeichert.'}>
           <MoonStars size={13} /> Zur Warteschlange
         </button>
+        </>)}
+        {showLW && <LocalWorkerPanel onClose={() => setShowLW(false)} />}
         <button className={`opt-chip opt-history-btn ${showHistory ? 'on' : ''}`} onClick={toggleHistory}
           data-testid="opt-history-toggle"
           title="Alle bisherigen Läufe mit Robustheits-Kennzahlen (WF-Score, Konsistenz, Konstanz) vergleichen und alte Ergebnisse wieder laden">
@@ -1395,7 +1325,7 @@ export default function Optimizer({ onClose }) {
             } : null,
           })} />
 
-        {result && !running && (
+        {result && !running && mode !== 'dynamic' && (
           <div className="opt-result" data-testid="opt-result">
             {result.explore_report && (
               <div className="opt-row opt-explore-report" data-testid="explore-report">

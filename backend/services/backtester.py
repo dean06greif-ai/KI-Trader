@@ -946,6 +946,10 @@ async def run_backtest(job_id: str, strategy_ids: List[str], symbols: List[str],
     strategy_configs = strategy_configs or {}
     start_ms = _range_ms(date_from)
     end_ms = _range_ms(date_to, end_of_day=True)
+    # Dynamische Strategien laufen über einen eigenen Pfad (Regime-Umschaltung);
+    # der klassische Pfad bekommt nur statische Strategien (unverändert).
+    dynamic_ids = [s for s in strategy_ids if registry.is_dynamic(s)]
+    strategy_ids = [s for s in strategy_ids if s not in dynamic_ids]
 
     # should_stop mit Pause-Unterstützung (services/job_control.py)
     cancelled = job_control.stop_check(job)
@@ -961,7 +965,11 @@ async def run_backtest(job_id: str, strategy_ids: List[str], symbols: List[str],
             workers = parallel_sim.workers_configured()
         except Exception:
             workers = 1
-        if workers > 1:
+        if not strategy_ids:
+            per_pair, export_trades, export_candles, strat_tf = [], [], {}, {}
+            bench = {"data_seconds": 0.0, "sim_seconds": 0.0, "cpu_seconds": 0.0,
+                     "workers": 1, "pairs": 0, "sim_candles": 0, "raw_candles": 0}
+        elif workers > 1:
             per_pair, export_trades, export_candles, strat_tf, bench = \
                 await _simulate_all_parallel(job, strategy_ids, symbols, days, cfg,
                                              registry, settings, strategy_configs,
@@ -973,6 +981,32 @@ async def run_backtest(job_id: str, strategy_ids: List[str], symbols: List[str],
                                                registry, settings, strategy_configs,
                                                default_timeframe, start_ms, end_ms,
                                                cancelled)
+        dynamic_breakdown: Dict[str, Dict] = {}
+        if dynamic_ids:
+            from services import dynamic_backtest
+            from core import state as _state
+            base_p = job.get("progress") or 0
+            span = max(100 - base_p, 10) / len(dynamic_ids)
+            for i, did in enumerate(dynamic_ids):
+                await job_control.wait_if_paused(job)
+                if cancelled():
+                    raise JobCancelled()
+                doc = await _state.db.dynamic_strategies.find_one({"id": did}, {"_id": 0}) \
+                    if _state.db is not None else None
+                if not doc:
+                    continue
+                scfg = strategy_configs.get(did) or {}
+                res = await dynamic_backtest.simulate_dynamic(
+                    doc, symbols, days, _pair_trade_cfg(cfg, scfg), settings, registry,
+                    job, cancelled, timeframe=scfg.get("timeframe") or default_timeframe,
+                    start_ms=start_ms, end_ms=end_ms,
+                    progress=(round(base_p + span * i), round(base_p + span * (i + 1))))
+                per_pair.extend(res["per_pair"])
+                strat_tf[did] = res["timeframe"]
+                dynamic_breakdown[did] = res["breakdown"]
+                if len(export_trades) < MAX_EXPORT_TRADES:
+                    export_trades.extend(res["export_trades"][:MAX_EXPORT_TRADES - len(export_trades)])
+                bench["pairs"] += len(res["per_pair"])
         benchmark = _build_benchmark(bench, t_start, dl_before,
                                      _cc.download_stats(),
                                      job.get("execution") or "cloud")
@@ -1033,6 +1067,8 @@ async def run_backtest(job_id: str, strategy_ids: List[str], symbols: List[str],
             "benchmark": benchmark,
             "finished_at": datetime.now(timezone.utc).isoformat(),
         }
+        if dynamic_breakdown:
+            result["dynamic_breakdown"] = dynamic_breakdown
         # Nicht auswertbare Regeln (z.B. KI-Strategie mit unbekanntem Indikator)
         # sichtbar machen – sonst bleibt "überall 0" unerklärt.
         warnings = []

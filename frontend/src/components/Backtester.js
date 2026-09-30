@@ -10,6 +10,8 @@ import SafeOverlay from './SafeOverlay';
 import LocalWorkerPanel from './LocalWorkerPanel';
 import BenchmarkBar from './BenchmarkBar';
 import EquityChart from './EquityChart';
+import DynamicRegimeBreakdown from './DynamicRegimeBreakdown';
+import { DynBadge } from './DynamicTradeTag';
 import StrategyCopilot from './StrategyCopilot';
 import PortfolioBacktestCard from './PortfolioBacktestCard';
 import AITraderSeeding from './AITraderSeeding';
@@ -137,8 +139,9 @@ export default function Backtester({ onClose }) {
   useEffect(() => {
     fetch(`${API_URL}/api/strategies`).then(r => r.json()).then(d => {
       // KI Trader hat im Backtester seinen eigenen Reiter (Setup-Backtest) –
-      // als Regel-Strategie ist er hier nicht simulierbar.
-      const list = (d.strategies || []).filter(s => s.id !== 'ai_trader' && !s.is_dynamic);
+      // als Regel-Strategie ist er hier nicht simulierbar. Dynamische
+      // Strategien laufen über den Regime-Pfad (services.dynamic_backtest).
+      const list = (d.strategies || []).filter(s => s.id !== 'ai_trader');
       setStrategies(list);
       setSelStrats(prev => {
         const valid = prev.filter(id => list.some(s => s.id === id));
@@ -756,8 +759,9 @@ export default function Backtester({ onClose }) {
                   <button
                     className={`bt-chip ${selStrats.includes(s.id) ? 'on' : ''}`}
                     onClick={() => toggle(selStrats, setSelStrats, s.id)}
-                    data-testid={`bt-strat-${s.id}`}>
-                    {s.name}
+                    data-testid={`bt-strat-${s.id}`}
+                    title={s.is_dynamic ? 'Dynamische Strategie: Regime je Kerze rückblickend bestimmt, je Regime die zugeordnete Strategie · Ergebnis mit Aufschlüsselung je Regime (nur Cloud)' : undefined}>
+                    {s.is_dynamic && <DynBadge />}{s.is_dynamic ? ' ' : ''}{s.name}
                     {(stratCfgs[s.id]?.timeframe) && <span className="btc-tf-tag">{stratCfgs[s.id].timeframe}</span>}
                   </button>
                   {selStrats.includes(s.id) && (
@@ -1008,6 +1012,15 @@ export default function Backtester({ onClose }) {
             )}
 
             {resultId && <EquityChart jobId={resultId} />}
+
+            {result.dynamic_breakdown && Object.values(result.dynamic_breakdown).map(bd => (
+              <div key={bd.dynamic_id} className="btc-panel" data-testid={`bt-dyn-breakdown-${bd.dynamic_id}`}>
+                <div className="bt-section-title" style={{ marginTop: 0 }}>
+                  <DynBadge /> {bd.name} · AUFSCHLÜSSELUNG JE REGIME ({bd.timeframe} · {bd.switches} Regimewechsel)
+                </div>
+                <DynamicRegimeBreakdown breakdown={bd} testPrefix={`bt-dyn-${bd.dynamic_id}`} />
+              </div>
+            ))}
 
             <div className="bt-section-title">MATRIX: WELCHE STRATEGIE PASST ZU WELCHEM COIN?</div>
             <div className="bt-table-wrap">

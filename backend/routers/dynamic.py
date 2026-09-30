@@ -432,7 +432,12 @@ async def workbench_start(body: Dict, _: bool = Depends(require_admin)):
         raise HTTPException(status_code=409, detail="Es läuft bereits ein Werkbank-/Regime-Lab-Job")
     p = {k: body.get(k) for k in ("endless", "rounds", "iterations", "objective", "min_trades",
                                   "execution", "name", "walkforward", "direction_bias",
-                                  "optimize_strategy_params", "max_rules", "base_strategy_id")}
+                                  "optimize_strategy_params", "max_rules", "base_strategy_id",
+                                  # Einstellungen wie im klassischen Optimizer (durchgereicht
+                                  # an regime_opt.run_regime_optimizer)
+                                  "timeframe", "days", "max_capital", "leverage", "fee_percent",
+                                  "sessions", "optimize", "indicators", "regime_walk_forward",
+                                  "regime_train_pct", "deep_test", "result_backtest")}
     mode = body.get("mode") or ("discovery" if kind == "discover" else "params")
     if mode not in ("params", "discovery", "combo"):
         raise HTTPException(status_code=400, detail="mode muss params|discovery|combo sein")

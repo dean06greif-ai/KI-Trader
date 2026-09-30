@@ -64,3 +64,25 @@ Bestehende, produktive Daytrading-Website (extern auf Render, Repo `dean06greif-
 - Banner: Score vorher → nachher, „Selbst-Übereinstimmung (innere Val.)“, Ø Richtungs-/Live-Phase, verworfene Varianten.
 - Tests: tests/test_autopilot_inner_guard_3009.py, jest regimeLabHelpers (iteration_31: 100 %).
 - Backlog: Render-Deploy nötig; Nutzer setzt Rohstoff-Kalibrierung selbst zurück und startet Autopilot neu.
+
+## Dynamik-Werkbank v2 + Dynamische Strategien im Backtester (30.09.2026, Branch conflict_300926_0800)
+Anforderung: Werkbank optisch/strukturell an den Optimizer angleichen, klassischen Dynamik-Pfad aus der UI nehmen,
+fehlende Einstellungen (Timeframe, Zeitraum, Zeitfenster, Kapital, Hebel, Gebühren, Ziel, Gruppen, Indikatoren,
+Walk-Forward je Regime, Richtungs-Bias) ergänzen, Ergebnis unten wie bei den anderen Modi inkl. Aufteilung je Regime
++ Empfehlung (nicht handeln / andere Strategie), Equity je Regime auf Klick, Suchbalken nur im startenden Reiter,
+Auswahl bleibt beim Reiter-Wechsel erhalten; dynamische Strategien im Backtester mit Aufschlüsselung je Regime.
+- Backend neu: `services/dynamic_backtest.py` (simulate_dynamic: Regime rückblickend je Kerze, Sub-Strategie/Config
+  je Regime über strategy_plan, Gesamt + je Regime + Alternativen-Check + `recommend()` + Equity-Punkte mit Regime).
+- `services/backtester.run_backtest`: dynamische IDs laufen über dynamic_backtest, Ergebnis `dynamic_breakdown[did]`;
+  statischer Pfad unverändert. `routers/backtest.run`: dynamische IDs erlaubt (nur Cloud).
+- `services/dynamic_workbench`: `PASSTHROUGH_KEYS` (timeframe, days, max_capital, leverage, fee_percent, sessions,
+  optimize, indicators, regime_walk_forward, regime_train_pct, deep_test) an regime_opt; Ergebnis enthält
+  `walkforward.per_regime/switches` und `backtest` (Ergebnis-Backtest der gebauten Strategie, abschaltbar).
+- `services/regime_opt`: `limit_segments_to_days` (Zeitraum-Parameter), `sessions` in cfg.
+- Frontend: `DynamicWorkbench.js` (Reiter-State je Reiter, localStorage `dwb_ui_state_v2`), `DynamicWorkbenchFields.js`,
+  `DynamicWorkbenchResult.js`, `DynamicRegimeBreakdown.js` (auch im Backtester), `IndicatorPicker.js` (Optimizer + Werkbank),
+  `constants/optimizerOptions.js` (OBJECTIVES/OPT_GROUPS/DAY_OPTIONS geteilt). Optimizer: Dynamik-Modus zeigt nur noch
+  die Werkbank (klassischer Block/Result ausgeblendet, Backend-Pfad bleibt kompatibel).
+- Tests: `backend/tests/test_dynamic_backtest_workbench.py` (13 unit).
+- Offen/Backlog: lokaler Worker kennt den Dynamik-Backtest nicht (Cloud-only); Workbench-Result nach Server-Neustart
+  nur im RAM (JOBS).

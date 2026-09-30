@@ -41,13 +41,18 @@ async def start_backtest(body: Dict, _: bool = Depends(require_admin)):
             date_from = None
     if not strategy_ids or not symbols:
         raise HTTPException(status_code=400, detail="strategy_ids und symbols erforderlich")
-    # Dynamische Strategien werden im Regime-Lab/Optimizer (Walk-Forward je
-    # Regime-Abschnitt) getestet – der Kerzen-Backtester kennt kein Live-Regime.
-    valid_ids = {m["id"] for m in strategy_registry.list_all() if not m.get("is_dynamic")}
+    # Dynamische Strategien (Regime-Umschaltung) laufen über services.dynamic_backtest
+    # – nur in der Cloud, der lokale Worker kennt den Dynamik-Pfad nicht.
+    valid_ids = {m["id"] for m in strategy_registry.list_all()}
     strategy_ids = [s for s in strategy_ids if s in valid_ids]
     symbols = [s for s in symbols if s in BACKTEST_SYMBOLS]
     if not strategy_ids or not symbols:
         raise HTTPException(status_code=400, detail="Keine gültigen Strategien/Coins")
+    dynamic_ids = [s for s in strategy_ids if strategy_registry.is_dynamic(s)]
+    if dynamic_ids and (body.get("execution") or "cloud").lower() == "local":
+        raise HTTPException(status_code=400,
+                            detail="Dynamische Strategien werden nur in der Cloud-Ausführung "
+                                   "gebacktestet – Ausführung auf Cloud stellen")
     running = [j for j in bt.JOBS.values() if j["status"] == "running"]
     if running:
         raise HTTPException(status_code=409, detail="Es läuft bereits ein Backtest")

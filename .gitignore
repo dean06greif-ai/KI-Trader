@@ -111,3 +111,4 @@ frontend/.env
 .ruff_cache/
 /yarn.lock
 frontend/yarn.lock
+frontend/node_modules/.cache/default-development/8.pack

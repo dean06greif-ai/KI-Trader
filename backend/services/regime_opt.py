@@ -112,6 +112,36 @@ async def _build_regime_segments(doc: Dict, scope: str, symbol: str,
     return segments
 
 
+def limit_segments_to_days(segments: Dict[str, List[Dict]], days: float) -> Dict[str, List[Dict]]:
+    """Nur Regime-Abschnitte der letzten `days` Tage behalten (rein). Der
+    Zeitraum bezieht sich auf das Ende der Analyse-Daten; Abschnitte, die vor
+    dem Fenster beginnen, werden am Fensteranfang abgeschnitten."""
+    if not days or days <= 0:
+        return segments
+    out: Dict[str, List[Dict]] = {}
+    for sym, segs in segments.items():
+        if not segs:
+            continue
+        end = max(int(s["candles"][-1]["timestamp"]) for s in segs if s.get("candles"))
+        cutoff = end - int(days * 86400000)
+        kept = []
+        for s in segs:
+            cds = s.get("candles") or []
+            if not cds or int(cds[-1]["timestamp"]) < cutoff:
+                continue
+            if int(s["start_ts"]) < cutoff:
+                first = next((i for i, c in enumerate(cds) if int(c["timestamp"]) >= cutoff), None)
+                if first is None or len(cds) - first < 20:
+                    continue
+                s = {**s, "start_ts": int(cds[first]["timestamp"]),
+                     "candles": cds[max(first - dyn.WARMUP_BARS, 0):],
+                     "n_bars": len(cds) - first}
+            kept.append(s)
+        if kept:
+            out[sym] = kept
+    return out
+
+
 def allowed_sides_for(bias: str, regime_id: int, mode) -> List[str]:
     """Richtungs-Bias (Etappe 3) -> erlaubte Trade-Seiten.
     'auto' leitet aus der Regime-Richtung ab: Aufwärts -> nur Longs,
@@ -162,7 +192,7 @@ async def run_regime_optimizer(job_id: str, body: Dict, registry, settings: Dict
         regime_wf = body.get("regime_walk_forward", True)
         regime_train_pct = float(min(max(float(body.get("regime_train_pct") or 75), 40), 95))
         cfg = dict(default_cfg)
-        for k in ("max_capital", "leverage", "fee_percent"):
+        for k in ("max_capital", "leverage", "fee_percent", "sessions"):
             if body.get(k) is not None:
                 cfg[k] = body[k]
         # --- Richtungs-Bias (Etappe 3): Aufwärts-Regime -> nur Longs,
@@ -182,6 +212,8 @@ async def run_regime_optimizer(job_id: str, body: Dict, registry, settings: Dict
 
         segments = await _build_regime_segments(doc, scope, symbol, regime_id,
                                                 timeframe, job)
+        if body.get("days"):
+            segments = limit_segments_to_days(segments, float(body["days"]))
         if not segments:
             raise RuntimeError("Keine Kerzen-Abschnitte für dieses Regime im "
                                "Trainingsbereich gefunden")
