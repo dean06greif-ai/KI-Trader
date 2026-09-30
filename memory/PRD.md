@@ -101,3 +101,13 @@ Bericht: `REGIME_DYNAMIK_PRUEFBERICHT_3009.md`. Produktiv-DB nur lesend geprüft
 - Tests: `backend/tests/test_regime_dynamic_consistency_3009.py` (18), iteration_33 (53/53 Unit, 5/5 E2E, Frontend ok).
 - Backlog: P1 bestehende gemischte Dynamik-Dokumente optional migrieren; P1 Werkbank: Regime mit negativem Walk-Forward
   automatisch „nicht handeln“ vorschlagen; P2 Render-RAM beobachten (142 d Historie je Dynamik-Symbol, geteilt mit KI-Trader).
+
+## Folge-Features (30.09.2026)
+- F1 Datenlücken reparieren: Worker-Panel Button je Coin (`lw-data-repair-<SYM>`) → `POST /api/localworker/data/repair`
+  (Primär- + zweite Quelle, Worker ≥ 1.17). UI-Fix: `local_exec.ui_data_info` formt Worker-Daten für die Tabelle
+  (symbols als Zeilen, `dir`, `total_bytes`); Worker liefert Kerzen/Zeitraum via `candle_cache.disk_meta`.
+- F2 Live-Ergebnis je Regime: `dynamic_performance.py`, `DynamicRegimePerformance.js` (Live vs. Walk-Forward).
+- F3 Verlust-Regime abschalten: Werkbank/Build `skip_regimes` bei negativem Walk-Forward (`regime_opt.py`, `dynamic_workbench.py`).
+- Tests: `test_regime_followups_3009.py`; iteration_34 (Backend 33/33), iteration_35 (Frontend 3/3).
+- Testagent-Dateien dieser Sitzung (test_iter33_regime_lab_e2e, test_iter34_followups, pytest/iter33/34.xml) entfernt.
+- Backlog: P2 React-Warnung `<span>` in `<option>` bereinigen; P2 Code-Splitting.
