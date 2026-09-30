@@ -1412,10 +1412,11 @@ async def persist_worker_result(db, job_id: str, job: Dict):
                 res["followup"] = {"series_item_id": followup["id"],
                                    "kind": "regime_analysis", "name": followup.get("label")}
     elif kind == "walkforward":
-        key = scope_key(res.get("scope") or "combined", res.get("symbol"))
+        subset = res.get("subset_symbols")
+        key = area_key(res.get("scope") or "combined", res.get("symbol"), subset)
         await db.regime_analyses.update_one(
             {"id": res.get("analysis_id")},
-            {"$set": {f"walkforward.{key}":
+            {"$set": {f"{area_fields(subset)[1]}.{key}":
                       {k: v for k, v in res.items() if k != "points"}}})
 
 
@@ -1428,6 +1429,39 @@ def model_for(doc: Dict, scope: str, symbol: str = None) -> Optional[Dict]:
 
 def scope_key(scope: str, symbol: str = None) -> str:
     return f"per_coin:{symbol}" if scope == "per_coin" else "combined"
+
+
+# Asset-Teilmenge der gemeinsamen Erkennung (Dynamik-Werkbank, z.B. nur BTC+ETH):
+# eigene Ablage (subset_assignments / subset_walkforward), damit Ergebnisse und
+# Scores der Gesamt-Menge nicht überschrieben oder vermischt werden.
+SUBSET_ASSIGNMENTS = "subset_assignments"
+SUBSET_WALKFORWARD = "subset_walkforward"
+
+
+def norm_subset(all_symbols: List[str], symbols) -> Optional[List[str]]:
+    """Echte Teilmenge der Analyse-Assets (sortiert) oder None (= alle Assets)."""
+    allowed = set(all_symbols or [])
+    sel = sorted({s for s in (symbols or []) if s in allowed})
+    return sel if sel and len(sel) < len(allowed) else None
+
+
+def area_key(scope: str, symbol: str = None, subset: Optional[List[str]] = None) -> str:
+    if subset and scope != "per_coin":
+        return "combined@" + "+".join(sorted(subset))
+    return scope_key(scope, symbol)
+
+
+def area_fields(subset: Optional[List[str]]) -> tuple:
+    """(Feld der Zuordnungen, Feld der Walk-Forward-Ergebnisse) im Analyse-Dokument."""
+    return (SUBSET_ASSIGNMENTS, SUBSET_WALKFORWARD) if subset else ("assignments", "walkforward")
+
+
+def dataset_for(dataset: Optional[Dict], syms: List[str]) -> Optional[Dict]:
+    """Manifest auf die geladenen Assets beschränken – sonst zählen nicht gewählte
+    Assets als „Daten fehlen“ und die 75-%-Regel bricht den Lauf ab."""
+    if not dataset or not isinstance(dataset.get("per_symbol"), dict):
+        return dataset
+    return {**dataset, "per_symbol": {s: w for s, w in dataset["per_symbol"].items() if s in syms}}
 
 
 def regime_ranges(doc: Dict, scope: str, symbol: str, sym: str,

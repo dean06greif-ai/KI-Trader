@@ -412,13 +412,14 @@ def _wb_deps() -> Dict:
             "slim": rl._slim_doc, "build": build}
 
 
-def _scored_current(analysis: Dict, scope: str, symbol, objective: str, min_trades: int) -> Dict:
+def _scored_current(analysis: Dict, scope: str, symbol, objective: str, min_trades: int,
+                    subset=None) -> Dict:
     """Bestehende Zuordnungen mit vergleichbarem Score (gleiches Ziel) versehen,
     damit die Suche nur ECHTE Verbesserungen übernimmt."""
     from services import dynamic_strategy as dyn
     from services import dynamic_workbench as wb
     out = {}
-    for rid, a in wb.current_candidates(analysis, scope, symbol).items():
+    for rid, a in wb.current_candidates(analysis, scope, symbol, subset).items():
         a = dict(a)
         if a.get("score") is None and a.get("metrics"):
             a["score"] = round(dyn._guarded_score(a["metrics"], objective, min_trades), 3)
@@ -427,6 +428,10 @@ def _scored_current(analysis: Dict, scope: str, symbol, objective: str, min_trad
                                                            max(int(min_trades * 0.4), 3))
         out[str(rid)] = a
     return out
+
+
+# Lokaler Worker: Asset-Teilmenge (symbols/reuse_key im regime_opt-Body) ab dieser Version
+WB_SUBSET_WORKER = (1, 18, 0)
 
 
 @router.post("/api/dynamic-workbench/start")
@@ -486,11 +491,28 @@ async def workbench_start(body: Dict, _: bool = Depends(require_admin)):
     analysis = await state.db.regime_analyses.find_one({"id": p["analysis_id"]})
     if not analysis:
         raise HTTPException(status_code=404, detail="Regime-Analyse nicht gefunden")
+    # Asset-Auswahl (nur gemeinsame Erkennung): None = alle Assets der Analyse
+    p["symbols"] = None
+    if p["scope"] != "per_coin":
+        raw = body.get("symbols")
+        if raw is None and kind == "refine":
+            raw = wb.subset_of(doc)
+        if raw is not None:
+            if not [s for s in raw if s in (analysis.get("symbols") or [])]:
+                raise HTTPException(status_code=400, detail="Mindestens 1 Asset der Analyse auswählen")
+            p["symbols"] = lab.norm_subset(analysis.get("symbols"), raw)
     if (p.get("execution") or "cloud") == "local":
         from routers.regime_lab import _check_local_available
         _check_local_available()
+        from services import local_exec
+        if p["symbols"] and not local_exec.worker_supports_version(WB_SUBSET_WORKER):
+            raise HTTPException(status_code=409,
+                                detail="Der lokale Worker ist veraltet und kennt die Asset-Auswahl der "
+                                       f"Dynamik-Werkbank noch nicht (Version {'.'.join(map(str, WB_SUBSET_WORKER))} "
+                                       "nötig). Bitte das Worker-Paket neu herunterladen – oder Cloud wählen.")
     p["current"] = _scored_current(analysis, p["scope"], p.get("symbol"),
-                                   p.get("objective") or "combo", int(p.get("min_trades") or 10))
+                                   p.get("objective") or "combo", int(p.get("min_trades") or 10),
+                                   p["symbols"])
     if kind == "create":
         p["current"] = {}
     jid = wb.create_job(kind, p)

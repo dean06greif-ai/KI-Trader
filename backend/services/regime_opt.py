@@ -10,8 +10,9 @@
   rein rückblickend, identisch zum Live-/Paper-Verhalten (kein Lookahead).
 """
 import logging
+import time
 from datetime import datetime, timezone
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from services import dynamic_strategy as dyn
 from services import job_control
@@ -87,23 +88,72 @@ def _guarded(m: Dict, objective: str, min_trades: int) -> float:
     return _guarded_score(m, objective, min_trades)
 
 
-async def _build_regime_segments(doc: Dict, scope: str, symbol: str,
-                                 regime_id: int, timeframe: str, job: Dict,
-                                 only_train: bool = True,
-                                 basis: str = "final") -> Dict[str, List[Dict]]:
-    """Kerzen laden und die gespeicherten Regime-Zeitbereiche auf Segmente
-    abbilden. Bei abweichendem Timeframe werden die Zeitbereiche der Analyse
-    auf die neuen Kerzen übertragen (Regime bleiben identisch definiert)."""
-    syms = [symbol] if scope == "per_coin" else list(doc.get("symbols") or [])
+# Werkbank-Wiederverwendung: EIN Slot mit den geprüften Kerzen des letzten
+# Laufs (gleicher reuse_key + gleiche Assets/Timeframe/Fenster). Die Werkbank
+# ruft je Regime × Runde einen regime_opt-Job – ohne Slot wurden dabei jedes Mal
+# alle Kerzen neu aggregiert und per Manifest-Checksum geprüft.
+HISTORY_REUSE_TTL_S = 30 * 60
+_HISTORY_SLOT: Dict = {}
+
+
+def _slot_get(key) -> Optional[Dict]:
+    if key and _HISTORY_SLOT.get("key") == key \
+            and time.time() - _HISTORY_SLOT.get("ts", 0) < HISTORY_REUSE_TTL_S:
+        _HISTORY_SLOT["ts"] = time.time()
+        return _HISTORY_SLOT
+    return None
+
+
+def clear_history_slot(reuse_key: Optional[str] = None):
+    """Slot freigeben (Werkbank-Ende); mit reuse_key nur, wenn er dazu gehört."""
+    if reuse_key is None or (_HISTORY_SLOT.get("key") or (None,))[0] == reuse_key:
+        _HISTORY_SLOT.clear()
+
+
+async def _load_area_histories(doc: Dict, syms: List[str], timeframe: str, job: Dict,
+                               reuse_key: Optional[str] = None) -> Dict[str, List[Dict]]:
     bounds = doc.get("bounds") or {}
     end_ts = {s: (bounds.get(s) or {}).get("end_ts") for s in syms}
     start_anchor = {s: (bounds.get(s) or {}).get("start_ts") for s in syms}
+    slot_key = (reuse_key, doc.get("id"), tuple(syms), timeframe, int(doc["days"]),
+                tuple(sorted((s, end_ts[s], start_anchor[s]) for s in syms))) if reuse_key else None
+    hit = _slot_get(slot_key)
+    if hit is not None:
+        if hit.get("excluded"):
+            job["dataset_excluded"] = list(hit["excluded"])
+        job["phase"] = "Kerzen aus diesem Werkbank-Lauf wiederverwendet"
+        return hit["histories"]
     # R06: gleicher Timeframe wie die Analyse -> Manifest-Prüfung möglich;
     # abweichender Timeframe lädt dieselben Anker, andere Aggregation.
-    dataset = doc.get("dataset") if timeframe == doc.get("timeframe") else None
+    dataset = lab.dataset_for(doc.get("dataset"), syms) if timeframe == doc.get("timeframe") else None
     histories = await lab.fetch_histories(syms, int(doc["days"]), timeframe,
                                           job, end_ts=end_ts,
                                           start_ts=start_anchor, dataset=dataset)
+    if slot_key:
+        _HISTORY_SLOT.clear()
+        _HISTORY_SLOT.update({"key": slot_key, "ts": time.time(), "histories": histories,
+                              "excluded": list(job.get("dataset_excluded") or [])})
+    return histories
+
+
+def area_symbols(doc: Dict, scope: str, symbol: str, subset: Optional[List[str]] = None) -> List[str]:
+    if scope == "per_coin":
+        return [symbol]
+    return list(subset) if subset else list(doc.get("symbols") or [])
+
+
+async def _build_regime_segments(doc: Dict, scope: str, symbol: str,
+                                 regime_id: int, timeframe: str, job: Dict,
+                                 only_train: bool = True,
+                                 basis: str = "final", subset: Optional[List[str]] = None,
+                                 reuse_key: Optional[str] = None) -> Dict[str, List[Dict]]:
+    """Kerzen laden und die gespeicherten Regime-Zeitbereiche auf Segmente
+    abbilden. Bei abweichendem Timeframe werden die Zeitbereiche der Analyse
+    auf die neuen Kerzen übertragen (Regime bleiben identisch definiert).
+    `subset`: nur diese Assets der gemeinsamen Erkennung (Regime-Zeitbereiche
+    bleiben die der Analyse)."""
+    syms = area_symbols(doc, scope, symbol, subset)
+    histories = await _load_area_histories(doc, syms, timeframe, job, reuse_key)
     segments: Dict[str, List[Dict]] = {}
     for sym, candles in histories.items():
         ranges = lab.regime_ranges(doc, scope, symbol, sym, regime_id, only_train, basis)
@@ -230,8 +280,10 @@ async def run_regime_optimizer(job_id: str, body: Dict, registry, settings: Dict
                                         or {"tpsl": True, "leverage": True})
 
         seg_basis, label_basis = label_basis_of(body, doc, scope, symbol)
+        subset = lab.norm_subset(doc.get("symbols"), body.get("symbols")) if scope != "per_coin" else None
         segments = await _build_regime_segments(doc, scope, symbol, regime_id,
-                                                timeframe, job, basis=seg_basis)
+                                                timeframe, job, basis=seg_basis,
+                                                subset=subset, reuse_key=body.get("reuse_key"))
         if body.get("days"):
             segments = limit_segments_to_days(segments, float(body["days"]))
         if not segments:
@@ -408,7 +460,7 @@ async def run_regime_optimizer(job_id: str, body: Dict, registry, settings: Dict
             "direction_bias": {"mode": bias, "regime_direction": int(reg_dir),
                                "allowed_sides": allowed_sides},
             "timeframe": timeframe, "timeframe_analysis": doc.get("timeframe"),
-            "symbols": list(segments.keys()),
+            "symbols": list(segments.keys()), "subset_symbols": subset,
             "strategy_id": body.get("strategy_id") if mode == "params" else None,
             "strategy_name": (getattr(strategy, "STRATEGY_NAME", None)
                               if mode == "params" else None),
@@ -448,13 +500,14 @@ async def run_regime_optimizer(job_id: str, body: Dict, registry, settings: Dict
 
 
 # ---------------- Finaler Walk-Forward der zusammengestellten Strategie ----------------
-def _assignment_items(doc: Dict, scope: str, symbol: str) -> Dict[int, Dict]:
+def _assignment_items(doc: Dict, scope: str, symbol: str,
+                      subset: Optional[List[str]] = None) -> Dict[int, Dict]:
     """Bestätigte Zuordnungen eines Bereichs – verworfene Regime (kept=false)
-    werden übersprungen."""
-    key = lab.scope_key(scope, symbol)
+    werden übersprungen. `subset`: Zuordnungen der Asset-Teilmenge."""
+    key = lab.area_key(scope, symbol, subset)
     kept = doc.get("kept") or {}
     out = {}
-    for k, a in (doc.get("assignments") or {}).items():
+    for k, a in (doc.get(lab.area_fields(subset)[0]) or {}).items():
         if not k.startswith(key + ":"):
             continue
         rid = int(k.rsplit(":", 1)[1])
@@ -480,7 +533,8 @@ async def run_walkforward(job_id: str, body: Dict, registry, settings: Dict,
         model = lab.model_for(doc, scope, symbol)
         if not model:
             raise RuntimeError("Kein Regime-Modell für diesen Bereich gespeichert")
-        assignments = _assignment_items(doc, scope, symbol)
+        subset = lab.norm_subset(doc.get("symbols"), body.get("symbols")) if scope != "per_coin" else None
+        assignments = _assignment_items(doc, scope, symbol, subset)
         if not assignments:
             raise RuntimeError("Keine bestätigten Regime-Strategien vorhanden")
         base_strategy = registry.get(body.get("strategy_id") or "")
@@ -491,7 +545,7 @@ async def run_walkforward(job_id: str, body: Dict, registry, settings: Dict,
             raise RuntimeError("Basis-Strategie erforderlich (mindestens ein Regime "
                                "hat keine eigene Regel-Definition)")
 
-        syms = [symbol] if scope == "per_coin" else list(doc.get("symbols") or [])
+        syms = area_symbols(doc, scope, symbol, subset)
         tf = doc.get("timeframe")
         s_cfg = doc.get("settings") or {}
         conf_min = float(s_cfg.get("confidence_min") or 70) / 100.0
@@ -501,7 +555,7 @@ async def run_walkforward(job_id: str, body: Dict, registry, settings: Dict,
                         for s in syms}
         histories = await lab.fetch_histories(syms, int(doc["days"]), tf, job,
                                               end_ts=end_ts, start_ts=start_anchor,
-                                              dataset=doc.get("dataset"),
+                                              dataset=lab.dataset_for(doc.get("dataset"), syms),
                                               progress_span=(0, 20))
         if not histories:
             raise RuntimeError("Zu wenig Daten")
@@ -623,6 +677,7 @@ async def run_walkforward(job_id: str, body: Dict, registry, settings: Dict,
                   # Live-Labels (classify_series) klassifiziert.
                   "label_basis": "causal_live",
                   "symbol": symbol, "symbols": list(histories.keys()),
+                  "subset_symbols": subset,
                   "timeframe": tf, "train_pct": s_cfg.get("train_pct"),
                   "dynamic_test": dyn_m, "switches": switches,
                   "untraded_bars": untraded_bars,
@@ -631,18 +686,18 @@ async def run_walkforward(job_id: str, body: Dict, registry, settings: Dict,
                   # AP07/R10: jede Wiederverwendung dieses sichtbaren Holdouts
                   # wird gezählt und am Ergebnis ausgewiesen.
                   "attempt_no": await research_validation.register_attempt(
-                      db, f"walkforward:{doc['id']}:{lab.scope_key(scope, symbol)}",
+                      db, f"walkforward:{doc['id']}:{lab.area_key(scope, symbol, subset)}",
                       "walkforward"),
                   "points": points[:8000],
                   # Symbole, deren Kerzen nicht mehr exakt zum Manifest passten
                   # (erklärt ausgeschlossen statt Abbruch des ganzen Laufs)
                   "dataset_excluded": list(job.get("dataset_excluded") or []),
                   "created_at": datetime.now(timezone.utc).isoformat()}
-        key = lab.scope_key(scope, symbol)
+        key = lab.area_key(scope, symbol, subset)
         if db is not None:
             await db.regime_analyses.update_one(
                 {"id": doc["id"]},
-                {"$set": {f"walkforward.{key}":
+                {"$set": {f"{lab.area_fields(subset)[1]}.{key}":
                           {k: v for k, v in result.items() if k != "points"}}})
         job["result"] = result
         job["status"] = "done"

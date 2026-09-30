@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from core import state
 from core.auth import require_admin
 from core.state import scanner
-from core.utils import _clean, _job_public, _watch_job_task
+from core.utils import _clean, _job_public
 from services import job_control, ram_queue
 from services import regime_lab as lab
 from services.ai_engine import ai_engine
@@ -814,7 +814,8 @@ async def build_dynamic(aid: str, body: Dict, _: bool = Depends(require_admin)):
     model = lab.model_for(doc, scope, symbol)
     if not model:
         raise HTTPException(status_code=400, detail="Kein Regime-Modell für diesen Bereich")
-    assignments = regime_opt._assignment_items(doc, scope, symbol)
+    subset = lab.norm_subset(doc.get("symbols"), body.get("symbols")) if scope != "per_coin" else None
+    assignments = regime_opt._assignment_items(doc, scope, symbol, subset)
     if not assignments:
         raise HTTPException(status_code=400, detail="Keine bestätigten Regime-Strategien")
     # Werkbank „Verlust-Regime abschalten“: diese Regime bleiben unbelegt -> kein Handel
@@ -846,7 +847,7 @@ async def build_dynamic(aid: str, body: Dict, _: bool = Depends(require_admin)):
         strategy_registry.upsert_custom(definition)
         sid = new_sid
     did = f"dyn_{uuid.uuid4().hex[:8]}"
-    wf = (doc.get("walkforward") or {}).get(lab.scope_key(scope, symbol)) or {}
+    wf = (doc.get(lab.area_fields(subset)[1]) or {}).get(lab.area_key(scope, symbol, subset)) or {}
     # Regime, die eine eigene Registry-Strategie (z.B. NNFX) nutzen, werden live
     # per Strategie-Umschaltung bedient; Regime-spezifische Strategie-Parameter
     # kommen aus den Zuordnungen.
@@ -856,7 +857,7 @@ async def build_dynamic(aid: str, body: Dict, _: bool = Depends(require_admin)):
     dyn_doc = {"id": did,
                "name": body.get("name") or f"Regime-Lab: {doc.get('name')}",
                "strategy_id": sid,
-               "symbols": [symbol] if scope == "per_coin" else doc.get("symbols") or [],
+               "symbols": regime_opt.area_symbols(doc, scope, symbol, subset),
                "timeframe": doc.get("timeframe"),
                "model": model,
                "configs": {str(a["regime_id"]): a.get("trade_params") or {}
@@ -875,6 +876,7 @@ async def build_dynamic(aid: str, body: Dict, _: bool = Depends(require_admin)):
                             "check_interval_minutes": 60, "check_days": 30,
                             "source": "regime_lab", "analysis_id": aid,
                             "scope_key": lab.scope_key(scope, symbol),
+                            **({"subset_symbols": subset} if subset else {}),
                             **({"skipped_regimes": sorted(skip_ids),
                                 "skipped_reason": "Walk-Forward negativ (Werkbank)"}
                                if skip_ids else {})},

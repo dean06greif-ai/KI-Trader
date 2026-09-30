@@ -35,6 +35,13 @@ PASSTHROUGH_KEYS = ("timeframe", "days", "max_capital", "leverage", "fee_percent
                     "deep_test", "label_basis")
 # Verlust-Regime: erst ab so vielen Walk-Forward-Trades gilt ein negativer PnL als belegt
 MIN_TRADES_SKIP = 5
+# Mehrrunden-/Endlos-Suche: Regime ohne Verbesserung in PLATEAU_ROUNDS Runden in
+# Folge pausieren und nur jede RETRY_EVERY-te Runde erneut versuchen.
+PLATEAU_ROUNDS = 2
+RETRY_EVERY = 4
+# So oft darf die Suche eines Regimes scheitern, bevor es für den Lauf ausfällt
+MAX_REGIME_FAILURES = 2
+_NO_DATA_HINTS = ("Keine Kerzen-Abschnitte", "zu wenig", "Zu wenig")
 
 
 def losing_regimes(wf: Optional[Dict], min_trades: int = MIN_TRADES_SKIP) -> List[Dict]:
@@ -147,10 +154,11 @@ async def _run_lab(job: Dict, kind_fn: str, body: Dict, analysis: Dict, deps: Di
 
 
 async def _assign(db, aid: str, scope: str, symbol: Optional[str], rid: int,
-                  cand: Optional[Dict], model: Dict):
-    doc = await db.regime_analyses.find_one({"id": aid}, {"assignments": 1})
-    assignments = dict((doc or {}).get("assignments") or {})
-    key = f"{lab.scope_key(scope, symbol)}:{rid}"
+                  cand: Optional[Dict], model: Dict, subset: Optional[List[str]] = None):
+    field = lab.area_fields(subset)[0]
+    doc = await db.regime_analyses.find_one({"id": aid}, {field: 1})
+    assignments = dict((doc or {}).get(field) or {})
+    key = f"{lab.area_key(scope, symbol, subset)}:{rid}"
     if cand is None:
         assignments.pop(key, None)
     else:
@@ -163,7 +171,7 @@ async def _assign(db, aid: str, scope: str, symbol: Optional[str], rid: int,
                                 "validation_passed")},
                             "rules": cand.get("rules") or [],
                             "source": "dynamic_workbench", "assigned_at": _now_iso()}
-    await db.regime_analyses.update_one({"id": aid}, {"$set": {"assignments": assignments}})
+    await db.regime_analyses.update_one({"id": aid}, {"$set": {field: assignments}})
 
 
 def _search_body(p: Dict, aid: str, rid: int, mode: str, strategy_id: Optional[str],
@@ -180,6 +188,10 @@ def _search_body(p: Dict, aid: str, rid: int, mode: str, strategy_id: Optional[s
             "direction_bias": p.get("direction_bias") or "off",
             "optimize_strategy_params": bool(p.get("optimize_strategy_params", True)),
             "execution": p.get("execution") or "cloud"}
+    if p.get("symbols"):
+        body["symbols"] = list(p["symbols"])
+    if p.get("reuse_key"):
+        body["reuse_key"] = p["reuse_key"]
     # Optionale Einstellungen wie im klassischen Optimizer – nur setzen, wenn
     # angegeben (regime_opt behält sonst seine bisherigen Defaults)
     for k in PASSTHROUGH_KEYS:
@@ -222,6 +234,23 @@ async def _result_backtest(job: Dict, built_id: str, p: Dict, deps: Dict) -> Opt
         return {"error": str(e)[:200]}
 
 
+def regime_should_run(state: Dict, round_no: int) -> bool:
+    """Plateau-Steuerung (rein): ausgefallene Regime nie, ausgereizte nur jede
+    RETRY_EVERY-te Runde, sonst immer."""
+    if state.get("dead"):
+        return False
+    return state.get("stale", 0) < PLATEAU_ROUNDS or round_no % RETRY_EVERY == 0
+
+
+def all_exhausted(states: Dict[int, Dict]) -> bool:
+    """Nichts mehr zu holen: jedes Regime ausgefallen oder ausgereizt (rein)."""
+    return all(st.get("dead") or st.get("stale", 0) >= PLATEAU_ROUNDS for st in states.values())
+
+
+def is_no_data_error(msg: str) -> bool:
+    return any(h in (msg or "") for h in _NO_DATA_HINTS)
+
+
 async def run(job_id: str, p: Dict, deps: Dict):
     """Gemeinsamer Ablauf für refine / create / discover."""
     job = JOBS[job_id]
@@ -230,6 +259,8 @@ async def run(job_id: str, p: Dict, deps: Dict):
         aid = p["analysis_id"]
         scope = p.get("scope") or "combined"
         symbol = p.get("symbol")
+        subset = p.get("symbols") or None
+        p = {**p, "reuse_key": job_id}
         analysis = await db.regime_analyses.find_one({"id": aid})
         if not analysis:
             raise RuntimeError("Regime-Analyse nicht gefunden")
@@ -241,6 +272,7 @@ async def run(job_id: str, p: Dict, deps: Dict):
             raise RuntimeError("Keine Regime ausgewählt")
         kind = job["kind"]
         best: Dict[int, Dict] = {int(k): v for k, v in (p.get("current") or {}).items() if v}
+        last_errors: List[str] = []
 
         if kind == "create":
             for rid, t in targets.items():
@@ -254,34 +286,54 @@ async def run(job_id: str, p: Dict, deps: Dict):
         else:
             endless = bool(p.get("endless"))
             max_rounds = 10_000 if endless else max(int(p.get("rounds") or 1), 1)
+            states: Dict[int, Dict] = {rid: {"stale": 0, "fails": 0} for rid in targets}
             round_no = 0
             while round_no < max_rounds and not job.get("stop"):
                 round_no += 1
                 job["round"] = round_no
                 improved_round = 0
-                for i, (rid, t) in enumerate(sorted(targets.items())):
+                runnable = [(rid, t) for rid, t in sorted(targets.items())
+                            if regime_should_run(states[rid], round_no)]
+                for i, (rid, t) in enumerate(runnable):
                     if job.get("stop") or job.get("cancel"):
                         break
+                    st = states[rid]
                     label = (regimes.get(rid) or {}).get("label") or f"#{rid + 1}"
                     mode = t.get("mode") or ("discovery" if kind == "discover" else "params")
                     sid = t.get("strategy_id")
                     if mode == "params" and not deps["registry"].get(sid or ""):
                         job["regimes"][str(rid)] = {"label": label, "note": "keine Strategie – übersprungen"}
+                        st["dead"] = True
                         continue
-                    _log(job, f"Runde {round_no} · Regime '{label}' ({i + 1}/{len(targets)}) · "
-                              f"{ {'params': 'Parameter', 'discovery': 'neue Regeln', 'combo': 'Regeln + Parameter'}[mode] }")
-                    job["progress"] = round((i / max(len(targets), 1)) * 100, 1) if not endless else job["progress"]
-                    res = await _run_lab(job, "regime_opt",
-                                         _search_body(p, aid, rid, mode, sid, round_no),
-                                         analysis, deps)
+                    _log(job, f"Runde {round_no} · Regime '{label}' ({i + 1}/{len(runnable)}) · "
+                              f"{ {'params': 'Parameter', 'discovery': 'neue Regeln', 'combo': 'Regeln + Parameter'}[mode] }"
+                              + (" · erneuter Versuch" if st["stale"] >= PLATEAU_ROUNDS else ""))
+                    job["progress"] = round((i / max(len(runnable), 1)) * 100, 1) if not endless else job["progress"]
+                    try:
+                        res = await _run_lab(job, "regime_opt",
+                                             _search_body(p, aid, rid, mode, sid, round_no),
+                                             analysis, deps)
+                    except RuntimeError as e:
+                        # Ein Regime ohne Daten (z.B. auf den gewählten Assets) oder mit
+                        # fehlgeschlagener Suche bricht nicht mehr den ganzen Lauf ab.
+                        st["fails"] += 1
+                        st["last_error"] = str(e)[:200]
+                        no_data = is_no_data_error(str(e))
+                        if no_data or st["fails"] >= MAX_REGIME_FAILURES:
+                            st["dead"] = True
+                        _log(job, f"Regime '{label}' {'ohne Daten – übersprungen' if no_data else 'Suche fehlgeschlagen'}: {str(e)[:140]}")
+                        entry = job["regimes"].setdefault(str(rid), {"label": label})
+                        if not best.get(rid):
+                            entry["note"] = ("keine Daten auf den gewählten Assets" if no_data
+                                             else f"Suche fehlgeschlagen: {str(e)[:80]}")
+                        continue
                     top = (res.get("top5") or [None])[0]
-                    if not top:
-                        continue
-                    cand = candidate_from_result(res, top, res.get("_lab_job_id") or "")
+                    cand = candidate_from_result(res, top, res.get("_lab_job_id") or "") if top else None
                     prev = best.get(rid)
-                    if candidate_rank(cand) > candidate_rank(prev):
+                    if cand and candidate_rank(cand) > candidate_rank(prev):
                         best[rid] = cand
                         improved_round += 1
+                        st["stale"] = 0
                         job["regimes"][str(rid)] = {
                             "label": label, "score": cand.get("score"),
                             "validation_passed": cand.get("validation_passed"),
@@ -289,18 +341,35 @@ async def run(job_id: str, p: Dict, deps: Dict):
                             "trades": (cand.get("metrics") or {}).get("trades"),
                             "strategy": cand.get("strategy_name") or "Eigene Regeln",
                             "improved_round": round_no}
-                _log(job, f"Runde {round_no} fertig · {improved_round} Regime verbessert")
+                    else:
+                        st["stale"] += 1
+                        if st["stale"] >= PLATEAU_ROUNDS and str(rid) in job["regimes"]:
+                            job["regimes"][str(rid)]["state"] = (
+                                f"ausgereizt – nur jede {RETRY_EVERY}. Runde")
+                if runnable:
+                    _log(job, f"Runde {round_no} fertig · {improved_round} Regime verbessert")
+                if all(st.get("dead") for st in states.values()):
+                    break
                 if not endless:
                     job["progress"] = round(round_no / max_rounds * 80, 1)
+                    if all_exhausted(states) and round_no < max_rounds:
+                        _log(job, f"Alle Regime ausgereizt (je {PLATEAU_ROUNDS} Runden ohne "
+                                  f"Verbesserung) – restliche Runden übersprungen")
+                        break
+            job["search_state"] = {str(r): {k: v for k, v in st.items() if k != "last_error"}
+                                   for r, st in states.items()}
+            last_errors = [st["last_error"] for st in states.values() if st.get("last_error")]
         if job.get("cancel"):
             raise asyncio.CancelledError()
         found = {rid: c for rid, c in best.items() if c}
         if not found:
-            raise RuntimeError("Kein verwertbares Ergebnis – kein Regime hat eine Strategie")
+            hint = last_errors[0] if last_errors else None
+            raise RuntimeError("Kein verwertbares Ergebnis – kein Regime hat eine Strategie"
+                               + (f" (zuletzt: {hint})" if hint else ""))
         # Zuordnungen schreiben: gesuchte/gewählte Regime + übernommene übrige
         for rid in regimes:
             if rid in targets or rid in best:
-                await _assign(db, aid, scope, symbol, rid, best.get(rid), model)
+                await _assign(db, aid, scope, symbol, rid, best.get(rid), model, subset)
         # Basis-Strategie (nötig für Regime ohne eigene Regel-Definition):
         # explizit gewählt, sonst die erste zugeordnete Registry-Strategie
         base_sid = p.get("base_strategy_id") or next(
@@ -310,12 +379,16 @@ async def run(job_id: str, p: Dict, deps: Dict):
         if p.get("walkforward", True) and (analysis.get("settings") or {}).get("train_pct", 100) < 100:
             _log(job, "Finaler Walk-Forward auf dem unangetasteten Holdout ...")
             job["stop"] = False
+            # Frisch laden: der Walk-Forward braucht die GERADE geschriebenen
+            # Zuordnungen (der lokale Worker bekommt das Dokument mitgeschickt).
+            analysis = {**analysis, **{k: v for k, v in (await db.regime_analyses.find_one(
+                {"id": aid}, {"_id": 0, "assignments": 1, lab.SUBSET_ASSIGNMENTS: 1, "kept": 1}) or {}).items()}}
+            wf_body = {"analysis_id": aid, "scope": scope, "symbol": symbol,
+                       "strategy_id": base_sid, "execution": p.get("execution") or "cloud"}
+            if subset:
+                wf_body["symbols"] = list(subset)
             try:
-                wf = await _run_lab(job, "walkforward",
-                                    {"analysis_id": aid, "scope": scope, "symbol": symbol,
-                                     "strategy_id": base_sid,
-                                     "execution": p.get("execution") or "cloud"},
-                                    analysis, deps)
+                wf = await _run_lab(job, "walkforward", wf_body, analysis, deps)
             except RuntimeError as e:
                 _log(job, f"Walk-Forward nicht möglich: {e}")
         _log(job, "Dynamische Strategie wird gebaut ...")
@@ -329,6 +402,7 @@ async def run(job_id: str, p: Dict, deps: Dict):
             _log(job, f"Regime '{s['label']}' wird NICHT gehandelt: Walk-Forward PnL {s['pnl']} "
                       f"über {s['trades']} Trades")
         built = await deps["build"](aid, {"scope": scope, "symbol": symbol,
+                                          "symbols": list(subset) if subset else None,
                                           "strategy_id": base_sid,
                                           "name": p.get("name"),
                                           "skip_regimes": [s["regime"] for s in skipped]})
@@ -341,7 +415,9 @@ async def run(job_id: str, p: Dict, deps: Dict):
                                          "switches": (wf or {}).get("switches"),
                                          "skipped_regimes": skipped,
                                          "kept_after_skip": kept_after_skip(wf, skipped)} if wf else None,
-                         "rounds": job["round"], "source_dynamic_id": p.get("dynamic_id")}
+                         "rounds": job["round"], "source_dynamic_id": p.get("dynamic_id"),
+                         "symbols": list(subset) if subset else list(analysis.get("symbols") or []),
+                         "subset": bool(subset), "search_state": job.get("search_state")}
         if p.get("result_backtest", True) and built.get("id"):
             job["result"]["backtest"] = await _result_backtest(job, built["id"], p, deps)
         job["status"] = "done"
@@ -355,13 +431,17 @@ async def run(job_id: str, p: Dict, deps: Dict):
         job["status"] = "error"
         job["error"] = str(e)[:300]
         _log(job, f"Fehler: {str(e)[:200]}")
+    finally:
+        from services import regime_opt
+        regime_opt.clear_history_slot(job_id)
 
 
-def current_candidates(analysis: Dict, scope: str, symbol: Optional[str]) -> Dict[int, Dict]:
+def current_candidates(analysis: Dict, scope: str, symbol: Optional[str],
+                       subset: Optional[List[str]] = None) -> Dict[int, Dict]:
     """Bestehende Zuordnungen eines Bereichs als Startwerte (rein)."""
-    key = lab.scope_key(scope, symbol)
+    key = lab.area_key(scope, symbol, subset)
     out = {}
-    for k, a in (analysis.get("assignments") or {}).items():
+    for k, a in (analysis.get(lab.area_fields(subset)[0]) or {}).items():
         if k.startswith(key + ":"):
             out[int(k.rsplit(":", 1)[1])] = a
     return out
@@ -376,6 +456,11 @@ def scope_of(doc: Dict) -> tuple:
     if (doc.get("settings") or {}).get("scope") == "per_coin" and len(syms) == 1:
         return "per_coin", syms[0]
     return "combined", None
+
+
+def subset_of(doc: Dict) -> Optional[List[str]]:
+    """Asset-Teilmenge, auf der eine Werkbank-Strategie optimiert wurde (rein)."""
+    return list((doc.get("settings") or {}).get("subset_symbols") or []) or None
 
 
 def regime_strategy_of(doc: Dict, rid: int) -> Optional[str]:

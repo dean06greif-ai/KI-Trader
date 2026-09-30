@@ -185,6 +185,12 @@ def worker_supports_explore() -> bool:
     return False
 
 
+def worker_supports_version(min_ver: tuple) -> bool:
+    """Mindestens ein aktiver Worker hat Version >= min_ver."""
+    return any(_now() - w.get("last_seen", 0) < WORKER_TIMEOUT and _ver(w.get("version")) >= tuple(min_ver)
+               for w in WORKERS.values())
+
+
 def worker_supports_autopilot() -> bool:
     """Regime-Autopilot (Endlos-Suche der Regime-Erkennung) braucht Worker
     >= 1.12.0 (regime_autopilot-Modul + fn='autopilot' im Paket)."""

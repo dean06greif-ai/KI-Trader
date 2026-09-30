@@ -76,12 +76,18 @@ export default function DynamicWorkbenchResult({ result, kindLabel }) {
         Die neue dynamische Strategie ist gespeichert und unter „Strategien verwalten“ als Reiter wählbar
         (Blitz = Live/Paper je Coin) sowie im Backtester auswählbar.
       </div>
+      {result.symbols?.length > 0 && (
+        <div className="opt-small" style={{ marginBottom: 8 }} data-testid="dwb-result-symbols">
+          Optimiert auf: <b>{result.symbols.map(s => s.replace('USDT', '')).join(', ')}</b>
+          {result.subset ? ' (Teilmenge der Analyse – eigene Zuordnungen, die Gesamt-Menge bleibt unberührt)' : ' (alle Assets der Analyse)'}
+        </div>
+      )}
       {searched.length > 0 && (
         <div className="opt-params-list" data-testid="dwb-result-search">
           <span className="opt-small" style={{ alignSelf: 'center' }}>SUCHE JE REGIME:</span>
           {searched.map(([rid, r]) => (
             <span key={rid} className="opt-param-pill" title={r.strategy ? `Strategie: ${r.strategy}` : ''}>
-              {r.label}: {r.note || <>Score <b>{fmt(r.score, 1)}</b> · PnL <b className={(r.pnl || 0) >= 0 ? 'pos' : 'neg'}>{fmt(r.pnl)}</b> ({r.trades} T.){r.validation_passed ? ' ✓ WF' : ''}</>}
+              {r.label}: {r.note || <>Score <b>{fmt(r.score, 1)}</b> · PnL <b className={(r.pnl || 0) >= 0 ? 'pos' : 'neg'}>{fmt(r.pnl)}</b> ({r.trades} T.){r.validation_passed ? ' ✓ WF' : ''}</>}{r.state ? ` · ${r.state}` : ''}
             </span>
           ))}
         </div>

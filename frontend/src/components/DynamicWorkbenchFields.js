@@ -36,6 +36,49 @@ export function RegimePicker({ regimes, selected, onToggle, onAll, testPrefix })
   );
 }
 
+// Asset-Auswahl der gemeinsamen Erkennung: Häkchen = Asset fließt in Suche,
+// Walk-Forward und Ergebnis-Backtest ein (mind. 1 bleibt aktiv).
+export function AssetToggle({ symbols, selected, onChange, disabled }) {
+  const toggle = (s) => {
+    const next = selected.includes(s) ? selected.filter(x => x !== s) : [...selected, s];
+    if (next.length) onChange(symbols.filter(x => next.includes(x)));
+  };
+  return (
+    <div className="opt-chips" data-testid="dwb-assets">
+      {symbols.map(s => (
+        <button key={s} type="button" disabled={disabled} className={`opt-chip ${selected.includes(s) ? 'on' : ''}`}
+          onClick={() => toggle(s)} data-testid={`dwb-asset-${s}`}
+          title={selected.length === 1 && selected.includes(s) ? 'Mindestens 1 Asset bleibt aktiv' : ''}>
+          {s.replace('USDT', '')}
+        </button>
+      ))}
+      <button type="button" className="opt-chip" disabled={disabled || selected.length === symbols.length}
+        onClick={() => onChange([...symbols])} data-testid="dwb-asset-all">alle</button>
+      <span className="opt-small" data-testid="dwb-assets-count">{selected.length}/{symbols.length} aktiv</span>
+    </div>
+  );
+}
+
+const TF_MIN = { m: 1, h: 60, d: 1440 };
+const tfMinutes = (tf) => { const m = /^(\d+)([mhd])$/.exec(tf || ''); return m ? Number(m[1]) * TF_MIN[m[2]] : 60; };
+
+// Grobe Plausibilität von „Min. Trades“ (gilt JE Regime): Ø Trainings-Kerzen
+// je Regime auf der Auswahl vs. geforderte Trades.
+export function MinTradesHint({ minTrades, nAssets, nRegimes, timeframe, days, trainPct }) {
+  if (!minTrades || !nAssets || !nRegimes || !days) return null;
+  const bars = Math.round(days * 1440 / tfMinutes(timeframe) * nAssets / nRegimes * (trainPct || 100) / 100);
+  const every = bars / minTrades;
+  if (every >= 15) return null;
+  return (
+    <div className="dyn-verdict warn" style={{ marginTop: 6 }} data-testid="dwb-min-trades-hint">
+      <b>Min. Trades {minTrades} ist für diese Auswahl sehr hoch</b>
+      <div>Der Wert gilt je Regime. Mit {nAssets} Asset{nAssets === 1 ? '' : 's'} hat ein Regime im Schnitt nur ca. {bars.toLocaleString('de-DE')} Trainings-Kerzen ({timeframe}) –
+        das verlangt einen Trade alle ~{Math.max(every, 0.1).toFixed(1)} Kerzen. Viele Regime erreichen das nicht und die Suche liefert dann nichts Brauchbares.
+        Richtwert: höchstens ca. {Math.max(Math.floor(bars / 30), 1).toLocaleString('de-DE')}.</div>
+    </div>
+  );
+}
+
 export function StrategyMapping({ regimes, strategies, mapping, setMapping }) {
   return (
     <div className="opt-setup" data-testid="dwb-mapping" style={{ marginBottom: 0 }}>
@@ -228,7 +271,7 @@ export function JobProgress({ job, onStop, onCancel }) {
         <div className="opt-best-live" style={{ flexWrap: 'wrap' }} data-testid="dwb-job-regimes">
           Bester Stand je Regime: {regimes.map(([rid, r]) => (
             <span key={rid} className="opt-param-pill">
-              {r.label}: {r.note || <>Score <b>{Number(r.score || 0).toFixed(1)}</b> · PnL <b className={(r.pnl || 0) >= 0 ? 'pos' : 'neg'}>{r.pnl}</b> ({r.trades} T.){r.validation_passed ? ' ✓' : ''}</>}
+              {r.label}: {r.note || <>Score <b>{Number(r.score || 0).toFixed(1)}</b> · PnL <b className={(r.pnl || 0) >= 0 ? 'pos' : 'neg'}>{r.pnl}</b> ({r.trades} T.){r.validation_passed ? ' ✓' : ''}</>}{r.state ? ` · ${r.state}` : ''}
             </span>
           ))}
         </div>

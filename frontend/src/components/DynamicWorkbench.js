@@ -5,7 +5,7 @@ import { authHeaders, isAdmin } from '../auth';
 import { INDICATOR_POOL } from '../lib/indicatorPool';
 import IndicatorPicker from './IndicatorPicker';
 import DynamicWorkbenchResult from './DynamicWorkbenchResult';
-import { RegimePicker, StrategyMapping, CoreSettings, OptGroups, RobustnessRow, ExecutionRow, JobProgress } from './DynamicWorkbenchFields';
+import { RegimePicker, StrategyMapping, CoreSettings, OptGroups, RobustnessRow, ExecutionRow, JobProgress, AssetToggle, MinTradesHint } from './DynamicWorkbenchFields';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -94,6 +94,13 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
   const analysis = analyses.find(a => a.id === (tab === 'refine' ? dyn?.dynamic?.analysis_id : cur.source));
   const regimes = tab === 'refine' ? (dyn?.dynamic?.regimes || []) : (analysis?.regimes || []);
   const mode = tab === 'create' ? 'params' : cur.mode;
+  const allSyms = analysis?.symbols || [];
+  // Asset-Auswahl je Reiter: gespeichert oder Standard (alle Assets der Analyse;
+  // beim Verfeinern die Assets, auf denen die Strategie optimiert wurde)
+  const defaultSyms = (tab === 'refine' && dyn?.dynamic?.symbols?.length)
+    ? allSyms.filter(s => dyn.dynamic.symbols.includes(s)) : allSyms;
+  const selSyms = (cur.symbols || []).filter(s => allSyms.includes(s));
+  const symbols = selSyms.length ? selSyms : (defaultSyms.length ? defaultSyms : allSyms);
   const running = job?.status === 'running';
   const jobOnThisTab = job && job.kind === tab;
 
@@ -102,7 +109,7 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
     // Quelle gewechselt -> Auswahl neu (alle Regime vorbelegt), Mapping leer
     const src = tab === 'refine' ? dyns.find(d => d.id === source) : analyses.find(a => a.id === source);
     const ids = ((tab === 'refine' ? src?.dynamic?.regimes : src?.regimes) || []).map(r => r.id);
-    patchSel({ source, regimes: ids, mapping: {} });
+    patchSel({ source, regimes: ids, mapping: {}, symbols: undefined });
   };
   const toggleRegime = (id) => patchSel({ regimes: cur.regimes.includes(id) ? cur.regimes.filter(x => x !== id) : [...cur.regimes, id] });
   const set = (k, v) => (k === 'mode' ? patchSel({ mode: v }) : setOpts(o => ({ ...o, [k]: v })));
@@ -123,6 +130,7 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
       regime_walk_forward: opts.regime_walk_forward, regime_train_pct: Number(opts.regime_train_pct),
       direction_bias: opts.direction_bias, label_basis: opts.label_basis, skip_losing: opts.skip_losing,
     };
+    body.symbols = symbols;
     if (tab === 'refine') Object.assign(body, { dynamic_id: cur.source, regime_ids: cur.regimes });
     else if (tab === 'create') Object.assign(body, { analysis_id: cur.source, scope: 'combined', mapping: cur.mapping });
     else Object.assign(body, { analysis_id: cur.source, scope: 'combined', regime_ids: cur.regimes });
@@ -167,16 +175,19 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
           </label>
         )}
         {analysis && (
-          <label className="opt-field">Assets (aus der Analyse)
-            <div className="opt-params-list" style={{ margin: 0 }} data-testid="dwb-assets">
-              {(analysis.symbols || []).map(s => <span key={s} className="opt-param-pill">{s.replace('USDT', '')}</span>)}
-            </div>
-          </label>
+          <div className="opt-field">Assets (aus der Analyse · Häkchen = wird optimiert)
+            <AssetToggle symbols={allSyms} selected={symbols} disabled={running} onChange={(v) => patchSel({ symbols: v })} />
+          </div>
         )}
       </div>
       {tab === 'refine' && dyns.length === 0 && <div className="opt-small" style={{ marginBottom: 8 }}>Noch keine dynamische Strategie aus dem Regime-Lab vorhanden – zuerst „Neu aus Strategien“ oder „Neue Strategie je Regime“ nutzen.</div>}
 
       <CoreSettings opts={opts} set={set} tab={tab} mode={mode} source={analysis} />
+      {tab !== 'create' && analysis && (
+        <MinTradesHint minTrades={Number(opts.min_trades)} nAssets={symbols.length} nRegimes={regimes.length || 1}
+          timeframe={opts.timeframe || analysis.timeframe} days={Number(opts.days) || analysis.days}
+          trainPct={analysis.settings?.train_pct ?? 100} />
+      )}
       {tab !== 'create' && (
         <label className="opt-check" style={{ marginTop: -6 }} title="Runde für Runde weitersuchen, bis du stoppst – nur echte Verbesserungen werden übernommen">
           <input type="checkbox" checked={opts.endless} onChange={e => set('endless', e.target.checked)} data-testid="dwb-endless" /> Endlos-Suche (Runden ignorieren, bis „Suche beenden“)
