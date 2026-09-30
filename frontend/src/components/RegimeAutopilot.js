@@ -66,6 +66,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [minPhase, setMinPhase] = useState(saved.minPhase ?? 5);
   const [maxPhase, setMaxPhase] = useState(saved.maxPhase ?? 15);
   const [searchDet, setSearchDet] = useState(saved.searchDet ?? true);
+  const [warmStart, setWarmStart] = useState(saved.warmStart ?? true);
   const [autoChain, setAutoChain] = useState(saved.autoChain ?? true);
   const [banner, setBanner] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -74,8 +75,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [lastDecision, setLastDecision] = useState(null);
 
   useEffect(() => {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, autoChain, phaseV: PHASE_V })); } catch { /* quota */ }
-  }, [maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, autoChain]);
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, warmStart, autoChain, phaseV: PHASE_V })); } catch { /* quota */ }
+  }, [maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, warmStart, autoChain]);
 
   const loadRuns = () => fetch(`${API_URL}/api/regime-lab/autopilot/runs`).then(r => r.json())
     .then(d => setRuns(d.runs || [])).catch(() => {});
@@ -145,6 +146,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
           : ` · Holdout ${fmt(b.holdout_direction_pct)}% → ${fmt(m.holdout_direction_pct)}%`)
         + ` · Selbst-Übereinstimmung (innere Val.) ${fmt(b.inner_direction_pct)}% → ${fmt(m.inner_direction_pct)}%`
         + ` · Ø Richtungs-Phase ${fmt(m.live_direction_phase_days)}d · Ø Live-Phase ${fmt(m.avg_live_phase_days)}d`
+        + (lastResult.warmstart?.tested ? ` · Warmstart: ${lastResult.warmstart.tested} bewährte getestet${lastResult.warmstart.adopted ? ` – beste Basis: ${lastResult.warmstart.adopted.source}` : ' – keine besser als der Start'}` : '')
         + (lastResult.guard_rejected ? ` · ${lastResult.guard_rejected} Varianten verworfen (innere Val. > ${fmt(lastResult.max_inner_drop_pp, 0)} Pkt. eingebrochen)` : '')
         + ` · Ende: ${STOP[lastResult.stop_reason] || lastResult.stop_reason || '–'}`
         + (lastResult.evidence === 'insufficient_evidence' ? ' · ⚠ zu wenig Holdout-Daten' : '')
@@ -159,7 +161,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
     symbols: selCoins, timeframe, days, train_pct: trainPct, engine_config: engineConfig || {},
     max_minutes: maxMin, target_pct: targetPct, max_rounds: maxRounds, plateau_rounds: plateau,
     min_phase_days_target: minPhase, max_phase_days_target: maxPhase, search_detectors: searchDet, execution,
-    auto_chain: autoChain,
+    auto_chain: autoChain, warm_start: warmStart,
   });
 
   const validate = () => {
@@ -252,6 +254,11 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
           <input type="checkbox" checked={searchDet} onChange={e => setSearchDet(e.target.checked)}
             data-testid="autopilot-search-detectors" />
           {' '}Grundgerüste mitsuchen
+        </label>
+        <label className="opt-check" title="Warmstart: zuerst die besten Erkennungen früherer Autopilot-Läufe und gespeicherter Analysen (z.B. gleiche Coins auf anderem Timeframe) auf den aktuellen Daten testen – spart Suchzeit, Bewertung und Holdout bleiben unverändert">
+          <input type="checkbox" checked={warmStart} onChange={e => setWarmStart(e.target.checked)}
+            data-testid="autopilot-warm-start" />
+          {' '}Warmstart (bewährte zuerst)
         </label>
         <label className="opt-check" title="Vollautomatik: nach einer gefundenen Verbesserung wird „Regime suchen & speichern“ mit der besten Erkennung automatisch in die Job-Warteschlange gestellt – auch nachts ohne offenen Browser">
           <input type="checkbox" checked={autoChain} onChange={e => setAutoChain(e.target.checked)}

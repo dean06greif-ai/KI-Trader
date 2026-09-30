@@ -234,14 +234,19 @@ async def _backup_head(session, symbol: str, start_ms: int, before_ms: int,
     return ca
 
 
-async def get_candles(session, symbol: str, days: int, job: Dict = None) -> CandleArray:
-    """1-Minuten-Kerzen der letzten `days` Tage – nutzt Cache aggressiv."""
+async def get_candles(session, symbol: str, days: int, job: Dict = None,
+                      start_ms: Optional[int] = None) -> CandleArray:
+    """1-Minuten-Kerzen der letzten `days` Tage – nutzt Cache aggressiv.
+    `start_ms` (optional): fixierter Fenster-Anfang einer gespeicherten Analyse –
+    der Tages-Deckel (days_cap, ab JETZT gerechnet) darf ihn nicht abschneiden."""
     from services import history_sources
     # Nicht mehr Historie anfordern als die Quelle hergibt, sonst wird bei jedem
     # Lauf erneut ein nie vorhandener Kopf-Bereich gesucht.
     days = history_sources.days_cap(symbol, days)
     end = int(time.time() * 1000)
     start = end - days * 86400 * 1000
+    if start_ms:
+        start = min(start, int(start_ms))
     async with _LOCK:
         entry = _MEM.get(symbol)
         if entry is None:

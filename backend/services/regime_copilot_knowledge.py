@@ -105,6 +105,13 @@ def static_knowledge() -> str:
         "werden als „nicht handeln“ vorgeschlagen (skip_regimes); unbelegte Regime handeln nie.",
         f"- Regimewechsel mit offenem Trade: on_switch={dr.ON_SWITCH_DEFAULT} (Standard, wie im "
         "Backtest) oder let_run (eigener Stop/Ziel). Blitz-Einstellungen je Regime (regime_configs).",
+        "- Regime-Risiko (Shadow, Verlauf-Reiter): Einsatz-Faktor je Struktur-Regime aus dem "
+        "Ø-Reward vorher geschlossener Trades (ab 15 Trades: <−0,25 R ×0.5, <0 ×0.75, <+0,25 ×1, "
+        "sonst ×1.25) – nur Beobachtung, zeigt ob ein echter Einsatz je Regime den PnL verbessert hätte.",
+        "- Lektions-Bilanz vergleicht „ohne“ bei genug Daten im gleichen Struktur-Regime.",
+        "- Autopilot-Warmstart: testet zuerst die besten Feinwerte früherer Autopilot-Läufe und "
+        "gespeicherter Analysen (z.B. gleiche Coins auf anderem Timeframe) – gleiche Bewertung, "
+        "Holdout bleibt Test; passt keiner, kostet es nur wenige Runden.",
         "- Ausbau-Ideen, die zur Architektur passen: Regime als Kontext-Feature der Setups, "
         "regimeabhängiges Risiko-Budget/Hebel, Setup-Freigabe je Regime, Übergangs-Filter "
         "(erste Tage nach Wechsel vorsichtig) – immer erst per Walk-Forward/Shadow belegen.",

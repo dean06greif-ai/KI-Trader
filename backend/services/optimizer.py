@@ -1030,7 +1030,7 @@ async def _run_dynamic(job, body, registry, settings, cfg, robust, full_historie
         n_workers = parallel_sim.workers_configured()
         if n_workers > 1:
             seg_pool = parallel_sim.make_pool(seg_data, n_workers)
-            dyn.set_pool(seg_pool)
+            dyn.set_pool(seg_pool, seg_data.keys())
             logger.info(f"Dynamik-Modus: {len(seg_data)} Abschnitte auf "
                         f"{n_workers} Kerne verteilt")
     except Exception as e:  # noqa: BLE001
@@ -1046,7 +1046,7 @@ async def _run_dynamic(job, body, registry, settings, cfg, robust, full_historie
             min_hold_days, min_share, train_pct, rule_variants, per_regime_strategies,
             max_rules_regime, variant_indicators, tf_options)
     finally:
-        dyn.set_pool(None)
+        dyn.release_pool(seg_pool)
         b = job.setdefault("_bench", {})
         b["sim_seconds"] = b.get("sim_seconds", 0.0) + dyn.BENCH["sim_seconds"]
         b["cpu_seconds"] = b.get("cpu_seconds", 0.0) + dyn.BENCH["cpu_seconds"]

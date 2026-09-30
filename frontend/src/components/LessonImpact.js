@@ -74,7 +74,9 @@ export const LessonImpactBadge = ({ row, recent, onShowChart, onReload }) => {
             <thead><tr style={{ opacity: 0.7 }}><th align="left">Gruppe</th><th>n</th><th>WR</th><th>Ø R</th><th>Σ R</th></tr></thead>
             <tbody>
               <tr><td>mit Lektion</td><td align="center">{row.with.n}</td><td align="center">{fmtPct(row.with.wr)}</td><td align="center">{fmtR(row.with.avg_r)}</td><td align="center">{fmtR(row.with.sum_r)}</td></tr>
-              <tr><td>ohne (gleiche Klasse/Zeitraum)</td><td align="center">{row.without.n}</td><td align="center">{fmtPct(row.without.wr)}</td><td align="center">{fmtR(row.without.avg_r)}</td><td align="center">—</td></tr>
+              <tr><td data-testid={`lesson-impact-control-basis-${row.id}`}
+                title={row.regimes?.length ? `Struktur-Regime der angewendeten Trades: ${row.regimes.join(', ')}` : 'Struktur-Regime erst ab Freigabe-Stufe Shadow erfasst'}>
+                {row.control_basis === 'regime' ? `ohne (gleiches Struktur-Regime: ${row.regimes.map(r => r.replace('strukturell ', '')).join('/')})` : 'ohne (gleiche Klasse/Zeitraum)'}</td><td align="center">{row.without.n}</td><td align="center">{fmtPct(row.without.wr)}</td><td align="center">{fmtR(row.without.avg_r)}</td><td align="center">—</td></tr>
               <tr><td>verhindert (Gegenprobe)</td><td align="center">{row.prevented.n}</td><td align="center" colSpan={2}>{row.prevented.would_loss} wären Verlierer · {row.prevented.would_win} Gewinner</td><td align="center">{fmtR(row.prevented.net_r)}</td></tr>
             </tbody>
           </table>

@@ -163,6 +163,28 @@ def mutate(best_cfg: Dict, rng: random.Random, search_detectors: bool,
     return cfg
 
 
+def warm_seeds(raw, start_cfg: Dict, search_detectors: bool) -> List[Dict]:
+    """Seeds aus dem Job-Body normalisieren (rein): nur Detektoren mit Live-Sicht,
+    ohne Duplikate/Startwert; ohne Grundgerüst-Suche nur der Start-Detektor."""
+    out, seen = [], {config_key(start_cfg)}
+    for x in raw or []:
+        cfg = (x or {}).get("engine_config") if isinstance(x, dict) else None
+        if not isinstance(cfg, dict) or not cfg:
+            continue
+        if str(cfg.get("detector") or "reactive").lower() not in DETECTORS:
+            continue  # z.B. regression: keine Live-Sicht
+        cfg = dict(cfg)
+        cfg["detector"] = detector_of(cfg)
+        if not search_detectors and cfg["detector"] != detector_of(start_cfg):
+            continue
+        key = config_key(cfg)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"engine_config": cfg, "source": str(x.get("source") or "gespeichert")[:120]})
+    return out[:12]
+
+
 def config_diff(a: Dict, b: Dict) -> Dict:
     """Welche Schlüssel unterscheiden sich (für die Anzeige)?"""
     out = {}
@@ -582,6 +604,11 @@ async def run_autopilot(job_id: str, body: Dict, db):
         history: List[Dict] = []
         tested = improved = stale = duplicates = restarts = guard_rejected = 0
         seen = {config_key(start_cfg)}
+        # Warmstart (services/regime_warmstart): bewährte Erkennungen zuerst testen
+        seeds = warm_seeds(body.get("seed_configs"), start_cfg, search_detectors)
+        seed_src: Dict[str, str] = {config_key(x["engine_config"]): x["source"] for x in seeds}
+        warm = {"offered": len(seeds), "tested": 0, "adopted": None}
+        job["warmstart"] = warm
         dup_run = 0
         t0 = time.time()
         stop_reason = None
@@ -632,11 +659,14 @@ async def run_autopilot(job_id: str, body: Dict, db):
             await job_control.wait_if_paused(job)
             if stop():
                 raise JobCancelled()
-            parent = best["engine_config"]
-            if stale and stale % RESTART_AFTER_STALE == 0 and len(history) > 3:
-                parent = rng.choice(history[:10])["engine_config"]
-                restarts += 1
-            cand = mutate(parent, rng, search_detectors, stale)
+            if seeds:
+                cand = dict(seeds.pop(0)["engine_config"])
+            else:
+                parent = best["engine_config"]
+                if stale and stale % RESTART_AFTER_STALE == 0 and len(history) > 3:
+                    parent = rng.choice(history[:10])["engine_config"]
+                    restarts += 1
+                cand = mutate(parent, rng, search_detectors, stale)
             ck = config_key(cand)
             if ck in seen:
                 duplicates += 1
@@ -655,6 +685,9 @@ async def run_autopilot(job_id: str, body: Dict, db):
             job["phase"] = phase_txt(f" · teste {desc}")[:240]
             job["progress"] = pct()
             job["limit_progress"] = limit_pct()
+            if ck in seed_src:
+                warm["tested"] += 1
+                job["phase"] = phase_txt(f" · Warmstart: teste {seed_src[ck]}")[:240]
             m = await ev(cand)
             tested += 1
             if m is None:
@@ -678,6 +711,8 @@ async def run_autopilot(job_id: str, body: Dict, db):
                 improved += 1
                 stale = 0
                 job["best"] = _public_best(best, baseline)
+                if ck in seed_src:
+                    warm["adopted"] = {"source": seed_src[ck], "score": round(sc, 1)}
             elif sc >= (best.get("score") if best.get("score") is not None else -1e9) \
                     and robustness_key(m, band) > robustness_key(best.get("metrics"), band):
                 # Score-Gleichstand (z.B. beide ~100): robustere Variante nur bei
@@ -710,6 +745,7 @@ async def run_autopilot(job_id: str, body: Dict, db):
                   "inner_regressed": inner_regressed(best["metrics"], base_m),
                   "guard_rejected": guard_rejected, "max_inner_drop_pp": MAX_INNER_DROP_PP,
                   "history": history, "stop_reason": stop_reason,
+                  "warmstart": warm,
                   "duplicates_skipped": duplicates, "restarts": restarts,
                   "plateau_rounds": plateau_rounds,
                   "elapsed_seconds": round(time.time() - t0, 1),

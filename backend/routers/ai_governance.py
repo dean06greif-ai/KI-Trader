@@ -115,6 +115,14 @@ async def list_lessons():
     return {"lessons": await lesson_store.all()}
 
 
+@router.get("/api/ai/regime-risk/shadow")
+async def regime_risk_shadow(days: int = 90):
+    """Regime-Risiko im Shadow-Modus: Einsatz-Faktor je Struktur-Regime (ohne
+    Lookahead) und was er am PnL geändert hätte. Reine Beobachtung."""
+    from services import regime_risk_shadow as rrs
+    return await rrs.report(ai_engine.db, days)
+
+
 @router.get("/api/ai/lessons/impact")
 async def lessons_impact(days: int = 90):
     """Lektions-Bilanz (PLAN_LEKTIONS_BILANZ C2): messbare Wirkung je Lektion –

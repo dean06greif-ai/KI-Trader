@@ -198,3 +198,95 @@ def test_snapshot_line_helpers():
                               "runtime_state": {"per_symbol": {"BTCUSDT": {"label": "Seitwärtsmarkt"}}}}],
                             ["dyn_1"])
     assert "gehandelt" in dl[0] and "BTCUSDT: Seitwärtsmarkt" in dl[0]
+
+
+# ---------------- Folge 01.10.: Worker-Pool, Warmstart, Regime-Kontrolle, Regime-Risiko ----------------
+def test_rows_for_runs_unknown_segments_inline(monkeypatch):
+    from services import dynamic_strategy as dyn
+    from services import parallel_sim
+    monkeypatch.setattr(parallel_sim, "strategy_spec", lambda st: {})
+
+    calls = []
+    monkeypatch.setattr(dyn, "simulate_segment", lambda st, seg, sym, s, c, stop=None: calls.append(seg["_key"]) or [{"k": seg["_key"]}])
+
+    class _Pool:  # jeder Pool-Aufruf meldet "Abschnitt unbekannt" wie ein fremder Kind-Prozess
+        pass
+
+    async def fake_exec(pool, fn, *args):
+        return (None, 0.0)
+
+    async def direct(fn, *args):
+        return fn(*args)
+    monkeypatch.setattr(dyn.asyncio, "to_thread", direct)
+
+    segs = [("BTCUSDT", {"_key": "BTCUSDT#seg1", "start_ts": 0}), ("ETHUSDT", {"_key": "ETHUSDT#seg2", "start_ts": 0})]
+    dyn.set_pool(_Pool(), ["BTCUSDT#seg1"])
+    try:
+        async def run():
+            loop = asyncio.get_running_loop()
+            monkeypatch.setattr(loop, "run_in_executor", fake_exec)
+            return await dyn._rows_for(object(), segs, {}, lambda s: {})
+        out = asyncio.run(run())
+    finally:
+        dyn.set_pool(None)
+    assert sorted(calls) == ["BTCUSDT#seg1", "ETHUSDT#seg2"]      # keine stillen Null-Trades
+    assert [rows[0]["k"] for _seg, rows in out] == ["BTCUSDT#seg1", "ETHUSDT#seg2"]
+
+
+def test_release_pool_only_clears_own_pool():
+    from services import dynamic_strategy as dyn
+    a, b = object(), object()
+    dyn.set_pool(b, ["x"])
+    dyn.release_pool(a)
+    assert dyn._POOL is b and dyn._POOL_KEYS == {"x"}
+    dyn.release_pool(b)
+    assert dyn._POOL is None and dyn._POOL_KEYS == set()
+
+
+def test_parallel_sim_unknown_key_returns_none():
+    from services import parallel_sim
+    assert parallel_sim.sim_segment_task({}, "NOPE#seg1", "BTCUSDT", {}, {}, "2026-01-01") is None
+
+
+def test_warmstart_rank_prefers_same_coins_and_dedupes():
+    from services import regime_warmstart as ws
+    c1 = {"engine_config": {"detector": "ema", "ema_days": 20}, "timeframe": "1h", "symbols": ["BTCUSDT", "ETHUSDT"], "score": 70, "source": "A"}
+    c2 = {"engine_config": {"detector": "reactive", "x": 1}, "timeframe": "4h", "symbols": ["XAUUSD"], "score": 90, "source": "B"}
+    dup = {**c1, "source": "A2"}
+    out = ws.rank_seeds([c2, c1, dup], "4h", ["BTCUSDT", "ETHUSDT"])
+    assert [s["source"] for s in out] == ["A", "B"]
+
+
+def test_warm_seeds_filters_detectors_and_start():
+    from services import regime_autopilot as ap
+    start = {"detector": "reactive"}
+    raw = [{"engine_config": {"detector": "regression"}}, {"engine_config": {"detector": "ema", "a": 1}, "source": "S"},
+           {"engine_config": dict(start)}, {"engine_config": {"detector": "ema", "a": 1}}]
+    assert [s["source"] for s in ap.warm_seeds(raw, start, True)] == ["S"]
+    assert ap.warm_seeds(raw, start, False) == []
+
+
+def test_lesson_control_matches_structural_regime():
+    def t(phase):
+        return {"entry_market_snapshot": {"structural": {"state": "ok", "phase": phase}}}
+    mine = [t("seitwärts")] * 3
+    control = [t("seitwärts")] * 5 + [t("bulle")] * 10
+    got, basis, regs = li.regime_matched_control(mine, control)
+    assert basis == "regime" and len(got) == 5 and regs == ["strukturell seitwärts"]
+    got, basis, _ = li.regime_matched_control(mine, [t("seitwärts")] * 2 + [t("bulle")] * 10)
+    assert basis == "klasse_zeitraum" and len(got) == 12
+
+
+def test_regime_risk_factor_and_no_lookahead():
+    from services import regime_risk_shadow as rrs
+    assert rrs.factor_for(5, -2.0) == 1.0
+    assert rrs.factor_for(20, -0.5) == 0.5 and rrs.factor_for(20, -0.1) == 0.75
+    assert rrs.factor_for(20, 0.1) == 1.0 and rrs.factor_for(20, 0.4) == 1.25
+    trades = [{"regime": "strukturell bär", "reward": -1, "pnl": -10,
+               "opened_at": f"2026-09-{i + 1:02d}T00", "closed_at": f"2026-09-{i + 1:02d}T01"} for i in range(16)]
+    trades.append({"regime": "strukturell bär", "reward": 1, "pnl": 100,
+                   "opened_at": "2026-09-20T00", "closed_at": "2026-09-20T01"})
+    res = rrs.simulate(trades)
+    assert res["scaled_trades"] == 2          # erst ab 15 vorher geschlossenen Trades
+    assert res["shadow_pnl"] == round(-160 + 100 * 0.5 + (-10 * 0.5 - (-10)), 2)
+    assert res["verdict"] == "sammelt"

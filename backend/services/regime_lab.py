@@ -92,7 +92,11 @@ async def fetch_histories(symbols: List[str], days: int, timeframe: str,
             # Fenster-ANFANG fixieren: Tage ab JETZT zurück bis vor den Anker
             sym_days = int(min(max((now_ms - int(anchor)) / 86400000 + 2,
                                    days), 5500))
-        raw = await fetch_history(session, sym, sym_days, job=job)
+        # Anker weiterreichen: sonst schneidet der Tages-Deckel (z.B. 365 d ab
+        # JETZT) den Anfang des gespeicherten Fensters ab, sobald die Analyse
+        # älter wird ("Kerzenanzahl ≠ Manifest", Symbol ausgeschlossen).
+        raw = await fetch_history(session, sym, sym_days, job=job,
+                                  start_ms=int(anchor) if anchor else None)
         raw_start = int(raw[0]["timestamp"]) if len(raw) else None
         candles = aggregate_candles(raw, timeframe, drop_partial=True)
         del raw

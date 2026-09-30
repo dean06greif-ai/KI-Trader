@@ -62,7 +62,7 @@ def _make_seg_pool(*segment_maps):
         if not seg_data:
             return None
         pool = parallel_sim.make_pool(seg_data, n_workers)
-        dyn.set_pool(pool)
+        dyn.set_pool(pool, seg_data.keys())
         logger.info(f"Regime-Lab Multi-Core: {len(seg_data)} Abschnitte auf "
                     f"{n_workers} Kerne verteilt")
         return pool
@@ -73,7 +73,7 @@ def _make_seg_pool(*segment_maps):
 
 
 def _close_seg_pool(pool, cancelled: bool):
-    dyn.set_pool(None)
+    dyn.release_pool(pool)
     if pool is not None:
         try:
             from services import parallel_sim

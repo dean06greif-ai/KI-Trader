@@ -379,6 +379,10 @@ async def start_autopilot(body: Dict, _: bool = Depends(require_admin)):
     execution = (body.get("execution") or "cloud").lower()
     params = {k: body.get(k) for k in AUTOPILOT_PARAM_KEYS}
     params["execution"] = execution
+    if body.get("warm_start", True) and not body.get("seed_configs"):
+        from services import regime_warmstart
+        body = {**body, "seed_configs": await regime_warmstart.collect_seeds(
+            state.db, body.get("timeframe") or "15m", symbols, body.get("engine_config"))}
     if execution == "local":
         _check_local_available()
         from services import local_exec

@@ -1,7 +1,8 @@
 """Lektions-Bilanz (PLAN_LEKTIONS_BILANZ, Baustein C) – quantitative Wirkung je Lektion.
 
 Je Lektion: Trades MIT ihr (attribuiert über `applied_lessons`), Vergleichsgruppe
-OHNE sie (gleiche Assetklasse, gleicher Zeitraum, ohne Sammel-Trades), verhinderte
+OHNE sie (gleiche Assetklasse, gleicher Zeitraum, ohne Sammel-Trades – wenn genug
+Daten: zusätzlich gleiches Struktur-Regime), verhinderte
 Trades aus der HOLD-Gegenprobe (`ai_lesson_cf`) und daraus ein Urteil + Vorschlag.
 Das Urteil ist reine Information für Trader, Lernlauf und Neubewertung – die
 bestehenden Gates (`ai_validation`) bleiben die einzige Instanz, die Lektionen ändert.
@@ -103,6 +104,25 @@ def contribution_r(with_: Dict, without: Dict, prevented: Dict) -> Optional[floa
     return None
 
 
+def _structural(t: Dict) -> Optional[str]:
+    from services.ai_rewards import structural_regime_of
+    return structural_regime_of(t)
+
+
+def regime_matched_control(mine: List[Dict], control: List[Dict]):
+    """Vergleichsgruppe auf die Struktur-Regime der angewendeten Trades begrenzen
+    (rein). Vorher mischte „ohne“ Trend- und Seitwärtsphasen – eine Lektion, die nur
+    im Seitwärtsmarkt greift, wurde gegen Trendtrades bewertet. Zu wenige passende
+    Trades (Regime erst ab Freigabe-Stufe shadow erfasst) -> bisherige Gruppe.
+    Rückgabe (Gruppe, Basis 'regime'|'klasse_zeitraum', Regime-Liste)."""
+    regimes = sorted({r for r in (_structural(t) for t in mine) if r})
+    if regimes:
+        matched = [t for t in control if _structural(t) in regimes]
+        if len(matched) >= MIN_GROUP:
+            return matched, "regime", regimes
+    return control, "klasse_zeitraum", regimes
+
+
 def impact_rows(lessons: List[Dict], trades: List[Dict], cf_agg: Dict[str, Dict],
                 settings: Optional[Dict] = None) -> List[Dict]:
     """Bilanz je Lektion. `trades`: geschlossene ai_trader-Trades (Projektion:
@@ -125,6 +145,7 @@ def impact_rows(lessons: List[Dict], trades: List[Dict], cf_agg: Dict[str, Dict]
                    if lid not in (t.get("applied_lessons") or [])
                    and setup_asset_class.asset_class_of(t.get("symbol")) in classes
                    and first_ts <= str(t.get("closed_at") or "") <= last_ts] if mine else []
+        control, basis, regimes = regime_matched_control(mine, control)
         with_ = _group_stats(mine)
         without = _group_stats(control)
         prevented = _prevented(cf_agg.get(lid))
@@ -134,6 +155,7 @@ def impact_rows(lessons: List[Dict], trades: List[Dict], cf_agg: Dict[str, Dict]
                      "weight": l.get("weight"), "status": l.get("status"),
                      "with": with_, "without": without, "prevented": prevented,
                      "collection_n": len(mine_coll),
+                     "control_basis": basis, "regimes": regimes,
                      "net_contribution_r": net_contribution,
                      "sample": with_["n"] + prevented["n"], **v})
     rows.sort(key=lambda r: (-(r["sample"]), str(r["title"])))
@@ -203,7 +225,8 @@ class LessonImpactService:
         return await self.db.auto_trades.find(
             {"strategy_id": "ai_trader", "status": "closed", "closed_at": {"$gte": cutoff}},
             {"_id": 0, "id": 1, "symbol": 1, "result": 1, "realized_pnl": 1, "risk_usdt": 1,
-             "closed_at": 1, "applied_lessons": 1, "data_collection": 1}
+             "closed_at": 1, "applied_lessons": 1, "data_collection": 1,
+             "entry_market_snapshot.structural": 1}
         ).sort("closed_at", -1).to_list(MAX_TRADES)
 
     async def _compute(self, days: int) -> Dict:

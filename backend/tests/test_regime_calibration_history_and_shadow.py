@@ -132,7 +132,7 @@ def test_fetch_histories_reports_skipped(monkeypatch):
     from services import regime_lab as lab
     import services.backtester as bt
 
-    async def fake_fetch(session, sym, days, job=None):
+    async def fake_fetch(session, sym, days, job=None, start_ms=None):
         n = 50 if sym == "CLUSDT" else 400
         return [{"timestamp": 1_700_000_000_000 + i * 86400000, "open": 1, "high": 1, "low": 1,
                  "close": 1, "volume": 1} for i in range(n)]

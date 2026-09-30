@@ -1,6 +1,7 @@
 import { SetupMaturityTable, SetupClassTabs } from './SetupMaturityTable';
 import { AssetCapitalLog } from './AssetCapitalLog';
 import { SetupUsagePanel } from './SetupUsagePanel';
+import { RegimeRiskShadow } from './RegimeRiskShadow';
 import React, { useState, useEffect, useCallback } from 'react';
 import { ArrowsClockwise, ChartLineUp, ShieldCheck } from '@phosphor-icons/react';
 
@@ -200,6 +201,7 @@ export const AIEquityPanel = () => {
         <AssetCapitalLog events={playbook.classes[pbClass].asset_events} />
       )}
       <SetupUsagePanel />
+      <RegimeRiskShadow />
     </div>
   );
 };

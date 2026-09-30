@@ -106,6 +106,7 @@ def prepare_providers(strategy, segments: Dict[str, List[Dict]], settings: Dict)
 
 # ---------------- Multi-Core-Ausführung der Regime-Abschnitte ----------------
 _POOL = None          # ProcessPoolExecutor oder None (sequenziell)
+_POOL_KEYS: set = set()   # Abschnitts-Schlüssel, deren Kerzen der Pool kennt
 _KEY_SEQ = [0]
 # Laufzeit-Zähler für die Benchmark-Anzeige (Kerne/Speedup im UI)
 BENCH = {"evaluations": 0, "cpu_seconds": 0.0, "sim_seconds": 0.0, "segments": 0}
@@ -116,10 +117,20 @@ def reset_bench():
                   "segments": 0})
 
 
-def set_pool(pool):
-    """Prozess-Pool für die Segment-Simulation setzen (None = sequenziell)."""
-    global _POOL
+def set_pool(pool, keys=None):
+    """Prozess-Pool für die Segment-Simulation setzen (None = sequenziell).
+    `keys`: Abschnitte, deren Kerzen beim Pool-Start übergeben wurden – nur
+    diese laufen im Pool, alle anderen inline (identisches Ergebnis)."""
+    global _POOL, _POOL_KEYS
     _POOL = pool
+    _POOL_KEYS = set(keys or ()) if pool is not None else set()
+
+
+def release_pool(pool):
+    """Pool nur freigeben, wenn er noch der aktive ist – ein parallel laufender
+    Job (lokaler Worker) behält so seinen eigenen Pool."""
+    if pool is not None and _POOL is pool:
+        set_pool(None)
 
 
 def register_segments(*segment_maps) -> Dict[str, object]:
@@ -159,32 +170,42 @@ async def _rows_for(strategy, segs: List[tuple], settings, cfg_for,
     t_wall = time.perf_counter()
     BENCH["evaluations"] += 1
     BENCH["segments"] += len(segs)
-    if _POOL is None:
-        out = []
-        for sym, seg in segs:
-            if should_stop and should_stop():
-                raise JobCancelled()
-            st = strategy(seg) if callable(strategy) else strategy
-            t0 = time.perf_counter()
-            out.append((seg, await asyncio.to_thread(
-                simulate_segment, st, seg, sym, set_for(seg), cfg_for(seg), should_stop)))
-            BENCH["cpu_seconds"] += time.perf_counter() - t0
-        BENCH["sim_seconds"] += time.perf_counter() - t_wall
-        return out
-    from services import parallel_sim
-    if should_stop and should_stop():
-        raise JobCancelled()
-    loop = asyncio.get_running_loop()
-    futs = []
-    for sym, seg in segs:
+    pool, keys = _POOL, _POOL_KEYS   # Momentaufnahme (parallele Jobs setzen global um)
+    pooled = [(sym, seg) for sym, seg in segs if pool is not None and seg.get("_key") in keys]
+    inline = [(sym, seg) for sym, seg in segs if not (pool is not None and seg.get("_key") in keys)]
+    by_id: Dict[int, List[Dict]] = {}
+    if pooled:
+        from services import parallel_sim
+        if should_stop and should_stop():
+            raise JobCancelled()
+        loop = asyncio.get_running_loop()
+        try:
+            futs = []
+            for sym, seg in pooled:
+                st = strategy(seg) if callable(strategy) else strategy
+                futs.append(loop.run_in_executor(
+                    pool, parallel_sim.sim_segment_task_timed, parallel_sim.strategy_spec(st),
+                    seg["_key"], sym, set_for(seg), cfg_for(seg), _iso(seg["start_ts"])))
+            timed = await asyncio.gather(*futs)
+        except RuntimeError as e:  # Pool inzwischen geschlossen (anderer Job) -> inline
+            logger.info(f"Segment-Pool nicht mehr verfügbar ({e}) – rechne inline")
+            timed = [(None, 0.0)] * len(pooled)
+        BENCH["cpu_seconds"] += sum(d for _, d in timed)
+        for (sym, seg), (rows, _d) in zip(pooled, timed):
+            if rows is None:     # Abschnitt im Kind-Prozess unbekannt -> inline
+                inline.append((sym, seg))
+            else:
+                by_id[id(seg)] = rows
+    for sym, seg in inline:
+        if should_stop and should_stop():
+            raise JobCancelled()
         st = strategy(seg) if callable(strategy) else strategy
-        futs.append(loop.run_in_executor(
-            _POOL, parallel_sim.sim_segment_task_timed, parallel_sim.strategy_spec(st),
-            seg["_key"], sym, set_for(seg), cfg_for(seg), _iso(seg["start_ts"])))
-    timed = await asyncio.gather(*futs)
-    BENCH["cpu_seconds"] += sum(d for _, d in timed)
+        t0 = time.perf_counter()
+        by_id[id(seg)] = await asyncio.to_thread(
+            simulate_segment, st, seg, sym, set_for(seg), cfg_for(seg), should_stop)
+        BENCH["cpu_seconds"] += time.perf_counter() - t0
     BENCH["sim_seconds"] += time.perf_counter() - t_wall
-    return list(zip([s for _, s in segs], [rows for rows, _ in timed]))
+    return [(seg, by_id[id(seg)]) for _, seg in segs]
 
 
 def _def_key(strategy, settings: Dict = None, sym: str = None) -> str:

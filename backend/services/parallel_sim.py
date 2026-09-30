@@ -195,6 +195,11 @@ def sim_segment_task(spec: Dict, key: str, symbol: str, settings: Dict, cfg: Dic
     from services import fast_sim
     from services.backtester import simulate_pair
     try:
+        if key not in (_DATA or {}):
+            # Abschnitt fehlt im Pool dieses Kind-Prozesses (nach Pool-Start
+            # registriert oder Pool eines parallelen Jobs) -> Aufrufer rechnet
+            # ihn inline. Vorher: stilles [] = Abschnitt ohne Trades (falsch).
+            return None
         strat = _strategy_from_spec(spec)
         candles = _DATA[key]
         provider = None

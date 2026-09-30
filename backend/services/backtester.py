@@ -56,10 +56,10 @@ def _clip_history(history, start_ms, end_ms):
 
 
 async def fetch_history(session: aiohttp.ClientSession, symbol: str, days: int,
-                        job: Dict = None) -> List[Dict]:
+                        job: Dict = None, start_ms: Optional[int] = None) -> List[Dict]:
     """Lädt 1m-Kerzen (nutzt Hybrid-Cache; siehe services.candle_cache)."""
     from services import candle_cache
-    return await candle_cache.get_candles(session, symbol, days, job=job)
+    return await candle_cache.get_candles(session, symbol, days, job=job, start_ms=start_ms)
 
 
 # ---------------- Zeitfenster ----------------
