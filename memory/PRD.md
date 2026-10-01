@@ -176,3 +176,15 @@ P1 Regime-Lab-Hauptbalken je Worker getrennt anzeigen; P2 Worker-Paket-Versionst
 - Tests: `backend/tests/test_autopilot_tf_chain.py` (25 offline tests); unit regression identical to baseline
   (18 failed / 5 errors pre-existing). Testing agent iteration_41: 100% pass.
 - Backlog: Copilot knowledge text about the chain; per-asset-class stats of winning TFs.
+
+## Session 01.10.2026 (b) – Klick-Feedback, Aufräumen, +400 entfernt
+- Prod measurement (read-only GETs): /api/autotrade/trades?limit=200 took 8–24 s / ~1 MB, polled by chart markers every 15 s;
+  /api/health ~0.2 s (loop not blocked at that moment). Root cause of slow start clicks in prod not proven yet.
+- frontend/src/lib/startFeedback.js (installed in index.js): instant "Wird gestartet …" toast for all start POSTs,
+  slow hint after 3 s, visible rejection reason, double-click dedupe. Jest tests: src/__tests__/startFeedback.test.js.
+- backend/core/loop_watchdog.py + GET /api/system/loop-health: detects event-loop blocks > 1 s with file:line culprit.
+- /api/autotrade/trades: TRADE_LIST_EXCLUDE projection (~30 % less data), full=true returns everything.
+- Header.js: +400 USDT display offset removed.
+- Dead code: 4 unused frontend components -> archive/frontend_unused (ARCHIV_KATALOG.md); ~25 unreferenced backend
+  functions/classes removed (vulture + grep verified). services/price_watch.py is never started -> ask the user.
+- Regression: unchanged versus baseline; testing agent iteration_42: 100 %.

@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 42 tested the new start-feedback UX, loop-health watchdog, trade-list projection, header +400 offset removal, and dead-code regression. 4/4 backend pytest cases pass. Frontend Playwright verified: route-delayed POST /api/regime-lab/analyze shows the 'Wird gestartet …' loading toast (observed after 150ms), the slow-text 'Server ist gerade ausgelastet, der Klick ist angekommen' appears after 3s, the toast dismisses when the response arrives, and the regime-job-progress bar renders (confirmed visually and via testid). Double-click dedup verified: 2 rapid clicks produced only 1 backend POST and the second click triggered a 'Start läuft bereits – bitte kurz warten …' toast (same id slot). Non-start POST /api/notifications did NOT trigger the start toast. Header renders without +400 offset (shows '—' locally since no Bitunix keys) and no '+400' substring present. Regime-Lab, Backtester, Tools-menu-optimizer entries all exist (Optimizer entry registered in dropdown; Backtester + Regime-Lab modals verified to open end-to-end). Timeframe-Kette checkbox default off was carried over from iteration 41. One rejection-toast path (409) could not be re-tested via UI because after the first real analyze POST the backend starts a real job and the button goes disabled; however the code path in startFeedback.js (res.ok === false → ui.message('Nicht gestartet: …')) is covered by frontend jest test (startFeedback.test.js) and the server-rejected toast slot is wired to the same id as the loading toast.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration42.py",
+    "/app/test_reports/pytest/iteration42.xml",
+    "/app/backend/tests/test_tf_chain_feature.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "startFeedback.js is small (~70 LOC), clean, pure, correctly keyed by url+body for dedup and uses one toast id per start so the message mutates in-place (loading → slow → dismiss/rejection) which gives a clean UX.",
+    "START_PATTERNS covers all current start endpoints incl. regime-lab/<id>/optimize|walkforward and dynamic-workbench/start — good future-proofing.",
+    "Header.js margin_balance display is now 1:1 (Number(bal.margin_balance).toFixed(2)); no BAL_DISPLAY_OFFSET constant remains in the file (grep clean).",
+    "autotrade.py TRADE_LIST_EXCLUDE correctly excludes 6 internal fields in default list and skips projection when full=true. Verified empty list on local DB passes trivially; recommend seeding a trade with those fields for a stricter regression in future.",
+    "/api/system/loop-health returns the expected shape {enabled, threshold_s, current_lag_s, max_lag_s, blocks, recent[]} with enabled=true — lifespan start confirmed.",
+    "Minor UX note (not a bug): rapid double-click shows 'Start läuft bereits …' which replaces the 'Wird gestartet …' text within ~50ms. Users doing one click still see 'Wird gestartet …' then '… ausgelastet' as designed.",
+    "Local preview env occasionally logs 'TypeError: Failed to fetch' on first mount (session/notifications/trades/klines) — appears to be a transient preview proxy race on cold start; not reproducible after a reload and unrelated to the diff."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration42.py"],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% on tested flows (toast loading, slow text, dedup, progress bar, non-start unaffected, header no +400, Regime-Lab/Backtester open, optimizer entry present)"},
+  "test_credentials": "Admin / LocalTest123! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. A real regime analysis job was started during testing via the UI (consumed by backend); it finishes within the normal cloud run time. No DB rows beyond that were seeded.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "startFeedback is installed in /app/frontend/src/index.js via installStartFeedback() (wraps window.fetch exactly once). Toast dedup key = url + JSON body; same toast id is reused for loading/slow/rejection so visually the SAME toast morphs. In Playwright, use page.route('**/api/regime-lab/analyze**', handler) with asyncio.sleep in route.continue_() to force the SLOW_AFTER_MS (3s) branch. Use data-testid='regime-analyze-btn' for the Analyze button (NOT 'regime-lab-analyze'). Admin login testids: admin-lock-button → admin-username, admin-password, button[type=submit]. The regime job once started holds the regime-lab queue → regime-analyze-btn becomes disabled; close+reopen modal does not re-enable it. For 409 testing, intercept BEFORE the first click or wait for the current job to finish. Backend tests at /app/backend/tests/test_iteration42.py cover loop-health, trade-list projection (both default and full=true), and admin login.",
+  "rca of the issue": "No bugs identified in iteration 42 features."
+}
