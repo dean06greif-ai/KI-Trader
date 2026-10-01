@@ -164,3 +164,15 @@ P1 Regime-Lab-Hauptbalken je Worker getrennt anzeigen; P2 Worker-Paket-Versionst
 - Aktionen: übernehmen (Engine-Einstellungen), „Regime suchen“ (übernehmen + sofort Analyse mit Coins/TF des Laufs),
   „Referenz“ (nächster Autopilot startet von dieser Erkennung + Top-Varianten, auch anderer Timeframe; result.reference = Abstammung).
 - Tests: backend/tests/test_autopilot_history_reference.py, tests/test_autopilot_history_api.py; iteration_40 100 %.
+
+## Session 01.10.2026 – Regime-Autopilot: Timeframe-Kette
+- User choices: Scoring + Fallback, fixed chain (not configurable), default ALWAYS OFF (not persisted), local test DB only.
+- `backend/services/regime_tf_chain.py` (new, pure): fixed ladder 15m…1d, chain = selected TF + 1 finer + 2 coarser;
+  hysteresis 1.0 points for TF changes; fallback switch after 60 stale rounds; evidence filter (holdout bars).
+- `regime_autopilot.run_autopilot`: one data context per TF (`_split_train`); chain off = identical behaviour.
+  Baseline = selected TF; result.timeframe = best TF (+ selected_timeframe, tf_chain summary, history[].timeframe).
+- Router: `tf_chain` param, `GET /api/regime-lab/autopilot/tf-chain`; local worker needs >= 1.19.0 (VERSION bumped).
+- Frontend: `RegimeTfChain.js` (TfChainToggle / TfChainResult), wired into RegimeAutopilot/RegimeLab/History.
+- Tests: `backend/tests/test_autopilot_tf_chain.py` (25 offline tests); unit regression identical to baseline
+  (18 failed / 5 errors pre-existing). Testing agent iteration_41: 100% pass.
+- Backlog: Copilot knowledge text about the chain; per-asset-class stats of winning TFs.
