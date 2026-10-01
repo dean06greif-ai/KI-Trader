@@ -22,6 +22,17 @@
 | `KI_TRADER_ANALYSE_0609.md` | Frühe externe Analyse (06.09.) | Vollständig überholt durch `analysis_paket/` (15.09.) |
 | `KI_TRADER_REVIEW_0709.md` | Externes Review (07.09.) | Vollständig überholt durch `analysis_paket/` (15.09.) |
 
+## Nach `archive/frontend_unused/` verschoben (01.10.2026 – von keiner Datei importiert)
+
+| Datei (vorher) | Inhalt | Warum archiviert |
+|---|---|---|
+| `frontend/src/components/DeepAnalytics.js` + `.css` | Alte Detail-Auswertung | Nirgends eingebunden – abgelöst durch `PerformanceAnalytics.js` |
+| `frontend/src/components/FomcPanel.js` | Altes FOMC-Panel | Nirgends eingebunden – abgelöst durch `EventSetupSeeding.js`/`EventScheduleBadges.js` (`FomcPanel.css` bleibt, wird dort weiter genutzt) |
+| `frontend/src/components/EconEventPanel.js` | Altes CPI/NFP-Panel | Nirgends eingebunden – gleiche Ablösung wie FOMC |
+| `frontend/src/components/StrategyParamDiff.js` | Parameter-Vorher/Nachher | Nirgends eingebunden |
+
+Backend-Endpunkte dieser Panels bleiben unverändert (Rückwärtskompatibilität).
+
 ## Historisch, aber AM ORT BELASSEN (weiter referenziert bzw. noch nützlich)
 
 | Datei | Status | Grund |

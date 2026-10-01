@@ -1,6 +1,5 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Dict, Optional
-from datetime import datetime
 
 class Signal(BaseModel):
     """Trading signal model"""
@@ -43,31 +42,3 @@ class Signal(BaseModel):
             }
         }
 
-class CoinPerformance(BaseModel):
-    """Coin performance tracking"""
-    symbol: str
-    total_signals: int = 0
-    long_signals: int = 0
-    short_signals: int = 0
-    wins: int = 0
-    losses: int = 0
-    breakevens: int = 0
-    avg_crv: float = 0.0
-    win_rate: float = 0.0
-    last_signal: Optional[str] = None
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "symbol": "BTCUSDT",
-                "total_signals": 25,
-                "long_signals": 15,
-                "short_signals": 10,
-                "wins": 18,
-                "losses": 5,
-                "breakevens": 2,
-                "avg_crv": 2.1,
-                "win_rate": 72.0,
-                "last_signal": "2026-01-08T10:30:00Z"
-            }
-        }

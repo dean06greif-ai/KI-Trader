@@ -20,7 +20,7 @@ Server-Neustart überlebt (der Worker hält die Berechnung im RAM).
 import asyncio
 import logging
 import time
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -173,15 +173,3 @@ def apply_remote_state(job: Dict, data: Dict) -> None:
         job["paused"] = bool(data.get("paused"))
 
 
-def find_job(job_id: str) -> Optional[Dict]:
-    """Job über alle Rechen-Stores finden (Backtester / Optimizer / Regime-Lab)."""
-    from services import backtester as bt
-    from services import optimizer as opt
-    for store in (bt.JOBS, opt.JOBS):
-        if job_id in store:
-            return store[job_id]
-    try:
-        from services import regime_lab as rlab
-        return rlab.JOBS.get(job_id)
-    except Exception:  # noqa: BLE001
-        return None

@@ -140,10 +140,6 @@ class CandleArray:
 Candles = Union[CandleArray, List[Dict]]
 
 
-def as_array(candles: Candles) -> CandleArray:
-    return candles if isinstance(candles, CandleArray) else CandleArray.from_dicts(candles)
-
-
 def as_list(candles: Candles) -> List[Dict]:
     return candles.to_list() if isinstance(candles, CandleArray) else candles
 

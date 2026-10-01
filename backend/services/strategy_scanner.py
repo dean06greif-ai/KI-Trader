@@ -324,9 +324,6 @@ class StrategyScanner:
             **({"cfg_overrides": dict(res["cfg_overrides"])} if res.get("cfg_overrides") else {}),
         }
 
-    def get_rule_states(self, symbols: List[str]) -> Dict:
-        return {s: self.rule_states.get(s, {}) for s in symbols if s in self.rule_states}
-
     def current_price(self, symbol: str) -> Optional[float]:
         f = self.forming.get(symbol)
         if f:

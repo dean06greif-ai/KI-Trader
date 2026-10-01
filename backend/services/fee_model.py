@@ -65,6 +65,3 @@ def fee_percent_for(symbol: str, default_pct: float, notional_usd: float = 0.0,
     return default_pct
 
 
-def broker_label(symbol: str) -> str:
-    """Anzeigename des Brokers für Log-/Fee-Wächter-Texte."""
-    return "IBKR" if is_forex(symbol) else "Bitunix"

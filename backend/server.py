@@ -46,6 +46,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Crypto Scalping Scanner...")
+    # Event-Loop-Wächter (core/loop_watchdog.py): meldet blockierende Rechen-Abschnitte
+    from core import loop_watchdog
+    loop_watchdog.start()
     # RAM-Guard: Malloc-Arenen begrenzen + periodisches Trim. Das RAM-Profil
     # (klein = 512-MB-Sparlimits, groß = Render Pro 2 GB: Kerzen-Cache 2 Mio.,
     # Orderflow 30k Ticks, ML-Trainingsmenge voll) wird automatisch erkannt.

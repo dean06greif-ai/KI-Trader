@@ -139,15 +139,6 @@ OPERATORS = ["<", ">", "<=", ">=", "==", "!=", "cross_above", "cross_below",
              "in_range", "not_in_range"]
 
 
-def _fin(v):
-    """numpy-Wert -> float oder None (NaN/inf gelten als 'kein Wert')."""
-    try:
-        f = float(v)
-    except (TypeError, ValueError):
-        return None
-    return None if (f != f or f in (float("inf"), float("-inf"))) else f
-
-
 class CustomStrategy(BaseStrategy):
     IS_CUSTOM = True
     STRATEGY_TIMEFRAME = "1m"

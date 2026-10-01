@@ -248,15 +248,6 @@ def chunk_pnls_from_trades(trades: List[Tuple[str, float, float]],
     return pnls
 
 
-async def collect_chunk_pnls(strategy, histories: Dict[str, List[Dict]],
-                             settings: Dict, cfg: Dict, chunk_days: int,
-                             fs_map: Dict = None, should_stop=None) -> List[float]:
-    """PnL je Zeit-Abschnitt über alle Symbole (Trades nach Schließzeit gebucht)."""
-    trades = await collect_trades_list(strategy, histories, settings, cfg,
-                                       fs_map, should_stop)
-    return chunk_pnls_from_trades(trades, histories, chunk_days)
-
-
 def evaluate_chunks(chunk_pnls: List[float], max_dev_pct: float) -> Dict:
     """Konstanz bewerten: relative Streuung (std/mean) der Abschnitts-PnLs.
     Durchschnitt <= 0 fällt immer durch (kein konstanter Gewinn vorhanden)."""

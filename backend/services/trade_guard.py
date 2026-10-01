@@ -150,12 +150,6 @@ async def resume(db, mode: Optional[str] = None) -> Dict:
     return await get_state(db, mode)
 
 
-def _next_midnight_utc() -> str:
-    now = datetime.now(timezone.utc)
-    nm = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    return nm.isoformat()
-
-
 def _today_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 

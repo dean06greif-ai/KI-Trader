@@ -92,7 +92,3 @@ async def upload(symbol: str, candles: CandleArray, force: bool = False) -> bool
     return ok
 
 
-async def list_archive() -> list:
-    if not enabled():
-        return []
-    return await storage.list_objects(BUCKET)

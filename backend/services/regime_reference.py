@@ -79,12 +79,6 @@ def f1_grade(pct: Optional[float]) -> Optional[str]:
     return "gut" if pct >= F1_GOOD else ("mittel" if pct >= F1_OK else "schwach")
 
 
-def skill_grade(skill: Optional[float]) -> Optional[str]:
-    if skill is None:
-        return None
-    return "gut" if skill >= SKILL_GOOD else ("mittel" if skill >= SKILL_OK else "schwach")
-
-
 def _split_index(candles, ts: Optional[int]) -> Optional[int]:
     """Erster Index mit timestamp > ts (None, wenn kein Anker)."""
     if ts is None:

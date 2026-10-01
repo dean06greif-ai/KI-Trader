@@ -32,6 +32,10 @@ async def ibkr_status():
 # offene Live-Trades, statt ihn aus Scanner-Preisen zu schätzen (Bug-Report:
 # grosse PnL-Abweichungen, z.B. Gold GC=F vs. XAUUSDT). ----
 _POS_CACHE = {"ts": 0.0, "by_id": {}, "by_key": {}}
+# Interne Diagnose-Felder je Trade (Snapshot/Checks/Rohantworten) – groß, in der
+# Trade-Liste ungenutzt; Detail-Endpunkt und interne Auswertungen lesen weiter alles.
+TRADE_LIST_EXCLUDE = {"entry_market_snapshot": 0, "entry_checks": 0, "paper_exec": 0,
+                      "bitunix_response": 0, "guard_shadow": 0, "policy_version": 0}
 
 
 async def _live_position_map() -> tuple:
@@ -222,16 +226,19 @@ async def list_strategy_coin_autotrade():
 
 @router.get("/api/autotrade/trades")
 async def get_trades(status: str = None, limit: int = 50, mode: str = None,
-                     offset: int = 0):
+                     offset: int = 0, full: bool = False):
     """`offset` + `limit` = seitenweises Nachladen ("Mehr laden" bei
     geschlossenen Trades) – die DB liefert nur die angefragte Seite, es wird
-    nichts zusätzlich gespeichert. Mit `status` kommt zusätzlich `total`."""
+    nichts zusätzlich gespeichert. Mit `status` kommt zusätzlich `total`.
+    Liste ohne interne Diagnose-Felder (TRADE_LIST_EXCLUDE, ~30 % der Daten,
+    von der Oberfläche nicht genutzt); `full=true` liefert alles."""
     q = {}
     if status:
         q["status"] = status
     if mode in ("live", "paper"):
         q["mode"] = mode
-    cursor = state.db.auto_trades.find(q).sort("opened_at", -1)
+    proj = None if full else dict(TRADE_LIST_EXCLUDE)
+    cursor = state.db.auto_trades.find(q, proj).sort("opened_at", -1)
     if offset > 0:
         cursor = cursor.skip(offset)
     trades = await cursor.limit(limit).to_list(limit)
@@ -239,7 +246,7 @@ async def get_trades(status: str = None, limit: int = 50, mode: str = None,
         # Offene Trades (z.B. ältere manuelle Bitunix-Trades) dürfen nie aus dem
         # Limit-Fenster fallen – sonst "verschwinden" sie in der UI (Bug-Report).
         seen_ids = {t.get("id") for t in trades}
-        extra_open = await state.db.auto_trades.find({**q, "status": "open"}) \
+        extra_open = await state.db.auto_trades.find({**q, "status": "open"}, proj) \
             .sort("opened_at", -1).to_list(500)
         trades.extend(t for t in extra_open if t.get("id") not in seen_ids)
     ex_by_id, ex_by_key = ({}, {})

@@ -328,10 +328,6 @@ async def refresh_live(session, sym: str) -> Dict:
     return st
 
 
-def live_state(sym: str) -> Dict:
-    return dict(_LIVE_STATE.get(sym) or {})
-
-
 async def live_loop(get_symbols: Callable[[], List[str]], interval_sec: int = 60,
                     funding_days: float = 90, ls_days: float = 7):
     """Hält Funding/L/S für die Live-Scanner-Symbole aktuell (nur Symbole, deren

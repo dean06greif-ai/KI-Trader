@@ -29,9 +29,10 @@ class _Coll:
     def __init__(self, docs):
         self.docs = docs
 
-    def find(self, q=None):
+    def find(self, q=None, projection=None):
         q = q or {}
-        return _Cursor([d for d in self.docs
+        drop = {k for k, v in (projection or {}).items() if v == 0}
+        return _Cursor([{k: v for k, v in d.items() if k not in drop} for d in self.docs
                         if all(d.get(k) == v for k, v in q.items())])
 
     async def count_documents(self, q=None):
@@ -96,3 +97,18 @@ def test_mode_filter_respected_for_open_extra(_db):
         autotrade_router.get_trades(mode="paper", limit=50))
     assert all(t["mode"] == "paper" for t in res["trades"])
     assert "t0" not in [t["id"] for t in res["trades"]]
+
+
+def test_list_omits_internal_diagnostics_but_full_keeps_them(_db):
+    """Performance (01.10.2026): Trade-Liste ohne große interne Diagnose-Felder."""
+    for d in _db:
+        d.update(entry_market_snapshot={"features": {"x": 1}}, entry_checks=[1],
+                 paper_exec={"a": 1}, bitunix_response={"b": 1}, guard_shadow={"c": 1},
+                 policy_version={"combined": "v"}, ai_reasoning="warum", sizing={"s": 1})
+    res = asyncio.run(autotrade_router.get_trades(limit=5))
+    t = res["trades"][0]
+    for k in autotrade_router.TRADE_LIST_EXCLUDE:
+        assert k not in t
+    assert t["ai_reasoning"] == "warum" and t["sizing"] == {"s": 1} and "events" in t
+    full = asyncio.run(autotrade_router.get_trades(limit=5, full=True))["trades"][0]
+    assert full["entry_market_snapshot"] == {"features": {"x": 1}}

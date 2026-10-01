@@ -1485,9 +1485,6 @@ class AutoTradeManager:
         # 3) Fallback: global mode
         return self.config.get("mode", "paper")
 
-    def is_enabled(self, symbol: str) -> bool:
-        return self.coin_cfg(symbol).get("enabled", False)
-
     def ai_manage_allowed(self, strategy_id: Optional[str],
                           symbol: Optional[str] = None) -> bool:
         """Darf der KI-Trader offene Trades dieser Strategie anpassen?

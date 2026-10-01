@@ -187,11 +187,6 @@ async def _rel(asset_class: str, band: Optional[str] = None) -> Optional[Dict]:
     return await _release_for(asset_class) if not band else await _release_for(asset_class, band)
 
 
-def stage_of_class_cached(asset_class: str) -> str:
-    doc = _release_cache.get(asset_class)
-    return str(((doc or {}).get("release") or {}).get("stage") or "none")
-
-
 async def stage_of(symbol: str, band: Optional[str] = None) -> str:
     doc = await _rel(setup_asset_class.asset_class_of(symbol), band)
     return str(((doc or {}).get("release") or {}).get("stage") or "none")

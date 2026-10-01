@@ -135,15 +135,6 @@ def _total_candles() -> int:
     return sum(len(v["candles"]) for v in _MEM.values())
 
 
-def _evict_if_needed():
-    while _total_candles() > MAX_CANDLES_IN_MEMORY and _MEM:
-        oldest = min(_MEM.keys(), key=lambda k: _MEM[k]["used_at"])
-        entry = _MEM.pop(oldest)
-        if DISK_ENABLED:
-            _save_disk(oldest, entry["candles"])
-        logger.info(f"candle_cache: evicted {oldest} ({len(entry['candles'])} candles)")
-
-
 async def _evict_if_needed_async():
     while _total_candles() > MAX_CANDLES_IN_MEMORY and _MEM:
         oldest = min(_MEM.keys(), key=lambda k: _MEM[k]["used_at"])
@@ -431,7 +422,6 @@ async def repair_symbol(session, symbol: str, job: Dict = None) -> Dict:
             "primary_source": hs.source_of(symbol), "secondary_source": second}
 
 
-
 def stats() -> Dict:
     return {
         "symbols": len(_MEM),
@@ -469,14 +459,6 @@ async def peek(symbol: str) -> Optional[CandleArray]:
     return disk if disk is not None and len(disk) else None
 
 
-def cached_meta(symbol: str) -> Optional[Dict]:
-    entry = _MEM.get(symbol)
-    if not entry or not len(entry["candles"]):
-        return None
-    c = entry["candles"]
-    return {"candles": len(c), "first_ts": int(c.ts[0]), "last_ts": int(c.ts[-1])}
-
-
 def disk_meta(symbol: str) -> Optional[Dict]:
     """Metadaten direkt von Platte lesen – ohne die Daten in den RAM zu holen."""
     path = _npy_path(symbol)
@@ -490,14 +472,6 @@ def disk_meta(symbol: str) -> Optional[Dict]:
                 "last_ts": int(m[-1, 0])}
     except (OSError, ValueError):
         return None
-
-
-def persist_symbol(symbol: str) -> bool:
-    entry = _MEM.get(symbol)
-    if not entry or not len(entry["candles"]):
-        return False
-    _save_disk(symbol, entry["candles"])
-    return True
 
 
 async def persist_symbol_async(symbol: str) -> bool:

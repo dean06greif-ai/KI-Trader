@@ -52,10 +52,6 @@ def normalize(updates: Dict) -> Dict[str, float]:
     return config_values({"min_sl_pct_by_class": updates or {}})
 
 
-def min_pct_for(ai_cfg: Optional[Dict], symbol: Optional[str]) -> float:
-    return config_values(ai_cfg).get(sac.asset_class_of(symbol), 0.0)
-
-
 WIDEN_BUFFER = 1.05           # erweitert auf Minimum +5 % (übersteht Drift/Rundung)
 EXEC_DRIFT_TOLERANCE = 0.10   # Ausführungs-Check: bis 10 % unter dem Minimum durch Kursdrift ok
 

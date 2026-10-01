@@ -635,22 +635,6 @@ def build_builtin_signal_provider(strategy, fs: FastSeries, settings: Dict,
     return provider
 
 
-def _cross_up(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    ap = np.concatenate([[np.nan], a[:-1]])
-    bp = np.concatenate([[np.nan], b[:-1]])
-    out = (ap <= bp) & (a > b)
-    out &= ~np.isnan(ap) & ~np.isnan(bp)
-    return out
-
-
-def _cross_down(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    ap = np.concatenate([[np.nan], a[:-1]])
-    bp = np.concatenate([[np.nan], b[:-1]])
-    out = (ap >= bp) & (a < b)
-    out &= ~np.isnan(ap) & ~np.isnan(bp)
-    return out
-
-
 def sweep_arrays(fs: FastSeries, left: int = 2, right: int = 2):
     """Vektorisierte Liquidity-Sweep-Erkennung (identisch zu TI.liquidity_sweep):
     Fraktal-Swings; letzte 3 Swing-Lows/Highs VOR der aktuellen Kerze;

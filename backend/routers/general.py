@@ -30,6 +30,14 @@ async def health_check():
     return {"status": "alive"}
 
 
+@router.get("/api/system/loop-health")
+async def loop_health():
+    """Wie reaktionsschnell ist der Server? Blockaden des Event-Loops (> Schwelle)
+    mit Verursacher (Datei:Zeile) – Grund für „Klick dauert lange“."""
+    from core import loop_watchdog
+    return loop_watchdog.snapshot()
+
+
 @router.get("/api/debug/status")
 async def debug_status():
     from services import candle_cache as _cc

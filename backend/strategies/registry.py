@@ -69,9 +69,6 @@ class StrategyRegistry:
     def list_ids(self) -> List[str]:
         return list(self._strategies.keys())
 
-    def get_default(self) -> BaseStrategy:
-        return self._strategies["scalping_4_rules"]
-
     # ---- custom strategies ----
     def load_custom(self, definitions: List[Dict]):
         """Custom-Strategien UND Built-in-Varianten laden (Varianten tragen

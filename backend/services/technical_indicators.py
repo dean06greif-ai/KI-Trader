@@ -239,22 +239,6 @@ class TechnicalIndicators:
         
         return reward / risk
 
-    # ------------------------------------------------------------------
-    # Erweiterte Indikatoren für den Strategie-Builder
-    # ------------------------------------------------------------------
-    @staticmethod
-    def calculate_sma(prices: List[float], period: int) -> List[Optional[float]]:
-        n = len(prices)
-        if n < period:
-            return [None] * n
-        arr = np.array(prices, dtype=float)
-        out: List[Optional[float]] = [None] * (period - 1)
-        csum = np.cumsum(arr)
-        for i in range(period - 1, n):
-            s = csum[i] - (csum[i - period] if i >= period else 0)
-            out.append(float(s / period))
-        return out
-
     @staticmethod
     def calculate_macd(prices: List[float], fast: int = 12, slow: int = 26,
                        signal: int = 9):

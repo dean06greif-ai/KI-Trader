@@ -621,12 +621,6 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _is_rate_limit_error(err: Exception) -> bool:
-    """True wenn Gemini 429 / RESOURCE_EXHAUSTED / Quota-Fehler wirft."""
-    s = str(err).lower()
-    return any(k in s for k in ("429", "resource_exhausted", "quota", "rate limit", "ratelimit"))
-
-
 def live_gate_bypass_ok(confidence, min_confidence, opened_today, cfg: Dict) -> bool:
     """Setup-Gate-Bypass (rein, testbar): hochkonfidente Setups dürfen begrenzt
     live gehen, auch wenn das Setup noch nicht 'live-reif' ist.
@@ -702,10 +696,6 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
             if has_key:
                 return ai_providers.primary_key(prov)
         return None
-
-    @staticmethod
-    def _provider_key(provider: str) -> Optional[str]:
-        return ai_providers.primary_key(provider)
 
     def _available_providers(self) -> Dict[str, bool]:
         """True, wenn für den Provider ein API-Key gesetzt ist."""
@@ -2698,7 +2688,6 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
         except Exception as e:
             logger.warning(f"Maker-Aussetzungs-Meldung fehlgeschlagen: {e}")
         logger.info(f"Maker-Modus auto-ausgesetzt (Fill-Quote {rate:.0%})")
-
 
 
     # ---------------- deep analysis (Tiefen-Analyst) ----------------
