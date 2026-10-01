@@ -199,8 +199,7 @@ async def optimizer_active():
         from services import local_exec
         if await local_exec.restore_running_jobs(state.db, "optimizer"):
             running = [j for j in opt.JOBS.values() if j["status"] == "running"]
-    from services import local_exec as _lx
-    if running and not _lx.parallel_allowed(running, body):
+    if running:
         return {"active": _job_public(running[-1])}
     done = sorted([j for j in opt.JOBS.values() if j["status"] in ("done", "error", "cancelled")],
                   key=lambda x: x["created_at"])

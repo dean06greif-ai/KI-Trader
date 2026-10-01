@@ -156,3 +156,11 @@ Umgesetzt (Details: /app/VERBESSERUNGEN_0110_MULTIWORKER_KITRADER.md):
 - asset_suggest + /api/dynamic-workbench/suggest-assets/{aid}; UI DynamicAssetSuggest
 Backlog: P1 Asset-Vorschlag zusätzlich mit Kerzen-Korrelation/Volatilität (Worker-Cache);
 P1 Regime-Lab-Hauptbalken je Worker getrennt anzeigen; P2 Worker-Paket-Versionstest (1.18 vs 1.13) bereinigen.
+
+## Iteration 01.10.2026 (b) – Autopilot-Verlauf zurück + Referenz-Start
+- Ursache „Verlauf weg“: Retention hielt nur 12 regime_lab_runs über ALLE Arten → regime_opt verdrängte Autopilot-Läufe.
+  Fix: je result.kind (Autopilot 40), gemerkte (pinned) nie löschen.
+- Verlauf: Ampel (sehr gut/gut/mittel/schwach, rate_result), ★ Bester je Coins/Timeframe, Filter, Merken (pin).
+- Aktionen: übernehmen (Engine-Einstellungen), „Regime suchen“ (übernehmen + sofort Analyse mit Coins/TF des Laufs),
+  „Referenz“ (nächster Autopilot startet von dieser Erkennung + Top-Varianten, auch anderer Timeframe; result.reference = Abstammung).
+- Tests: backend/tests/test_autopilot_history_reference.py, tests/test_autopilot_history_api.py; iteration_40 100 %.
