@@ -337,35 +337,28 @@ def no_model_reason(histories: Dict[str, List[Dict]], train_hist: Dict[str, List
     return msg[:300]
 
 
-def evaluate_config(cfg: Dict, histories: Dict, train_hist: Dict, bounds: Dict,
-                    inner_anchor: Dict, timeframe: str, stop=None) -> Optional[Dict]:
-    """Eine Detektor-Konfiguration bewerten (CPU-lastig, im Thread aufrufen).
-    Nutzt exakt die Kennzahlen der gespeicherten Analysen (Live=Final)."""
-    model = rg.detect_regimes(train_hist, timeframe, 5, 3.0, 5.0,
-                              engine="v2", engine_config=cfg)
-    if not model:
-        return None
-    conf_min = float(cfg.get("confidence_min") or 0.55)
-    min_hold = float(cfg.get("min_hold_days") or 0)
-    bpd = max(rg.bars_per_day(timeframe), 1e-9)
-    agg = {"direction_pct": [], "holdout_direction_pct": [],
-           "inner_direction_pct": [], "trend_hit_pct": [], "train_direction_pct": []}
-    ragg = {"reference_pct": [], "inner_reference_pct": [], "holdout_reference_pct": [],
-            "train_reference_pct": [], "reference_lag_days": [],
-            "inner_reference_bal_pct": [], "train_reference_bal_pct": [],
-            "inner_reference_f1_pct": [], "train_reference_f1_pct": [],
-            "holdout_reference_f1_pct": [], "holdout_kappa_pct": [],
-            "utility_separation_pct": [], "utility_sign_hit_pct": [],
-            "utility_train_sign_hit_pct": [],
-            "holdout_reference_bal_pct": [], "holdout_skill_pct": [],
-            "live_direction_phase_days": []}
-    holdout_bars = switches = seg_bars = seg_n = 0
-    for sym, candles in histories.items():
-        if stop and stop():
-            raise JobCancelled()
-        _labels, entry = lab._symbol_payload(model, candles, timeframe, conf_min,
-                                             min_hold, False, bounds.get(sym),
-                                             inner_anchor.get(sym))
+class MetricsAccumulator:
+    """Kennzahlen einer Erkennung über mehrere Symbole sammeln (rein). Eine
+    Quelle der Wahrheit für den Autopiloten (evaluate_config) UND für den Import
+    gespeicherter Analysen in den Autopilot-Verlauf (services/regime_history_import)."""
+
+    def __init__(self, timeframe: str):
+        self.bpd = max(rg.bars_per_day(timeframe), 1e-9)
+        self.agg = {"direction_pct": [], "holdout_direction_pct": [],
+                    "inner_direction_pct": [], "trend_hit_pct": [], "train_direction_pct": []}
+        self.ragg = {"reference_pct": [], "inner_reference_pct": [], "holdout_reference_pct": [],
+                     "train_reference_pct": [], "reference_lag_days": [],
+                     "inner_reference_bal_pct": [], "train_reference_bal_pct": [],
+                     "inner_reference_f1_pct": [], "train_reference_f1_pct": [],
+                     "holdout_reference_f1_pct": [], "holdout_kappa_pct": [],
+                     "utility_separation_pct": [], "utility_sign_hit_pct": [],
+                     "utility_train_sign_hit_pct": [],
+                     "holdout_reference_bal_pct": [], "holdout_skill_pct": [],
+                     "live_direction_phase_days": []}
+        self.holdout_bars = self.switches = self.seg_bars = self.seg_n = 0
+
+    def add(self, entry: Dict) -> None:
+        agg = self.agg
         la = entry.get("live_agreement") or {}
         for k in agg:
             if la.get(k) is not None:
@@ -376,20 +369,45 @@ def evaluate_config(cfg: Dict, histories: Dict, train_hist: Dict, bounds: Dict,
             same = float(la["direction_pct"]) / 100.0 * bars
             hsame = float(la.get("holdout_direction_pct") or 0) / 100.0 * hbars
             agg["train_direction_pct"].append((same - hsame) / (bars - hbars) * 100.0)
-        _collect_reference(entry.get("reference") or {}, ragg)
-        holdout_bars += int(la.get("holdout_bars") or 0)
+        _collect_reference(entry.get("reference") or {}, self.ragg)
+        self.holdout_bars += int(la.get("holdout_bars") or 0)
         lsegs = entry.get("live_segments") or entry.get("segments") or []
-        switches += max(len(lsegs) - 1, 0)
-        seg_bars += sum(int(s.get("bars") or 0) for s in lsegs)
-        seg_n += len(lsegs)
-    return {"direction_pct": _mean(agg["direction_pct"]),
-            "holdout_direction_pct": _mean(agg["holdout_direction_pct"]),
-            "inner_direction_pct": _mean(agg["inner_direction_pct"]),
-            "train_direction_pct": _mean(agg["train_direction_pct"]),
-            "trend_hit_pct": _mean(agg["trend_hit_pct"]),
-            "holdout_bars": holdout_bars, "switches_live": switches,
-            "avg_live_phase_days": (round(seg_bars / seg_n / bpd, 2) if seg_n else None),
-            **{k: _mean(v) for k, v in ragg.items()}}
+        self.switches += max(len(lsegs) - 1, 0)
+        self.seg_bars += sum(int(s.get("bars") or 0) for s in lsegs)
+        self.seg_n += len(lsegs)
+
+    def result(self) -> Dict:
+        agg = self.agg
+        return {"direction_pct": _mean(agg["direction_pct"]),
+                "holdout_direction_pct": _mean(agg["holdout_direction_pct"]),
+                "inner_direction_pct": _mean(agg["inner_direction_pct"]),
+                "train_direction_pct": _mean(agg["train_direction_pct"]),
+                "trend_hit_pct": _mean(agg["trend_hit_pct"]),
+                "holdout_bars": self.holdout_bars, "switches_live": self.switches,
+                "avg_live_phase_days": (round(self.seg_bars / self.seg_n / self.bpd, 2)
+                                        if self.seg_n else None),
+                **{k: _mean(v) for k, v in self.ragg.items()}}
+
+
+def evaluate_config(cfg: Dict, histories: Dict, train_hist: Dict, bounds: Dict,
+                    inner_anchor: Dict, timeframe: str, stop=None) -> Optional[Dict]:
+    """Eine Detektor-Konfiguration bewerten (CPU-lastig, im Thread aufrufen).
+    Nutzt exakt die Kennzahlen der gespeicherten Analysen (Live=Final)."""
+    model = rg.detect_regimes(train_hist, timeframe, 5, 3.0, 5.0,
+                              engine="v2", engine_config=cfg)
+    if not model:
+        return None
+    conf_min = float(cfg.get("confidence_min") or 0.55)
+    min_hold = float(cfg.get("min_hold_days") or 0)
+    acc = MetricsAccumulator(timeframe)
+    for sym, candles in histories.items():
+        if stop and stop():
+            raise JobCancelled()
+        _labels, entry = lab._symbol_payload(model, candles, timeframe, conf_min,
+                                             min_hold, False, bounds.get(sym),
+                                             inner_anchor.get(sym))
+        acc.add(entry)
+    return acc.result()
 
 
 def _collect_reference(ref: Dict, ragg: Dict) -> None:

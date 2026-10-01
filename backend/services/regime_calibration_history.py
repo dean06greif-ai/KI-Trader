@@ -84,7 +84,8 @@ async def list_history(db, limit: int = 20, include_autopilot: bool = True) -> L
     runs = []
     if include_autopilot:
         runs = await db.regime_lab_runs.find(
-            {"result.kind": "autopilot"}, {"_id": 0, "result.history": 0}) \
+            {"result.kind": "autopilot", "result.source": {"$ne": "import"}},
+            {"_id": 0, "result.history": 0}) \
             .sort("created_at", -1).to_list(lim)
     return merged_history(cals, runs, lim)
 

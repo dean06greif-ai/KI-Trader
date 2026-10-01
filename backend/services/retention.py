@@ -153,6 +153,9 @@ async def _keep_groups(db, rule: Dict) -> List[tuple]:
 
 async def _trim_group(db, rule: Dict, flt: Dict, keep: int) -> int:
     coll = rule["coll"]
+    if rule.get("protect") == "pinned":
+        # Gemerkte Zeilen (auch importierte Regime) belegen keinen der keep-Plätze
+        flt = {**flt, "pinned": {"$ne": True}}
     if await db[coll].count_documents(flt) <= keep:
         return 0
     old = await db[coll].find(flt, {"_id": 1, "id": 1, "pinned": 1}).sort(rule["ts"], -1) \

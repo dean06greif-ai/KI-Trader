@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Star, PushPin, Crosshair, ArrowRight, CheckCircle } from '@phosphor-icons/react';
+import { Star, PushPin, Crosshair, ArrowRight, CheckCircle, DownloadSimple } from '@phosphor-icons/react';
 
 const fmt = (v, d = 1) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
 const short = (s) => s.replace('USDT', '');
@@ -23,7 +23,7 @@ export function GradeBadge({ rating, testId }) {
 }
 
 /** Autopilot-Verlauf: Ampel je Lauf, übernehmen, direkt neue Erkennung, als Referenz weitersuchen. */
-export default function RegimeAutopilotHistory({ runs, det, appliedId, referenceId, onApply, onAnalyze, onReference, onPin }) {
+export default function RegimeAutopilotHistory({ runs, det, appliedId, referenceId, onApply, onAnalyze, onReference, onPin, onImport, importing }) {
   const [open, setOpen] = useState(true);
   const [filter, setFilter] = useState('all');
   const shown = runs.filter(r => passes(r.rating?.grade, filter));
@@ -37,6 +37,12 @@ export default function RegimeAutopilotHistory({ runs, det, appliedId, reference
           <select value={filter} onChange={e => setFilter(e.target.value)} data-testid="autopilot-history-filter" style={{ fontSize: 10 }}>
             {FILTERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
+        )}
+        {open && onImport && (
+          <button className="opt-chip" style={{ fontSize: 10 }} onClick={onImport} disabled={importing} data-testid="autopilot-history-import"
+            title="Deine gespeicherten Regime-Analysen (Erkennung + Kennzahlen) als gemerkte Zeilen in diesen Verlauf übernehmen – bleiben dauerhaft gesichert, auch wenn die Analyse später gelöscht wird. Bereits übernommene werden übersprungen.">
+            <DownloadSimple size={11} /> {importing ? 'Übernehme …' : 'Bestehende Regime sichern & einfügen'}
+          </button>
         )}
       </div>
       {open && runs.length === 0 && (
@@ -67,6 +73,7 @@ export default function RegimeAutopilotHistory({ runs, det, appliedId, reference
                       {r.best_in_group && <Star size={12} weight="fill" color="#ffd75a" style={{ marginLeft: 4 }} data-testid={`autopilot-run-best-${r.id}`} />}
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      {res.source === 'import' && <div className="opt-small" style={{ opacity: 0.75 }} data-testid={`autopilot-run-imported-${r.id}`} title="Aus einer gespeicherten Regime-Analyse übernommen (kein Autopilot-Lauf)">⤓ importiert: {res.imported_from?.name || 'Analyse'}</div>}
                       {res.reference && <div className="opt-small" style={{ opacity: 0.7 }} data-testid={`autopilot-run-ref-${r.id}`}>⤷ aus Referenz {String(res.reference.created_at || '').slice(0, 10)} · {res.reference.timeframe}</div>}
                     </td>
                     <td>{(res.symbols || []).map(short).join(', ')}<div className="opt-small" style={{ whiteSpace: 'nowrap' }}><b>{res.timeframe}</b> · {res.days}d

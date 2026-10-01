@@ -70,3 +70,26 @@ def test_retention_keeps_autopilot_runs_per_kind_and_pinned():
     left = asyncio.run(go())
     assert sum(1 for x in left if x.startswith("opt")) == 12
     assert {"ap4", "ap3", "ap2", "ap0"} == {x for x in left if x.startswith("ap")}
+
+
+def test_retention_pinned_rows_do_not_consume_keep_slots():
+    """01.10.2026: importierte/gemerkte Zeilen verdrängen keine echten Autopilot-Läufe."""
+    from motor.motor_asyncio import AsyncIOMotorClient
+    url = os.environ.get("MONGO_URL")
+    if not url:
+        import pytest
+        pytest.skip("MONGO_URL fehlt")
+
+    async def go():
+        db = AsyncIOMotorClient(url)["test_retention_pinned_tmp"]
+        await db.regime_lab_runs.delete_many({})
+        docs = [{"id": f"ap{i}", "created_at": f"2026-08-01T{i:02d}:00:00", "result": {"kind": "autopilot"},
+                 "pinned": i >= 4} for i in range(7)]
+        await db.regime_lab_runs.insert_many(docs)
+        rule = next(r for r in retention.DEFAULT_POLICY if r["coll"] == "regime_lab_runs")
+        await retention._sweep_rule(db, {**rule, "keep_by_group": {"autopilot": 3}})
+        left = {d["id"] async for d in db.regime_lab_runs.find({}, {"id": 1})}
+        await db.client.drop_database("test_retention_pinned_tmp")
+        return left
+
+    assert asyncio.run(go()) == {"ap6", "ap5", "ap4", "ap3", "ap2", "ap1"}

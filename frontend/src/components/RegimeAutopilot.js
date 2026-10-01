@@ -83,8 +83,24 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, warmStart, autoChain, phaseV: PHASE_V })); } catch { /* quota */ }
   }, [maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, warmStart, autoChain]);
 
-  const loadRuns = () => fetch(`${API_URL}/api/regime-lab/autopilot/runs`).then(r => r.json())
+  const loadRuns = () => fetch(`${API_URL}/api/regime-lab/autopilot/runs?limit=60`).then(r => r.json())
     .then(d => setRuns(d.runs || [])).catch(() => {});
+  const [importing, setImporting] = useState(false);
+  // Bestehende Regime (gespeicherte Analysen) in den Verlauf übernehmen & dauerhaft sichern
+  const importRuns = async () => {
+    if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
+    setImporting(true);
+    try {
+      const r = await fetch(`${API_URL}/api/regime-lab/autopilot/runs/import`, { method: 'POST', headers: authHeaders() });
+      const d = await r.json();
+      if (!r.ok) { toast.info(`Übernahme fehlgeschlagen: ${d.detail || r.status}`); return; }
+      toast.success(d.imported
+        ? `${d.imported} bestehende Regime in den Verlauf übernommen & gesichert` + (d.already ? ` (${d.already} waren schon drin)` : '')
+        : `Keine neuen Regime – ${d.already} schon im Verlauf` + (d.skipped ? `, ${d.skipped} ohne Live-Erkennung übersprungen` : ''));
+      loadRuns();
+    } catch { toast.info('Übernahme fehlgeschlagen: keine Verbindung'); }
+    finally { setImporting(false); }
+  };
   useEffect(() => { loadRuns(); }, [lastResult]);
 
   // Lauf über Nacht fertig geworden (Browser war zu): beste Erkennung beim
@@ -377,7 +393,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
           (r.result?.timeframe && r.result.timeframe !== timeframe)
             ? `Erkennung übernommen – Achtung: Lauf war auf ${r.result.timeframe}, oben ist ${timeframe} gewählt`
             : 'Erkennung aus dem Verlauf übernommen – jetzt „Regime suchen & speichern“ oder direkt „Regime suchen“ im Verlauf')}
-        onAnalyze={analyzeFromRun} onReference={toggleReference} onPin={pinRun} />
+        onAnalyze={analyzeFromRun} onReference={toggleReference} onPin={pinRun}
+        onImport={importRuns} importing={importing} />
     </div>
   );
 }

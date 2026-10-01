@@ -464,6 +464,14 @@ async def autopilot_runs(limit: int = 30):
     return {"runs": regime_autopilot.annotate_runs(rows)}
 
 
+@router.post("/api/regime-lab/autopilot/runs/import")
+async def autopilot_runs_import(_: bool = Depends(require_admin)):
+    """Bestehende Regime (gespeicherte Analysen) als gemerkte Zeilen in den
+    Autopilot-Verlauf übernehmen – idempotent, sichert die Erkennung dauerhaft."""
+    from services import regime_history_import
+    return await regime_history_import.import_existing(state.db)
+
+
 @router.post("/api/regime-lab/autopilot/runs/{run_id}/pin")
 async def autopilot_run_pin(run_id: str, body: Dict, _: bool = Depends(require_admin)):
     """Lauf merken (bleibt bei der Datenbank-Bereinigung erhalten) bzw. lösen."""
