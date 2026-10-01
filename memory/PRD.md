@@ -141,3 +141,18 @@ Regime-Copilot mit aktuellem Regime-Wissen (Taxonomie, Freigabe, KI-Trader-Anbin
   Walk-Forward nutzt frisch gespeicherte Zuordnungen (vorher beim lokalen Worker veraltet); Warnhinweis bei unrealistischem Min. Trades.
 - Worker 1.18.0 für Teilmengen lokal (`WB_SUBSET_WORKER`, 409 bei älteren). Tests: tests/test_workbench_assets_0110.py; Testagent iteration_38: 100 %.
 - Backlog: Regime parallel rechnen (RAM auf Render beachten); Code-Splitting.
+
+## Iteration 01.10.2026 (Branch conflict_300926_2220)
+Aufgabe: Asset-Vorschlag je Regime (Werkbank), bis zu 2 lokale Worker parallel mit Job-Zuweisung,
+Ursache „KI-Trader-Setups handeln kaum“ finden & fixen, KI-Chat soll Setup-Befehle selbst ausführen.
+Nutzer-Entscheidungen: Vorschlag = bisherige Ergebnisse + Marktdaten; Job wird einem Worker zugewiesen;
+Prod-DB nur lesend; Chat führt Befehle direkt aus.
+Umgesetzt (Details: /app/VERBESSERUNGEN_0110_MULTIWORKER_KITRADER.md):
+- Funding-Einheit-Bug (100× überschätzt) → Fee-Wächter blockte 207 Krypto-Signale/14 Tage
+- Mindest-SL: erweitern statt verwerfen (433 Entscheidungen) + Drift-Toleranz bei Ausführung
+- Playbook: revert_setup / revision_history / auto_revert_due (Selbstkorrektur toter Revisionen)
+- Chat: setup_revert / setup_revise, kein Leaken interner Prompt-Blöcke
+- local_exec: MAX_ACTIVE_WORKERS=2, worker_id-Ziel, parallel_allowed; UI WorkerTargetSelect
+- asset_suggest + /api/dynamic-workbench/suggest-assets/{aid}; UI DynamicAssetSuggest
+Backlog: P1 Asset-Vorschlag zusätzlich mit Kerzen-Korrelation/Volatilität (Worker-Cache);
+P1 Regime-Lab-Hauptbalken je Worker getrennt anzeigen; P2 Worker-Paket-Versionstest (1.18 vs 1.13) bereinigen.
