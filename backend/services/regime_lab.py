@@ -1400,6 +1400,9 @@ async def persist_worker_result(db, job_id: str, job: Dict):
     elif kind == "reevaluate":
         await apply_reevaluation(db, res.get("aid"), res.get("updates") or {})
     elif kind in ("regime_opt", "autopilot", "ablation"):
+        ref = (job.get("params") or {}).get("reference")
+        if kind == "autopilot" and ref and not res.get("reference"):
+            res["reference"] = ref  # ältere Worker-Pakete kennen das Feld noch nicht
         await db.regime_lab_runs.replace_one(
             {"id": job_id}, {"id": job_id, "result": res,
                              "created_at": res.get("created_at")}, upsert=True)

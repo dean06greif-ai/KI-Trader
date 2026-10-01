@@ -539,6 +539,84 @@ async def schedule_followup(db, job_id: str, result: Dict, params: Dict) -> Opti
 
 
 # ---------------- Job ----------------
+# ---------------- Autopilot-Verlauf: Bewertung & Referenz-Start ----------------
+GRADES = (("top", "sehr gut"), ("good", "gut"), ("mid", "mittel"), ("weak", "schwach"))
+MAX_REFERENCE_SEEDS = 10
+
+
+def rate_result(res: Dict) -> Dict:
+    """Ampel für einen Autopilot-Lauf (rein & testbar): Auswahl-Score,
+    Holdout (finaler Test), Beweislage und Phasen-Warnungen."""
+    best = res.get("best") or {}
+    m = best.get("metrics") or {}
+    score = float(best.get("score") or 0)
+    pts, why = 0, []
+    pts += 2 if score >= 75 else 1 if score >= 60 else 0
+    why.append(f"Score {score:.1f}")
+    hf1 = m.get("holdout_reference_f1_pct")
+    if hf1 is not None:
+        pts += 2 if hf1 >= 55 else 1 if hf1 >= 45 else 0
+        why.append(f"Holdout-F1 {hf1:.1f}%")
+    elif m.get("holdout_direction_pct") is not None:
+        pts += 1 if m["holdout_direction_pct"] >= 90 else 0
+        why.append(f"Holdout {m['holdout_direction_pct']:.1f}%")
+    phase = m.get("avg_live_phase_days")
+    st = res.get("settings") or {}
+    lo, hi = st.get("min_phase_days_target") or 0, st.get("max_phase_days_target") or 0
+    if phase is not None and phase >= lo and (not hi or phase <= hi):
+        pts += 1
+        why.append(f"Ø Phase {phase:.1f}d im Sweet Spot")
+    if res.get("holdout_regressed"):
+        pts -= 1
+        why.append("Holdout gefallen")
+    if res.get("evidence") == "insufficient_evidence":
+        pts -= 1
+        why.append("zu wenig Holdout-Daten")
+    grade = "top" if pts >= 4 else "good" if pts == 3 else "mid" if pts == 2 else "weak"
+    return {"grade": grade, "label": dict(GRADES)[grade], "points": pts, "why": " · ".join(why)}
+
+
+def group_key(res: Dict) -> str:
+    return f"{','.join(sorted(res.get('symbols') or []))}|{res.get('timeframe') or ''}"
+
+
+def annotate_runs(rows: List[Dict]) -> List[Dict]:
+    """Verlauf anreichern (rein): Ampel je Lauf + Bester je Coins/Timeframe-Gruppe."""
+    best_by_group: Dict[str, tuple] = {}
+    for r in rows:
+        res = r.get("result") or {}
+        r["rating"] = rate_result(res)
+        sc = float((res.get("best") or {}).get("score") or 0)
+        g = group_key(res)
+        if g not in best_by_group or sc > best_by_group[g][0]:
+            best_by_group[g] = (sc, r.get("id"))
+    for r in rows:
+        top = best_by_group.get(group_key(r.get("result") or {}), (0, None))[1] == r.get("id")
+        r["best_in_group"] = top and r["rating"]["grade"] in ("top", "good")
+    return rows
+
+
+def reference_start(run: Dict, current_cfg: Optional[Dict]) -> Dict:
+    """Referenz-Lauf als Startpunkt (rein): Start = beste Erkennung der Referenz,
+    Seeds = ihre Top-Varianten + die aktuelle Einstellung (wird mitgetestet,
+    falls sie auf den neuen Daten besser ist). Funktioniert auch auf einem
+    anderen Timeframe (z.B. 1h-Ergebnis als Start für 4h) – kein Suchfortschritt geht verloren."""
+    res = run.get("result") or {}
+    start = dict(res.get("best_engine_config") or (res.get("best") or {}).get("engine_config") or {})
+    when = str(run.get("created_at") or "")[:10]
+    src = f"Referenz {when} · {res.get('timeframe') or ''}"
+    seeds = [{"engine_config": h["engine_config"], "source": f"{src} · Top {i + 1}"}
+             for i, h in enumerate(res.get("history") or [])
+             if isinstance(h.get("engine_config"), dict)][:MAX_REFERENCE_SEEDS]
+    if current_cfg:
+        seeds.append({"engine_config": dict(current_cfg), "source": "aktuelle Einstellung"})
+    info = {"run_id": run.get("id"), "created_at": run.get("created_at"),
+            "timeframe": res.get("timeframe"), "symbols": res.get("symbols") or [],
+            "days": res.get("days"), "score": (res.get("best") or {}).get("score"),
+            "detector": (res.get("best") or {}).get("detector")}
+    return {"engine_config": start, "seeds": seeds, "reference": info}
+
+
 async def run_autopilot(job_id: str, body: Dict, db):
     job = lab.JOBS[job_id]
     try:
@@ -771,6 +849,8 @@ async def run_autopilot(job_id: str, body: Dict, db):
                   "created_at": datetime.now(timezone.utc).isoformat()}
         if job.get("start_fallback"):
             result["start_fallback"] = job["start_fallback"]
+        if body.get("reference"):
+            result["reference"] = body["reference"]
         result["adopt_recommended"] = adopt_recommended(result)
         if db is not None:
             try:

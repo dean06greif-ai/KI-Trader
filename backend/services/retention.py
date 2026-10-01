@@ -66,7 +66,11 @@ DEFAULT_POLICY: List[Dict] = [
     # Ergänzung 06/2026 (Audit): bisher ungedeckelte Wachstums-Collections
     {"coll": "app_notifications", "ts": "created_at", "days": 30, "keep_last": None},
     {"coll": "ai_ghost_trades", "ts": "opened_at", "days": 60, "keep_last": None},
-    {"coll": "regime_lab_runs", "ts": "created_at", "days": None, "keep_last": 12},
+    # Je Lauf-Art getrennt zählen (Befund 10/2026: viele regime_opt-Läufe der
+    # Werkbank verdrängten alle Autopilot-Läufe -> Autopilot-Verlauf leer).
+    # Gemerkte Läufe (pinned, z.B. als Referenz genutzt) bleiben immer.
+    {"coll": "regime_lab_runs", "ts": "created_at", "days": None, "keep_last": 12,
+     "group_by": "result.kind", "keep_by_group": {"autopilot": 40}, "protect": "pinned"},
     {"coll": "dynamic_switch_log", "ts": "at", "days": 45, "keep_last": None},
     {"coll": "confluence_events", "ts": "timestamp", "days": 45, "keep_last": None},
     {"coll": "local_jobs", "ts": "created_at", "days": 7, "keep_last": None},
@@ -130,16 +134,37 @@ async def _sweep_rule(db, rule: Dict) -> Dict:
         deleted += int(res.deleted_count or 0)
     keep = rule.get("keep_last")
     if keep:
-        total = await db[coll].count_documents({})
-        if total > keep:
-            old = await db[coll].find({}, {"_id": 1, "id": 1}).sort(ts_field, -1) \
-                .skip(int(keep)).to_list(length=None)
-            protected = await protected_ids(db, rule.get("protect")) if rule.get("protect") else set()
-            ids = [o["_id"] for o in old if o.get("id") not in protected]
-            if ids:
-                res = await db[coll].delete_many({"_id": {"$in": ids}})
-                deleted += int(res.deleted_count or 0)
+        for flt, n in await _keep_groups(db, rule):
+            deleted += await _trim_group(db, rule, flt, n)
     return {"coll": coll, "deleted": deleted}
+
+
+async def _keep_groups(db, rule: Dict) -> List[tuple]:
+    """(Filter, keep_last) je Gruppe – ohne group_by eine Gruppe (Alt-Verhalten)."""
+    field = rule.get("group_by")
+    if not field:
+        return [({}, int(rule["keep_last"]))]
+    per = rule.get("keep_by_group") or {}
+    values = await db[rule["coll"]].distinct(field)
+    groups = [({field: v}, int(per.get(v, rule["keep_last"]))) for v in values]
+    groups.append(({field: {"$exists": False}}, int(rule["keep_last"])))
+    return groups
+
+
+async def _trim_group(db, rule: Dict, flt: Dict, keep: int) -> int:
+    coll = rule["coll"]
+    if await db[coll].count_documents(flt) <= keep:
+        return 0
+    old = await db[coll].find(flt, {"_id": 1, "id": 1, "pinned": 1}).sort(rule["ts"], -1) \
+        .skip(int(keep)).to_list(length=None)
+    protect = rule.get("protect")
+    protected = await protected_ids(db, protect) if protect and protect != "pinned" else set()
+    ids = [o["_id"] for o in old if o.get("id") not in protected
+           and not (protect == "pinned" and o.get("pinned"))]
+    if not ids:
+        return 0
+    res = await db[coll].delete_many({"_id": {"$in": ids}})
+    return int(res.deleted_count or 0)
 
 
 def pinned_analysis_ids(analyses: List[Dict], dyn_docs: List[Dict]) -> set:

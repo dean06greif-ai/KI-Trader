@@ -8,6 +8,7 @@ import { EdgeBanner, labJobAction } from './RegimeJobProgress';
 import { WhatNow } from './RegimeDetectorTools';
 import NumInput from './NumInput';
 import RegimeAutopilotAdvice from './RegimeAutopilotAdvice';
+import RegimeAutopilotHistory, { GradeBadge } from './RegimeAutopilotHistory';
 import { workerField } from '../lib/workerTarget';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -58,7 +59,7 @@ function BestLine({ best, testId }) {
  * übernommen, danach „Regime suchen & speichern“ starten.
  */
 export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, engineConfig, setEngineConfig,
-  calibApplied, setCalibApplied, execution, lwOnline, jobBlocked, activeJob, lastResult, onStarted, onQueued }) {
+  calibApplied, setCalibApplied, execution, lwOnline, jobBlocked, activeJob, lastResult, onStarted, onQueued, onAnalyzeWith }) {
   const saved = loadSettings();
   const [maxMin, setMaxMin] = useState(saved.maxMin ?? 0);
   const [targetPct, setTargetPct] = useState(saved.targetPct ?? 0);
@@ -71,7 +72,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [autoChain, setAutoChain] = useState(saved.autoChain ?? true);
   const [banner, setBanner] = useState(null);
   const [runs, setRuns] = useState([]);
-  const [showHistory, setShowHistory] = useState(false);
+  const [reference, setReference] = useState(null);
   const [appliedId, setAppliedId] = useState(null);
   const [lastDecision, setLastDecision] = useState(null);
 
@@ -105,11 +106,11 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runs]);
 
-  const applyBest = (res, id, source) => {
+  const applyBest = (res, id, source, ctx) => {
     const report = autopilotReport(res);
     if (!report) return false;
     setEngineConfig({ ...(engineConfig || {}), ...report.best_config });
-    setCalibApplied?.(calibAppliedFromReport(report, id, source, { symbols: selCoins, timeframe }));
+    setCalibApplied?.(calibAppliedFromReport(report, id, source, ctx || { symbols: selCoins, timeframe }));
     setAppliedId(id || null);
     return true;
   };
@@ -158,7 +159,32 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastResult]);
 
+  const toggleReference = (r) => {
+    setReference(cur => (cur?.id === r.id ? null : r));
+    if (reference?.id !== r.id) toast.info(`Referenz gesetzt – der nächste Autopilot startet von diesem Ergebnis (${r.result?.timeframe}) und sucht auf ${timeframe} weiter`);
+  };
+
+  // Übernehmen + sofort neue Regime-Erkennung mit Coins/Timeframe/Zeitraum des Laufs
+  const analyzeFromRun = (r) => {
+    const res = r.result || {};
+    const report = autopilotReport(res);
+    if (!report || !onAnalyzeWith) return;
+    applyBest(res, r.id, 'Autopilot-Verlauf', { symbols: res.symbols, timeframe: res.timeframe });
+    onAnalyzeWith({ engineConfig: { ...(engineConfig || {}), ...report.best_config },
+      symbols: res.symbols, timeframe: res.timeframe, days: res.days });
+  };
+
+  const pinRun = async (r) => {
+    const rr = await fetch(`${API_URL}/api/regime-lab/autopilot/runs/${r.id}/pin`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ pinned: !r.pinned }),
+    }).catch(() => null);
+    if (rr?.ok) { toast.success(r.pinned ? 'Lauf gelöst' : 'Lauf gemerkt – bleibt dauerhaft im Verlauf'); loadRuns(); }
+    else toast.error('Merken fehlgeschlagen (Admin-Login?)');
+  };
+
   const buildBody = () => ({
+    ...(reference ? { reference_run_id: reference.id } : {}),
     symbols: selCoins, timeframe, days, train_pct: trainPct, engine_config: engineConfig || {},
     max_minutes: maxMin, target_pct: targetPct, max_rounds: maxRounds, plateau_rounds: plateau,
     min_phase_days_target: minPhase, max_phase_days_target: maxPhase, search_detectors: searchDet, execution, ...workerField(execution, 'regime_lab'),
@@ -183,7 +209,9 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
       const d = await r.json();
       if (!r.ok) { toast.error(d.detail || 'Start fehlgeschlagen'); return; }
       onStarted?.(d.job_id, 'autopilot');
-      toast.success(`Regime-Autopilot gestartet (${d.execution === 'local' ? 'lokaler Worker' : 'Cloud'})`);
+      toast.success(`Regime-Autopilot gestartet (${d.execution === 'local' ? 'lokaler Worker' : 'Cloud'})`
+        + (reference ? ` – Start aus Referenz ${String(reference.created_at).slice(0, 10)} · ${reference.result?.timeframe}` : ''));
+      setReference(null);
     } catch { toast.error('Verbindungsfehler'); }
   };
 
@@ -282,6 +310,15 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
           <MoonStars size={13} /> + Warteschlange
         </button>
       </div>
+      {reference && (
+        <div className="opt-small" style={{ marginTop: 4, padding: '4px 8px', border: '1px solid rgba(120,190,255,0.4)', borderRadius: 6 }} data-testid="autopilot-reference">
+          <b>Startpunkt (Referenz):</b> <GradeBadge rating={reference.rating} /> Lauf vom {new Date(reference.created_at).toLocaleString('de-DE')} ·
+          {' '}{(reference.result?.symbols || []).map(x => x.replace('USDT', '')).join(', ')} · {reference.result?.timeframe} · Score {fmt(reference.result?.best?.score)}
+          {reference.result?.timeframe !== timeframe && <> → sucht jetzt auf <b>{timeframe}</b> weiter</>}
+          {' '}– die Ausgangslage ist die Referenz-Erkennung, ihre Top-Varianten und deine aktuelle Einstellung werden zuerst getestet.
+          <button className="opt-chip" style={{ marginLeft: 6 }} onClick={() => setReference(null)} data-testid="autopilot-reference-clear">✕ entfernen</button>
+        </div>
+      )}
       {running && activeJob?.best && (
         <div className="opt-small" style={{ marginTop: 4 }} data-testid="autopilot-live-best">
           Aktuell Bestes: <BestLine best={activeJob.best} testId="autopilot-live-best-line" />
@@ -319,44 +356,12 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
             data-testid="autopilot-apply">{lastDecision?.adopt ? 'Beste Erkennung erneut übernehmen' : 'Trotzdem übernehmen'}</button>
         </div>
       )}
-      {runs.length > 0 && (
-        <div style={{ marginTop: 6 }}>
-          <button className="opt-chip" style={{ fontSize: 10 }} onClick={() => setShowHistory(v => !v)} data-testid="autopilot-history-toggle">
-            {showHistory ? '▾' : '▸'} Autopilot-Verlauf ({runs.length})
-          </button>
-          {showHistory && (
-            <table className="rl-compare-table" data-testid="autopilot-history" style={{ marginTop: 4 }}>
-              <thead>
-                <tr><th>Datum</th><th>Coins</th><th>Grundgerüst</th><th>Innere Val.</th><th>Holdout</th><th>Referenz</th><th>Ø Phase</th><th>Varianten</th><th></th></tr>
-              </thead>
-              <tbody>
-                {runs.map(r => {
-                  const res = r.result || {};
-                  const m = res.best?.metrics || {};
-                  return (
-                    <tr key={r.id} data-testid={`autopilot-run-${r.id}`} style={appliedId === r.id ? { background: 'rgba(80,200,120,0.12)' } : undefined}>
-                      <td>{new Date(r.created_at).toLocaleString('de-DE')}</td>
-                      <td>{(res.symbols || []).map(s => s.replace('USDT', '')).join(', ')} · {res.timeframe} · {res.days}d</td>
-                      <td>{DET[res.best?.detector] || res.best?.detector}</td>
-                      <td>{fmt(m.inner_direction_pct)}%</td>
-                      <td>{fmt(m.holdout_direction_pct)}%</td>
-                      <td>{fmt(m.reference_pct)}%</td>
-                      <td>{fmt(m.avg_live_phase_days)}d</td>
-                      <td>{res.tested} · {res.improvements} ↑{res.followup ? ' · ⛓' : ''}</td>
-                      <td>
-                        <button className="opt-chip" data-testid={`autopilot-run-apply-${r.id}`}
-                          onClick={() => applyBest(res, r.id, 'Autopilot-Verlauf') && toast.success('Erkennung aus dem Verlauf übernommen')}>
-                          übernehmen
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
+      <RegimeAutopilotHistory runs={runs} det={DET} appliedId={appliedId} referenceId={reference?.id}
+        onApply={(r) => applyBest(r.result || {}, r.id, 'Autopilot-Verlauf') && toast.success(
+          (r.result?.timeframe && r.result.timeframe !== timeframe)
+            ? `Erkennung übernommen – Achtung: Lauf war auf ${r.result.timeframe}, oben ist ${timeframe} gewählt`
+            : 'Erkennung aus dem Verlauf übernommen – jetzt „Regime suchen & speichern“ oder direkt „Regime suchen“ im Verlauf')}
+        onAnalyze={analyzeFromRun} onReference={toggleReference} onPin={pinRun} />
     </div>
   );
 }

@@ -5,7 +5,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -389,10 +389,27 @@ async def start_autopilot(body: Dict, _: bool = Depends(require_admin)):
     execution = (body.get("execution") or "cloud").lower()
     params = {k: body.get(k) for k in AUTOPILOT_PARAM_KEYS}
     params["execution"] = execution
+    ref_seeds: List[Dict] = []
+    if body.get("reference_run_id"):
+        # Referenz aus dem Autopilot-Verlauf: von deren bester Erkennung aus weitersuchen
+        run = await state.db.regime_lab_runs.find_one(
+            {"id": str(body["reference_run_id"]), "result.kind": "autopilot"}, {"_id": 0})
+        if not run:
+            raise HTTPException(status_code=404, detail="Referenz-Lauf nicht (mehr) im Verlauf")
+        plan = regime_autopilot.reference_start(run, body.get("engine_config"))
+        if not plan["engine_config"]:
+            raise HTTPException(status_code=400, detail="Referenz-Lauf enthält keine Erkennung")
+        ref_seeds = plan["seeds"]
+        body = {**body, "engine_config": plan["engine_config"], "reference": plan["reference"]}
+        params["reference"] = plan["reference"]
+        params["engine_config"] = plan["engine_config"]
+        await state.db.regime_lab_runs.update_one({"id": run["id"]}, {"$set": {"pinned": True}})
     if body.get("warm_start", True) and not body.get("seed_configs"):
         from services import regime_warmstart
         body = {**body, "seed_configs": await regime_warmstart.collect_seeds(
             state.db, body.get("timeframe") or "15m", symbols, body.get("engine_config"))}
+    if ref_seeds:
+        body = {**body, "seed_configs": ref_seeds + list(body.get("seed_configs") or [])}
     if execution == "local":
         _check_local_available(body)
         from services import local_exec
@@ -422,12 +439,24 @@ async def stop_autopilot(job_id: str, _: bool = Depends(require_admin)):
 
 
 @router.get("/api/regime-lab/autopilot/runs")
-async def autopilot_runs(limit: int = 15):
-    """Verlauf der Autopilot-Läufe (Cloud + lokaler Worker), kompakt."""
+async def autopilot_runs(limit: int = 30):
+    """Verlauf der Autopilot-Läufe (Cloud + lokaler Worker), kompakt – mit
+    Ampel (sehr gut/gut/mittel/schwach) und „Bester je Coins/Timeframe“."""
+    from services import regime_autopilot
     rows = await state.db.regime_lab_runs.find(
         {"result.kind": "autopilot"}, {"_id": 0, "result.history": 0}) \
-        .sort("created_at", -1).to_list(max(1, min(int(limit), 50)))
-    return {"runs": rows}
+        .sort("created_at", -1).to_list(max(1, min(int(limit), 60)))
+    return {"runs": regime_autopilot.annotate_runs(rows)}
+
+
+@router.post("/api/regime-lab/autopilot/runs/{run_id}/pin")
+async def autopilot_run_pin(run_id: str, body: Dict, _: bool = Depends(require_admin)):
+    """Lauf merken (bleibt bei der Datenbank-Bereinigung erhalten) bzw. lösen."""
+    res = await state.db.regime_lab_runs.update_one(
+        {"id": run_id, "result.kind": "autopilot"}, {"$set": {"pinned": bool(body.get("pinned", True))}})
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+    return {"status": "ok", "pinned": bool(body.get("pinned", True))}
 
 
 @router.get("/api/regime-lab/list")

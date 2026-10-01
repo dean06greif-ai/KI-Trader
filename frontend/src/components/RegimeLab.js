@@ -972,11 +972,14 @@ export default function RegimeLab({ onClose }) {
   };
 
   // Request-Body wie beim direkten Start – wird auch für die Nacht-Serie genutzt
-  const buildAnalysisBody = () => ({
-    symbols: selCoins, timeframe, days, scope, name: name || undefined,
+  // ov: Werte aus dem Autopilot-Verlauf („Regime suchen“), bevor der State nachzieht
+  const buildAnalysisBody = (ov = {}) => ({
+    symbols: ov.symbols || selCoins, timeframe: ov.timeframe || timeframe, days: ov.days || days,
+    scope, name: name || undefined,
     max_regimes: maxRegimes, lookback_days: lookback, min_share_pct: minShare,
     confidence_min: confMin, min_hold_days: minHold, train_pct: trainPct,
-    engine, engine_config: engine === 'v2' ? { min_phase_days: minHold, ...engineConfig } : undefined,
+    engine: ov.engine || engine,
+    engine_config: (ov.engine || engine) === 'v2' ? { min_phase_days: minHold, ...(ov.engineConfig || engineConfig) } : undefined,
     execution,
     ...workerField(execution, 'regime_lab'),
   });
@@ -1010,9 +1013,10 @@ export default function RegimeLab({ onClose }) {
     toast.success(`Einstellungen von „${a.name}“ übernommen – oben weiter optimieren (Kalibrierung, Autopilot, Werkzeuge) und dann neu „Regime suchen & speichern“`);
   };
 
-  const startAnalysis = async () => {
+  const startAnalysis = async (ov = {}) => {
     if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
-    if (!selCoins.length) { toast.error('Mindestens 1 Coin wählen'); return; }
+    if (!(ov.symbols || selCoins).length) { toast.error('Mindestens 1 Coin wählen'); return; }
+    if (jobBlocked) { toast.error('Es läuft bereits ein Regime-Lab-Job – danach erneut starten oder „+ Warteschlange“'); return; }
     if (execution === 'local' && !lwOnline) {
       toast.error('Kein lokaler Worker verbunden – Worker starten oder Cloud wählen');
       return;
@@ -1020,11 +1024,12 @@ export default function RegimeLab({ onClose }) {
     try {
       const r = await fetch(`${API_URL}/api/regime-lab/analyze`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify(buildAnalysisBody()),
+        body: JSON.stringify(buildAnalysisBody(ov)),
       });
       const d = await r.json();
       if (!r.ok) { toast.error(d.detail || 'Start fehlgeschlagen'); return; }
       attachPoll(d.job_id, 'analysis');
+      if (ov.engineConfig) toast.success('Neue Regime-Erkennung mit den Autopilot-Werten gestartet');
     } catch { toast.error('Verbindungsfehler'); }
   };
 
@@ -1207,7 +1212,7 @@ export default function RegimeLab({ onClose }) {
                 onCommit={(v) => setMinHold(v || 0)}
                 data-testid="regime-minhold" style={{ width: 55 }} />
             </label>
-            <button className="opt-run" onClick={startAnalysis} disabled={jobBlocked} data-testid="regime-analyze-btn">
+            <button className="opt-run" onClick={() => startAnalysis()} disabled={jobBlocked} data-testid="regime-analyze-btn">
               <Play size={14} weight="fill" /> Regime suchen & speichern
             </button>
             <button className="opt-chip" onClick={queueAnalysisToSeries} data-testid="regime-add-series"
@@ -1251,7 +1256,15 @@ export default function RegimeLab({ onClose }) {
         <EmaPeriodCompare selCoins={selCoins} timeframe={timeframe} days={days}
           trainPct={trainPct} engineConfig={engineConfig} setEngineConfig={setEngineConfig} jobBlocked={jobBlocked}
           onStarted={attachPoll} onResult={(r) => setToolResult('ema_compare', r)}
-          onQueued={() => setQueueRefresh(k => k + 1)} />
+          onQueued={() => setQueueRefresh(k => k + 1)}
+          onAnalyzeWith={(ov) => {
+            if (ov.symbols?.length) setSelCoins(ov.symbols);
+            if (ov.timeframe) setTimeframe(ov.timeframe);
+            if (ov.days) setDays(Number(ov.days));
+            setEngine('v2');
+            setEngineConfig(ov.engineConfig);
+            startAnalysis({ ...ov, engine: 'v2' });
+          }} />
 
         <KombiAutoCalibrate selCoins={selCoins} timeframe={timeframe} days={days}
           trainPct={trainPct} engineConfig={engineConfig}
