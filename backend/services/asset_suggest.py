@@ -7,6 +7,10 @@ Bewertet jedes Asset einer Regime-Analyse je Regime aus drei Quellen:
     (coin_similarity) – Ausreißer passen schlecht in eine gemeinsame Erkennung.
   * Bisherige Ergebnisse: geschlossene Trades dynamischer Strategien dieser
     Analyse je (Regime, Asset).
+  * Kurs-Korrelation & Volatilität je Regime aus vorhandenen Kerzen
+    (services/asset_market.py): Assets, die im Regime mitlaufen und eine
+    ähnliche Schwankung haben, passen in eine gemeinsame Strategie; nahezu
+    identische Kurse (Korrelation > 0,92) bringen kaum Mehrwert.
 Reine Bewertung (`score_assets`) ist ohne DB testbar; `suggest` lädt die Daten.
 """
 import math
@@ -16,6 +20,8 @@ MIN_SEGMENTS = 2          # weniger Regime-Phasen = kaum verwertbare Stichprobe
 PICK_THRESHOLD = 0.5      # ab diesem Score gilt ein Asset als passend
 PERF_FULL_TRADES = 10     # ab so vielen Trades zählt das Ergebnis voll
 W_PRESENCE, W_CONSISTENCY, W_PERF = 0.45, 0.25, 0.30
+W_CORR, W_VOL = 0.15, 0.10
+REDUNDANT_CORR = 0.92
 
 
 def regime_presence(per_symbol: Dict[str, Dict]) -> Dict[str, Dict[int, Dict]]:
@@ -56,9 +62,32 @@ def perf_score(st: Optional[Dict]) -> Optional[float]:
     return round(max(-1.0, min(1.0, raw)) * min(1.0, n / PERF_FULL_TRADES), 3)
 
 
+def corr_fit(corr: Optional[float], max_corr: Optional[float]) -> Optional[float]:
+    """Mitlaufen im Regime: 0 bei Korrelation <= 0,1, voll ab 0,7; Dublette gedämpft (rein)."""
+    if corr is None:
+        return None
+    fit = max(0.0, min(1.0, (corr - 0.1) / 0.6))
+    return round(fit * 0.7, 3) if (max_corr or 0) > REDUNDANT_CORR else round(fit, 3)
+
+
+def vol_fit(vol_rel: Optional[float]) -> Optional[float]:
+    """Schwankung nahe am Gruppen-Median = 1, Faktor 3 daneben = 0 (rein)."""
+    if not vol_rel or vol_rel <= 0:
+        return None
+    return round(max(0.0, 1.0 - abs(math.log(vol_rel)) / math.log(3)), 3)
+
+
+def _combine(parts: List[tuple]) -> float:
+    """Gewichtetes Mittel über vorhandene Teil-Scores (None = keine Daten)."""
+    got = [(w, v) for w, v in parts if v is not None]
+    return sum(w * v for w, v in got) / sum(w for w, _ in got) if got else 0.0
+
+
 def score_assets(symbols: List[str], regimes: List[Dict], presence: Dict[str, Dict[int, Dict]],
-                 cons: Dict[str, float], perf: Dict[str, Dict[str, Dict]]) -> Dict:
+                 cons: Dict[str, float], perf: Dict[str, Dict[str, Dict]],
+                 market: Optional[Dict[str, Dict[str, Dict]]] = None) -> Dict:
     """Ranking je Regime + Gesamtvorschlag (rein & testbar)."""
+    market = market or {}
     per_regime = []
     for reg in regimes:
         rid = int(reg.get("id"))
@@ -71,18 +100,25 @@ def score_assets(symbols: List[str], regimes: List[Dict], presence: Dict[str, Di
                 min(0.3, pr["share"] / avg_share)
             p_perf = perf_score((perf.get(str(rid)) or {}).get(sym))
             c = cons.get(sym, 0.5)
-            if p_perf is None:
-                score = (W_PRESENCE * p_pres + W_CONSISTENCY * c) / (W_PRESENCE + W_CONSISTENCY)
-            else:
-                score = W_PRESENCE * p_pres + W_CONSISTENCY * c + W_PERF * (p_perf + 1) / 2
+            mk = (market.get(str(rid)) or {}).get(sym) or {}
+            p_corr, p_vol = corr_fit(mk.get("corr"), mk.get("max_corr")), vol_fit(mk.get("vol_rel"))
+            score = _combine([(W_PRESENCE, p_pres), (W_CONSISTENCY, c),
+                              (W_PERF, None if p_perf is None else (p_perf + 1) / 2),
+                              (W_CORR, p_corr), (W_VOL, p_vol)])
             reasons = [f"{pr['share']:.0f}% der Zeit in diesem Regime ({pr['segments']} Phasen)",
                        f"Gleichlauf {c * 100:.0f}%"]
+            if mk.get("corr") is not None:
+                reasons.append(f"Kurs-Korrelation Ø {mk['corr']:+.2f}"
+                               + (" (fast identisch mit einem anderen Asset)" if (mk.get("max_corr") or 0) > REDUNDANT_CORR else ""))
+            if mk.get("vol_rel") is not None:
+                reasons.append(f"Volatilität {mk['vol_pct']:.2f}%/Balken ({mk['vol_rel']:.1f}× Median)")
             st = (perf.get(str(rid)) or {}).get(sym)
             if st:
                 reasons.append(f"bisher {st['trades']} Trades, {st.get('pnl', 0):+.1f} USDT")
             rows.append({"symbol": sym, "score": round(score, 3), "pick": score >= PICK_THRESHOLD,
                          "share": pr["share"], "segments": pr["segments"],
-                         "consistency": c, "perf": p_perf, "reasons": reasons})
+                         "consistency": c, "perf": p_perf, "corr": mk.get("corr"),
+                         "vol_rel": mk.get("vol_rel"), "reasons": reasons})
         rows.sort(key=lambda r: -r["score"])
         if rows and not any(r["pick"] for r in rows):
             rows[0]["pick"] = True  # mind. ein Asset je Regime
@@ -127,9 +163,12 @@ async def suggest(db, analysis: Dict, regime_ids: Optional[List[int]] = None) ->
     trades = await db.auto_trades.find(
         {"strategy_id": {"$in": dyn_ids}, "status": "closed"},
         {"_id": 0, "symbol": 1, "dynamic": 1, "realized_pnl": 1}).to_list(20000) if dyn_ids else []
+    from services import asset_market
+    mkt = await asset_market.market_stats(analysis, [int(r.get("id")) for r in regimes])
     res = score_assets(symbols, regimes, regime_presence(combined.get("per_symbol") or {}),
                        consistency(combined.get("coin_similarity") or [], symbols),
-                       perf_from_trades(trades))
+                       perf_from_trades(trades), mkt["stats"])
     res["sources"] = {"trades": len(trades), "dynamic_strategies": len(dyn_ids),
-                      "has_segments": bool(combined.get("per_symbol"))}
+                      "has_segments": bool(combined.get("per_symbol")),
+                      "candles": mkt["symbols_with_candles"], "market_days": mkt["days"]}
     return res

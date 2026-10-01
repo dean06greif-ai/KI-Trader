@@ -456,6 +456,19 @@ def download_stats() -> Dict:
 
 
 # ---- Public Helfer für Daten-Verwaltung (lokaler Worker & Server) ----
+async def peek(symbol: str) -> Optional[CandleArray]:
+    """Bereits vorhandene Kerzen (RAM -> Disk -> Archiv) OHNE Börsen-Download –
+    für schnelle Zusatz-Auswertungen (z.B. Asset-Vorschlag der Werkbank)."""
+    entry = _MEM.get(symbol)
+    if entry is not None and len(entry["candles"]):
+        entry["used_at"] = time.time()
+        return entry["candles"]
+    disk = await asyncio.to_thread(_load_disk, symbol)
+    if disk is None or not len(disk):
+        disk = await candle_archive.download(symbol)
+    return disk if disk is not None and len(disk) else None
+
+
 def cached_meta(symbol: str) -> Optional[Dict]:
     entry = _MEM.get(symbol)
     if not entry or not len(entry["candles"]):
