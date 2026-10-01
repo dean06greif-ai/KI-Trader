@@ -1,0 +1,19 @@
+{
+  "summary": "Iteration 8 – Regime-Lab Intuitive-Umbau + neue Indikatoren getestet. Backend: 6/6 Tests grün (builder-options mit allen 8 neuen Indikatoren + supertrend_period/roc_period, regime-lab endpoints, analytics/daily, rule-preview mit supertrend_dir/adx/chop/aroon_down 200 ohne 'unknown indicator'). Frontend: Regime-Lab UI komplett OK (Summary mit 4 Steps, Help-Glossar mit 'Grundgerüst', Kalibrier-Box mit Detektor + Inaktiv-Text, Sektionen EMA-Compare/Kombi/Ablation mit Run-Buttons, Kalibrierungs-Verlauf toggle+empty). Engine-Feineinstellungen: detector=ema aktualisiert regime-summary-detector-label und regime-research-detector auf 'EMA-Steigung'. Backtester: bt-require-all Checkbox entfernt (count=0), Panel rendert. Dashboard Analyse->Trades Tab rendert, PnL-Filter zeigt Alle/Live/Paper/Sammlung. Keine JS-Konsolenfehler außer erwarteten 401 vor Admin-Login. Kalibrierung (Admin): regime-calibrate-btn löst regime-calibrate-status Progress-Bar aus, positioniert DIREKT UNTER regime-calibrate-box (status_top=839 > btn_bottom=819, status_width=912 = box_width=912, gleiche linke Kante) – Layout wie gefordert. Job lief >2,5 min ohne Banner -> gemäß Vorgabe abgebrochen (regime-calibrate-status-cancel) und als NICHT ABSCHLIESSEND GETESTET markiert, kein Bug.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_regime_lab_iter8.py", "/app/test_reports/pytest/iter8.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Backend rule-preview akzeptiert alte body-Form (symbol + long_rules/short_rules top-level); Payload mit definition-Wrap wurde als 422 abgewiesen und fällt auf alt zurück – doppelt unterstützt, OK, aber Docs sollten die kanonische Form nennen.",
+    "Regime-Kalibrierung dauert im Cloud-Setup >2min; UI-Progressbar sichtbar, jedoch kein sichtbarer ETA/Prozent-Text im Poll-Zeitraum. Nutzerfreundlichkeit: Prozent oder Etappenanzeige wäre hilfreich."
+  ],
+  "updated_files": ["/app/backend/tests/test_regime_lab_iter8.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% (Kalibrierungs-Endresultat nicht abgewartet)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin – funktioniert",
+  "seed_data_creation": "keine",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Kalibrierungs-Job dauert im Preview >2,5min; für vollständige Verifikation von regime-calibrate-banner / regime-summary-calibration-active mind. 4-5 Minuten pollen oder kleineren Zeitraum konfigurieren. Alle statischen UI-/API-Anforderungen dieser Iteration sind erfüllt.",
+  "rca of the issue": "n/a – keine Bugs gefunden"
+}

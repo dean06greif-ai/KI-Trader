@@ -1,0 +1,980 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 -- /root/.venv/bin/python
+rootdir: /app/backend
+configfile: pytest.ini
+plugins: xdist-3.8.0, anyio-4.14.1
+created: 2/2 workers
+2 workers [3918 items]
+
+scheduling tests via LoadScopeScheduling
+
+tests/test_ai_lab.py::test_compute_features_needs_enough_candles 
+tests/test_ai_trader_iter2_fixes.py::test_be_formula_covers_entry_and_exit_fees_long 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_compute_features_needs_enough_candles 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_be_formula_covers_entry_and_exit_fees_long 
+tests/test_ai_trader_iter2_fixes.py::test_be_formula_covers_entry_and_exit_fees_short 
+tests/test_ai_lab.py::test_compute_features_uptrend 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_be_formula_covers_entry_and_exit_fees_short 
+tests/test_ai_trader_iter2_fixes.py::test_old_be_formula_was_slightly_below_true_be 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_old_be_formula_was_slightly_below_true_be 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_compute_features_uptrend 
+tests/test_ai_trader_iter2_fixes.py::test_live_be_uses_exact_fee_formula 
+tests/test_ai_lab.py::test_classify_regime_branches 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_classify_regime_branches 
+tests/test_ai_lab.py::test_snapshot_to_text 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_snapshot_to_text 
+tests/test_ai_lab.py::test_digest_backtests_empty_and_filled 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_digest_backtests_empty_and_filled 
+tests/test_ai_lab.py::test_digest_optimizer_reports_holdout_and_params 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_digest_optimizer_reports_holdout_and_params 
+tests/test_ai_lab.py::test_digest_regime_runs_and_analyses 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_digest_regime_runs_and_analyses 
+tests/test_ai_lab.py::test_build_prompt_contains_all_sections 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_build_prompt_contains_all_sections 
+tests/test_ai_lab.py::test_label_of 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_label_of 
+tests/test_ai_lab.py::test_nearest_snapshot_respects_gap 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_nearest_snapshot_respects_gap 
+tests/test_ai_lab.py::test_feature_row_uses_market_state_and_order 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_feature_row_uses_market_state_and_order 
+tests/test_ai_lab.py::test_build_dataset_filters_and_counts 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_build_dataset_filters_and_counts 
+tests/test_ai_lab.py::test_to_matrix_shape 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_to_matrix_shape 
+tests/test_ai_lab.py::test_importances_text 
+[gw0] [  0%] PASSED tests/test_ai_lab.py::test_importances_text 
+tests/test_ai_lab.py::test_train_sync_produces_model_when_libs_present 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_live_be_uses_exact_fee_formula 
+tests/test_ai_trader_iter2_fixes.py::test_backtester_be_uses_exact_fee_formula 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_backtester_be_uses_exact_fee_formula 
+tests/test_ai_trader_iter2_fixes.py::test_live_sl_sync_only_when_improved 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_live_sl_sync_only_when_improved 
+tests/test_ai_trader_iter2_fixes.py::test_watchdog_default_manage_external_off 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_watchdog_default_manage_external_off 
+tests/test_ai_trader_iter2_fixes.py::test_watchdog_skips_manual_position_without_local_trade 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_watchdog_skips_manual_position_without_local_trade 
+tests/test_ai_trader_iter2_fixes.py::test_watchdog_skips_adopted_external_position 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_watchdog_skips_adopted_external_position 
+tests/test_ai_trader_iter2_fixes.py::test_watchdog_clears_fail_counter_for_external 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_watchdog_clears_fail_counter_for_external 
+tests/test_ai_trader_iter2_fixes.py::test_watchdog_update_settings_accepts_manage_external 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_watchdog_update_settings_accepts_manage_external 
+tests/test_ai_trader_iter2_fixes.py::test_distribution_empty_without_events 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_distribution_empty_without_events 
+tests/test_ai_trader_iter2_fixes.py::test_distribution_buckets_real_events_by_side 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_distribution_buckets_real_events_by_side 
+tests/test_ai_trader_iter2_fixes.py::test_distribution_window_is_hours_not_minutes 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_distribution_window_is_hours_not_minutes 
+tests/test_ai_trader_iter2_fixes.py::test_liq_window_still_compatible 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_liq_window_still_compatible 
+tests/test_ai_trader_iter2_fixes.py::test_old_events_fall_out_of_distribution 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_old_events_fall_out_of_distribution 
+tests/test_ai_trader_iter2_fixes.py::test_prompt_uses_measured_not_model_clusters 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_prompt_uses_measured_not_model_clusters 
+tests/test_ai_trader_iter2_fixes.py::test_schedule_keeps_model_and_provider 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_schedule_keeps_model_and_provider 
+tests/test_ai_trader_iter2_fixes.py::test_effective_window_returns_window_with_model 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_effective_window_returns_window_with_model 
+tests/test_ai_trader_iter2_fixes.py::test_effective_interval_unchanged_behaviour 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_effective_interval_unchanged_behaviour 
+tests/test_ai_trader_iter2_fixes.py::test_disabled_window_has_no_model_effect 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_disabled_window_has_no_model_effect 
+tests/test_ai_trader_iter2_fixes.py::test_engine_analyst_chain_respects_window_model 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_engine_analyst_chain_respects_window_model 
+tests/test_ai_trader_iter2_fixes.py::test_schedule_uses_berlin_time 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_schedule_uses_berlin_time 
+tests/test_ai_trader_iter2_fixes.py::test_track_tokens_upserts_per_role_and_day 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_track_tokens_upserts_per_role_and_day 
+tests/test_ai_trader_iter2_fixes.py::test_track_tokens_noop_without_db_or_tokens 
+[gw1] [  0%] PASSED tests/test_ai_trader_iter2_fixes.py::test_track_tokens_noop_without_db_or_tokens 
+tests/test_ai_trader_iter2_fixes.py::test_heatmap_review_publishes_after_target_trades 
+[gw1] [  1%] PASSED tests/test_ai_trader_iter2_fixes.py::test_heatmap_review_publishes_after_target_trades 
+tests/test_ai_trader_iter2_fixes.py::test_heatmap_review_waits_below_target 
+[gw1] [  1%] PASSED tests/test_ai_trader_iter2_fixes.py::test_heatmap_review_waits_below_target 
+tests/test_ai_trader_iter2_fixes.py::test_lesson_store_all_returns_superseded_flags 
+[gw1] [  1%] PASSED tests/test_ai_trader_iter2_fixes.py::test_lesson_store_all_returns_superseded_flags 
+tests/test_ai_trader_iter2_fixes.py::test_timeutil_is_berlin_based 
+[gw1] [  1%] PASSED tests/test_ai_trader_iter2_fixes.py::test_timeutil_is_berlin_based 
+tests/test_ai_trader_iter2_fixes.py::test_token_tracking_uses_berlin_date 
+[gw1] [  1%] PASSED tests/test_ai_trader_iter2_fixes.py::test_token_tracking_uses_berlin_date 
+tests/test_regime_engine.py::test_ols_stats_recovers_slope_and_tstat 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_ols_stats_recovers_slope_and_tstat 
+tests/test_regime_engine.py::test_ols_stats_flat_series_has_small_tstat 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_ols_stats_flat_series_has_small_tstat 
+tests/test_regime_engine.py::test_rolling_zscore_is_backward_only 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_rolling_zscore_is_backward_only 
+tests/test_regime_engine.py::test_adx_rises_in_trend_and_falls_in_chop 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_adx_rises_in_trend_and_falls_in_chop 
+tests/test_regime_engine.py::test_strong_uptrend_is_labelled_up 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_strong_uptrend_is_labelled_up 
+tests/test_regime_engine.py::test_strong_downtrend_is_labelled_down 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_strong_downtrend_is_labelled_down 
+tests/test_regime_engine.py::test_slow_long_decline_is_not_sideways 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_slow_long_decline_is_not_sideways 
+tests/test_regime_engine.py::test_sideways_is_labelled_sideways 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_sideways_is_labelled_sideways 
+tests/test_regime_engine.py::test_random_walk_has_no_directional_bias 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_random_walk_has_no_directional_bias 
+tests/test_regime_engine.py::test_regime_switch_is_detected_and_not_too_late 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_regime_switch_is_detected_and_not_too_late 
+tests/test_regime_engine.py::test_more_than_two_regimes_over_mixed_market 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_more_than_two_regimes_over_mixed_market 
+tests/test_regime_engine.py::test_high_volatility_is_recognised 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_high_volatility_is_recognised 
+tests/test_regime_engine.py::test_no_lookahead_prefix_stability 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_no_lookahead_prefix_stability 
+tests/test_regime_engine.py::test_model_config_is_serialisable_and_stable 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_model_config_is_serialisable_and_stable 
+tests/test_regime_engine.py::test_hysteresis_reduces_switching 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_hysteresis_reduces_switching 
+tests/test_regime_engine.py::test_min_hold_days_is_respected 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_min_hold_days_is_respected 
+tests/test_regime_engine.py::test_validation_passes_on_clean_series[0.5-1.0-81] 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_validation_passes_on_clean_series[0.5-1.0-81] 
+tests/test_regime_engine.py::test_validation_passes_on_clean_series[-0.5-1.0-82] 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_validation_passes_on_clean_series[-0.5-1.0-82] 
+tests/test_regime_engine.py::test_validation_passes_on_clean_series[-0.1-0.8-84] 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_validation_passes_on_clean_series[-0.1-0.8-84] 
+tests/test_regime_engine.py::test_validation_passes_on_clean_series[0.25-2.0-86] 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_validation_passes_on_clean_series[0.25-2.0-86] 
+tests/test_regime_engine.py::test_validation_flags_wrong_labels 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_validation_flags_wrong_labels 
+tests/test_regime_engine.py::test_ideal_labels_agree_with_live_direction 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_ideal_labels_agree_with_live_direction 
+tests/test_regime_engine.py::test_regime_module_dispatches_to_v2_by_default 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_regime_module_dispatches_to_v2_by_default 
+tests/test_regime_engine.py::test_kmeans_engine_still_available 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_kmeans_engine_still_available 
+tests/test_regime_engine.py::test_early_warning_signals_reversal_before_switch 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_early_warning_signals_reversal_before_switch 
+tests/test_regime_engine.py::test_early_warning_quiet_in_stable_trend 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_early_warning_quiet_in_stable_trend 
+tests/test_regime_engine.py::test_early_warning_fields_are_serialisable 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_early_warning_fields_are_serialisable 
+tests/test_regime_engine.py::test_nnfx_mapping_covers_all_regimes 
+[gw1] [  1%] PASSED tests/test_regime_engine.py::test_nnfx_mapping_covers_all_regimes 
+tests/test_regime_engine.py::test_scenario_bank_all_plausible 
+[gw0] [  1%] PASSED tests/test_ai_lab.py::test_train_sync_produces_model_when_libs_present 
+tests/test_ai_lab.py::test_default_roles_have_presets_for_every_role 
+[gw0] [  1%] PASSED tests/test_ai_lab.py::test_default_roles_have_presets_for_every_role 
+tests/test_ai_lab.py::test_new_roles_registered 
+[gw0] [  1%] PASSED tests/test_ai_lab.py::test_new_roles_registered 
+tests/test_ai_lab.py::test_load_keeps_preset_when_user_never_configured 
+[gw0] [  1%] PASSED tests/test_ai_lab.py::test_load_keeps_preset_when_user_never_configured 
+tests/test_ai_lab.py::test_load_respects_user_choice 
+[gw0] [  1%] PASSED tests/test_ai_lab.py::test_load_respects_user_choice 
+tests/test_ai_lab.py::test_update_marks_user_configured_and_reset_restores_preset 
+[gw0] [  1%] PASSED tests/test_ai_lab.py::test_update_marks_user_configured_and_reset_restores_preset 
+tests/test_ai_lab.py::test_research_role_specific_fields_are_sanitized 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_research_role_specific_fields_are_sanitized 
+tests/test_ai_lab.py::test_market_observer_fields 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_market_observer_fields 
+tests/test_ai_lab.py::test_chain_appends_available_providers 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_chain_appends_available_providers 
+tests/test_ai_lab.py::test_load_migration_keeps_enabled_flags 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_load_migration_keeps_enabled_flags 
+tests/test_ai_lab.py::test_in_active_hours_unchanged 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_in_active_hours_unchanged 
+tests/test_ai_lab.py::test_knowledge_store_remember_and_recall_without_supabase 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_knowledge_store_remember_and_recall_without_supabase 
+tests/test_ai_lab.py::test_knowledge_store_remember_many_and_context_text 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_knowledge_store_remember_many_and_context_text 
+tests/test_ai_lab.py::test_supabase_config_strips_rest_suffix 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_supabase_config_strips_rest_suffix 
+tests/test_ai_lab.py::test_check_limits_allows_and_blocks 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_check_limits_allows_and_blocks 
+tests/test_ai_lab.py::test_resolve_price_absolute_and_pct 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_resolve_price_absolute_and_pct 
+tests/test_ai_lab.py::test_trades_text_contains_key_numbers 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_trades_text_contains_key_numbers 
+tests/test_ai_lab.py::test_liq_price_moves_with_leverage 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_liq_price_moves_with_leverage 
+tests/test_ai_lab.py::test_pick_candidate_prefers_optimizer_run 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_pick_candidate_prefers_optimizer_run 
+tests/test_ai_lab.py::test_closed_loop_defaults_off 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_closed_loop_defaults_off 
+tests/test_ai_lab.py::test_trade_manager_role_registered 
+[gw0] [  2%] PASSED tests/test_ai_lab.py::test_trade_manager_role_registered 
+tests/test_ai_trader_quality_fixes.py::test_default_config_heatmap_off_liquidation_on 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_default_config_heatmap_off_liquidation_on 
+tests/test_ai_trader_quality_fixes.py::test_default_config_cost_savers_on 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_default_config_cost_savers_on 
+tests/test_ai_trader_quality_fixes.py::test_update_config_accepts_new_toggles 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_update_config_accepts_new_toggles 
+tests/test_ai_trader_quality_fixes.py::test_update_config_clamps_move_pct 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_update_config_clamps_move_pct 
+tests/test_ai_trader_quality_fixes.py::test_model_clusters_are_marked_as_modelled 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_model_clusters_are_marked_as_modelled 
+tests/test_ai_trader_quality_fixes.py::test_liquidity_prompt_no_longer_sells_model_clusters_as_magnets 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_liquidity_prompt_no_longer_sells_model_clusters_as_magnets 
+tests/test_ai_trader_quality_fixes.py::test_extra_blocks_lean_gates_static_content 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_extra_blocks_lean_gates_static_content 
+tests/test_ai_trader_quality_fixes.py::test_lesson_topics_matches_title_only 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_lesson_topics_matches_title_only 
+tests/test_ai_trader_quality_fixes.py::test_leverage_conflict_newest_trader_instruction_wins 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_leverage_conflict_newest_trader_instruction_wins 
+tests/test_ai_trader_quality_fixes.py::test_break_even_conflict_resolved_by_recency 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_break_even_conflict_resolved_by_recency 
+tests/test_ai_trader_quality_fixes.py::test_ai_lesson_superseded_by_trader_lesson_same_topic 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_ai_lesson_superseded_by_trader_lesson_same_topic 
+tests/test_ai_trader_quality_fixes.py::test_unrelated_lessons_untouched 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_unrelated_lessons_untouched 
+tests/test_ai_trader_quality_fixes.py::test_ai_only_topic_not_consolidated 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_ai_only_topic_not_consolidated 
+tests/test_ai_trader_quality_fixes.py::test_winner_in_one_topic_never_superseded_by_another 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_winner_in_one_topic_never_superseded_by_another 
+tests/test_ai_trader_quality_fixes.py::test_lessons_text_excludes_superseded 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_lessons_text_excludes_superseded 
+tests/test_ai_trader_quality_fixes.py::test_active_lessons_keeps_flags_out_of_prompt_but_data_stored 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_active_lessons_keeps_flags_out_of_prompt_but_data_stored 
+tests/test_ai_trader_quality_fixes.py::test_merge_lessons_preserves_superseded_flags 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_merge_lessons_preserves_superseded_flags 
+tests/test_ai_trader_quality_fixes.py::test_smart_skip_when_market_unchanged 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_smart_skip_when_market_unchanged 
+tests/test_ai_trader_quality_fixes.py::test_no_skip_on_manual_run 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_no_skip_on_manual_run 
+tests/test_ai_trader_quality_fixes.py::test_no_skip_when_disabled 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_no_skip_when_disabled 
+tests/test_ai_trader_quality_fixes.py::test_no_skip_with_open_position_in_group 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_no_skip_with_open_position_in_group 
+tests/test_ai_trader_quality_fixes.py::test_no_skip_when_open_positions_unknown 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_no_skip_when_open_positions_unknown 
+tests/test_ai_trader_quality_fixes.py::test_no_skip_on_significant_price_move 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_no_skip_on_significant_price_move 
+tests/test_ai_trader_quality_fixes.py::test_no_skip_when_last_decision_wanted_to_trade 
+[gw0] [  2%] PASSED tests/test_ai_trader_quality_fixes.py::test_no_skip_when_last_decision_wanted_to_trade 
+tests/test_ai_trader_quality_fixes.py::test_no_skip_without_fresh_decision 
+[gw0] [  3%] PASSED tests/test_ai_trader_quality_fixes.py::test_no_skip_without_fresh_decision 
+tests/test_ai_trader_quality_fixes.py::test_max_two_consecutive_skips_then_forced_run 
+[gw0] [  3%] PASSED tests/test_ai_trader_quality_fixes.py::test_max_two_consecutive_skips_then_forced_run 
+tests/test_ai_trader_quality_fixes.py::test_skip_requires_all_symbols_calm 
+[gw0] [  3%] PASSED tests/test_ai_trader_quality_fixes.py::test_skip_requires_all_symbols_calm 
+tests/test_pruefung_2409.py::test_pol_case_sl_behind_real_liq_is_detected 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_pol_case_sl_behind_real_liq_is_detected 
+tests/test_pruefung_2409.py::test_pol_case_tops_up_margin_when_capital_is_free 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_pol_case_tops_up_margin_when_capital_is_free 
+tests/test_pruefung_2409.py::test_pol_case_moves_sl_before_liq_without_free_capital 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_pol_case_moves_sl_before_liq_without_free_capital 
+tests/test_pruefung_2409.py::test_close_when_price_already_beyond_safe_sl 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_close_when_price_already_beyond_safe_sl 
+tests/test_pruefung_2409.py::test_long_side_and_safe_case 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_long_side_and_safe_case 
+tests/test_pruefung_2409.py::test_implied_mmr_from_exchange_numbers 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_implied_mmr_from_exchange_numbers 
+tests/test_pruefung_2409.py::test_entry_deviation 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_entry_deviation 
+tests/test_pruefung_2409.py::test_liquidation_flag_from_history 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_liquidation_flag_from_history 
+tests/test_pruefung_2409.py::test_watchdog_parses_exchange_liq_price 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_watchdog_parses_exchange_liq_price 
+tests/test_pruefung_2409.py::test_shadow_counts_of_deleted_analyses_are_orphaned 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_shadow_counts_of_deleted_analyses_are_orphaned 
+tests/test_pruefung_2409.py::test_reference_v2_window_is_independent_of_model_horizons 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_reference_v2_window_is_independent_of_model_horizons 
+tests/test_pruefung_2409.py::test_always_sideways_has_no_skill_and_low_balanced 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_always_sideways_has_no_skill_and_low_balanced 
+tests/test_pruefung_2409.py::test_quality_grade_capped_by_balanced_reference 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_quality_grade_capped_by_balanced_reference 
+tests/test_pruefung_2409.py::test_ablation_delta_prefers_reference_v2 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_ablation_delta_prefers_reference_v2 
+tests/test_pruefung_2409.py::test_autopilot_score_prefers_balanced_reference_and_direction_phase 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_autopilot_score_prefers_balanced_reference_and_direction_phase 
+tests/test_pruefung_2409.py::test_macro_f1_and_kappa_punish_trend_nervous_and_constant_detectors 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_macro_f1_and_kappa_punish_trend_nervous_and_constant_detectors 
+tests/test_pruefung_2409.py::test_autopilot_score_prefers_f1_over_balanced 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_autopilot_score_prefers_f1_over_balanced 
+tests/test_pruefung_2409.py::test_quality_grade_uses_f1_when_present 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_quality_grade_uses_f1_when_present 
+tests/test_pruefung_2409.py::test_kombi_pivot_scan_does_not_flip_forever_after_crash_wick 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_kombi_pivot_scan_does_not_flip_forever_after_crash_wick 
+tests/test_pruefung_2409.py::test_reactive_detector_source_uses_exclusive_rebase_window 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_reactive_detector_source_uses_exclusive_rebase_window 
+tests/test_pruefung_2409.py::test_utility_separation_positive_for_prescient_labels_and_zero_for_random 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_utility_separation_positive_for_prescient_labels_and_zero_for_random 
+tests/test_pruefung_2409.py::test_utility_handles_short_input 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_utility_handles_short_input 
+tests/test_pruefung_2409.py::test_autopilot_skips_duplicates_and_stops_on_plateau 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_autopilot_skips_duplicates_and_stops_on_plateau 
+tests/test_pruefung_2409.py::test_htf_filter_demotes_contradicting_trends_and_optionally_promotes 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_htf_filter_demotes_contradicting_trends_and_optionally_promotes 
+tests/test_pruefung_2409.py::test_htf_keys_survive_config_resolution 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_htf_keys_survive_config_resolution 
+tests/test_pruefung_2409.py::test_autopilot_score_uses_train_utility_only 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_autopilot_score_uses_train_utility_only 
+tests/test_pruefung_2409.py::test_reevaluate_recomputes_reference_v2_on_stored_window 
+[gw0] [  3%] PASSED tests/test_pruefung_2409.py::test_reevaluate_recomputes_reference_v2_on_stored_window 
+tests/test_ai_team_api.py::test_ai_status_shape 
+[gw1] [  3%] PASSED tests/test_regime_engine.py::test_scenario_bank_all_plausible 
+tests/test_regime_engine.py::test_performance_on_intraday_history 
+[gw0] [  3%] PASSED tests/test_ai_team_api.py::test_ai_status_shape 
+tests/test_ai_team_api.py::test_get_roles_and_labels 
+[gw0] [  3%] PASSED tests/test_ai_team_api.py::test_get_roles_and_labels 
+tests/test_ai_team_api.py::test_post_roles_requires_admin 
+[gw0] [  3%] PASSED tests/test_ai_team_api.py::test_post_roles_requires_admin 
+tests/test_ai_team_api.py::test_post_roles_persists_analyst 
+[gw0] [  3%] PASSED tests/test_ai_team_api.py::test_post_roles_persists_analyst 
+tests/test_ai_team_api.py::test_post_roles_invalid_values_ignored 
+[gw0] [  3%] PASSED tests/test_ai_team_api.py::test_post_roles_invalid_values_ignored 
+tests/test_ai_team_api.py::test_post_roles_deep_schedule 
+[gw0] [  3%] PASSED tests/test_ai_team_api.py::test_post_roles_deep_schedule 
+tests/test_ai_team_api.py::test_post_roles_news_interval_clamped 
+[gw0] [  3%] PASSED tests/test_ai_team_api.py::test_post_roles_news_interval_clamped 
+tests/test_ai_team_api.py::test_news_events_shape 
+[gw0] [  3%] PASSED tests/test_ai_team_api.py::test_news_events_shape 
+tests/test_ai_team_api.py::test_calendar_shape 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_calendar_shape 
+tests/test_ai_team_api.py::test_strategy_performance_shape 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_strategy_performance_shape 
+tests/test_ai_team_api.py::test_deep_analyze_requires_admin 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_deep_analyze_requires_admin 
+tests/test_ai_team_api.py::test_news_check_requires_admin 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_news_check_requires_admin 
+tests/test_ai_team_api.py::test_analyze_requires_admin 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_analyze_requires_admin 
+tests/test_ai_team_api.py::test_deep_analyze_graceful_rate_limit 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_deep_analyze_graceful_rate_limit 
+tests/test_ai_team_api.py::test_news_check_graceful 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_news_check_graceful 
+tests/test_ai_team_api.py::test_analyze_graceful 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_analyze_graceful 
+tests/test_ai_team_api.py::test_chat_history_still_ok 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_chat_history_still_ok 
+tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/signals] 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/signals] 
+tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/performance] 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/performance] 
+tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/settings] 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/settings] 
+tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/strategies] 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/strategies] 
+tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/autotrade/config] 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/autotrade/config] 
+tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/ai/insights] 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/ai/insights] 
+tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/ai/proposals] 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/ai/proposals] 
+tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/ai/news] 
+[gw0] [  4%] PASSED tests/test_ai_team_api.py::test_existing_endpoints_ok[/api/ai/news] 
+tests/test_hardening_regression.py::test_health_alive 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_health_alive 
+tests/test_hardening_regression.py::test_auth_login_returns_token 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_auth_login_returns_token 
+tests/test_hardening_regression.py::test_auth_verify_with_token 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_auth_verify_with_token 
+tests/test_hardening_regression.py::test_auth_verify_without_token_rejected 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_auth_verify_without_token_rejected 
+tests/test_hardening_regression.py::test_watchdog_status_contract_no_500 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_watchdog_status_contract_no_500 
+tests/test_hardening_regression.py::test_dynamic_list 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_dynamic_list 
+tests/test_hardening_regression.py::test_dynamic_confirm_without_pending_returns_400 
+[gw0] [  4%] SKIPPED tests/test_hardening_regression.py::test_dynamic_confirm_without_pending_returns_400 
+tests/test_hardening_regression.py::test_dynamic_dismiss_is_idempotent 
+[gw0] [  4%] SKIPPED tests/test_hardening_regression.py::test_dynamic_dismiss_is_idempotent 
+tests/test_hardening_regression.py::test_risk_budget_no_crash 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_risk_budget_no_crash 
+tests/test_hardening_regression.py::test_regime_lab_list 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_regime_lab_list 
+tests/test_hardening_regression.py::test_regime_lab_active 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_regime_lab_active 
+tests/test_hardening_regression.py::test_regime_lab_engine_defaults 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_regime_lab_engine_defaults 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/config] 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/config] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/trades] 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/trades] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/capital] 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/capital] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/sync-status] 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/sync-status] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/pnl-reconcile/status] 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/pnl-reconcile/status] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/pending-entry-orders] 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/pending-entry-orders] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/ai-protection] 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/ai-protection] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/slippage-stats] 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/autotrade/slippage-stats] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/ibkr/status] 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/ibkr/status] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/notifications] 
+[gw0] [  4%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/notifications] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/trade-guard] 
+[gw0] [  5%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/trade-guard] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/safety/status] 
+[gw0] [  5%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/safety/status] 
+tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/dynamic/current-regime] 
+[gw1] [  5%] PASSED tests/test_regime_engine.py::test_performance_on_intraday_history 
+tests/test_ai_governance_api.py::test_health 
+[gw0] [  5%] PASSED tests/test_hardening_regression.py::test_core_endpoint_no_500[/api/dynamic/current-regime] 
+tests/test_fix_custom_ai_trades.py::test_on_signal_blocked_by_master_kill_switch 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_on_signal_blocked_by_master_kill_switch 
+tests/test_fix_custom_ai_trades.py::test_trade_manager_open_blocked_by_master_kill_switch 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_trade_manager_open_blocked_by_master_kill_switch 
+tests/test_fix_custom_ai_trades.py::test_trade_manager_open_blocked_when_engine_disabled 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_trade_manager_open_blocked_when_engine_disabled 
+tests/test_fix_custom_ai_trades.py::test_trade_manager_tick_skips_when_engine_disabled 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_trade_manager_tick_skips_when_engine_disabled 
+tests/test_fix_custom_ai_trades.py::test_trade_manager_tick_runs_when_engine_enabled 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_trade_manager_tick_runs_when_engine_enabled 
+tests/test_fix_custom_ai_trades.py::test_prompt_example_has_no_fixed_10x_leverage 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_prompt_example_has_no_fixed_10x_leverage 
+tests/test_fix_custom_ai_trades.py::test_open_trade_clamps_leverage_to_manager_limit 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_open_trade_clamps_leverage_to_manager_limit 
+tests/test_fix_custom_ai_trades.py::test_reject_deregisters_strategy_and_closes_trades 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_reject_deregisters_strategy_and_closes_trades 
+tests/test_fix_custom_ai_trades.py::test_delete_candidate_removes_everything 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_delete_candidate_removes_everything 
+tests/test_fix_custom_ai_trades.py::test_register_for_testing_blocked_for_rejected 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_register_for_testing_blocked_for_rejected 
+tests/test_fix_custom_ai_trades.py::test_open_trade_reports_guard_rejection 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_open_trade_reports_guard_rejection 
+tests/test_fix_custom_ai_trades.py::test_sync_closes_externally_closed_live_position 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_sync_closes_externally_closed_live_position 
+tests/test_fix_custom_ai_trades.py::test_sync_keeps_position_that_is_still_open_on_bitunix 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_sync_keeps_position_that_is_still_open_on_bitunix 
+tests/test_fix_custom_ai_trades.py::test_sync_ignores_paper_trades 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_sync_ignores_paper_trades 
+tests/test_fix_custom_ai_trades.py::test_delete_candidate_route_registered 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_delete_candidate_route_registered 
+tests/test_fix_custom_ai_trades.py::test_control_stop_trades_route_still_exists 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_control_stop_trades_route_still_exists 
+tests/test_fix_custom_ai_trades.py::test_sync_bitunix_route_registered 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_sync_bitunix_route_registered 
+tests/test_fix_custom_ai_trades.py::test_manual_close_books_external_close_when_position_gone 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_manual_close_books_external_close_when_position_gone 
+tests/test_fix_custom_ai_trades.py::test_manual_close_keeps_trade_open_when_position_still_exists 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_manual_close_keeps_trade_open_when_position_still_exists 
+tests/test_fix_custom_ai_trades.py::test_adjust_levels_books_external_close_when_position_gone 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_adjust_levels_books_external_close_when_position_gone 
+tests/test_fix_custom_ai_trades.py::test_partial_close_books_external_close_when_position_gone 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_partial_close_books_external_close_when_position_gone 
+tests/test_fix_custom_ai_trades.py::test_trade_manager_strategy_name_without_custom_suffix 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_trade_manager_strategy_name_without_custom_suffix 
+tests/test_fix_custom_ai_trades.py::test_lesson_audit_deletes_violating_lessons 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_lesson_audit_deletes_violating_lessons 
+tests/test_fix_custom_ai_trades.py::test_master_prompt_block_declares_supremacy_over_lessons 
+[gw0] [  5%] PASSED tests/test_fix_custom_ai_trades.py::test_master_prompt_block_declares_supremacy_over_lessons 
+tests/test_forex_ibkr_live.py::test_plan_legs_splits_on_tp1_percent 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_plan_legs_splits_on_tp1_percent 
+tests/test_forex_ibkr_live.py::test_plan_legs_single_when_tp1_disabled_or_too_small 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_plan_legs_single_when_tp1_disabled_or_too_small 
+tests/test_forex_ibkr_live.py::test_be_price_covers_fees_both_sides 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_be_price_covers_fees_both_sides 
+tests/test_forex_ibkr_live.py::test_pnl_usd_quote_and_base_pairs 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_pnl_usd_quote_and_base_pairs 
+tests/test_forex_ibkr_live.py::test_parse_order_status_variants 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_parse_order_status_variants 
+tests/test_forex_ibkr_live.py::test_health_server_detection 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_health_server_detection 
+tests/test_forex_ibkr_live.py::test_map_orders_by_ref_and_extract_ids 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_map_orders_by_ref_and_extract_ids 
+tests/test_forex_ibkr_live.py::test_fx_order_ticket_shape 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_fx_order_ticket_shape 
+tests/test_forex_ibkr_live.py::test_forex_fee_percent_min_commission_per_leg 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_forex_fee_percent_min_commission_per_leg 
+tests/test_forex_ibkr_live.py::test_trade_fee_percent_uses_broker_model 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_trade_fee_percent_uses_broker_model 
+tests/test_forex_ibkr_live.py::test_fee_guard_forex_uses_ibkr_fee_and_two_legs 
+[gw0] [  5%] PASSED tests/test_forex_ibkr_live.py::test_fee_guard_forex_uses_ibkr_fee_and_two_legs 
+tests/test_forex_ibkr_live.py::test_open_live_forex_places_two_oca_brackets 
+[gw1] [  5%] PASSED tests/test_ai_governance_api.py::test_health 
+tests/test_ai_governance_api.py::test_strategies_contains_ai_trader 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_strategies_contains_ai_trader 
+tests/test_ai_governance_api.py::test_ai_status_has_new_blocks 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_ai_status_has_new_blocks 
+tests/test_ai_governance_api.py::test_autotrade_trades_and_config 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_autotrade_trades_and_config 
+tests/test_ai_governance_api.py::test_settings 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_settings 
+tests/test_ai_governance_api.py::test_master_prompt_get 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_master_prompt_get 
+tests/test_ai_governance_api.py::test_master_prompt_post_requires_admin 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_master_prompt_post_requires_admin 
+tests/test_ai_governance_api.py::test_master_prompt_post_admin_increments_version 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_master_prompt_post_admin_increments_version 
+tests/test_ai_governance_api.py::test_master_prompt_history 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_master_prompt_history 
+tests/test_ai_governance_api.py::test_master_prompt_restore 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_master_prompt_restore 
+tests/test_ai_governance_api.py::test_lesson_create_requires_admin 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_lesson_create_requires_admin 
+tests/test_ai_governance_api.py::test_lesson_create_admin 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_lesson_create_admin 
+tests/test_ai_governance_api.py::test_lesson_patch_admin 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_lesson_patch_admin 
+tests/test_ai_governance_api.py::test_lesson_patch_requires_admin 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_lesson_patch_requires_admin 
+tests/test_ai_governance_api.py::test_ai_insights_contains_lessons 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_ai_insights_contains_lessons 
+tests/test_ai_governance_api.py::test_lesson_delete_requires_admin 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_lesson_delete_requires_admin 
+tests/test_ai_governance_api.py::test_lesson_delete_admin 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_lesson_delete_admin 
+tests/test_ai_governance_api.py::test_validation_get 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_validation_get 
+tests/test_ai_governance_api.py::test_validation_post_admin_and_persist 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_validation_post_admin_and_persist 
+tests/test_ai_governance_api.py::test_validation_restore_defaults 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_validation_restore_defaults 
+tests/test_ai_governance_api.py::test_strategies_get 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_strategies_get 
+tests/test_ai_governance_api.py::test_strategies_create_admin 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_strategies_create_admin 
+tests/test_ai_governance_api.py::test_strategies_decide_approve 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_strategies_decide_approve 
+tests/test_ai_governance_api.py::test_strategies_decide_approve_live 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_strategies_decide_approve_live 
+tests/test_ai_governance_api.py::test_strategies_decide_reset 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_strategies_decide_reset 
+tests/test_ai_governance_api.py::test_strategies_register_test_not_testable 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_strategies_register_test_not_testable 
+tests/test_ai_governance_api.py::test_strategies_ghost_trades_empty 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_strategies_ghost_trades_empty 
+tests/test_ai_governance_api.py::test_strategies_settings_admin 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_strategies_settings_admin 
+tests/test_ai_governance_api.py::test_strategies_reject_cleanup 
+[gw1] [  6%] PASSED tests/test_ai_governance_api.py::test_strategies_reject_cleanup 
+tests/test_iter8_token_crv_lev.py::test_default_trade_frame_backwards_compatible 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_default_trade_frame_backwards_compatible 
+tests/test_iter8_token_crv_lev.py::test_update_config_accepts_and_clamps_trade_frame 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_update_config_accepts_and_clamps_trade_frame 
+tests/test_iter8_token_crv_lev.py::test_crv_frame_raises_tp1_to_min 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_crv_frame_raises_tp1_to_min 
+tests/test_iter8_token_crv_lev.py::test_crv_frame_caps_tp1_at_max 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_crv_frame_caps_tp1_at_max 
+tests/test_iter8_token_crv_lev.py::test_crv_frame_no_cap_when_max_zero 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_crv_frame_no_cap_when_max_zero 
+tests/test_iter8_token_crv_lev.py::test_lev_mode_coin_keeps_previous_behavior 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_lev_mode_coin_keeps_previous_behavior 
+tests/test_iter8_token_crv_lev.py::test_lev_mode_fixed_forces_leverage 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_lev_mode_fixed_forces_leverage 
+tests/test_iter8_token_crv_lev.py::test_lev_mode_auto_caps_ai_choice 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_lev_mode_auto_caps_ai_choice 
+tests/test_iter8_token_crv_lev.py::test_lev_auto_swing_still_capped 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_lev_auto_swing_still_capped 
+tests/test_iter8_token_crv_lev.py::test_safe_lev_parsing 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_safe_lev_parsing 
+tests/test_iter8_token_crv_lev.py::test_trade_frame_block_in_analysis_prompt 
+[gw1] [  6%] PASSED tests/test_iter8_token_crv_lev.py::test_trade_frame_block_in_analysis_prompt 
+tests/test_iter8_token_crv_lev.py::test_lean_system_prompt_same_schema_but_shorter 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_lean_system_prompt_same_schema_but_shorter 
+tests/test_iter8_token_crv_lev.py::test_lean_prompt_selects_lean_system 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_lean_prompt_selects_lean_system 
+tests/test_iter8_token_crv_lev.py::test_hold_reason_instruction_in_both_prompts 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_hold_reason_instruction_in_both_prompts 
+tests/test_iter8_token_crv_lev.py::test_liquidity_block_only_for_crypto_group 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_liquidity_block_only_for_crypto_group 
+tests/test_iter8_token_crv_lev.py::test_trade_manager_uses_lean_review_context 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_trade_manager_uses_lean_review_context 
+tests/test_iter8_token_crv_lev.py::test_extra_blocks_review_purpose_documented 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_extra_blocks_review_purpose_documented 
+tests/test_iter8_token_crv_lev.py::test_market_observer_reuses_summary_when_unchanged 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_market_observer_reuses_summary_when_unchanged 
+tests/test_iter8_token_crv_lev.py::test_market_observer_regenerates_on_move 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_market_observer_regenerates_on_move 
+tests/test_iter8_token_crv_lev.py::test_learner_skips_daily_run_without_new_results 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_learner_skips_daily_run_without_new_results 
+tests/test_iter8_token_crv_lev.py::test_learner_prompt_lean_gates_research_and_ml 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_learner_prompt_lean_gates_research_and_ml 
+tests/test_iter8_token_crv_lev.py::test_stop_trades_no_longer_closes_positions 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_stop_trades_no_longer_closes_positions 
+tests/test_iter8_token_crv_lev.py::test_active_fallback_tracked_and_cleared 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_active_fallback_tracked_and_cleared 
+tests/test_iter8_token_crv_lev.py::test_backup_key_is_plain_key_rotation_not_fallback 
+[gw1] [  7%] PASSED tests/test_iter8_token_crv_lev.py::test_backup_key_is_plain_key_rotation_not_fallback 
+tests/test_ai_iter3_api.py::test_health 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_health 
+tests/test_ai_iter3_api.py::test_strategies_and_settings 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_strategies_and_settings 
+tests/test_ai_iter3_api.py::test_schedule_get 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_schedule_get 
+tests/test_ai_iter3_api.py::test_schedule_requires_admin 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_schedule_requires_admin 
+tests/test_ai_iter3_api.py::test_schedule_post_stores_and_filters_invalid 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_schedule_post_stores_and_filters_invalid 
+tests/test_ai_iter3_api.py::test_ai_status_has_schedule_active_and_providers_health 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_ai_status_has_schedule_active_and_providers_health 
+tests/test_ai_iter3_api.py::test_schedule_cleanup 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_schedule_cleanup 
+tests/test_ai_iter3_api.py::test_master_prompt_get_has_lesson_policy 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_master_prompt_get_has_lesson_policy 
+tests/test_ai_iter3_api.py::test_master_prompt_post_with_new_rules 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_master_prompt_post_with_new_rules 
+tests/test_ai_iter3_api.py::test_master_prompt_reset 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_master_prompt_reset 
+tests/test_ai_iter3_api.py::test_validation_has_macro 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_validation_has_macro 
+tests/test_ai_iter3_api.py::test_validation_post_macro_persists 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_validation_post_macro_persists 
+tests/test_ai_iter3_api.py::test_validation_restore 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_validation_restore 
+tests/test_ai_iter3_api.py::test_providers_health_shape 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_providers_health_shape 
+tests/test_ai_iter3_api.py::test_notify_guard_get 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_notify_guard_get 
+tests/test_ai_iter3_api.py::test_notify_guard_requires_admin 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_notify_guard_requires_admin 
+tests/test_ai_iter3_api.py::test_notify_guard_set_and_persist 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_notify_guard_set_and_persist 
+tests/test_ai_iter3_api.py::test_notify_guard_invalid 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_notify_guard_invalid 
+tests/test_ai_iter3_api.py::test_notify_guard_restore 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_notify_guard_restore 
+tests/test_ai_iter3_api.py::test_create_candidate 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_create_candidate 
+tests/test_ai_iter3_api.py::test_macro_requires_admin 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_macro_requires_admin 
+tests/test_ai_iter3_api.py::test_macro_set_and_ignore_unknown 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_macro_set_and_ignore_unknown 
+tests/test_ai_iter3_api.py::test_candidate_cleanup 
+[gw1] [  7%] PASSED tests/test_ai_iter3_api.py::test_candidate_cleanup 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_world_of 
+[gw1] [  7%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_world_of 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_rows_to_worlds_and_display_live_is_real_plus_paper 
+[gw1] [  7%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_rows_to_worlds_and_display_live_is_real_plus_paper 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_display_worlds_empty_and_attach 
+[gw1] [  7%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_display_worlds_empty_and_attach 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_merge_worlds_sums_classes 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_merge_worlds_sums_classes 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_build_match_windows_like_playbook 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_build_match_windows_like_playbook 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_thin_points_keeps_first_last_and_limit 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_thin_points_keeps_first_last_and_limit 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_contribution_uses_prevented_when_few_applied_trades 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_contribution_uses_prevented_when_few_applied_trades 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_contribution_with_control_group_unchanged 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_contribution_with_control_group_unchanged 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_impact_rows_edge_reachable_via_prevented_only 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_impact_rows_edge_reachable_via_prevented_only 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_configured_fee_forex_uses_ibkr_model 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_configured_fee_forex_uses_ibkr_model 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_pending_includes_frameless_holds_no_head_of_line_blocking 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_pending_includes_frameless_holds_no_head_of_line_blocking 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_regime_keys_unique_per_mode 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_regime_keys_unique_per_mode 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_static_knowledge_contains_all_current_labels_and_rules 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_static_knowledge_contains_all_current_labels_and_rules 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_regime_lab_prompt_has_no_stale_rules 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_regime_lab_prompt_has_no_stale_rules 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_regime_lab_context_includes_knowledge_without_db 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_regime_lab_context_includes_knowledge_without_db 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_snapshot_line_helpers 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_snapshot_line_helpers 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_rows_for_runs_unknown_segments_inline 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_rows_for_runs_unknown_segments_inline 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_release_pool_only_clears_own_pool 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_release_pool_only_clears_own_pool 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_parallel_sim_unknown_key_returns_none 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_parallel_sim_unknown_key_returns_none 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_warmstart_rank_prefers_same_coins_and_dedupes 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_warmstart_rank_prefers_same_coins_and_dedupes 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_warm_seeds_filters_detectors_and_start 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_warm_seeds_filters_detectors_and_start 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_lesson_control_matches_structural_regime 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_lesson_control_matches_structural_regime 
+tests/test_mm_verlauf_regime_copilot_0110.py::test_regime_risk_factor_and_no_lookahead 
+[gw1] [  8%] PASSED tests/test_mm_verlauf_regime_copilot_0110.py::test_regime_risk_factor_and_no_lookahead 
+tests/test_ai_learning.py::test_max_capital_is_always_forbidden 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_max_capital_is_always_forbidden 
+tests/test_ai_learning.py::test_mode_and_enabled_forbidden 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_mode_and_enabled_forbidden 
+tests/test_ai_learning.py::test_numbers_are_clamped_to_bounds 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_numbers_are_clamped_to_bounds 
+tests/test_ai_learning.py::test_enum_and_bool_and_unknown 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_enum_and_bool_and_unknown 
+tests/test_ai_learning.py::test_engine_scope_keys 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_engine_scope_keys 
+tests/test_ai_learning.py::test_spec_text_mentions_keys 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_spec_text_mentions_keys 
+tests/test_ai_learning.py::test_default_config_has_new_keys 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_default_config_has_new_keys 
+tests/test_ai_learning.py::test_aggregate_performance_basic 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_aggregate_performance_basic 
+tests/test_ai_learning.py::test_aggregate_ignores_pre_signals 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_aggregate_ignores_pre_signals 
+tests/test_ai_learning.py::test_performance_text_renders 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_performance_text_renders 
+tests/test_ai_learning.py::test_change_without_enough_data_is_parked 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_change_without_enough_data_is_parked 
+tests/test_ai_learning.py::test_macro_change_needs_multiple_confirmations 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_macro_change_needs_multiple_confirmations 
+tests/test_ai_learning.py::test_user_change_bypasses_validation 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_user_change_bypasses_validation 
+tests/test_ai_learning.py::test_change_against_master_prompt_is_blocked 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_change_against_master_prompt_is_blocked 
+tests/test_ai_learning.py::test_suggest_mode_creates_pending_proposal 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_suggest_mode_creates_pending_proposal 
+tests/test_ai_learning.py::test_auto_mode_applies_immediately 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_auto_mode_applies_immediately 
+tests/test_ai_learning.py::test_autonomy_off_ignores_changes 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_autonomy_off_ignores_changes 
+tests/test_ai_learning.py::test_unknown_symbol_skipped 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_unknown_symbol_skipped 
+tests/test_ai_learning.py::test_noop_changes_skipped 
+[gw1] [  8%] PASSED tests/test_ai_learning.py::test_noop_changes_skipped 
+tests/test_ai_learning.py::test_engine_scope_change 
+[gw1] [  9%] PASSED tests/test_ai_learning.py::test_engine_scope_change 
+tests/test_ai_learning.py::test_approve_pending_proposal 
+[gw1] [  9%] PASSED tests/test_ai_learning.py::test_approve_pending_proposal 
+tests/test_ai_learning.py::test_reject_pending_proposal 
+[gw1] [  9%] PASSED tests/test_ai_learning.py::test_reject_pending_proposal 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_01_health_minimal_alive 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_01_health_minimal_alive 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_02_coins_groups 
+[gw1] [  9%] FAILED tests/test_krypto_alert_features.py::TestKryptoAlert::test_02_coins_groups 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_03_klines_btc 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_03_klines_btc 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_04_klines_gold_no_crash 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_04_klines_gold_no_crash 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_05_strategies_list 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_05_strategies_list 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_06_builder_options 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_06_builder_options 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_07_rule_states_btc 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_07_rule_states_btc 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_08_settings_get 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_08_settings_get 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_09_settings_post_persists 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_09_settings_post_persists 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_10_create_custom_strategy 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_10_create_custom_strategy 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_11_delete_custom_strategy 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_11_delete_custom_strategy 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_12_autotrade_config_get 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_12_autotrade_config_get 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_13_autotrade_coin_persists 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_13_autotrade_coin_persists 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_14_autotrade_mode_toggle 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_14_autotrade_mode_toggle 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_15_autotrade_trades 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_15_autotrade_trades 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_16_autotrade_balance_paper 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_16_autotrade_balance_paper 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_17_signals_today_only 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_17_signals_today_only 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_18_performance_by_strategy 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_18_performance_by_strategy 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_19_analytics_daily 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_19_analytics_daily 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_20_analytics_time_based 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_20_analytics_time_based 
+tests/test_krypto_alert_features.py::TestKryptoAlert::test_21_session_status_shape 
+[gw1] [  9%] PASSED tests/test_krypto_alert_features.py::TestKryptoAlert::test_21_session_status_shape 
+tests/test_strategy_parity.py::test_parity_default_params[bollinger_reversion] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[bollinger_reversion] 
+tests/test_strategy_parity.py::test_parity_default_params[bollinger_squeeze] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[bollinger_squeeze] 
+tests/test_strategy_parity.py::test_parity_default_params[ema_pullback_scalping] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[ema_pullback_scalping] 
+tests/test_strategy_parity.py::test_parity_default_params[horst_vwap_obv] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[horst_vwap_obv] 
+tests/test_strategy_parity.py::test_parity_default_params[macd_rsi_momentum] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[macd_rsi_momentum] 
+tests/test_strategy_parity.py::test_parity_default_params[nnfx_breakout] 
+[gw0] [  9%] PASSED tests/test_forex_ibkr_live.py::test_open_live_forex_places_two_oca_brackets 
+tests/test_forex_ibkr_live.py::test_open_live_forex_single_bracket_without_tp1 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[nnfx_breakout] 
+tests/test_strategy_parity.py::test_parity_default_params[nnfx_reversion] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[nnfx_reversion] 
+tests/test_strategy_parity.py::test_parity_default_params[nnfx_trend] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[nnfx_trend] 
+tests/test_strategy_parity.py::test_parity_default_params[rsi_only] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[rsi_only] 
+tests/test_strategy_parity.py::test_parity_default_params[scalping_4_rules] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[scalping_4_rules] 
+tests/test_strategy_parity.py::test_parity_default_params[stoch_reversal] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[stoch_reversal] 
+tests/test_strategy_parity.py::test_parity_default_params[tradex_vwap_scalping] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[tradex_vwap_scalping] 
+tests/test_strategy_parity.py::test_parity_default_params[trend_surfer] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[trend_surfer] 
+tests/test_strategy_parity.py::test_parity_default_params[vol_squeeze_breakout] 
+[gw1] [  9%] PASSED tests/test_strategy_parity.py::test_parity_default_params[vol_squeeze_breakout] 
+tests/test_strategy_parity.py::test_parity_default_params[vwap_reversion] 
+[gw1] [ 10%] PASSED tests/test_strategy_parity.py::test_parity_default_params[vwap_reversion] 
+tests/test_strategy_parity.py::test_parity_param_overrides[bollinger_reversion] 
+[gw1] [ 10%] PASSED tests/test_strategy_parity.py::test_parity_param_overrides[bollinger_reversion] 
+tests/test_strategy_parity.py::test_parity_param_overrides[ema_pullback_scalping] 
+[gw1] [ 10%] PASSED tests/test_strategy_parity.py::test_parity_param_overrides[ema_pullback_scalping] 
+tests/test_strategy_parity.py::test_parity_param_overrides[rsi_only] 
+[gw1] [ 10%] PASSED tests/test_strategy_parity.py::test_parity_param_overrides[rsi_only] 
+tests/test_strategy_parity.py::test_parity_param_overrides[stoch_reversal] 
+[gw0] [ 10%] PASSED tests/test_forex_ibkr_live.py::test_open_live_forex_single_bracket_without_tp1 
+tests/test_forex_ibkr_live.py::test_move_stop_modifies_all_open_legs 
+[gw1] [ 10%] PASSED tests/test_strategy_parity.py::test_parity_param_overrides[stoch_reversal] 
+tests/test_strategy_parity.py::test_vectorized_strategies_exist 
+[gw1] [ 10%] PASSED tests/test_strategy_parity.py::test_vectorized_strategies_exist 
+tests/test_strategy_parity.py::test_parity_not_vacuous 
+[gw1] [ 10%] PASSED tests/test_strategy_parity.py::test_parity_not_vacuous 
+tests/test_ai_team_regression.py::test_new_providers_in_catalog 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_new_providers_in_catalog 
+tests/test_ai_team_regression.py::test_model_weights_complete 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_model_weights_complete 
+tests/test_ai_team_regression.py::test_provider_for_model 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_provider_for_model 
+tests/test_ai_team_regression.py::test_openrouter_backup_key_order 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_openrouter_backup_key_order 
+tests/test_ai_team_regression.py::test_backup_key_only_when_set 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_backup_key_only_when_set 
+tests/test_ai_team_regression.py::test_is_rate_limit_error 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_is_rate_limit_error 
+tests/test_ai_team_regression.py::test_same_provider_chain_preferred_first 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_same_provider_chain_preferred_first 
+tests/test_ai_team_regression.py::test_generate_chain_no_keys_raises 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_generate_chain_no_keys_raises 
+tests/test_ai_team_regression.py::test_in_active_hours_normal_window 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_in_active_hours_normal_window 
+tests/test_ai_team_regression.py::test_in_active_hours_over_midnight 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_in_active_hours_over_midnight 
+tests/test_ai_team_regression.py::test_in_active_hours_none_or_invalid 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_in_active_hours_none_or_invalid 
+tests/test_ai_team_regression.py::test_role_chain_inherits_engine_default 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_role_chain_inherits_engine_default 
+tests/test_ai_team_regression.py::test_role_chain_custom_model_and_fallback 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_role_chain_custom_model_and_fallback 
+tests/test_ai_team_regression.py::test_role_chain_dead_model_migrates 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_role_chain_dead_model_migrates 
+tests/test_ai_team_regression.py::test_role_chain_outside_hours_uses_fallback_first 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_role_chain_outside_hours_uses_fallback_first 
+tests/test_ai_team_regression.py::test_role_sanitize_rejects_invalid 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_role_sanitize_rejects_invalid 
+tests/test_ai_team_regression.py::test_role_sanitize_deep_times_and_news_interval 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_role_sanitize_deep_times_and_news_interval 
+tests/test_ai_team_regression.py::test_default_roles_complete 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_default_roles_complete 
+tests/test_ai_team_regression.py::test_engine_backward_compat_aliases 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_engine_backward_compat_aliases 
+tests/test_ai_team_regression.py::test_news_watcher_module 
+[gw1] [ 10%] PASSED tests/test_ai_team_regression.py::test_news_watcher_module 
+tests/test_e1_adaptive_multiasset.py::test_retention_policy_covers_previously_unbounded_collections 
+[gw1] [ 10%] PASSED tests/test_e1_adaptive_multiasset.py::test_retention_policy_covers_previously_unbounded_collections 
+tests/test_e1_adaptive_multiasset.py::test_retention_still_never_touches_core_collections 
+[gw1] [ 10%] PASSED tests/test_e1_adaptive_multiasset.py::test_retention_still_never_touches_core_collections 
+tests/test_e1_adaptive_multiasset.py::test_retention_ghost_trades_floor 
+[gw1] [ 10%] PASSED tests/test_e1_adaptive_multiasset.py::test_retention_ghost_trades_floor 
+tests/test_e1_adaptive_multiasset.py::test_compact_error_kind_classifies_atlas_shared_tier 
+[gw1] [ 10%] PASSED tests/test_e1_adaptive_multiasset.py::test_compact_error_kind_classifies_atlas_shared_tier 
+tests/test_e1_adaptive_multiasset.py::test_compact_reports_unsupported_with_hint 
+[gw1] [ 10%] PASSED tests/test_e1_adaptive_multiasset.py::test_compact_reports_unsupported_with_hint 
+tests/test_e1_adaptive_multiasset.py::test_compact_success_has_no_hint 
+[gw1] [ 10%] PASSED tests/test_e1_adaptive_multiasset.py::test_compact_success_has_no_hint 
+tests/test_e1_adaptive_multiasset.py::test_open_mask_crypto_always_open 
+[gw1] [ 10%] PASSED tests/test_e1_adaptive_multiasset.py::test_open_mask_crypto_always_open 
+tests/test_e1_adaptive_multiasset.py::test_open_mask_forex_weekend_and_daily_break 
+[gw1] [ 10%] PASSED tests/test_e1_adaptive_multiasset.py::test_open_mask_forex_weekend_and_daily_break 
+tests/test_e1_adaptive_multiasset.py::test_open_mask_matches_scalar_is_market_closed 
+[gw1] [ 10%] PASSED tests/test_e1_adaptive_multiasset.py::test_open_mask_matches_scalar_is_market_closed 
+tests/test_e1_adaptive_multiasset.py::test_market_open_only_filters_candles_for_forex_and_keeps_crypto 
+[gw1] [ 10%] PASSED tests/test_e1_adaptive_multiasset.py::test_market_open_only_filters_candles_for_forex_and_keeps_crypto 
+tests/test_e1_adaptive_multiasset.py::test_resolve_forex_falls_back_to_yahoo_without_ibkr 
+[gw1] [ 10%] FAILED tests/test_e1_adaptive_multiasset.py::test_resolve_forex_falls_back_to_yahoo_without_ibkr 
+tests/test_e1_adaptive_multiasset.py::test_resolve_forex_uses_ibkr_when_configured 
+[gw1] [ 11%] PASSED tests/test_e1_adaptive_multiasset.py::test_resolve_forex_uses_ibkr_when_configured 
+tests/test_e1_adaptive_multiasset.py::test_fetch_ibkr_falls_back_to_yahoo_without_conid 
+[gw1] [ 11%] PASSED tests/test_e1_adaptive_multiasset.py::test_fetch_ibkr_falls_back_to_yahoo_without_conid 
+tests/test_e1_adaptive_multiasset.py::test_fetch_ibkr_chunks_and_orders_ascending 
+[gw1] [ 11%] PASSED tests/test_e1_adaptive_multiasset.py::test_fetch_ibkr_chunks_and_orders_ascending 
+tests/test_e1_adaptive_multiasset.py::test_guard_normalize_idea_defaults_and_clamp 
+[gw1] [ 11%] PASSED tests/test_e1_adaptive_multiasset.py::test_guard_normalize_idea_defaults_and_clamp 
+tests/test_e1_adaptive_multiasset.py::test_idea_round_due_only_after_max_steps_and_gap 
+[gw1] [ 11%] PASSED tests/test_e1_adaptive_multiasset.py::test_idea_round_due_only_after_max_steps_and_gap 
+tests/test_e1_adaptive_multiasset.py::test_parse_idea_validates_actions 
+[gw1] [ 11%] PASSED tests/test_e1_adaptive_multiasset.py::test_parse_idea_validates_actions 
+tests/test_e1_adaptive_multiasset.py::test_summarize_holds_dedupes_reasons 
+[gw1] [ 11%] PASSED tests/test_e1_adaptive_multiasset.py::test_summarize_holds_dedupes_reasons 
+tests/test_e1_adaptive_multiasset.py::test_build_prompt_contains_evidence 
+[gw1] [ 11%] PASSED tests/test_e1_adaptive_multiasset.py::test_build_prompt_contains_evidence 
+tests/test_e1_adaptive_multiasset.py::test_chat_text_variants 
+[gw1] [ 11%] PASSED tests/test_e1_adaptive_multiasset.py::test_chat_text_variants 
+tests/test_iteration_review.py::test_health 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_health 
+tests/test_iteration_review.py::test_coins 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_coins 
+tests/test_iteration_review.py::test_strategies_list 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_strategies_list 
+tests/test_iteration_review.py::test_ai_status 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_ai_status 
+tests/test_iteration_review.py::test_ai_chat_history_fast 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_ai_chat_history_fast 
+tests/test_iteration_review.py::test_liquidity_levels[BTCUSDT-15m] 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_liquidity_levels[BTCUSDT-15m] 
+tests/test_iteration_review.py::test_liquidity_levels[ETHUSDT-1h] 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_liquidity_levels[ETHUSDT-1h] 
+tests/test_iteration_review.py::test_liquidity_heatmap 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_liquidity_heatmap 
+tests/test_iteration_review.py::test_liquidity_context 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_liquidity_context 
+tests/test_iteration_review.py::test_liquidity_live 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_liquidity_live 
+tests/test_iteration_review.py::test_analytics_clear_preview_strategy 
+[gw1] [ 11%] FAILED tests/test_iteration_review.py::test_analytics_clear_preview_strategy 
+tests/test_iteration_review.py::test_analytics_clear_preview_missing_strategy_id 
+[gw1] [ 11%] FAILED tests/test_iteration_review.py::test_analytics_clear_preview_missing_strategy_id 
+tests/test_iteration_review.py::test_analytics_clear_preview_invalid_scope 
+[gw1] [ 11%] FAILED tests/test_iteration_review.py::test_analytics_clear_preview_invalid_scope 
+tests/test_iteration_review.py::test_analytics_clear_preview_coin_missing_symbol 
+[gw1] [ 11%] FAILED tests/test_iteration_review.py::test_analytics_clear_preview_coin_missing_symbol 
+tests/test_iteration_review.py::test_analytics_clear_requires_admin 
+[gw1] [ 11%] PASSED tests/test_iteration_review.py::test_analytics_clear_requires_admin 
+tests/test_iteration_review.py::test_analytics_clear_scope_strategy 
+[gw1] [ 11%] FAILED tests/test_iteration_review.py::test_analytics_clear_scope_strategy 
+tests/test_iteration_review.py::test_custom_strategy_default_params_populated 
+[gw1] [ 11%] ERROR tests/test_iteration_review.py::test_custom_strategy_default_params_populated 
+tests/test_iteration_review.py::test_optimizer_run_custom_strategy 
+[gw1] [ 11%] ERROR tests/test_iteration_review.py::test_optimizer_run_custom_strategy 
+tests/test_iteration_review.py::test_backtest_run_custom 
+[gw1] [ 11%] ERROR tests/test_iteration_review.py::test_backtest_run_custom 
+tests/test_iteration_review.py::test_backtest_strategy_warnings_unknown_indicator 
+[gw1] [ 11%] ERROR tests/test_iteration_review.py::test_backtest_strategy_warnings_unknown_indicator 
+tests/test_ai_iter2_governance.py::test_schedule_windows_and_default 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_schedule_windows_and_default 
+tests/test_ai_iter2_governance.py::test_disabled_window_is_ignored 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_disabled_window_is_ignored 
+tests/test_ai_iter2_governance.py::test_invalid_windows_are_dropped 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_invalid_windows_are_dropped 
+tests/test_ai_iter2_governance.py::test_window_matches_edges 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_window_matches_edges 
+tests/test_ai_iter2_governance.py::test_schedule_text_mentions_default 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_schedule_text_mentions_default 
+tests/test_ai_iter2_governance.py::test_repeated_signal_is_suppressed_within_cooldown 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_repeated_signal_is_suppressed_within_cooldown 
+tests/test_ai_iter2_governance.py::test_new_price_level_is_notified_again 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_new_price_level_is_notified_again 
+tests/test_ai_iter2_governance.py::test_notification_after_cooldown 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_notification_after_cooldown 
+tests/test_ai_iter2_governance.py::test_guard_state_flow 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_guard_state_flow 
+tests/test_ai_iter2_governance.py::test_macro_keys_recognised 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_macro_keys_recognised 
+tests/test_ai_iter2_governance.py::test_single_trade_cannot_move_stop_loss_far 
+[gw1] [ 11%] PASSED tests/test_ai_iter2_governance.py::test_single_trade_cannot_move_stop_loss_far 
+tests/test_ai_iter2_governance.py::test_small_changes_pass_unclamped 
+[gw1] [ 12%] PASSED tests/test_ai_iter2_governance.py::test_small_changes_pass_unclamped 
+tests/test_ai_iter2_governance.py::test_clamp_respects_hard_bounds 
+[gw1] [ 12%] PASSED tests/test_ai_iter2_governance.py::test_clamp_respects_hard_bounds 
+tests/test_ai_iter2_governance.py::test_macro_needs_sample_and_confirmations 
+[gw1] [ 12%] PASSED tests/test_ai_iter2_governance.py::test_macro_needs_sample_and_confirmations 
+tests/test_ai_iter2_governance.py::test_forbidden_terms_block_lessons 
+[gw1] [ 12%] PASSED tests/test_ai_iter2_governance.py::test_forbidden_terms_block_lessons 
+tests/test_ai_iter2_governance.py::test_daily_risk_limits 
+[gw1] [ 12%] PASSED tests/test_ai_iter2_governance.py::test_daily_risk_limits 
+tests/test_ai_iter2_governance.py::test_provider_health_reports_fallback_and_limits 
+[gw1] [ 12%] PASSED tests/test_ai_iter2_governance.py::test_provider_health_reports_fallback_and_limits 
+tests/test_ai_iter2_governance.py::test_expired_ghost_trades_are_not_counted_as_results 
+[gw1] [ 12%] PASSED tests/test_ai_iter2_governance.py::test_expired_ghost_trades_are_not_counted_as_results 
+tests/test_iter_e2_maintenance_adaptive_api.py::test_health_alive 
+[gw1] [ 12%] PASSED tests/test_iter_e2_maintenance_adaptive_api.py::test_health_alive 
+tests/test_iter_e2_maintenance_adaptive_api.py::test_playbook_backtest_endpoint 
+[gw1] [ 12%] PASSED tests/test_iter_e2_maintenance_adaptive_api.py::test_playbook_backtest_endpoint 
+tests/test_iter_e2_maintenance_adaptive_api.py::test_retention_policy_shape 
+[gw1] [ 12%] PASSED tests/test_iter_e2_maintenance_adaptive_api.py::test_retention_policy_shape 
+tests/test_iter_e2_maintenance_adaptive_api.py::test_storage_endpoint 
+[gw1] [ 12%] PASSED tests/test_iter_e2_maintenance_adaptive_api.py::test_storage_endpoint 
+tests/test_iter_e2_maintenance_adaptive_api.py::test_compact_requires_auth 
+[gw1] [ 12%] PASSED tests/test_iter_e2_maintenance_adaptive_api.py::test_compact_requires_auth 
+tests/test_iter_e2_maintenance_adaptive_api.py::test_compact_bad_body 
+[gw1] [ 12%] PASSED tests/test_iter_e2_maintenance_adaptive_api.py::test_compact_bad_body 
+tests/test_iter_e2_maintenance_adaptive_api.py::test_compact_ok_all 
+[gw0] [ 12%] PASSED tests/test_forex_ibkr_live.py::test_move_stop_modifies_all_open_legs 
+tests/test_forex_ibkr_live.py::test_close_live_forex_uses_real_remaining_position 
