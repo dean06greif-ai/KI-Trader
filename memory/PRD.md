@@ -205,3 +205,12 @@ Aufgabe: Werkbank-Ladebalken mit Pause & Co. (wie Discovery), Werkbank und Regim
   - Fix: Refine übernimmt die Phasen-Anpassungen nicht verbesserter Phasen
 - Tests: test_workbench_phases_1010.py (17) und test_finetune_compare_1010.py (7), Testing-Agent iteration_44 und iteration_45 grün.
 - Backlog: P1 kompletten Refine-Lauf mit echten Kerzen prüfen (Übernahme der Anpassungen live). P2 Kennzahlen je Variante aus einem eigenen Mini-Backtest.
+
+## Iteration 02.10.2026 (c) – Branch conflict_021026_1321
+Nutzer-Wunsch (wörtlich, gekürzt): "Autopilot Verlauf … da sind nur neue drin, kannst du dort auch noch alte wie z.B. von meiner Regime Analyse mit sehr gut (9 Regime … 25.09.2026, 13:40) mit rein machen" · "ich verstehe nicht das walkforward der regimerkennung … werden da random Strategie darauf gemacht" · "normale Strategien … importieren und exportieren, das bitte auch für dynamische Strategien … mit der verbundenen Regime Analyse … duplizieren".
+- Autopilot-Verlauf: alte Analysen automatisch als gemerkte Referenzen (Boot-Migration `regime_history_import_v1`; `persist_analysis` sichert bei jedem Speichern und vor der Limit-Löschung über `regime_history_import.import_one`). Zeile zeigt "Analyse: sehr gut, 9 Regime".
+- Walk-Forward: `WalkForwardScope.js` erklärt vor dem Start, was getestet wird (Regime → zugeordnete Strategie → Herkunft).
+- Dynamische Strategien: `services/dynamic_backup.py` + `GET /api/dynamic/{id}/export`, `POST /api/dynamic/import`, `POST /api/dynamic/{id}/duplicate`; UI `DynamicBackupActions.js` (Export, Duplizieren, Backup importieren). Import überschreibt nie, Auto-Prüfung/-Übernahme aus.
+- Tests: `tests/test_dynamic_backup.py` (neu), Mock-Fix in `test_autopilot_history_import.py`; iteration_46: 100 % bestanden.
+- Backlog: P1 Import-Vorschau vor Bestätigung · P2 Sammel-Backup mehrerer dynamischer Strategien.
+
