@@ -214,3 +214,12 @@ Nutzer-Wunsch (wörtlich, gekürzt): "Autopilot Verlauf … da sind nur neue dri
 - Tests: `tests/test_dynamic_backup.py` (neu), Mock-Fix in `test_autopilot_history_import.py`; iteration_46: 100 % bestanden.
 - Backlog: P1 Import-Vorschau vor Bestätigung · P2 Sammel-Backup mehrerer dynamischer Strategien.
 
+
+
+## Iteration 02.10.2026 (d) – Feedback Werkbank/Backtester/Note/Last
+- „Bestehende optimieren“: Dropdown „– Strategie ändern –“, „Übernehmen…“ erst nach Auswahl, Phasen erst nach „Phasen-Parameter anzeigen“, Tooltip „Optimierte Strategie“ (DynamicPhaseEditor.js).
+- Backtester: dynamische Strategien wahlweise Live-Sicht oder Rückblick (ideale Phasen) – `dynamic_label_basis`, `dynamic_backtest.phase_labels`.
+- Eine Note: Autopilot-Ampel = Erkennungsqualität (`regime_quality.grade_from_metrics`, Import = Analyse-Note); Such-Score nur Rangliste (Tooltip). Accumulator sammelt missed_pct + Validierung.
+- Last: Job-Starts laden Analysen ohne chart/chart_emas (`lab.NO_CHART`), Worker-Payload ohne chart_emas.
+- Tests: `tests/test_grade_unify_and_dyn_basis.py`; iteration_47 grün (2 bereits vorher rote Alt-Tests in test_ap01_dynamic_apply.py).
+- Offen: Prod-Diagnose /api/system/loop-health für weitere Last-Optimierung.
