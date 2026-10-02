@@ -223,3 +223,10 @@ Nutzer-Wunsch (wörtlich, gekürzt): "Autopilot Verlauf … da sind nur neue dri
 - Last: Job-Starts laden Analysen ohne chart/chart_emas (`lab.NO_CHART`), Worker-Payload ohne chart_emas.
 - Tests: `tests/test_grade_unify_and_dyn_basis.py`; iteration_47 grün (2 bereits vorher rote Alt-Tests in test_ap01_dynamic_apply.py).
 - Offen: Prod-Diagnose /api/system/loop-health für weitere Last-Optimierung.
+
+## Iteration 02.10.2026 (e) – Zeitraum über Analyse hinaus, Ergebnis-Backtest lokal, Last-Messung
+- Werkbank-Zeitraum länger als die Analyse: nur Live-Sicht (`regime_opt.extra_days_for`, `_extended_live_segments` – Daten VOR der Analyse, kausal eingeteilt, Holdout unberührt); Rückblick darüber hinaus gesperrt (UI-Hinweis + Start gesperrt + Backend-Fehler).
+- Ergebnis-Backtest am Ende der Werkbank läuft bei Ausführung „lokal“ auf dem Worker (`dynamic_workbench._local_result_backtest`), Cloud nur als Fallback.
+- Last-Messung lokal mit KI-Keys (ohne Börsen-/Telegram-Keys, lokale DB): KI-Schleifen blockieren den Server nicht; einzige Blockade 2,6 s beim Start (ai_ml_lab._restore_model). Keys danach wieder entfernt.
+- Tests: `tests/test_workbench_extended_and_local_bt.py`; iteration_48 grün.
+
