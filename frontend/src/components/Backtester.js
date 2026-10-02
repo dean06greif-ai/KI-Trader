@@ -11,6 +11,7 @@ import LocalWorkerPanel from './LocalWorkerPanel';
 import BenchmarkBar from './BenchmarkBar';
 import EquityChart from './EquityChart';
 import DynamicRegimeBreakdown from './DynamicRegimeBreakdown';
+import { LabelBasisSelect, LABEL_BASIS_HINT } from './DynamicWorkbenchFields';
 import { DynBadge } from './DynamicTradeTag';
 import StrategyCopilot from './StrategyCopilot';
 import PortfolioBacktestCard from './PortfolioBacktestCard';
@@ -91,6 +92,7 @@ export default function Backtester({ onClose }) {
   const [result, setResult] = useState(null);
   const [resultId, setResultId] = useState(null);
   const [fastPath, setFastPath] = useState(saved.fastPath !== false);
+  const [dynBasis, setDynBasis] = useState(saved.dynBasis || 'live');
   const [ram, setRam] = useState(null);
   const [applyFor, setApplyFor] = useState(null);
   const [applyMode, setApplyMode] = useState('paper');
@@ -110,11 +112,11 @@ export default function Backtester({ onClose }) {
     try {
       localStorage.setItem(STATE_KEY, JSON.stringify({
         selStrats, selCoins, days, dateMode, dateFrom, dateTo, capital,
-        fee, requireAll, fastPath, execution, tab,
+        fee, requireAll, fastPath, execution, tab, dynBasis,
       }));
     } catch { /* ignore */ }
   }, [selStrats, selCoins, days, dateMode, dateFrom, dateTo, capital,
-    fee, requireAll, fastPath, execution, tab]);
+    fee, requireAll, fastPath, execution, tab, dynBasis]);
 
   // ---- Lokaler Worker: Online-Status für die Ausführungs-Auswahl ----
   useEffect(() => {
@@ -428,6 +430,7 @@ export default function Backtester({ onClose }) {
       max_capital: capital, fee_percent: fee,
       require_all_rules: requireAll,
       use_fast_path: fastPath,
+      ...(hasDynamic ? { dynamic_label_basis: dynBasis } : {}),
       strategy_configs: strategyConfigs,
       execution,
       ...workerField(execution, 'backtest'),
@@ -471,6 +474,7 @@ export default function Backtester({ onClose }) {
   };
 
   const running = job?.status === 'running';
+  const hasDynamic = selStrats.some(id => strategies.find(s => s.id === id)?.is_dynamic);
   const perStrategy = result?.per_strategy || [];
   const perPair = result?.per_pair || [];
   const bestPerSymbol = result?.best_per_symbol || {};
@@ -821,6 +825,12 @@ export default function Backtester({ onClose }) {
             <input type="checkbox" checked={fastPath} onChange={e => setFastPath(e.target.checked)} data-testid="bt-fast-path" />
             Fast-Path (schnell)
           </label>
+          {hasDynamic && (
+            <label className="bt-check" title={`Nur für dynamische Strategien. ${LABEL_BASIS_HINT}`} data-testid="bt-dyn-basis-field">
+              Regime-Abschnitte
+              <LabelBasisSelect value={dynBasis} onChange={setDynBasis} testId="bt-dyn-label-basis" />
+            </label>
+          )}
           <div className="bt-exec" data-testid="bt-execution-toggle">
             <span className="bt-exec-label">Ausführung</span>
             <button className={`bt-exec-btn ${execution === 'cloud' ? 'on' : ''}`}
@@ -1020,7 +1030,7 @@ export default function Backtester({ onClose }) {
             {result.dynamic_breakdown && Object.values(result.dynamic_breakdown).map(bd => (
               <div key={bd.dynamic_id} className="btc-panel" data-testid={`bt-dyn-breakdown-${bd.dynamic_id}`}>
                 <div className="bt-section-title" style={{ marginTop: 0 }}>
-                  <DynBadge /> {bd.name} · AUFSCHLÜSSELUNG JE REGIME ({bd.timeframe} · {bd.switches} Regimewechsel)
+                  <DynBadge /> {bd.name} · AUFSCHLÜSSELUNG JE REGIME ({bd.timeframe} · {bd.switches} Regimewechsel{bd.label_basis === 'retrospective_reference' ? ' · Rückblick (ideale Phasen – geschönt)' : bd.label_basis ? ' · Live-Sicht' : ''})
                 </div>
                 <DynamicRegimeBreakdown breakdown={bd} testPrefix={`bt-dyn-${bd.dynamic_id}`} />
               </div>

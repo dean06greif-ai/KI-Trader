@@ -44,7 +44,7 @@ async def _load_doc(body: Dict, db) -> Dict:
     Worker aus dem mitgeschickten Payload (Worker hat keinen DB-Zugriff)."""
     doc = body.get("analysis_doc")
     if doc is None and db is not None:
-        doc = await db.regime_analyses.find_one({"id": body.get("analysis_id")})
+        doc = await db.regime_analyses.find_one({"id": body.get("analysis_id")}, lab.NO_CHART)
     if not doc:
         raise RuntimeError("Regime-Analyse nicht gefunden")
     return doc

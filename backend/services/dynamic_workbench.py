@@ -317,7 +317,7 @@ async def run(job_id: str, p: Dict, deps: Dict):
         symbol = p.get("symbol")
         subset = p.get("symbols") or None
         p = {**p, "reuse_key": job_id}
-        analysis = await db.regime_analyses.find_one({"id": aid})
+        analysis = await db.regime_analyses.find_one({"id": aid}, lab.NO_CHART)
         if not analysis:
             raise RuntimeError("Regime-Analyse nicht gefunden")
         analysis.pop("_id", None)

@@ -676,7 +676,8 @@ async def workbench_start(body: Dict, _: bool = Depends(require_admin)):
                 raise HTTPException(status_code=400, detail="Mindestens einem Regime eine Strategie zuordnen")
         else:
             p["targets"] = {str(int(r)): {"mode": mode} for r in (body.get("regime_ids") or [])}
-    analysis = await state.db.regime_analyses.find_one({"id": p["analysis_id"]})
+    analysis = await state.db.regime_analyses.find_one({"id": p["analysis_id"]},
+                                                       {"chart": 0, "chart_emas": 0})
     if not analysis:
         raise HTTPException(status_code=404, detail="Regime-Analyse nicht gefunden")
     # Asset-Auswahl (nur gemeinsame Erkennung): None = alle Assets der Analyse

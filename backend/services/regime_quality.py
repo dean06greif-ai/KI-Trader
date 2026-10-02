@@ -221,6 +221,35 @@ def summarize_scope(per_symbol: Dict[str, Dict]) -> Optional[Dict]:
                                          "sweet_spot_days": list(SWEET_SPOT_DAYS)}}}
 
 
+def grade_from_metrics(m: Dict) -> Optional[Dict]:
+    """Erkennungsqualität aus den gepoolten Autopilot-Kennzahlen (rein) – exakt
+    dieselbe Note/Benchmark wie summarize_scope (Mittel über die Symbole).
+    None ohne Holdout-Kennzahl (Alt-Läufe)."""
+    if not m or m.get("holdout_direction_pct") is None:
+        return None
+    hb = int(m.get("holdout_bars") or 0)
+    v2 = m.get("holdout_reference_f1_pct") is not None or m.get("holdout_reference_bal_pct") is not None
+    ref_hold = m.get("holdout_reference_pct")
+    ref_basis = "holdout" if ref_hold is not None and hb >= MIN_HOLDOUT_BARS else "overall"
+    ref_pct = ref_hold if ref_basis == "holdout" else m.get("reference_pct")
+    agg = {"reference_version": 2 if v2 else 1,
+           "reference_holdout_f1_pct": m.get("holdout_reference_f1_pct") if v2 else None,
+           "reference_holdout_balanced_pct": m.get("holdout_reference_bal_pct") if v2 else None,
+           "reference_holdout_skill_pct": m.get("holdout_skill_pct") if v2 else None,
+           "live_direction_phase_days": m.get("live_direction_phase_days") if v2 else None,
+           "avg_segment_days": m.get("avg_live_phase_days"),
+           "holdout_direction_pct": m.get("holdout_direction_pct"),
+           "direction_pct": m.get("direction_pct"),
+           "reference_holdout_pct": ref_hold,
+           "reference_lag_days": m.get("reference_lag_days"),
+           "reference_missed_pct": m.get("reference_missed_pct"),
+           "validation_passed": m.get("validation_passed"),
+           "holdout_bars": hb}
+    agg.update(grade_of(agg["holdout_direction_pct"], agg["direction_pct"], hb, ref_pct, ref_basis,
+                        agg["reference_holdout_balanced_pct"], agg["reference_holdout_f1_pct"]))
+    return apply_benchmark(agg)
+
+
 def grade_for_classes(doc: Dict, asset_classes: Optional[List[str]] = None) -> Optional[str]:
     """Schwächste Note der kombinierten Analyse über die angefragten Klassen
     (ohne Klassen: Gesamtnote). None, wenn nicht bewertbar."""

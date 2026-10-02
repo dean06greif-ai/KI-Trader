@@ -38,6 +38,7 @@ JOBS: Dict[str, Dict] = {}
 
 CHART_MAX_POINTS = 1200
 MAX_ANALYSES = 40
+NO_CHART = {"chart": 0, "chart_emas": 0}  # Projektion: Analyse ohne Chart-Daten
 MIN_HISTORY_BARS = 100        # Symbole mit weniger aggregierten Kerzen werden übersprungen
 
 

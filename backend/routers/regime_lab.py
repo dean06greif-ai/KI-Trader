@@ -50,7 +50,9 @@ def _regime_id_or_400(body: Dict) -> int:
 
 
 async def _get_doc(aid: str) -> Dict:
-    doc = await state.db.regime_analyses.find_one({"id": aid})
+    # Ohne Chart-Daten (chart + chart_emas ≈ 60 % der Dokumentgröße, mehrere MB
+    # über Atlas) – keiner der Job-Starts/Zuordnungen braucht sie.
+    doc = await state.db.regime_analyses.find_one({"id": aid}, lab.NO_CHART)
     if not doc:
         raise HTTPException(status_code=404, detail="Regime-Analyse nicht gefunden")
     return doc
@@ -58,7 +60,7 @@ async def _get_doc(aid: str) -> Dict:
 
 def _slim_doc(doc: Dict) -> Dict:
     """Analyse-Dokument für den Worker-Payload: ohne Chart-Daten (unnötig groß)."""
-    return {k: v for k, v in _clean(doc).items() if k != "chart"}
+    return {k: v for k, v in _clean(doc).items() if k not in ("chart", "chart_emas")}
 
 
 def _enqueue_local(kind_fn: str, job_id: str, body: Dict):

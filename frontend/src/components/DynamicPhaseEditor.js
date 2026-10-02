@@ -17,6 +17,10 @@ function describe(choice, phase, strategies) {
   return `Phase „${phase.label}“ handelt künftig mit „${s?.name || choice}“ als Ausgangs-Strategie.`;
 }
 
+const OPT_HINT = 'Optimierte Strategie = das beste gespeicherte Ergebnis der Strategie-Suche für genau diese Phase '
+  + '(„Strategie suchen“ im Regime-Lab bzw. Optimierungs-Läufe der Dynamik-Werkbank) inkl. Regeln und Parametern. '
+  + '„Optimierte Strategie aktivieren“ setzt die Phase wieder auf dieses Ergebnis zurück – z.B. nachdem du sie testweise auf eine Standard-Strategie umgestellt hast.';
+
 function OptimizedCell({ o }) {
   if (!o) return <span className="opt-small">keine gespeichert</span>;
   const m = o.metrics || {};
@@ -107,17 +111,20 @@ function PhaseRow({ phase, strategies, releaseStatus, disabled, onChanged, refre
     <div className={`dpe-row ${optimizing ? 'optimizing' : ''}`} data-testid={`dpe-row-${phase.regime}`}>
       <div className="dpe-cell dpe-label"><b>{phase.label}</b></div>
       <div className="dpe-cell" data-testid={`dpe-current-${phase.regime}`}><span className="opt-small">Aktuell: </span><CurrentVariant phase={phase} /></div>
-      <div className="dpe-cell" data-testid={`dpe-optimized-${phase.regime}`}><span className="opt-small">Optimiert: </span><OptimizedCell o={phase.optimized} /></div>
+      <div className="dpe-cell" data-testid={`dpe-optimized-${phase.regime}`} title={OPT_HINT}><span className="opt-small">Optimiert ⓘ: </span><OptimizedCell o={phase.optimized} /></div>
       <div className="dpe-cell dpe-act">
-        <select value={choice} disabled={disabled || asking} onChange={e => setChoice(e.target.value)} data-testid={`dpe-select-${phase.regime}`}>
-          <option value="">– Phase ändern –</option>
+        <select value={choice} disabled={disabled || asking} onChange={e => setChoice(e.target.value)} data-testid={`dpe-select-${phase.regime}`}
+          title="Strategie dieser Phase ändern: nicht handeln, optimierte Strategie oder eine Standard-Strategie als Ausgangs-Strategie">
+          <option value="">– Strategie ändern –</option>
           {phase.traded && <option value="skip">Nicht handeln</option>}
-          {phase.optimized && <option value="optimized">Optimierte Strategie aktivieren</option>}
+          {phase.optimized && <option value="optimized" title={OPT_HINT}>Optimierte Strategie aktivieren</option>}
           {strategies.filter(s => s.id !== phase.strategy_id || phase.own_rules).map(s => (
             <option key={s.id} value={`strategy:${s.id}`}>Ausgangs-Strategie: {s.name}</option>
           ))}
         </select>
-        <button className="opt-cancel-run" disabled={!choice || disabled || asking} onClick={() => setAsking(true)} data-testid={`dpe-apply-${phase.regime}`}>Übernehmen…</button>
+        {choice && !asking && (
+          <button className="opt-cancel-run" disabled={disabled} onClick={() => setAsking(true)} data-testid={`dpe-apply-${phase.regime}`}>Übernehmen…</button>
+        )}
       </div>
       <PhaseFocus phase={phase} optimizing={optimizing} onToggleOptimize={onToggleOptimize} onFocus={onFocus}
         showHistory={showHistory} setShowHistory={setShowHistory} disabled={disabled} />
@@ -133,6 +140,7 @@ function PhaseRow({ phase, strategies, releaseStatus, disabled, onChanged, refre
 export default function DynamicPhaseEditor({ dynamicId, strategies, disabled, optimizeSel, onToggleOptimize, onFocus }) {
   const [data, setData] = useState(null);
   const [rev, setRev] = useState(0);
+  const [showPhases, setShowPhases] = useState(false);
   const load = useCallback(() => {
     fetch(`${API_URL}/api/dynamic/${dynamicId}/phases`).then(r => r.json()).then(setData).catch(() => setData(null));
   }, [dynamicId]);
@@ -152,7 +160,11 @@ export default function DynamicPhaseEditor({ dynamicId, strategies, disabled, op
         Deine Anpassungen bleiben auch in der neuen optimierten Version erhalten, solange dort nichts verbessert wurde.
       </div>
       {!isAdmin() && <div className="opt-small">Admin-Login erforderlich, um Phasen zu ändern.</div>}
-      {data.phases.map(p => (
+      <button className="opt-chip" onClick={() => setShowPhases(v => !v)} data-testid="dpe-toggle-phases"
+        style={{ marginBottom: 6 }} title="Je Phase: aktuell gehandelte Strategie, optimierte Strategie, Strategie ändern und Verlauf">
+        {showPhases ? '▾ Phasen-Parameter ausblenden' : `▸ Phasen-Parameter anzeigen (${data.phases.length} Phasen)`}
+      </button>
+      {showPhases && data.phases.map(p => (
         <PhaseRow key={p.regime} phase={{ ...p, dynamicId }} strategies={strategies} releaseStatus={data.release_status}
           disabled={disabled || !isAdmin()} onChanged={changed} refreshKey={rev}
           optimizing={(optimizeSel || []).includes(p.regime)} onToggleOptimize={onToggleOptimize} onFocus={onFocus} />

@@ -368,8 +368,9 @@ class MetricsAccumulator:
                      "utility_separation_pct": [], "utility_sign_hit_pct": [],
                      "utility_train_sign_hit_pct": [],
                      "holdout_reference_bal_pct": [], "holdout_skill_pct": [],
-                     "live_direction_phase_days": []}
+                     "live_direction_phase_days": [], "reference_missed_pct": []}
         self.holdout_bars = self.switches = self.seg_bars = self.seg_n = 0
+        self.validation = []
 
     def add(self, entry: Dict) -> None:
         agg = self.agg
@@ -384,6 +385,9 @@ class MetricsAccumulator:
             hsame = float(la.get("holdout_direction_pct") or 0) / 100.0 * hbars
             agg["train_direction_pct"].append((same - hsame) / (bars - hbars) * 100.0)
         _collect_reference(entry.get("reference") or {}, self.ragg)
+        passed = (entry.get("validation") or {}).get("passed")
+        if passed is not None:
+            self.validation.append(bool(passed))
         self.holdout_bars += int(la.get("holdout_bars") or 0)
         lsegs = entry.get("live_segments") or entry.get("segments") or []
         self.switches += max(len(lsegs) - 1, 0)
@@ -400,6 +404,7 @@ class MetricsAccumulator:
                 "holdout_bars": self.holdout_bars, "switches_live": self.switches,
                 "avg_live_phase_days": (round(self.seg_bars / self.seg_n / self.bpd, 2)
                                         if self.seg_n else None),
+                "validation_passed": all(self.validation) if self.validation else None,
                 **{k: _mean(v) for k, v in self.ragg.items()}}
 
 
@@ -440,7 +445,8 @@ def _collect_reference(ref: Dict, ragg: Dict) -> None:
                      ("train_balanced_pct", "train_reference_bal_pct"),
                      ("holdout_balanced_pct", "holdout_reference_bal_pct"),
                      ("holdout_skill_pct", "holdout_skill_pct"),
-                     ("live_direction_phase_days", "live_direction_phase_days")):
+                     ("live_direction_phase_days", "live_direction_phase_days"),
+                     ("missed_pct", "reference_missed_pct")):
         if ref.get(src) is not None:
             ragg[dst].append(float(ref[src]))
     bars, hbars = int(ref.get("bars") or 0), int(ref.get("holdout_bars") or 0)
@@ -577,9 +583,42 @@ GRADES = (("top", "sehr gut"), ("good", "gut"), ("mid", "mittel"), ("weak", "sch
 MAX_REFERENCE_SEEDS = 10
 
 
+QUALITY_TO_GRADE = {"sehr gut": "top", "gut": "good", "mittel": "mid", "schwach": "weak"}
+
+
 def rate_result(res: Dict) -> Dict:
-    """Ampel für einen Autopilot-Lauf (rein & testbar): Auswahl-Score,
-    Holdout (finaler Test), Beweislage und Phasen-Warnungen."""
+    """Ampel eines Verlaufs-Eintrags = Erkennungsqualität des Regime-Labs (eine
+    Quelle der Wahrheit, gleiche Kriterien/Benchmark wie die Analyse). Der
+    Such-Score ist nur die Rangliste der Suche (Trainingsdaten) und wird
+    zusätzlich angezeigt. Alt-Läufe ohne Holdout-Kennzahlen: bisherige Ampel."""
+    from services import regime_quality
+    best = res.get("best") or {}
+    score = float(best.get("score") or 0)
+    imp = res.get("imported_from") or {}
+    label, why, checks = None, [], []
+    if res.get("source") == "import" and imp.get("grade") in QUALITY_TO_GRADE:
+        label = imp["grade"]
+        why.append("Erkennungsqualität der Analyse")
+    else:
+        q = regime_quality.grade_from_metrics(best.get("metrics") or {})
+        if q and q.get("grade") in QUALITY_TO_GRADE:
+            label = q["grade"]
+            checks = (q.get("benchmark") or {}).get("checks") or []
+            why.append("Erkennungsqualität (gleiche Kriterien wie im Regime-Lab)")
+            failed = [c["label"] for c in checks if not c["ok"]]
+            if failed and label != "sehr gut":
+                why.append("für „sehr gut“ fehlt: " + ", ".join(failed))
+    if label is None:
+        return _legacy_rating(res)
+    why.append(f"Such-Score {score:.1f} (Rangliste der Suche, nur Trainingsdaten)")
+    if res.get("holdout_regressed"):
+        why.append("⚠ Holdout gefallen (Überanpassung möglich)")
+    return {"grade": QUALITY_TO_GRADE[label], "label": label, "basis": "quality",
+            "points": sum(1 for c in checks if c["ok"]), "why": " · ".join(why)}
+
+
+def _legacy_rating(res: Dict) -> Dict:
+    """Bisherige Punkte-Ampel (nur für Alt-Läufe ohne Holdout-Kennzahlen)."""
     best = res.get("best") or {}
     m = best.get("metrics") or {}
     score = float(best.get("score") or 0)
@@ -606,7 +645,8 @@ def rate_result(res: Dict) -> Dict:
         pts -= 1
         why.append("zu wenig Holdout-Daten")
     grade = "top" if pts >= 4 else "good" if pts == 3 else "mid" if pts == 2 else "weak"
-    return {"grade": grade, "label": dict(GRADES)[grade], "points": pts, "why": " · ".join(why)}
+    return {"grade": grade, "label": dict(GRADES)[grade], "points": pts, "basis": "legacy",
+            "why": " · ".join(why)}
 
 
 def group_key(res: Dict) -> str:

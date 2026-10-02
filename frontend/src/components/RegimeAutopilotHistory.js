@@ -59,7 +59,7 @@ export default function RegimeAutopilotHistory({ runs, det, appliedId, reference
           </div>
           <table className="rl-compare-table" data-testid="autopilot-history" style={{ fontSize: 11 }}>
             <thead>
-              <tr><th>Bewertung</th><th>Datum</th><th>Coins · TF</th><th>Grundgerüst</th><th>Score</th><th>Holdout-F1</th><th>Innere Val.</th><th>Ø Phase</th><th>Varianten</th><th></th></tr>
+              <tr><th>Bewertung</th><th>Datum</th><th>Coins · TF</th><th>Grundgerüst</th><th title="Such-Score = Rangliste der Autopilot-Suche (nur Trainingsdaten + innere Validierung, ohne Holdout). Formel: 25 % Live=Final + 75 % Referenz-Macro-F1, ± Regime-Nutzen, minus Phasen-Strafe. Theoretisch ≈ 100 (max. 105), praktisch liegt die Obergrenze bei ca. 65–70: die Referenz kennt die Zukunft, eine Live-Erkennung muss Wendepunkte erst bestätigen. Die Bewertung links ist die Erkennungsqualität (gleiche Kriterien wie im Regime-Lab).">Score ⓘ</th><th>Holdout-F1</th><th>Innere Val.</th><th>Ø Phase</th><th>Varianten</th><th></th></tr>
             </thead>
             <tbody>
               {shown.map(r => {

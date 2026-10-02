@@ -83,7 +83,8 @@ async def start_backtest(body: Dict, _: bool = Depends(require_admin)):
               "be_smart_lookback", "require_all_rules", "sessions",
               "tp_mode", "tp1_percent", "tp_full_percent",
               "maintenance_margin_rate", "use_fast_path", "sl_ticks", "trade_pre_signals",
-              "auto_leverage_enabled", "auto_lev_mode", "auto_lev_value", "auto_lev_max"):
+              "auto_leverage_enabled", "auto_lev_mode", "auto_lev_value", "auto_lev_max",
+              "dynamic_label_basis"):
         if body.get(k) is not None:
             cfg[k] = body[k]
     strategy_configs = body.get("strategy_configs") or {}

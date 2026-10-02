@@ -39,6 +39,17 @@ def _regime_warmup_days(model: Dict) -> int:
     return eng.required_history_days(model.get("config") or {}, 0)
 
 
+def phase_labels(model: Dict, candles: List[Dict], tf: str, conf_min: float,
+                 min_hold: float, retro: bool = False) -> List[Optional[int]]:
+    """Regime je Kerze: Live-Sicht (kausal, wie im Handel – Standard) oder
+    Rückblick (ideale, pivot-korrigierte Phasen – nur v2-Modelle; schönt das
+    Ergebnis, weil der Einstieg am Wendepunkt live nicht möglich ist)."""
+    if retro and rg.is_v2(model):
+        from services import regime_engine as eng
+        return eng.final_labels(model, candles)
+    return rg.classify_series(model, candles, tf, conf_min, min_hold)
+
+
 def _window_start(candles: List[Dict], days: int, start_ms: Optional[int]) -> int:
     """Erster Zeitstempel des eigentlichen Testfensters (rein)."""
     if start_ms:
@@ -158,6 +169,7 @@ async def simulate_dynamic(doc: Dict, symbols: List[str], days: int, cfg: Dict,
     labels_of = {int(r["id"]): r.get("label") or f"#{int(r['id']) + 1}"
                  for r in model.get("regimes") or []}
     capital = float(cfg.get("max_capital", 100.0)) or 100.0
+    retro = str(cfg.get("dynamic_label_basis") or "live").lower() == "final"
     p0, p1 = progress
 
     plans = {rid: _plan_for_regime(doc, rid, registry, _mk_strategy) for rid in labels_of}
@@ -184,10 +196,10 @@ async def simulate_dynamic(doc: Dict, symbols: List[str], days: int, cfg: Dict,
     if not histories:
         raise RuntimeError(f"{name}: zu wenig Kerzen für {', '.join(symbols)}")
 
-    job["phase"] = f"{name}: Regime je Kerze bestimmen (rückblickend)"
+    job["phase"] = f"{name}: Regime je Kerze bestimmen ({'Rückblick, ideale Phasen' if retro else 'Live-Sicht wie im Handel'})"
     labels_map = {}
     for sym, cs in histories.items():
-        labels = rg.classify_series(model, cs, tf, conf_min, min_hold)
+        labels = phase_labels(model, cs, tf, conf_min, min_hold, retro)
         labels_map[sym] = [lb if c["timestamp"] >= win_start[sym] else None
                            for lb, c in zip(labels, cs)]
     all_segments = dyn.build_segments(histories, labels_map)
@@ -260,6 +272,7 @@ async def simulate_dynamic(doc: Dict, symbols: List[str], days: int, cfg: Dict,
     job["progress"] = round(p1)
     return {"per_pair": per_pair, "export_trades": export_trades, "timeframe": tf,
             "breakdown": {"dynamic_id": did, "name": name, "timeframe": tf,
+                          "label_basis": "retrospective_reference" if retro else "causal_live",
                           "symbols": list(histories.keys()), "switches": switches,
                           "total": total_m, "regimes": regimes_out,
                           "points": _equity_points(rows, labels_of)[:8000],
