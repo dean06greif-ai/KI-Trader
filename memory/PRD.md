@@ -188,3 +188,9 @@ P1 Regime-Lab-Hauptbalken je Worker getrennt anzeigen; P2 Worker-Paket-Versionst
 - Dead code: 4 unused frontend components -> archive/frontend_unused (ARCHIV_KATALOG.md); ~25 unreferenced backend
   functions/classes removed (vulture + grep verified). services/price_watch.py is never started -> ask the user.
 - Regression: unchanged versus baseline; testing agent iteration_42: 100 %.
+
+## Iteration 02.10.2026 (Branch conflict_011026_1749)
+Aufgabe: Werkbank-Ladebalken mit Pause & Co. (wie Discovery), Werkbank und Regime-Lab-Balken entkoppeln, „Bestehende optimieren“ mit Strategie je Phase (nicht handeln / andere Ausgangs-Strategie / optimierte reaktivieren, mit Bestätigung, neue Version, Verlauf + Wiederherstellen), Dynamik-Backtest auf dem lokalen Worker.
+- Umgesetzt: siehe `VERBESSERUNGEN_0210_WERKBANK_PHASEN.md`. Neue Module: `services/dynamic_versions.py`, `DynamicPhaseEditor.js`, `DynamicVersionHistory.js`, `lib/postJson.js`. Worker 1.20.0.
+- Tests: `backend/tests/test_workbench_phases_1010.py` (14) und Testing-Agent iteration_43 grün.
+- Backlog: P1 Live-Pause eines echten Werkbank-Laufs am Worker prüfen. P1 Phasen-Editor: Mini-Backtest direkt nach der Änderung. P2 Basis-Strategie für Discovery-Regeln ist eine Built-in-Strategie (Regeln greifen live nur bei Custom-Basis, Altverhalten).
