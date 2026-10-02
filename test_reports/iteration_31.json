@@ -1,0 +1,26 @@
+{
+  "summary": "Verified inner-val guard fix for Regime-Autopilot (30.09 Rohstoffe bug) end-to-end. Backend unit + monkeypatched job runs green; API advice endpoint returns empty advice + band [5,15] for the new sweet spot; jest regimeLabHelpers all pass including the 80.9->65.8 inner_regressed case; UI defaults now 5/15 and one-time migration from old {minPhase:4,maxPhase:14} without phaseV works (phaseV=2 written).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_autopilot_inner_guard_3009.py",
+    "/app/backend/tests/test_dynamic_trading_0926.py",
+    "/app/backend/tests/test_iter25_regime_utility_and_autopilot_plateau.py",
+    "/app/backend/tests/test_autopilot_no_model_fallback.py",
+    "/app/frontend/src/__tests__/regimeLabHelpers.test.js",
+    "/app/test_reports/pytest/iter31_inner_guard.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "inner_regressed strict-lt inequality (`b + 5 < a - 1e-9`) correctly makes 75.9 pass and 75.8 fail per test expectation; documented boundary is fine.",
+    "autopilot_advice endpoint is unauthenticated (no require_admin) – matches user story requirement but confirm intentional exposure of settings hints."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (25/25 targeted unit tests + monkeypatched job run)", "frontend": "100% (25/25 jest + UI migration verified)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (POST /api/auth/login)",
+  "seed_data_creation": "None. UI test seeded localStorage regime_autopilot_v1={minPhase:4,maxPhase:14,plateau:300,autoChain:true} pre-load to verify one-time phaseV migration.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All requested checks green: (a) services.regime_autopilot.inner_regressed threshold >5pp (80.9->65.8 true, 75.9 false, 75.8 true, missing false); (b) adopt_recommended blocked when inner_regressed even with holdout-F1 up (47.5->54.4) and followup_analysis_body returns None; (c) monkeypatched run: guard_rejected=20 for variants with high score & inner=60 vs base 80, inner_regressed=False in result, max_inner_drop_pp=5.0, settings.min_phase_days_target defaults to 5.0; (d) GET /api/regime-lab/autopilot/advice?timeframe=1h&days=720&n_symbols=5&min_days=5&max_days=15 -> {advice:[], recommended_band:[5.0,15.0], recommended_min_days_history:540} (no auth required); (e) regime_calibration_history.autopilot_row already carries inner_regressed flag (line 55); (f) UI defaults & migration via Tools > Regime-Lab: data-testid autopilot-min-phase=5, autopilot-max-phase=15, phaseV=2 persisted, old 4/14 dropped; (g) jest 25/25 including 'inner_regressed' reason and Rohstoffe scenario. No regressions in adjacent tests (dynamic_trading, iter25 utility/plateau, no_model_fallback).",
+  "rca of the issue": "Root cause of reported user bug: previous adopt/guard logic only checked holdout regression; when Regime-Autopilot switched detector to jump-model, inner_direction_pct (Live=Final) collapsed from 80.9 -> 65.8 while holdout-F1 rose 47.5 -> 54.4, so the run was auto-adopted and 'Regime suchen & speichern' auto-queued despite worse live self-agreement (flackernde Regime-Erkennung). Fix (verified): MAX_INNER_DROP_PP=5.0 guard in run_autopilot loop rejects such variants (guard_rejected counter), adopt_recommended additionally denies auto-adopt when inner_regressed, followup_analysis_body returns None, banner shows guard-rejected count and 'Selbst-Übereinstimmung (innere Val.)' label; sweet-spot band aligned to benchmark 'sehr gut' 5-15 days with one-time phaseV migration of saved 4/14."
+}

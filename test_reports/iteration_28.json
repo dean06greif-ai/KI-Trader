@@ -1,0 +1,24 @@
+{
+  "summary": "Iter28: Verified new TradeX VWAP Scalping (Horst v2) strategy + generic modular trade settings (time_exit, entry/tp order type, direction, limit_expiry, maker_fee) end-to-end. All 10 unit tests in tests/test_tradex_vwap_scalping.py pass. New API test tests/test_iter28_tradex_vwap.py (3/3 passing) confirms /api/strategies exposes tradex_vwap_scalping with requires_positioning=true and recommended_trade_cfg, backtest via POST /api/backtest/run for tradex_vwap_scalping on BTCUSDT 30d completes status=done and per_pair entry contains new fields time_exits and limit_expired, and horst_vwap_obv regression backtest (14d) still completes done. UI E2E via preview URL: Backtester modal lists 'TradeX VWAP Scalping (Horst v2)' next to 'Horst VWAP + OBV-RSI Scalping'; selecting the strategy and opening the gear opens bt-cfg-panel-tradex_vwap_scalping showing Zeit-Exit (bt-cfg-maxhold), Entry-Order (bt-cfg-entryorder), TP-Order (bt-cfg-tporder) and Richtung (bt-cfg-sides) fields; switching Entry-Order=Limit reveals bt-cfg-limitexpiry + bt-cfg-makerfee; the 'Empfohlen' button (bt-cfg-recommended-tradex_vwap_scalping) fills maxhold=360, entry=limit, tp=limit, SL 3.5%, TP 0.8%. Optimizer modal shows the three new groups 'Zeit-Exit optimieren' (opt-flag-time_exit), 'Entry-Ordertyp optimieren' (opt-flag-entry_order) and 'Richtung optimieren' (opt-flag-direction); a small run (tradex_vwap_scalping, BTCUSDT, 7d, 6 iterations, all three flags enabled) via POST /api/optimizer/run completed status=done phase='Fertig' progress=100 without error.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_tradex_vwap_scalping.py",
+    "/app/backend/tests/test_iter28_tradex_vwap.py",
+    "/app/test_reports/pytest/iter28.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Preview environment is geo-blocked from Binance fapi and Bybit (funding + L/S ratios for the very last day may be missing); expected per agent-note. Backtests still complete and per_pair fields are populated (0-valued when setup filter isn't met, which is correct)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter28_tradex_vwap.py"
+  ],
+  "success_rate": {"backend": "100% (13/13 unit+api)", "frontend": "100% (backtester + optimizer flows)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "POST /api/backtest/run uses strategy_ids (plural) not strategy_id; POST /api/optimizer/run for tradex_vwap_scalping/BTCUSDT 7d 6 iterations with opt_flags {time_exit,entry_order,direction} finishes in ~15s in this preview. test_iter28_tradex_vwap.py has a token fixture with 5 retries (60s) because preview cold-start occasionally returns Cloudflare 502.",
+  "rca of the issue": "n/a - feature verification"
+}

@@ -1,0 +1,21 @@
+{
+  "summary": "Verified two bugfixes: (1) Deploy dependency fix - frontend has react-day-picker 9.14.0 + date-fns 4.1.0 (no ERESOLVE), backend requirements.txt does NOT contain emergentintegrations. (2) Regime-Autopilot fallback + error UI: unit tests pass (5/5), API POST /api/regime-lab/autopilot with OIL/24h/30d returns 200 started, then status transitions to error with exact message 'Zu wenig Daten fuer diesen Timeframe/Zeitraum'. UI shows 'Fehler: Zu wenig Daten ...' in red (rgb(255,138,128)) in data-testid regime-job-progress-phase. Regression pytest suite: 35 passed. Help texts updated: 'Bestwert-Score (0-100 %)' present, 'hoechstens 95 %' removed. Endless label = 'Endlos-Suche: Balken = Bestwert-Score'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_autopilot_no_model_fallback.py",
+    "/app/backend/tests/test_structural_regime.py",
+    "/app/backend/tests/test_worker_restart_and_autopilot_chain.py",
+    "/app/backend/tests/test_worker_reconnect_and_regime_autopilot.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Deploy-fix + Regime-Autopilot Fallback/Error-UI verifiziert. API-Test genutzt: POST /api/regime-lab/autopilot mit OIL/24h/30d (schneller Fehlerpfad wegen <100 Kerzen). UI-Test: admin-login -> tools-menu-regime-lab -> regime-coin-OIL, regime-tf=24h, regime-days=30, regime-exec-cloud, autopilot-start. Phase-Text 'Regime-Autopilot | Fehler: Zu wenig Daten fuer diesen Timeframe/Zeitraum' in Rot. Alle 40 relevanten pytest gruen.",
+  "rca of the issue": "N/A - beide Fixes verifiziert, keine offenen Probleme."
+}

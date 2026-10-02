@@ -1,0 +1,22 @@
+{
+  "summary": "Iter25 – Plan 1.4 (Regime-Nutzen) & Plan 1.5 (Autopilot plateau/duplicate/space_exhausted) verified. All 66 targeted unit tests pass (6 requested files + new test_iter25_regime_utility_and_autopilot_plateau.py). Frontend Regime-Lab Autopilot input 'autopilot-plateau-rounds' defaults to 300 and persists to localStorage after reload (verified 450 round-trip). No page errors during flow.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter25_regime_utility_and_autopilot_plateau.py",
+    "/app/test_reports/pytest/iter25_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "services/regime_utility.py: clean, small, testable. Consider: horizon_stats returns 'basis' only when injected by compute() – if compute basis fallback path fails (empty st), the caller still gets a dict with basis='overall' but possibly None separation; downstream summary() handles None. OK.",
+    "services/regime_autopilot.py: hard-coded consecutive-duplicate ceiling (2000) and stale-restart threshold (120) are magic constants – consider elevating to module-level CONSTANTS or body-overrides for future tuning (already partially exposed via plateau_rounds)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter25_regime_utility_and_autopilot_plateau.py"],
+  "success_rate": {"backend": "100% (66/66)", "frontend": "100% (plateau default+persist verified)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (dev)",
+  "seed_data_creation": "none (no DB writes)",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter25 verified Plan 1.4 regime_utility (prescient labels: separation>0.1 & sign_hit>90; random: |sep|<0.3 & 35<sign_hit<65; short input returns {}) and Plan 1.5 autopilot loop (existing test_pruefung_2409::test_autopilot_skips_duplicates_and_stops_on_plateau confirms plateau stop and duplicates_skipped>0, run finishes in <3s). UI: autopilot-plateau-rounds default 300, localStorage key retains change after reload. Local Mongo crypto_scanner_dev only; no cloud autopilot jobs started.",
+  "rca of the issue": "n/a – no failures observed."
+}

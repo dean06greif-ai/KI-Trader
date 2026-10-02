@@ -1,0 +1,62 @@
+/* Nachanalyse (Post-Trade-Review) im Lern-Panel – Stil analog Belohnungssystem */
+.ai-postmortem-panel {
+  margin: 10px 0 14px; padding: 12px 14px; border: 1px solid #232a44;
+  border-radius: 10px; background: #10152a; font-size: 11.5px; color: #a9b1d1;
+}
+.pm-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.pm-title {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700;
+  color: #7dd3fc; letter-spacing: 0.4px; margin-right: auto;
+}
+.pm-head select, .pm-btn {
+  background: #161b2e; border: 1px solid #2a3049; color: #a9b1d1; border-radius: 6px;
+  font-size: 11.5px; padding: 3px 6px; cursor: pointer;
+}
+.pm-btn { height: 24px; display: inline-flex; align-items: center; justify-content: center; }
+.pm-btn:hover { color: #fff; }
+.pm-btn:disabled { opacity: 0.5; cursor: default; }
+.pm-run { color: #7dd3fc; border-color: #2c4a63; }
+.pm-intro { color: #7c839c; line-height: 1.45; margin-bottom: 8px; }
+.pm-intro b { color: #a9b1d1; }
+.pm-summary { display: flex; flex-wrap: wrap; gap: 14px; color: #7c839c; margin-bottom: 8px; }
+.pm-summary b { color: #e5e7eb; }
+.pm-empty { padding: 10px; border: 1px dashed #2a3049; border-radius: 8px; color: #7c839c; }
+.pm-setup { border: 1px solid #1f2640; border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; background: #0d1224; }
+.pm-setup.has-finding { border-color: #2c4a63; }
+.pm-setup-head { display: flex; align-items: center; gap: 8px; cursor: pointer; flex-wrap: wrap; }
+.pm-setup-head b { color: #e5e7eb; }
+.pm-meta { color: #7c839c; }
+.pm-caret { margin-left: auto; color: #7c839c; }
+.pm-tag { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #1a2038; color: #a9b1d1; }
+.pm-tag.pos { background: #12301f; color: #4ade80; }
+.pm-tag.warn { background: #3a2f1c; color: #ffb020; }
+.pm-tag.neg { background: #3a1c25; color: #f87171; }
+.pm-tag.mute { background: #1a2038; color: #7c839c; }
+.pm-finding { margin-top: 6px; padding: 6px 8px; border-left: 3px solid #7dd3fc; background: #111a2e; color: #dbeafe; line-height: 1.4; }
+.pm-setup-body { margin-top: 8px; }
+.pm-verdicts { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.pm-variants { display: flex; gap: 6px; flex-wrap: wrap; }
+.pm-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 999px;
+  border: 1px solid #2a3049; background: #161b2e; font-size: 10.5px; color: #7c839c;
+}
+.pm-chip.pos { color: #a9b1d1; }
+.pm-chip.neg { color: #7c839c; opacity: 0.7; }
+.pm-chip.robust { border-color: #4ade80; color: #4ade80; }
+.pm-limits { margin-top: 8px; padding-top: 8px; border-top: 1px solid #1f2640; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pm-runner { margin-top: 8px; padding: 7px 10px; border: 1px solid #1f2640; border-radius: 8px; background: #0d1224; }
+.pm-runner-title { color: #e5e7eb; font-weight: 600; margin-bottom: 4px; }
+.pm-runner-row { display: flex; gap: 12px; flex-wrap: wrap; padding: 2px 0; }
+.pm-runner-row b { color: #a9b1d1; min-width: 96px; }
+.pm-runner-row .pos { color: #4ade80; }
+.pm-runner-row .neg { color: #f87171; }
+.pm-recent { margin-top: 8px; }
+.pm-link { background: none; border: none; color: #7dd3fc; cursor: pointer; font-size: 11.5px; padding: 0; }
+.pm-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 11px; }
+.pm-table th { text-align: left; color: #7c839c; font-weight: 600; padding: 4px 6px; border-bottom: 1px solid #1f2640; }
+.pm-table td { padding: 4px 6px; border-bottom: 1px solid #151a2d; color: #a9b1d1; }
+.pm-table td.pos, .pm-summary .pos { color: #4ade80; }
+.pm-table td.neg, .pm-summary .neg { color: #f87171; }
+.pm-table i { color: #7c839c; }
+.ai-postmortem-panel .spin { animation: pm-spin 1s linear infinite; }
+@keyframes pm-spin { to { transform: rotate(360deg); } }
