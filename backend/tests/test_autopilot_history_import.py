@@ -27,7 +27,9 @@ def test_analysis_to_run_has_autopilot_shape_and_same_metrics():
     assert run["id"] == "imp_a1" and run["pinned"] is True
     res = run["result"]
     assert res["kind"] == "autopilot" and res["source"] == "import"
-    assert res["imported_from"] == {"type": "analysis", "id": "a1", "name": "Analyse a1"}
+    assert {k: res["imported_from"][k] for k in ("type", "id", "name")} == \
+        {"type": "analysis", "id": "a1", "name": "Analyse a1"}
+    assert "grade" in res["imported_from"] and "regimes" in res["imported_from"]
     assert res["best_engine_config"]["detector"] == "ema"
     assert res["timeframe"] == "1h" and res["symbols"] == ["BTCUSDT", "ETHUSDT"]
     # Kennzahlen exakt wie der Autopilot sie rechnet
@@ -122,10 +124,29 @@ def test_router_exposes_import_endpoint():
     assert "/api/regime-lab/autopilot/runs/import" in paths
 
 
-def test_import_skips_followup_analysis_of_existing_autopilot_run():
+def test_import_skips_followup_analysis_of_pinned_autopilot_run():
+    db = _Db([_analysis("a1")])
+    res = imp.analysis_to_run(_analysis("a1"))["result"]
+    db.regime_lab_runs.docs["run1"] = {"result": {**res, "source": None}, "pinned": True}
+    out = asyncio.run(imp.import_existing(db))
+    assert out["imported"] == 0 and out["already"] == 1
+    assert "imp_a1" not in db.regime_lab_runs.docs
+
+
+def test_import_keeps_analysis_when_matching_run_is_not_pinned():
+    # 10/2026: ungemerkte Autopilot-Läufe löscht die Bereinigung -> Analyse trotzdem sichern
     db = _Db([_analysis("a1")])
     res = imp.analysis_to_run(_analysis("a1"))["result"]
     db.regime_lab_runs.docs["run1"] = {"result": {**res, "source": None}}
     out = asyncio.run(imp.import_existing(db))
-    assert out["imported"] == 0 and out["already"] == 1
-    assert "imp_a1" not in db.regime_lab_runs.docs
+    assert out["imported"] == 1 and "imp_a1" in db.regime_lab_runs.docs
+
+
+def test_import_default_engine_config_and_per_coin_scope():
+    doc = _analysis("old")
+    doc["settings"]["engine_config"] = {}
+    run = imp.analysis_to_run(doc)
+    assert run and run["result"]["best_engine_config"]["detector"] == ap.eng.DEFAULT_CONFIG.get("detector")
+    pc = _analysis("pc", per_symbol={})
+    pc["per_coin"] = {"BTCUSDT": _entry(), "ETHUSDT": {"error": "x"}}
+    assert imp.analysis_to_run(pc)["result"]["best"]["metrics"]

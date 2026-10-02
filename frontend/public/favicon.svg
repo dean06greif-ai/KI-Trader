@@ -1,1 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#0A0A0A"/><path d="M10 46V18l11 16 11-16v28M32 46V18l11 16 11-16v28" fill="none" stroke="#00E08A" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="mmStroke" x1="7" y1="52" x2="57" y2="11" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00B86E"/><stop offset="0.55" stop-color="#00E08A"/><stop offset="1" stop-color="#8CFFC9"/>
+    </linearGradient>
+    <linearGradient id="mmArea" x1="0" y1="11" x2="0" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00E08A" stop-opacity="0.2"/><stop offset="1" stop-color="#00E08A" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0A0A0A"/>
+  <path d="M7 52 L9 31 L16 42 L23 25 L25 45 L31 37 L33 17 L40 28 L47 11 L49 31 L57 21 L57 60 L7 60 Z" fill="url(#mmArea)"/>
+  <path d="M7 52 L9 31 L16 42 L23 25 L25 45 L31 37 L33 17 L40 28 L47 11 L49 31 L57 21" fill="none" stroke="url(#mmStroke)" stroke-width="4.4" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M50.19 22.62 L57 21 L56.92 28.0" fill="none" stroke="#8CFFC9" stroke-width="4.4" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

@@ -498,6 +498,13 @@ async def autopilot_runs(limit: int = 30):
     rows = await state.db.regime_lab_runs.find(
         {"result.kind": "autopilot"}, {"_id": 0, "result.history": 0}) \
         .sort("created_at", -1).to_list(max(1, min(int(limit), 60)))
+    # Gemerkte Läufe/Referenzen (auch importierte Alt-Analysen) IMMER zeigen,
+    # auch wenn sie älter als die letzten N Läufe sind
+    seen = {r.get("id") for r in rows}
+    pinned = await state.db.regime_lab_runs.find(
+        {"result.kind": "autopilot", "pinned": True, "id": {"$nin": list(seen)}},
+        {"_id": 0, "result.history": 0}).sort("created_at", -1).to_list(200)
+    rows = sorted(rows + pinned, key=lambda r: str(r.get("created_at") or ""), reverse=True)
     return {"runs": regime_autopilot.annotate_runs(rows)}
 
 

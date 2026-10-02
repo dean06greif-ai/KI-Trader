@@ -26,8 +26,8 @@ TARGET_MAX_DAYS = 15.0          # Standard-Sweet-Spot oben wie in der Oberfläch
 SCAN_LIMIT = 60
 # Nur die Felder, die für Erkennung + Kennzahlen nötig sind (Charts sind MB-groß)
 PROJECTION = {"_id": 0, "id": 1, "name": 1, "symbols": 1, "timeframe": 1, "days": 1,
-              "created_at": 1, "settings": 1,
-              "combined.per_symbol": 1}
+              "created_at": 1, "settings": 1, "scope": 1, "regimes": 1,
+              "combined.per_symbol": 1, "combined.model.regimes": 1}
 
 
 def run_id_for(analysis_id: str) -> str:
@@ -38,14 +38,17 @@ def analysis_to_run(doc: Dict) -> Optional[Dict]:
     """Gespeicherte Analyse -> Autopilot-Verlaufszeile (rein). None, wenn keine
     Live-Erkennung vorliegt (K-Means/Regression oder ohne Kennzahlen)."""
     st = doc.get("settings") or {}
-    cfg = dict(st.get("engine_config") or {})
-    if str(st.get("engine") or "v2").lower() != "v2" or not cfg:
+    if str(st.get("engine") or "v2").lower() != "v2":
         return None
+    # Leere engine_config = Standard-Erkennung (ältere Analysen mit Standardwerten
+    # wurden bisher übersprungen, obwohl sie eine vollwertige Live-Erkennung haben)
+    cfg = dict(st.get("engine_config") or {}) or {"detector": ap.eng.DEFAULT_CONFIG.get("detector", "reactive")}
     if str(cfg.get("detector") or "reactive").lower() not in ap.DETECTORS:
         return None
     cfg["detector"] = ap.detector_of(cfg)
     tf = doc.get("timeframe") or "1h"
-    per_symbol = ((doc.get("combined") or {}).get("per_symbol")) or {}
+    per_symbol = ((doc.get("combined") or {}).get("per_symbol")) or \
+        {s: pc for s, pc in (doc.get("per_coin") or {}).items() if isinstance(pc, dict) and not pc.get("error")}
     acc = ap.MetricsAccumulator(tf)
     for entry in per_symbol.values():
         if isinstance(entry, dict) and entry.get("live_agreement"):
@@ -59,7 +62,9 @@ def analysis_to_run(doc: Dict) -> Optional[Dict]:
             "baseline_score": score, "changes": {}}
     created = doc.get("created_at")
     result = {"kind": "autopilot", "source": SOURCE,
-              "imported_from": {"type": "analysis", "id": doc.get("id"), "name": doc.get("name")},
+              "imported_from": {"type": "analysis", "id": doc.get("id"), "name": doc.get("name"),
+                                "grade": _grade(doc), "regimes": _n_regimes(doc),
+                                "analysis_created_at": created},
               "best": best, "best_engine_config": cfg,
               "baseline": {"engine_config": cfg, "metrics": metrics, "score": score},
               "improved": False, "improvements": 0, "tested": 0, "history": [],
@@ -73,6 +78,20 @@ def analysis_to_run(doc: Dict) -> Optional[Dict]:
             "pinned": True}
 
 
+def _grade(doc: Dict) -> Optional[str]:
+    """Erkennungs-Note der Analyse („sehr gut“ …) – fail-open."""
+    try:
+        from services import regime_quality
+        return regime_quality.grade_for_classes(doc)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _n_regimes(doc: Dict) -> Optional[int]:
+    regs = ((doc.get("combined") or {}).get("model") or {}).get("regimes") or doc.get("regimes") or []
+    return len(regs) or None
+
+
 def same_detection_key(result: Dict) -> str:
     """Erkennung + Timeframe + Coins (rein) – erkennt Analysen, die nur die
     Folge-Analyse eines schon vorhandenen Autopilot-Laufs sind."""
@@ -84,16 +103,22 @@ async def import_existing(db, limit: int = SCAN_LIMIT) -> Dict:
     """Alle gespeicherten Analysen sichern, die noch nicht im Verlauf sind."""
     rows = await db.regime_lab_runs.find(
         {"result.kind": "autopilot"},
-        {"_id": 0, "id": 1, "result.best_engine_config": 1, "result.best.engine_config": 1,
+        {"_id": 0, "id": 1, "pinned": 1, "result.best_engine_config": 1, "result.best.engine_config": 1,
          "result.timeframe": 1, "result.symbols": 1}).to_list(2000)
     have = {r["id"] for r in rows}
-    known = {same_detection_key(r.get("result") or {}) for r in rows}
+    # Nur GEMERKTE Läufe ersetzen eine Analyse: ungemerkte Autopilot-Läufe löscht
+    # die Datenbank-Bereinigung (40er-Limit) – sonst ginge die Analyse verloren.
+    known = {same_detection_key(r.get("result") or {}) for r in rows if r.get("pinned")}
     cursor = db.regime_analyses.find({}, PROJECTION).sort("created_at", -1).limit(limit)
     imported: List[str] = []
     skipped = already = 0
     async for doc in cursor:
+        if doc.get("scope") == "per_coin" and not (doc.get("combined") or {}).get("per_symbol"):
+            extra = await db.regime_analyses.find_one({"id": doc.get("id")}, {"_id": 0, "per_coin": 1})
+            doc = {**doc, **(extra or {})}
         if run_id_for(doc.get("id")) in have:
             already += 1
+            await _refresh_meta(db, doc)
             continue
         run = analysis_to_run(doc)
         if not run:
@@ -109,3 +134,14 @@ async def import_existing(db, limit: int = SCAN_LIMIT) -> Dict:
                 f"{already} schon vorhanden, {skipped} ohne Live-Erkennung")
     return {"imported": len(imported), "already": already, "skipped": skipped,
             "names": imported[:20]}
+
+
+async def _refresh_meta(db, doc: Dict) -> None:
+    """Bereits importierte Zeilen um Note/Regime-Zahl ergänzen (Alt-Importe)."""
+    try:
+        await db.regime_lab_runs.update_one(
+            {"id": run_id_for(doc.get("id"))},
+            {"$set": {"result.imported_from.grade": _grade(doc),
+                      "result.imported_from.regimes": _n_regimes(doc)}})
+    except Exception:  # noqa: BLE001
+        pass
