@@ -56,3 +56,16 @@
 - Kennzahlen (Score/PnL/Trades/WR) gibt es nur, wenn die Phase genau die optimierte Zuordnung handelt. Sonst steht dort ehrlich „Backtest starten“.
 - API: `GET /api/dynamic/{id}/versions/compare?a=&b=`
 - Tests: `backend/tests/test_finetune_compare_1010.py` (7)
+
+## 9. Unter-Reiter der Dynamik-Werkbank neu gestaltet
+- Segment-Leiste in Türkis mit Nummern statt der lila Karten der Haupt-Modi. Darunter steht die Beschreibung des aktiven Reiters plus „worin er sich unterscheidet“.
+
+## 10. Phasen gezielt weiter optimieren + Verlauf je Phase
+- Jede Phase hat das Häkchen „wird weiter optimiert“ bzw. „bleibt so“ (gleiche Auswahl wie die Regime-Häkchen) und die Schnellaktionen „Nur diese Phase optimieren“ und „Neue Regeln für diese Phase“.
+- „Verlauf der Phase“ listet alle bisherigen Varianten (Strategie, Parameter, Regeln, Kennzahlen). Eingeschlossen sind frühere Optimierungs-Läufe (`settings.refined_from`). Jede Variante lässt sich nach Bestätigung zurückholen; dabei ändert sich nur diese Phase.
+- Fix: „Bestehende optimieren“ baut aus den Analyse-Zuordnungen neu. Deine Phasen-Anpassungen (z.B. „nicht handeln“) gingen dabei bisher in der neuen Version verloren.
+  - Jetzt werden sie in Phasen übernommen, die der Lauf nicht verbessert hat (`dynamic_versions.after_refine`).
+  - Übernommene Strategie-Tausche setzen die neue Version auf Entwurf, weil der Walk-Forward sie nicht geprüft hat.
+- API:
+  - `GET /api/dynamic/{id}/phase-history?regime_id=`
+  - `POST /api/dynamic/{id}/phase` mit `action: "variant"`, `source_dynamic_id` und `version`

@@ -548,3 +548,7 @@
 @media (max-width: 640px) {
   .dwb-subtab { padding: 7px 10px; font-size: 11.5px; }
 }
+@media (max-width: 640px) {
+  .dwb-subtabs { flex-wrap: wrap; border-radius: 14px; overflow-x: visible; }
+  .dwb-subtab { flex: 1 1 100%; justify-content: flex-start; }
+}

@@ -194,3 +194,14 @@ Aufgabe: Werkbank-Ladebalken mit Pause & Co. (wie Discovery), Werkbank und Regim
 - Umgesetzt: siehe `VERBESSERUNGEN_0210_WERKBANK_PHASEN.md`. Neue Module: `services/dynamic_versions.py`, `DynamicPhaseEditor.js`, `DynamicVersionHistory.js`, `lib/postJson.js`. Worker 1.20.0.
 - Tests: `backend/tests/test_workbench_phases_1010.py` (14) und Testing-Agent iteration_43 grün.
 - Backlog: P1 Live-Pause eines echten Werkbank-Laufs am Worker prüfen. P1 Phasen-Editor: Mini-Backtest direkt nach der Änderung. P2 Basis-Strategie für Discovery-Regeln ist eine Built-in-Strategie (Regeln greifen live nur bei Custom-Basis, Altverhalten).
+
+## Iteration 02.10.2026 (Teil 2–3)
+- Umgesetzt:
+  - Überanpassungs-Warnung im Autopilot und Badge im Verlauf
+  - Kurze Feinsuche (`services/regime_finetune.py`, `fine_mode`)
+  - Versionsvergleich (`/versions/compare`)
+  - Unter-Reiter der Werkbank als Segment-Leiste
+  - je Phase: Optimieren-Häkchen, „Nur diese Phase“, „Neue Regeln für diese Phase“, Verlauf je Phase über die Linie (`refined_from`), Variante zurückholen
+  - Fix: Refine übernimmt die Phasen-Anpassungen nicht verbesserter Phasen
+- Tests: test_workbench_phases_1010.py (17) und test_finetune_compare_1010.py (7), Testing-Agent iteration_44 und iteration_45 grün.
+- Backlog: P1 kompletten Refine-Lauf mit echten Kerzen prüfen (Übernahme der Anpassungen live). P2 Kennzahlen je Variante aus einem eigenen Mini-Backtest.
