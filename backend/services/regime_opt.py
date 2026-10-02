@@ -108,6 +108,60 @@ def clear_history_slot(reuse_key: Optional[str] = None):
     """Slot freigeben (Werkbank-Ende); mit reuse_key nur, wenn er dazu gehört."""
     if reuse_key is None or (_HISTORY_SLOT.get("key") or (None,))[0] == reuse_key:
         _HISTORY_SLOT.clear()
+    for k in [k for k in _EXT_SLOT if reuse_key is None or k[0] == reuse_key]:
+        _EXT_SLOT.pop(k, None)
+
+
+_EXT_SLOT: Dict[tuple, Dict] = {}   # Kerzen VOR dem Analyse-Zeitraum (Live-Erweiterung)
+
+
+def extra_days_for(body: Dict, doc: Dict) -> int:
+    """Tage über den Analyse-Zeitraum hinaus (rein): 0 = innerhalb."""
+    want = int(float(body.get("days") or 0))
+    return max(want - int(doc.get("days") or 0), 0)
+
+
+async def _extended_live_segments(doc: Dict, scope: str, symbol: str, regime_id: int,
+                                  timeframe: str, job: Dict, syms: List[str], extra_days: int,
+                                  reuse_key: Optional[str] = None) -> Dict[str, List[Dict]]:
+    """Zeitraum VOR der Analyse (nur Live-Sicht): Regime kausal mit dem Modell
+    bestimmen – genau wie im Handel/Backtest. Der Holdout am Ende der Analyse
+    bleibt unberührt (Erweiterung liegt zeitlich davor)."""
+    from services import dynamic_backtest as dbt
+    model = lab.model_for(doc, scope, symbol) or {}
+    if not model.get("regimes"):
+        return {}
+    bounds = doc.get("bounds") or {}
+    start = {s: (bounds.get(s) or {}).get("start_ts") for s in syms}
+    syms = [s for s in syms if start.get(s)]
+    key = (reuse_key, doc.get("id"), tuple(syms), timeframe, extra_days)
+    hit = _EXT_SLOT.get(key) if reuse_key else None
+    if hit is None:
+        warm = dbt._regime_warmup_days(model)
+        hit = await lab.fetch_histories(syms, int(extra_days) + warm, timeframe, job,
+                                        end_ts={s: start[s] - 1 for s in syms})
+        if reuse_key:
+            _EXT_SLOT[key] = hit
+    s_cfg = doc.get("settings") or {}
+    conf_min = float(s_cfg.get("confidence_min") or 70) / 100.0
+    min_hold = float(s_cfg.get("min_hold_days") or 2)
+    out: Dict[str, List[Dict]] = {}
+    for sym, candles in (hit or {}).items():
+        if not candles:
+            continue
+        cut = start[sym] - int(extra_days) * 86_400_000
+        labels = dbt.phase_labels(model, candles, timeframe, conf_min, min_hold)
+        labels = [lb if c["timestamp"] >= cut else None for lb, c in zip(labels, candles)]
+        segs = []
+        for s, e, rid in rg.segments_from_labels(labels):
+            if rid != regime_id or e - s < 10:
+                continue
+            w0 = max(s - dyn.WARMUP_BARS, 0)
+            segs.append({"regime": regime_id, "start_ts": candles[s]["timestamp"],
+                         "candles": candles[w0:e], "n_bars": e - s, "extended": True})
+        if segs:
+            out[sym] = segs
+    return out
 
 
 async def _load_area_histories(doc: Dict, syms: List[str], timeframe: str, job: Dict,
@@ -281,10 +335,20 @@ async def run_regime_optimizer(job_id: str, body: Dict, registry, settings: Dict
 
         seg_basis, label_basis = label_basis_of(body, doc, scope, symbol)
         subset = lab.norm_subset(doc.get("symbols"), body.get("symbols")) if scope != "per_coin" else None
+        extra = extra_days_for(body, doc)
+        if extra and label_basis != "causal_live":
+            raise RuntimeError("Rückblick (ideale Phasen) gibt es nur im Zeitraum der Analyse "
+                               f"({int(doc.get('days') or 0)} Tage) – für längere Zeiträume Live-Sicht wählen")
         segments = await _build_regime_segments(doc, scope, symbol, regime_id,
                                                 timeframe, job, basis=seg_basis,
                                                 subset=subset, reuse_key=body.get("reuse_key"))
-        if body.get("days"):
+        if extra:
+            ext = await _extended_live_segments(doc, scope, symbol, regime_id, timeframe, job,
+                                                area_symbols(doc, scope, symbol, subset), extra,
+                                                body.get("reuse_key"))
+            for sym, ss in ext.items():
+                segments[sym] = ss + segments.get(sym, [])
+        elif body.get("days"):
             segments = limit_segments_to_days(segments, float(body["days"]))
         if not segments:
             raise RuntimeError("Keine Kerzen-Abschnitte für dieses Regime im "

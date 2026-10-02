@@ -260,6 +260,46 @@ def _search_body(p: Dict, aid: str, rid: int, mode: str, strategy_id: Optional[s
     return body
 
 
+async def _local_result_backtest(job: Dict, doc: Dict, days: int, cfg: Dict, p: Dict,
+                                 deps: Dict) -> Optional[Dict]:
+    """Ergebnis-Backtest auf dem lokalen Worker (der hat die Kerzen schon) statt
+    alle Assets nochmal auf dem Server zu laden. None = nicht lokal möglich
+    (Cloud-Ausführung, kein/zu alter Worker) -> Aufrufer rechnet in der Cloud."""
+    from services import backtester as bt
+    from services import local_exec
+    if (p.get("execution") or "cloud") != "local" or not local_exec.worker_online():
+        return None
+    wid = (job.get("params") or {}).get("worker_id") or p.get("worker_id")
+    if not local_exec.worker_supports(local_exec.DYNAMIC_BACKTEST_MIN_VERSION, wid):
+        return None
+    did, syms, tf = doc["id"], list(doc.get("symbols") or []), p.get("timeframe") or None
+    dyn_doc = {k: v for k, v in doc.items() if k not in ("last_state", "runtime_state", "pending_switch")}
+    bjid = bt.create_job({"strategy_ids": [did], "symbols": syms, "days": days,
+                          "execution": "local", "workbench_job": job["id"]})
+    local_exec.enqueue_compute("backtest", bjid, {
+        "kind": "backtest",
+        "args": {"strategy_ids": [did], "symbols": syms, "days": days, "cfg": cfg,
+                 "settings": dict(deps["settings"]), "strategy_configs": {did: {"timeframe": tf}} if tf else {},
+                 "default_timeframe": tf, "dynamic_docs": {did: dyn_doc}},
+        "custom_definitions": deps["registry"].list_custom_definitions(),
+    }, worker_id=wid)
+    _log(job, "Ergebnis-Backtest auf dem lokalen Worker (Kerzen dort schon vorhanden) ...")
+    while True:
+        bj = bt.JOBS.get(bjid) or {}
+        if job.get("cancel") and bj:
+            bj["cancel"] = True
+        if not bj or bj.get("status") in ("done", "error", "cancelled"):
+            break
+        job["progress"] = 90 + round((bj.get("progress") or 0) / 10)
+        await asyncio.sleep(POLL_S)
+    if bj.get("status") != "done":
+        raise RuntimeError(bj.get("error") or "Ergebnis-Backtest auf dem Worker fehlgeschlagen")
+    bd = ((bj.get("result") or {}).get("dynamic_breakdown") or {}).get(did)
+    if not bd:
+        raise RuntimeError("Worker lieferte keine Aufschlüsselung je Regime")
+    return bd
+
+
 async def _result_backtest(job: Dict, built_id: str, p: Dict, deps: Dict) -> Optional[Dict]:
     """Ergebnis-Backtest der fertigen dynamischen Strategie über den vollen
     Analyse-Zeitraum: Gesamt + je Regime + Empfehlung (services.dynamic_backtest).
@@ -277,6 +317,10 @@ async def _result_backtest(job: Dict, built_id: str, p: Dict, deps: Dict) -> Opt
         if p.get(k) is not None:
             cfg[k] = p[k]
     try:
+        local = await _local_result_backtest(job, doc, days, cfg, p, deps)
+        if local is not None:
+            return {**local, "days": days, "execution": "local",
+                    "config": {k: cfg.get(k) for k in ("max_capital", "leverage", "fee_percent")}}
         _log(job, "Ergebnis-Backtest: Gesamt und je Regime ...")
         res = await dynamic_backtest.simulate_dynamic(
             doc, list(doc.get("symbols") or []), days, cfg, deps["settings"], deps["registry"],

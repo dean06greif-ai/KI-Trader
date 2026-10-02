@@ -172,7 +172,8 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
     } catch (e) { toast.error(e.message); }
   };
   const togglePause = () => control((job?.pause || job?.paused) ? 'resume' : 'pause');
-  const canStart = !running && cur.source && (tab === 'create' ? Object.values(cur.mapping).some(Boolean) : cur.regimes.length > 0);
+  const retroLocked = (opts.label_basis || 'live') !== 'live' && analysis?.days && Number(opts.days) > analysis.days;
+  const canStart = !running && !retroLocked && cur.source && (tab === 'create' ? Object.values(cur.mapping).some(Boolean) : cur.regimes.length > 0);
   const holdout = analysis ? (analysis.settings?.train_pct ?? 100) < 100 : undefined;
 
   return (

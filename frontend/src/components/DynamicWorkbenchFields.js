@@ -100,7 +100,9 @@ export function StrategyMapping({ regimes, strategies, mapping, setMapping }) {
 /** Einstellungen wie im klassischen Optimizer (Timeframe, Zeitraum, Kapital, Hebel …). */
 export function CoreSettings({ opts, set, tab, mode, source }) {
   const maxDays = source?.days || 0;
-  const dayOpts = DAY_OPTIONS.filter(d => !maxDays || d < maxDays);
+  const live = (opts.label_basis || 'live') === 'live';
+  const dayOpts = DAY_OPTIONS.filter(d => !maxDays || d < maxDays || live);
+  const beyond = maxDays && Number(opts.days) > maxDays;
   return (
     <div className="opt-setup">
       {tab !== 'create' && (
@@ -116,11 +118,17 @@ export function CoreSettings({ opts, set, tab, mode, source }) {
           {TIMEFRAMES.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
         </select>
       </label>
-      <label className="opt-field" title="Nur die letzten N Tage des Analyse-Zeitraums für die Suche nutzen (Regime-Erkennung bleibt identisch)">Zeitraum
+      <label className="opt-field" title={`Zeitraum für Suche und Ergebnis-Backtest. Innerhalb der Analyse: die letzten N Tage. Länger als die Analyse (${maxDays || '?'} Tage): nur mit Live-Sicht – die früheren Daten werden wie im Handel live mit der Erkennung eingeteilt (Holdout bleibt unberührt). Rückblick (ideale Phasen) gibt es nur im Analyse-Zeitraum.`}>Zeitraum
         <select value={opts.days} onChange={e => set('days', e.target.value)} data-testid="dwb-days">
           <option value="">gesamt{maxDays ? ` (${maxDays} Tage)` : ''}</option>
-          {dayOpts.map(d => <option key={d} value={d}>{`${d} Tag${d > 1 ? 'e' : ''}`}</option>)}
+          {dayOpts.map(d => <option key={d} value={d}>{`${d} Tag${d > 1 ? 'e' : ''}`}{maxDays && d > maxDays ? ' · über Analyse hinaus (Live-Sicht)' : ''}</option>)}
         </select>
+        {beyond && !live && (
+          <span className="neg opt-small" data-testid="dwb-days-retro-locked">Rückblick gesperrt – nur im Analyse-Zeitraum ({maxDays} Tage). Live-Sicht wählen oder Zeitraum verkürzen.</span>
+        )}
+        {beyond && live && (
+          <span className="opt-small" data-testid="dwb-days-extended">+{Number(opts.days) - maxDays} Tage vor der Analyse, live eingeteilt</span>
+        )}
       </label>
       <label className="opt-field">Zeitfenster (optional)
         <input type="text" placeholder="z.B. 15:00-18:00 · leer = 24h" value={opts.sessions}
