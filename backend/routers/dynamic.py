@@ -426,7 +426,7 @@ async def dynamic_phases(did: str):
     overrides = s.get("phase_overrides") or {}
     optimized = await _optimized_by_regime(doc)
     phases = []
-    for p in dv.phase_summary(doc, strategy_registry):
+    for p in dv.summary_with_metrics(doc, strategy_registry, optimized):
         rid = p["regime"]
         reason = None
         if not p["traded"]:
@@ -438,6 +438,7 @@ async def dynamic_phases(did: str):
                        "optimized": _slim_optimized(optimized[rid]) if rid in optimized else None})
     versions = await state.db[dv.COLLECTION].count_documents({"dynamic_id": did})
     return {"id": did, "name": doc.get("name"), "phases": phases,
+            "refined_from": s.get("refined_from"), "refined_from_name": s.get("refined_from_name"),
             "release_status": strategy_release.effective_status(doc),
             "block_reason": strategy_release.activation_block_reason(doc),
             "traded": did in dynamic_runtime.traded_ids(), "versions": versions}
@@ -455,13 +456,18 @@ async def dynamic_phase_change(did: str, body: Dict, _: bool = Depends(require_a
     if rid is None or not str(rid).lstrip("-").isdigit():
         raise HTTPException(status_code=400, detail="regime_id (Zahl) erforderlich")
     doc = _clean(await _get_doc(did))
-    optimized = None
-    if body.get("action") == "optimized":
-        optimized = (await _optimized_by_regime(doc)).get(int(rid))
+    opt_map = await _optimized_by_regime(doc)
+    optimized = opt_map.get(int(rid)) if body.get("action") == "optimized" else None
     try:
+        variant = None
+        if body.get("action") == "variant":
+            # Variante wird serverseitig aus dem gespeicherten Stand geladen (kein Roh-Input)
+            variant = await dv.variant_from(state.db, doc, str(body.get("source_dynamic_id") or did),
+                                            body.get("version"), int(rid))
         res = await dv.change_phase(state.db, doc, strategy_registry, int(rid), body.get("action"),
                                     body.get("strategy_id"), optimized,
-                                    bool(body.get("reset_trade_params")), bool(body.get("keep_release")))
+                                    bool(body.get("reset_trade_params")), bool(body.get("keep_release")),
+                                    variant=variant, optimized_map=opt_map)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     await dynamic_runtime.reload(did)
@@ -476,6 +482,16 @@ async def dynamic_versions_list(did: str, limit: int = 50):
     await _get_doc(did)
     rows = await dv.list_versions(state.db, did, limit)
     return {"versions": [{k: v for k, v in r.items() if k != "snapshot"} for r in rows]}
+
+
+@router.get("/api/dynamic/{did}/phase-history")
+async def dynamic_phase_history(did: str, regime_id: int):
+    """Varianten einer Phase über Phasen-Anpassungen und frühere Optimierungs-
+    Läufe (Vorgänger-Strategien) – zum Ansehen und Zurückholen."""
+    from services import dynamic_versions as dv
+    doc = _clean(await _get_doc(did))
+    return {"regime_id": int(regime_id),
+            "variants": await dv.phase_history(state.db, doc, int(regime_id), strategy_registry)}
 
 
 @router.get("/api/dynamic/{did}/versions/compare")
@@ -501,7 +517,8 @@ async def dynamic_version_restore(did: str, version: int, body: Dict = None,
     doc = _clean(await _get_doc(did))
     try:
         res = await dv.restore(state.db, doc, strategy_registry, version,
-                               bool((body or {}).get("keep_release")))
+                               bool((body or {}).get("keep_release")),
+                               optimized_map=await _optimized_by_regime(doc))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     await dynamic_runtime.reload(did)

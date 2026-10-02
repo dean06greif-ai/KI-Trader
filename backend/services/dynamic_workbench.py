@@ -464,6 +464,12 @@ async def run(job_id: str, p: Dict, deps: Dict):
                                           "strategy_id": base_sid,
                                           "name": p.get("name"),
                                           "skip_regimes": [s["regime"] for s in skipped]})
+        if kind == "refine" and p.get("dynamic_id") and built.get("id"):
+            carried = await _link_refined(db, deps, p["dynamic_id"], built["id"], list(found),
+                                          aid, scope, symbol, subset)
+            if carried:
+                _log(job, f"Deine Phasen-Anpassungen bleiben in Regime {carried} erhalten "
+                          "(dort nichts verbessert)")
         job["result"] = {"dynamic_id": built.get("id"), "analysis_id": aid,
                          "regimes": job["regimes"],
                          "walkforward": {"verdict": (wf or {}).get("verdict"),
@@ -492,6 +498,24 @@ async def run(job_id: str, p: Dict, deps: Dict):
     finally:
         from services import regime_opt
         regime_opt.clear_history_slot(job_id)
+
+
+async def _link_refined(db, deps: Dict, src_id: str, new_id: str, improved: List[int],
+                        aid: str, scope: str, symbol: Optional[str], subset) -> List[int]:
+    """Herkunft + Verlauf der neuen Version; deine Phasen-Anpassungen bleiben in
+    Phasen erhalten, die dieser Lauf nicht verbessert hat (services/dynamic_versions)."""
+    from services import dynamic_versions as dv
+    from services import dynamic_runtime
+    try:
+        field = lab.area_fields(subset)[0]
+        analysis = await db.regime_analyses.find_one({"id": aid}, {"_id": 0, field: 1}) or {}
+        res = await dv.after_refine(db, deps["registry"], src_id, new_id, improved,
+                                    current_candidates(analysis, scope, symbol, subset))
+        await dynamic_runtime.reload(new_id)
+        return (res or {}).get("carried") or []
+    except Exception as e:  # noqa: BLE001 – Verlauf darf das Ergebnis nicht verhindern
+        logger.warning(f"refine lineage {new_id}: {e}")
+        return []
 
 
 def current_candidates(analysis: Dict, scope: str, symbol: Optional[str],

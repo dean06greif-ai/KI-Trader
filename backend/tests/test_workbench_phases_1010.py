@@ -250,3 +250,56 @@ def test_phase_warning_shows_hidden_difference():
     w = regime_advice.result_warnings({"reference_pct": 50, "avg_live_phase_days": 4.96}, 5, 15)
     assert any("4.96" in x for x in w)
     assert regime_advice.fmt_days(3.2, 5) == "3.2"
+
+
+# ---------------- Varianten je Phase, Linie über Optimierungs-Läufe ----------------
+def test_phase_variant_and_variant_action_roundtrip():
+    doc = _doc()
+    v = dv.phase_variant(dv.snapshot_of(doc), 1)
+    assert v["traded"] and v["sub_strategy"]["rules"] == ["rsi<30"] and v["trade_params"] == {"tp1_crv": 1.5}
+    skipped = {**doc, **dv.apply_phase_change(doc, 1, "skip", _Reg())}
+    back = dv.apply_phase_change(skipped, 1, "variant", _Reg(), variant=v)
+    assert back["regime_strategies"]["1"] == "custom_base" and back["sub_strategies"]["1"]["rules"] == ["rsi<30"]
+    off = dv.apply_phase_change(doc, 0, "variant", _Reg(), variant={"traded": False})
+    assert off["regime_strategies"]["0"] is None
+
+
+def test_carry_overrides_keeps_user_changes_in_unimproved_phases():
+    src = {**_doc(), **dv.apply_phase_change(_doc(), 0, "skip", _Reg())}
+    src["settings"] = {**src["settings"], "phase_overrides": {"0": {"action": "skip"}, "1": {"action": "strategy"}}}
+    new = _doc()  # frischer Build aus den Analyse-Zuordnungen
+    res = dv.carry_overrides(src, new, improved_rids=[1])
+    assert res["carried"] == [0]  # Regime 1 wurde verbessert -> neues Ergebnis gilt
+    assert res["fields"]["regime_strategies"]["0"] is None and res["swapped"] is False
+    assert res["fields"]["settings"]["phase_overrides"] == {"0": {"action": "skip"}}
+    assert dv.carry_overrides(_doc(), new, [0])["carried"] == []
+
+
+def test_phase_history_over_lineage_and_variant_restore(tmp_db):
+    name, url = tmp_db
+
+    async def go():
+        from motor.motor_asyncio import AsyncIOMotorClient
+        db = AsyncIOMotorClient(url)[name]
+        parent = _doc()
+        await db.dynamic_strategies.insert_one(dict(parent))
+        await dv.change_phase(db, parent, _Reg(), 0, "strategy", strategy_id="nnfx")
+        parent = await db.dynamic_strategies.find_one({"id": parent["id"]}, {"_id": 0})
+        child = {**_doc(), "id": "dyn_child", "name": "Kind"}
+        await db.dynamic_strategies.insert_one(dict(child))
+        out = await dv.after_refine(db, _Reg(), parent["id"], "dyn_child", improved_rids=[1])
+        assert out["carried"] == [0]
+        child = await db.dynamic_strategies.find_one({"id": "dyn_child"}, {"_id": 0})
+        assert child["settings"]["refined_from"] == parent["id"]
+        assert child["regime_strategies"]["0"] == "nnfx"  # Anpassung übernommen
+        assert strategy_release.effective_status(child) == "draft"  # Tausch nicht WF-geprüft
+        hist = await dv.phase_history(db, child, 0, _Reg())
+        names = [h["strategy_name"] for h in hist]
+        assert hist[0]["current"] and names[0] == "NNFX" and "EMA Cross" in names
+        old = next(h for h in hist if h["strategy_name"] == "EMA Cross")
+        var = await dv.variant_from(db, child, old["dynamic_id"], old["version"], 0)
+        res = await dv.change_phase(db, child, _Reg(), 0, "variant", variant=var)
+        assert res["doc"]["regime_strategies"]["0"] == "ema"
+        with pytest.raises(ValueError):
+            await dv.variant_from(db, child, "fremd", None, 0)
+    asyncio.run(go())

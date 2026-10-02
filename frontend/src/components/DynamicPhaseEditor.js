@@ -3,6 +3,7 @@ import { toast } from '../lib/toast';
 import { isAdmin } from '../auth';
 import { postJson } from '../lib/postJson';
 import DynamicVersionHistory from './DynamicVersionHistory';
+import DynamicPhaseVariants, { ParamPills } from './DynamicPhaseVariants';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const RELEASE_LABEL = { validated: 'validiert', approved: 'freigegeben', draft: 'Entwurf', stale: 'geändert – neu prüfen', legacy: 'Altbestand' };
@@ -65,16 +66,47 @@ function PhaseConfirm({ phase, choice, strategies, releaseStatus, onDone, onCanc
   );
 }
 
-function PhaseRow({ phase, strategies, releaseStatus, disabled, onChanged }) {
+/** Optimierungs-Auswahl & Schnellaktionen einer Phase (gleiche Auswahl wie die Regime-Häkchen unten). */
+function PhaseFocus({ phase, optimizing, onToggleOptimize, onFocus, showHistory, setShowHistory, disabled }) {
+  return (
+    <div className="dpe-cell dpe-focus">
+      {onToggleOptimize && (
+        <label className="opt-check" title="Häkchen = diese Phase wird beim nächsten Start weiter optimiert. Ohne Häkchen bleibt sie unverändert.">
+          <input type="checkbox" checked={optimizing} disabled={disabled} onChange={() => onToggleOptimize(phase.regime)} data-testid={`dpe-opt-${phase.regime}`} />
+          {' '}{optimizing ? 'wird weiter optimiert' : 'bleibt so (nicht optimieren)'}
+        </label>
+      )}
+      {onFocus && <button className="opt-chip" disabled={disabled} onClick={() => onFocus(phase, 'params')} data-testid={`dpe-only-${phase.regime}`}
+        title="Nur diese Phase markieren und Parameter weiter optimieren">Nur diese Phase optimieren</button>}
+      {onFocus && <button className="opt-chip" disabled={disabled} onClick={() => onFocus(phase, 'discovery')} data-testid={`dpe-newrules-${phase.regime}`}
+        title="Nur diese Phase markieren und komplett neue Regeln suchen (wie Discovery)">Neue Regeln für diese Phase</button>}
+      <button className="opt-chip" onClick={() => setShowHistory(h => !h)} data-testid={`dpe-history-${phase.regime}`}>
+        {showHistory ? 'Verlauf zu' : 'Verlauf der Phase'}
+      </button>
+    </div>
+  );
+}
+
+function CurrentVariant({ phase }) {
+  if (!phase.traded) return <span className="neg">nicht handeln<span className="opt-small"> · {phase.skip_reason}</span></span>;
+  const m = phase.metrics || {};
+  return (
+    <>
+      <b>{phase.strategy_name}</b>{phase.own_rules && phase.rules?.length ? <span className="opt-small"> · {phase.rules.length} Regeln</span> : null}
+      <div><ParamPills trade={phase.trade_params} strategy={phase.strategy_params} max={4} /></div>
+      {phase.metrics && <div className="opt-small">Score {fmt(phase.score)} · PnL {fmt(m.pnl, 2)}{m.trades != null ? ` · ${m.trades} Trades` : ''}</div>}
+    </>
+  );
+}
+
+function PhaseRow({ phase, strategies, releaseStatus, disabled, onChanged, refreshKey, optimizing, onToggleOptimize, onFocus }) {
   const [choice, setChoice] = useState('');
   const [asking, setAsking] = useState(false);
-  const current = phase.traded
-    ? <><b>{phase.strategy_name}</b>{phase.own_rules && phase.rules?.length ? <span className="opt-small"> · {phase.rules.length} Regeln</span> : null}</>
-    : <span className="neg">nicht handeln<span className="opt-small"> · {phase.skip_reason}</span></span>;
+  const [showHistory, setShowHistory] = useState(false);
   return (
-    <div className="dpe-row" data-testid={`dpe-row-${phase.regime}`}>
+    <div className={`dpe-row ${optimizing ? 'optimizing' : ''}`} data-testid={`dpe-row-${phase.regime}`}>
       <div className="dpe-cell dpe-label"><b>{phase.label}</b></div>
-      <div className="dpe-cell" data-testid={`dpe-current-${phase.regime}`}><span className="opt-small">Aktuell: </span>{current}</div>
+      <div className="dpe-cell" data-testid={`dpe-current-${phase.regime}`}><span className="opt-small">Aktuell: </span><CurrentVariant phase={phase} /></div>
       <div className="dpe-cell" data-testid={`dpe-optimized-${phase.regime}`}><span className="opt-small">Optimiert: </span><OptimizedCell o={phase.optimized} /></div>
       <div className="dpe-cell dpe-act">
         <select value={choice} disabled={disabled || asking} onChange={e => setChoice(e.target.value)} data-testid={`dpe-select-${phase.regime}`}>
@@ -87,15 +119,18 @@ function PhaseRow({ phase, strategies, releaseStatus, disabled, onChanged }) {
         </select>
         <button className="opt-cancel-run" disabled={!choice || disabled || asking} onClick={() => setAsking(true)} data-testid={`dpe-apply-${phase.regime}`}>Übernehmen…</button>
       </div>
+      <PhaseFocus phase={phase} optimizing={optimizing} onToggleOptimize={onToggleOptimize} onFocus={onFocus}
+        showHistory={showHistory} setShowHistory={setShowHistory} disabled={disabled} />
       {asking && <PhaseConfirm phase={phase} choice={choice} strategies={strategies} releaseStatus={releaseStatus}
         onCancel={() => setAsking(false)} onDone={() => { setAsking(false); setChoice(''); onChanged(); }} />}
+      {showHistory && <DynamicPhaseVariants phase={phase} refreshKey={refreshKey} disabled={disabled} onChanged={onChanged} />}
     </div>
   );
 }
 
 /** „Bestehende optimieren“: Strategie je Phase anzeigen, nach Bestätigung
  *  abschalten / tauschen, mit Versionsverlauf zum Zurückholen. */
-export default function DynamicPhaseEditor({ dynamicId, strategies, disabled }) {
+export default function DynamicPhaseEditor({ dynamicId, strategies, disabled, optimizeSel, onToggleOptimize, onFocus }) {
   const [data, setData] = useState(null);
   const [rev, setRev] = useState(0);
   const load = useCallback(() => {
@@ -110,11 +145,17 @@ export default function DynamicPhaseEditor({ dynamicId, strategies, disabled }) 
       <div className="opt-small" style={{ marginBottom: 6 }} data-testid="dpe-release">
         Status: <b>{RELEASE_LABEL[data.release_status] || data.release_status}</b>{data.traded ? ' · wird live/paper gehandelt – Änderungen wirken sofort' : ''}
         {data.block_reason ? <span className="neg"> · {data.block_reason}</span> : null}
+        {data.refined_from_name ? <span> · optimiert aus „{data.refined_from_name}“</span> : null}
+      </div>
+      <div className="opt-small" style={{ marginBottom: 6 }}>
+        Pro Phase: Häkchen = wird beim nächsten Start weiter optimiert. Phasen ohne Häkchen bleiben genau so, wie sie sind.
+        Deine Anpassungen bleiben auch in der neuen optimierten Version erhalten, solange dort nichts verbessert wurde.
       </div>
       {!isAdmin() && <div className="opt-small">Admin-Login erforderlich, um Phasen zu ändern.</div>}
       {data.phases.map(p => (
         <PhaseRow key={p.regime} phase={{ ...p, dynamicId }} strategies={strategies} releaseStatus={data.release_status}
-          disabled={disabled || !isAdmin()} onChanged={changed} />
+          disabled={disabled || !isAdmin()} onChanged={changed} refreshKey={rev}
+          optimizing={(optimizeSel || []).includes(p.regime)} onToggleOptimize={onToggleOptimize} onFocus={onFocus} />
       ))}
       <DynamicVersionHistory dynamicId={dynamicId} count={data.versions} refreshKey={rev} disabled={disabled || !isAdmin()} onRestored={changed} />
     </div>

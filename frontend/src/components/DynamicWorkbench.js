@@ -7,15 +7,18 @@ import IndicatorPicker from './IndicatorPicker';
 import DynamicWorkbenchResult from './DynamicWorkbenchResult';
 import DynamicAssetSuggest from './DynamicAssetSuggest';
 import DynamicPhaseEditor from './DynamicPhaseEditor';
-import { RegimePicker, StrategyMapping, CoreSettings, OptGroups, RobustnessRow, ExecutionRow, JobProgress, AssetToggle, MinTradesHint } from './DynamicWorkbenchFields';
+import { MODE_LABEL, RegimePicker, StrategyMapping, CoreSettings, OptGroups, RobustnessRow, ExecutionRow, JobProgress, AssetToggle, MinTradesHint } from './DynamicWorkbenchFields';
 import { workerField } from '../lib/workerTarget';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export const TABS = [
-  { id: 'refine', title: 'Bestehende optimieren', desc: 'Gesamt oder nur ausgewählte Regime einer dynamischen Strategie verbessern – optional endlos. Ergebnis ist eine neue Version, die live gehandelte bleibt unberührt.' },
-  { id: 'create', title: 'Neu aus Strategien', desc: 'Regime-Erkennung wählen und jedem Regime eine bestehende Strategie zuordnen (leer = Regime nicht handeln).' },
-  { id: 'discover', title: 'Neue Strategie je Regime', desc: 'Für eine Regime-Erkennung je Regime eine komplett neue Regel-Strategie suchen (wie Discovery) – optional endlos.' },
+  { id: 'refine', title: 'Bestehende optimieren', desc: 'Gesamt oder nur ausgewählte Regime einer dynamischen Strategie verbessern – optional endlos. Ergebnis ist eine neue Version, die live gehandelte bleibt unberührt.',
+    diff: 'Startet von einer FERTIGEN dynamischen Strategie: je Phase siehst du Strategie, Parameter und Verlauf und wählst, welche Phasen weiter optimiert werden.' },
+  { id: 'create', title: 'Neu aus Strategien', desc: 'Regime-Erkennung wählen und jedem Regime eine bestehende Strategie zuordnen (leer = Regime nicht handeln).',
+    diff: 'Startet von einer Regime-ANALYSE: du ordnest selbst zu, es wird nichts gesucht, nur gebaut und getestet.' },
+  { id: 'discover', title: 'Neue Strategie je Regime', desc: 'Für eine Regime-Erkennung je Regime eine komplett neue Regel-Strategie suchen (wie Discovery) – optional endlos.',
+    diff: 'Startet von einer Regime-ANALYSE: sucht je Phase völlig neue Regeln, ohne vorhandene Strategie als Basis.' },
 ];
 
 const STATE_KEY = 'dwb_ui_state_v2';
@@ -114,6 +117,12 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
     const ids = ((tab === 'refine' ? src?.dynamic?.regimes : src?.regimes) || []).map(r => r.id);
     patchSel({ source, regimes: ids, mapping: {}, symbols: undefined });
   };
+  // Phasen-Editor: nur EINE Phase weiter optimieren (Parameter oder neue Regeln)
+  const focusPhase = (phase, m) => {
+    patchSel({ regimes: [phase.regime], mode: m });
+    toast.info(`Nur „${phase.label}“ ist markiert (${MODE_LABEL[m]}). Unten „Optimierung starten“. Die anderen Phasen bleiben unverändert.`);
+    setTimeout(() => document.querySelector('[data-testid="dwb-start"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  };
   const toggleRegime = (id) => patchSel({ regimes: cur.regimes.includes(id) ? cur.regimes.filter(x => x !== id) : [...cur.regimes, id] });
   const set = (k, v) => (k === 'mode' ? patchSel({ mode: v }) : setOpts(o => ({ ...o, [k]: v })));
 
@@ -168,13 +177,19 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
 
   return (
     <div data-testid="dynamic-workbench">
-      <div className="opt-modes" style={{ marginTop: 6 }} data-testid="dwb-tabs">
-        {TABS.map(t => (
-          <button key={t.id} className={`opt-mode ${tab === t.id ? 'on' : ''}`} onClick={() => setTab(t.id)} data-testid={`dwb-tab-${t.id}`}>
-            <div className="opt-mode-title">{t.title}{job && job.kind === t.id && job.status === 'running' ? ' · läuft' : ''}</div>
-            <div className="opt-mode-desc">{t.desc}</div>
+      <div className="dwb-subtabs" role="tablist" data-testid="dwb-tabs">
+        {TABS.map((t, i) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} className={`dwb-subtab ${tab === t.id ? 'on' : ''}`}
+            onClick={() => setTab(t.id)} data-testid={`dwb-tab-${t.id}`}>
+            <span className="dwb-subtab-num">{i + 1}</span>
+            <span className="dwb-subtab-title">{t.title}</span>
+            {job && job.kind === t.id && job.status === 'running' && <span className="dwb-subtab-live" data-testid={`dwb-tab-live-${t.id}`}>läuft</span>}
           </button>
         ))}
+      </div>
+      <div className="dwb-subtab-desc" data-testid="dwb-tab-desc">
+        <b>{TABS.find(t => t.id === tab)?.title}:</b> {TABS.find(t => t.id === tab)?.desc}
+        <span className="dwb-subtab-diff"> {TABS.find(t => t.id === tab)?.diff}</span>
       </div>
 
       <div className="opt-setup">
@@ -202,7 +217,8 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
           </div>
         )}
       </div>
-      {tab === 'refine' && dyn && <DynamicPhaseEditor dynamicId={dyn.id} strategies={strategies} disabled={running} />}
+      {tab === 'refine' && dyn && <DynamicPhaseEditor dynamicId={dyn.id} strategies={strategies} disabled={running}
+        optimizeSel={cur.regimes} onToggleOptimize={toggleRegime} onFocus={focusPhase} />}
       {tab === 'refine' && dyns.length === 0 && <div className="opt-small" style={{ marginBottom: 8 }}>Noch keine dynamische Strategie aus dem Regime-Lab vorhanden – zuerst „Neu aus Strategien“ oder „Neue Strategie je Regime“ nutzen.</div>}
 
       <CoreSettings opts={opts} set={set} tab={tab} mode={mode} source={analysis} />

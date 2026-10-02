@@ -34,3 +34,25 @@
 - `backend/tests/test_workbench_phases_1010.py`: 14 Regressionstests, laufen gegen eine lokale Test-DB.
 - Bestehende Suiten (Werkbank, Job-Steuerung, Multi-Worker, Dynamik-Backtest) sind grün.
 - Testing-Agent iteration_43: Backend und Frontend ohne Befund.
+
+## 6. Überanpassungs-Warnung (Regime-Autopilot)
+- Steigt der Score, während der Abschlusstest (Holdout-F1 bzw. Live=Final) fällt, erscheint eine Warnung.
+  - Sie zeigt: Score-Plus, Holdout-Minus und die Anzahl getesteter Varianten.
+  - Sie gibt eine Empfehlung und hat einen Button „Kurze Feinsuche starten“.
+- Im Autopilot-Verlauf bekommt so ein Lauf das Badge „⚠ Überanpassung“. Das funktioniert auch für Alt-Läufe, weil es aus den gespeicherten Feldern berechnet wird (`frontend/src/lib/overfit.js`).
+
+## 7. Kurze Feinsuche (Autopilot-Modus)
+- Neuer Button „Kurze Feinsuche“ neben „Autopilot starten“. Er sendet `fine_tune: true` an `POST /api/regime-lab/autopilot`.
+- Startpunkt (`services/regime_finetune.py`), in dieser Reihenfolge:
+  1. Referenz-Lauf
+  2. gespeicherte Analyse mit der besten Note (ab „gut“, gleiche Coins/Timeframe bevorzugt)
+  3. bester Autopilot-Lauf derselben Coins/Timeframe
+  4. aktuelle Einstellung
+- Grenzen: max. 15 Min. (Deckel 30), 400 Varianten, Plateau nach 60 Runden. Kein Grundgerüst-Wechsel, keine Timeframe-Kette, kein Warmstart.
+- `fine_mode` ändert die Mutation auf ±1 Schritt bei 1–2 Parametern, ohne Zufallssprünge und Neustarts. Ältere Worker kennen `fine_mode` nicht, halten sich aber an die Grenzen.
+
+## 8. Versionen vergleichen (Dynamik-Verlauf)
+- Im Verlauf hakst du zwei Versionen an und siehst sie je Phase nebeneinander: Strategie, Trade- und Strategie-Parameter, geänderte Phasen markiert.
+- Kennzahlen (Score/PnL/Trades/WR) gibt es nur, wenn die Phase genau die optimierte Zuordnung handelt. Sonst steht dort ehrlich „Backtest starten“.
+- API: `GET /api/dynamic/{id}/versions/compare?a=&b=`
+- Tests: `backend/tests/test_finetune_compare_1010.py` (7)
