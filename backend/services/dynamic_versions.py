@@ -231,3 +231,39 @@ async def _save(db, doc: Dict) -> None:
     keys = strategy_release._SEMANTIC_FIELDS + ("release", "verdict", "settings")
     await db.dynamic_strategies.update_one({"id": doc["id"]},
                                            {"$set": {k: doc.get(k) for k in keys}})
+
+
+def _is_optimized(snap: Dict, key: str, a: Optional[Dict]) -> bool:
+    """Handelt die Phase in diesem Stand genau die optimierte Zuordnung? (rein)"""
+    if not a:
+        return False
+    sub = (snap.get("sub_strategies") or {}).get(key) or {}
+    if a.get("definition"):
+        return bool(sub) and sub.get("definition") == a.get("definition")
+    return not sub and (snap.get("regime_strategies") or {}).get(key) == a.get("strategy_id")
+
+
+def compare(va: Dict, vb: Dict, optimized: Dict[int, Dict]) -> Dict:
+    """Zwei Versionen je Phase nebeneinander (rein). Kennzahlen gibt es nur,
+    wenn die Phase die optimierte Zuordnung handelt (Ergebnis der Optimierung)
+    – sonst None (ehrlich: dafür einen Backtest starten)."""
+    def side(v: Dict, rid: int) -> Dict:
+        p = next((x for x in v.get("summary") or [] if int(x["regime"]) == rid), None) or {}
+        a = optimized.get(rid)
+        opt = bool(p.get("traded")) and _is_optimized(v.get("snapshot") or {}, str(rid), a)
+        return {"traded": bool(p.get("traded")), "strategy_name": p.get("strategy_name"),
+                "own_rules": bool(p.get("own_rules")), "trade_params": p.get("trade_params") or {},
+                "strategy_params": p.get("strategy_params") or {}, "is_optimized": opt,
+                "metrics": ((a or {}).get("metrics") or {}) if opt else None,
+                "score": (a or {}).get("score") if opt else None}
+    rids = sorted({int(x["regime"]) for v in (va, vb) for x in v.get("summary") or []})
+    labels = {int(x["regime"]): x.get("label") for v in (va, vb) for x in v.get("summary") or []}
+    rows = []
+    for rid in rids:
+        a, b = side(va, rid), side(vb, rid)
+        keys = ("traded", "strategy_name", "own_rules", "trade_params", "strategy_params")
+        rows.append({"regime": rid, "label": labels.get(rid), "a": a, "b": b,
+                     "changed": any(a[k] != b[k] for k in keys)})
+    head = lambda v: {k: v.get(k) for k in ("version", "created_at", "reason", "release_status")}  # noqa: E731
+    return {"a": head(va), "b": head(vb), "phases": rows,
+            "changed_count": sum(1 for r in rows if r["changed"])}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { overfitInfo } from '../lib/overfit';
 import { Star, PushPin, Crosshair, ArrowRight, CheckCircle, DownloadSimple } from '@phosphor-icons/react';
 
 const fmt = (v, d = 1) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
@@ -74,6 +75,8 @@ export default function RegimeAutopilotHistory({ runs, det, appliedId, reference
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       {res.source === 'import' && <div className="opt-small" style={{ opacity: 0.75 }} data-testid={`autopilot-run-imported-${r.id}`} title="Aus einer gespeicherten Regime-Analyse übernommen (kein Autopilot-Lauf)">⤓ importiert: {res.imported_from?.name || 'Analyse'}</div>}
+                      {overfitInfo(res) && <div className="opt-small" style={{ color: '#ffd75a' }} data-testid={`autopilot-run-overfit-${r.id}`} title="Score gestiegen, Abschlusstest (Holdout) gefallen – wahrscheinlich Überanpassung">⚠ Überanpassung ({(res.tested || 0).toLocaleString('de-DE')} Var.)</div>}
+                      {res.settings?.fine_mode && <div className="opt-small" style={{ opacity: 0.75 }} data-testid={`autopilot-run-fine-${r.id}`}>🔍 Kurze Feinsuche{res.fine_start?.source ? ` · Start: ${res.fine_start.source}` : ''}</div>}
                       {res.reference && <div className="opt-small" style={{ opacity: 0.7 }} data-testid={`autopilot-run-ref-${r.id}`}>⤷ aus Referenz {String(res.reference.created_at || '').slice(0, 10)} · {res.reference.timeframe}</div>}
                     </td>
                     <td>{(res.symbols || []).map(short).join(', ')}<div className="opt-small" style={{ whiteSpace: 'nowrap' }}><b>{res.timeframe}</b> · {res.days}d

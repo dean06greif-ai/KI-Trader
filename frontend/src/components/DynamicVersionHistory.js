@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ClockCounterClockwise } from '@phosphor-icons/react';
 import { toast } from '../lib/toast';
 import { postJson } from '../lib/postJson';
+import DynamicVersionCompare from './DynamicVersionCompare';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const fmtDate = (iso) => { try { return new Date(iso).toLocaleString('de-DE'); } catch { return iso; } };
@@ -16,7 +17,7 @@ function VersionSummary({ summary }) {
   );
 }
 
-function VersionRow({ v, latest, disabled, dynamicId, onRestored }) {
+function VersionRow({ v, latest, disabled, dynamicId, onRestored, picked, onPick }) {
   const [open, setOpen] = useState(false);
   const [asking, setAsking] = useState(false);
   const restore = async () => {
@@ -29,6 +30,9 @@ function VersionRow({ v, latest, disabled, dynamicId, onRestored }) {
   return (
     <div className="dpe-version" data-testid={`dvh-version-${v.version}`}>
       <div className="dpe-version-head">
+        <label className="opt-check" title="Für den Vergleich auswählen (2 Versionen)">
+          <input type="checkbox" checked={picked} onChange={() => onPick(v.version)} data-testid={`dvh-pick-${v.version}`} />
+        </label>
         <b>v{v.version}</b>{latest ? <span className="opt-badge"> aktuell</span> : null}
         <span className="opt-small"> · {fmtDate(v.created_at)} · {v.reason}</span>
         <button className="opt-chip" onClick={() => setOpen(o => !o)} data-testid={`dvh-view-${v.version}`}>{open ? 'zuklappen' : 'ansehen'}</button>
@@ -53,6 +57,10 @@ function VersionRow({ v, latest, disabled, dynamicId, onRestored }) {
 export default function DynamicVersionHistory({ dynamicId, count, refreshKey, disabled, onRestored }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState([]);
+  const [pick, setPick] = useState([]);
+  // max. 2 Versionen: die älteste Auswahl fällt heraus
+  const togglePick = (ver) => setPick(p => (p.includes(ver) ? p.filter(x => x !== ver) : [...p, ver].slice(-2)));
+  const [va, vb] = [...pick].sort((x, y) => x - y);
   useEffect(() => {
     if (!open) return;
     fetch(`${API_URL}/api/dynamic/${dynamicId}/versions`).then(r => r.json())
@@ -64,8 +72,15 @@ export default function DynamicVersionHistory({ dynamicId, count, refreshKey, di
         <ClockCounterClockwise size={13} /> Verlauf ({count || 0} {count === 1 ? 'Version' : 'Versionen'})
       </button>
       {open && !rows.length && <div className="opt-small" data-testid="dvh-empty">Noch keine Änderungen – die erste Phasen-Anpassung sichert den Ausgangsstand als Version 1.</div>}
+      {open && rows.length > 1 && (
+        <div className="opt-small" data-testid="dvh-compare-hint">
+          {pick.length < 2 ? `Zwei Versionen anhaken, um sie nebeneinander zu vergleichen (${pick.length}/2).` : `Vergleich v${va} ↔ v${vb}`}
+        </div>
+      )}
+      {open && pick.length === 2 && <DynamicVersionCompare dynamicId={dynamicId} a={va} b={vb} />}
       {open && rows.map((v, i) => (
-        <VersionRow key={v.id} v={v} latest={i === 0} disabled={disabled} dynamicId={dynamicId} onRestored={onRestored} />
+        <VersionRow key={v.id} v={v} latest={i === 0} disabled={disabled} dynamicId={dynamicId} onRestored={onRestored}
+          picked={pick.includes(v.version)} onPick={togglePick} />
       ))}
     </div>
   );

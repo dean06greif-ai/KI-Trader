@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Play, MoonStars, Robot, StopCircle } from '@phosphor-icons/react';
+import { Play, MoonStars, Robot, StopCircle, MagnifyingGlass } from '@phosphor-icons/react';
 import { toast } from '../lib/toast';
 import { authHeaders, isAdmin } from '../auth';
 import { addToSeries } from '../lib/series';
@@ -11,6 +11,7 @@ import RegimeAutopilotAdvice from './RegimeAutopilotAdvice';
 import RegimeAutopilotHistory, { GradeBadge } from './RegimeAutopilotHistory';
 import { workerField } from '../lib/workerTarget';
 import { TfChainToggle, TfChainResult } from './RegimeTfChain';
+import RegimeOverfitWarning from './RegimeOverfitWarning';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const fmt = (v, d = 1) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
@@ -221,20 +222,24 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
     return true;
   };
 
-  const start = async () => {
+  // fine = Kurze Feinsuche: kurz & dicht um die beste Analyse (services/regime_finetune.py)
+  const start = async (fine = false) => {
     if (!validate()) return;
     if (execution === 'local' && !lwOnline) { toast.error('Kein lokaler Worker verbunden – Worker starten oder Cloud wählen'); return; }
     setBanner(null);
     try {
       const r = await fetch(`${API_URL}/api/regime-lab/autopilot`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify(buildBody()),
+        body: JSON.stringify({ ...buildBody(), ...(fine ? { fine_tune: true } : {}) }),
       });
       const d = await r.json();
       if (!r.ok) { toast.error(d.detail || 'Start fehlgeschlagen'); return; }
       onStarted?.(d.job_id, 'autopilot');
-      toast.success(`Regime-Autopilot gestartet (${d.execution === 'local' ? 'lokaler Worker' : 'Cloud'})`
-        + (reference ? ` – Start aus Referenz ${String(reference.created_at).slice(0, 10)} · ${reference.result?.timeframe}` : ''));
+      const where = d.execution === 'local' ? 'lokaler Worker' : 'Cloud';
+      toast.success(fine
+        ? `Kurze Feinsuche gestartet (${where}, max. ${d.fine?.max_minutes ?? 15} Min.) – Start: ${d.fine?.start?.source || 'aktuelle Einstellung'}`
+        : `Regime-Autopilot gestartet (${where})`
+          + (reference ? ` – Start aus Referenz ${String(reference.created_at).slice(0, 10)} · ${reference.result?.timeframe}` : ''));
       setReference(null);
     } catch { toast.error('Verbindungsfehler'); }
   };
@@ -323,10 +328,16 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
         </label>
         <TfChainToggle timeframe={timeframe} checked={tfChain} onChange={setTfChain} />
         {!running ? (
-          <button className="opt-run" onClick={start} disabled={jobBlocked} data-testid="autopilot-start"
-            title="Startet die Endlos-Suche mit den oben gewählten Coins, Timeframe, Zeitraum und Training-% (Ausführung wie oben gewählt)">
-            <Play size={13} weight="fill" /> Autopilot starten
-          </button>
+          <>
+            <button className="opt-run" onClick={() => start(false)} disabled={jobBlocked} data-testid="autopilot-start"
+              title="Startet die Endlos-Suche mit den oben gewählten Coins, Timeframe, Zeitraum und Training-% (Ausführung wie oben gewählt)">
+              <Play size={13} weight="fill" /> Autopilot starten
+            </button>
+            <button className="opt-chip" onClick={() => start(true)} disabled={jobBlocked} data-testid="autopilot-finetune-start"
+              title="Kurze Feinsuche: startet an deiner besten Analyse (bzw. der gesetzten Referenz) und testet nur Nachbarn (±1 Schritt, 1–2 Parameter, kein Grundgerüst-Wechsel). Max. 15 Min., 400 Varianten, 60 Runden Plateau. Weniger Varianten bedeuten weniger Zufallstreffer (Überanpassung).">
+              <MagnifyingGlass size={13} /> Kurze Feinsuche
+            </button>
+          </>
         ) : (
           <button className="opt-chip" onClick={softStop} data-testid="autopilot-stop"
             title="Suche sanft beenden – die bisher beste Erkennung wird als Ergebnis übernommen">
@@ -356,6 +367,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
         minPhase={minPhase} maxPhase={maxPhase}
         onApplyBand={([lo, hi]) => { setMinPhase(lo); setMaxPhase(hi); }} />
       {banner && <EdgeBanner {...banner} testId="autopilot-banner" />}
+      {lastResult?.best && <RegimeOverfitWarning result={lastResult} disabled={jobBlocked || running}
+        onFineTune={() => start(true)} />}
       {(lastResult?.warnings || []).length > 0 && (
         <ul className="regime-advice-list warn" data-testid="autopilot-result-warnings">
           {lastResult.warnings.map(w => <li key={w}>{w}</li>)}

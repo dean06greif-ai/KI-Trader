@@ -504,3 +504,12 @@
 @media (max-width: 640px) {
   .dpe-label { flex-basis: 100%; }
 }
+.dvc { margin: 8px 0; border: 1px solid rgba(179, 136, 255, 0.3); border-radius: 8px; padding: 6px 8px; }
+.dvc-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 6px 0; border-top: 1px solid rgba(255, 255, 255, 0.06); font-size: 12.5px; }
+.dvc-row.dvc-head { border-top: none; }
+.dvc-row.changed { background: rgba(255, 215, 90, 0.05); }
+.dvc-side { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .dvc-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .dvc-label { grid-column: 1 / -1; }
+}

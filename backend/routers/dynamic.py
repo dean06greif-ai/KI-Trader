@@ -478,6 +478,20 @@ async def dynamic_versions_list(did: str, limit: int = 50):
     return {"versions": [{k: v for k, v in r.items() if k != "snapshot"} for r in rows]}
 
 
+@router.get("/api/dynamic/{did}/versions/compare")
+async def dynamic_versions_compare(did: str, a: int, b: int):
+    """Zwei Versionen je Phase nebeneinander: Strategie, Parameter, Kennzahlen."""
+    from services import dynamic_versions as dv
+    doc = _clean(await _get_doc(did))
+    rows = {r["version"]: r for r in await state.db[dv.COLLECTION].find(
+        {"dynamic_id": did, "version": {"$in": [int(a), int(b)]}}, {"_id": 0}).to_list(2)}
+    if int(a) not in rows or int(b) not in rows:
+        raise HTTPException(status_code=404, detail="Version nicht gefunden")
+    optimized = {rid: _slim_optimized(x) | {"definition": x.get("definition")}
+                 for rid, x in (await _optimized_by_regime(doc)).items()}
+    return dv.compare(rows[int(a)], rows[int(b)], optimized)
+
+
 @router.post("/api/dynamic/{did}/versions/{version}/restore")
 async def dynamic_version_restore(did: str, version: int, body: Dict = None,
                                   _: bool = Depends(require_admin)):

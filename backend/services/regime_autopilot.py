@@ -97,6 +97,10 @@ DETECTOR_SPACE = {
 
 
 # ---------------- reine Hilfsfunktionen (testbar) ----------------
+# Kurze Feinsuche: nach so vielen Runden ohne Gewinn 2 statt 1 Parameter ändern
+FINE_WIDEN_AFTER = 20
+
+
 def detector_of(cfg: Dict) -> str:
     d = str((cfg or {}).get("detector") or "reactive").lower()
     return d if d in DETECTORS else "reactive"
@@ -121,8 +125,9 @@ def _current(cfg: Dict, key: str):
     return cfg.get(key, eng.DEFAULT_CONFIG.get(key))
 
 
-def _neighbor(spec, cur, rng: random.Random):
-    """Nachbarwert (lokale Suche): 1-3 Schritte vom aktuellen Wert entfernt."""
+def _neighbor(spec, cur, rng: random.Random, steps=(-3, -2, -1, 1, 2, 3)):
+    """Nachbarwert (lokale Suche): 1-3 Schritte vom aktuellen Wert entfernt
+    (Feinsuche: nur ±1 Schritt)."""
     if isinstance(spec, list):
         others = [x for x in spec if x != cur] or spec
         return rng.choice(others)
@@ -131,7 +136,7 @@ def _neighbor(spec, cur, rng: random.Random):
         base = float(cur)
     except (TypeError, ValueError):
         return _sample(spec, rng)
-    v = base + rng.choice((-3, -2, -1, 1, 2, 3)) * step
+    v = base + rng.choice(steps) * step
     v = min(max(v, lo), hi)
     if all(isinstance(x, int) for x in spec):
         return int(round(v))
@@ -139,11 +144,20 @@ def _neighbor(spec, cur, rng: random.Random):
 
 
 def mutate(best_cfg: Dict, rng: random.Random, search_detectors: bool,
-           stale_rounds: int) -> Dict:
+           stale_rounds: int, fine: bool = False) -> Dict:
     """Neue Variante aus der besten Konfiguration ableiten. Je länger ohne
-    Verbesserung, desto mehr Parameter ändern sich (breitere Suche)."""
+    Verbesserung, desto mehr Parameter ändern sich (breitere Suche).
+    fine=True (Kurze Feinsuche): nur 1-2 Parameter um ±1 Schritt, keine
+    Zufallssprünge, kein Grundgerüst-Wechsel – bleibt dicht an der Ausgangslage."""
     cfg = copy.deepcopy(best_cfg or {})
     det = detector_of(cfg)
+    if fine:
+        cfg["detector"] = det
+        space = space_for(det)
+        keys = sorted(space)
+        for key in rng.sample(keys, min(1 + (stale_rounds >= FINE_WIDEN_AFTER), len(keys))):
+            cfg[key] = _neighbor(space[key], _current(cfg, key), rng, steps=(-1, 1))
+        return cfg
     if search_detectors and rng.random() < DETECTOR_SWITCH_P:
         det = rng.choice([d for d in DETECTORS if d != det])
         cfg["detector"] = det
@@ -659,7 +673,8 @@ async def run_autopilot(job_id: str, body: Dict, db):
         max_minutes = min(max(float(body.get("max_minutes") or 0), 0.0), 1440.0)
         target_pct = min(max(float(body.get("target_pct") or 0), 0.0), 100.0)
         max_rounds = max(int(body.get("max_rounds") or 0), 0)
-        search_detectors = bool(body.get("search_detectors", True))
+        fine_mode = bool(body.get("fine_mode"))
+        search_detectors = bool(body.get("search_detectors", True)) and not fine_mode
         plateau_rounds = max(int(body.get("plateau_rounds", PLATEAU_ROUNDS_DEFAULT) or 0), 0)
         target_min_days = min(max(float(body.get("min_phase_days_target") or SWEET_SPOT_DAYS[0]), 0.0), 30.0)
         # Sweet Spot nach oben (0 = aus, Rückwärtskompatibilität für alte Aufrufer)
@@ -848,10 +863,11 @@ async def run_autopilot(job_id: str, body: Dict, db):
                 cand = dict(seeds.pop(0)["engine_config"])
             else:
                 parent = best["engine_config"]
-                if stale and stale % RESTART_AFTER_STALE == 0 and len(history) > 3:
+                if not fine_mode and stale and stale % RESTART_AFTER_STALE == 0 and len(history) > 3:
                     parent = rng.choice(history[:10])["engine_config"]
                     restarts += 1
-                cand = mutate(parent, rng, search_detectors, stale)
+                cand = (mutate(parent, rng, search_detectors, stale, fine=True) if fine_mode
+                        else mutate(parent, rng, search_detectors, stale))
             ck = config_key(cand)
             sk = tf_chain.seen_key(active, ck, chain_on)
             if sk in seen:
@@ -958,7 +974,7 @@ async def run_autopilot(job_id: str, body: Dict, db):
                                "max_rounds": max_rounds, "search_detectors": search_detectors,
                                "min_phase_days_target": target_min_days,
                                "max_phase_days_target": target_max_days,
-                               "tf_chain": chain_on},
+                               "tf_chain": chain_on, "fine_mode": fine_mode},
                   "symbols": list(best_ctx.keys()), "timeframe": best_tf,
                   "days": days, "train_pct": train_pct,
                   # Plausibilität (services/regime_advice.py): fehlende Referenz,
@@ -976,6 +992,8 @@ async def run_autopilot(job_id: str, body: Dict, db):
             result["start_fallback"] = job["start_fallback"]
         if body.get("reference"):
             result["reference"] = body["reference"]
+        if body.get("fine_start"):
+            result["fine_start"] = body["fine_start"]
         result["adopt_recommended"] = adopt_recommended(result)
         if db is not None:
             try:

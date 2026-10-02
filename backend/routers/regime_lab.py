@@ -390,6 +390,28 @@ async def autopilot_tf_chain(timeframe: str = "1h"):
             "cross_tf_margin": regime_tf_chain.CROSS_TF_MARGIN}
 
 
+async def _fine_tune_body(body: Dict, params: Dict, symbols: List[str]):
+    """Kurze Feinsuche: Start an der besten Analyse (bzw. Referenz), enge Grenzen."""
+    from services import regime_finetune
+    body = {**body, **regime_finetune.fine_settings(body)}
+    current = dict(body.get("engine_config") or {})
+    if body.get("reference"):
+        start = {"source": f"Referenz-Lauf {str(body['reference'].get('created_at') or '')[:10]}"}
+    else:
+        start = await regime_finetune.collect_start(state.db, symbols, body.get("timeframe") or "15m")
+        if start:
+            seeds = [{"engine_config": current, "source": "aktuelle Einstellung"}] if current else []
+            body = {**body, "engine_config": start["engine_config"],
+                    "seed_configs": seeds + list(body.get("seed_configs") or [])}
+        else:
+            start = {"source": "aktuelle Einstellung (keine bewertete Analyse gefunden)"}
+    fine_start = {k: v for k, v in start.items() if k != "engine_config"}
+    body["fine_start"] = fine_start
+    params = {**params, **{k: body.get(k) for k in AUTOPILOT_PARAM_KEYS},
+              "fine_mode": True, "fine_start": fine_start, "plateau_rounds": body.get("plateau_rounds")}
+    return body, params
+
+
 @router.post("/api/regime-lab/autopilot")
 async def start_autopilot(body: Dict, _: bool = Depends(require_admin)):
     """Regime-Autopilot: verändert die Detektor-Einstellungen Runde für Runde,
@@ -419,6 +441,8 @@ async def start_autopilot(body: Dict, _: bool = Depends(require_admin)):
         params["reference"] = plan["reference"]
         params["engine_config"] = plan["engine_config"]
         await state.db.regime_lab_runs.update_one({"id": run["id"]}, {"$set": {"pinned": True}})
+    if body.get("fine_tune") is True:
+        body, params = await _fine_tune_body(body, params, symbols)
     if body.get("warm_start", True) and not body.get("seed_configs"):
         from services import regime_warmstart
         body = {**body, "seed_configs": await regime_warmstart.collect_seeds(
@@ -442,12 +466,19 @@ async def start_autopilot(body: Dict, _: bool = Depends(require_admin)):
                                        "Cloud-Ausführung wählen.")
         job_id = lab.create_job("autopilot", params)
         _enqueue_local("autopilot", job_id, body)
-        return {"status": "started", "job_id": job_id, "execution": "local"}
+        return {"status": "started", "job_id": job_id, "execution": "local", **_fine_info(body)}
     job_id = lab.create_job("autopilot", params)
     queued = ram_queue.submit(lab.JOBS, job_id,
                               lambda: regime_autopilot.run_autopilot(job_id, body, state.db),
                               kind="regime_autopilot")
-    return {"status": "started", "job_id": job_id, "ram_queued": queued}
+    return {"status": "started", "job_id": job_id, "ram_queued": queued, **_fine_info(body)}
+
+
+def _fine_info(body: Dict) -> Dict:
+    if not body.get("fine_mode"):
+        return {}
+    return {"fine": {"max_minutes": body.get("max_minutes"), "max_rounds": body.get("max_rounds"),
+                     "plateau_rounds": body.get("plateau_rounds"), "start": body.get("fine_start")}}
 
 
 @router.post("/api/regime-lab/autopilot/stop/{job_id}")
