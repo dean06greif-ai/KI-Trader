@@ -126,6 +126,10 @@ DEFAULT_AI_CONFIG = {
     "tune_guard_max": 6,
     # Maker-Order-Modus: unkritische KI-Entries als Post-Only-Limit (Maker-Fee)
     "maker_mode": False,
+    # 'setup' = Order-Art je Setup (Vorgabe + Lernen, services/setup_order_policy.py),
+    # 'all' = bisher: jede unkritische KI-Entry als Maker-Limit
+    "maker_policy": "setup",
+    "maker_setup_overrides": {},
     "maker_wait_sec": 45,
     "maker_suspended_until": None,
     # ---- Datensammel-Modus (Phase 4): Entscheidungen unterhalb der
@@ -845,6 +849,11 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
             self.config["tune_guard_min"] = self.config["tune_guard_max"]
         if "maker_mode" in updates:
             self.config["maker_mode"] = bool(updates["maker_mode"])
+        if updates.get("maker_policy") in ("setup", "all"):
+            self.config["maker_policy"] = updates["maker_policy"]
+        if isinstance(updates.get("maker_setup_overrides"), dict):
+            self.config["maker_setup_overrides"] = {
+                str(k): v for k, v in updates["maker_setup_overrides"].items() if v in ("maker", "market")}
         if "maker_wait_sec" in updates:
             self.config["maker_wait_sec"] = max(10, min(300, int(updates["maker_wait_sec"])))
         if "maker_suspended_until" in updates:
@@ -2545,7 +2554,18 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
         # Datensammel-Trades ausgenommen (sollen sofort füllen -> Lernen).
         if not collection and self.config.get("maker_mode"):
             await self._maker_check_performance()
-            if not self._maker_suspended():
+            use_maker = not self._maker_suspended()
+            if use_maker and str(self.config.get("maker_policy") or "setup") == "setup":
+                try:
+                    from services import setup_order_policy
+                    mode, why, src = setup_order_policy.decide(
+                        dec.get("setup"), await setup_order_policy.stats(self.db),
+                        self.config.get("maker_setup_overrides"))
+                    dec["order_policy"] = {"mode": mode, "reason": why, "source": src}
+                    use_maker = mode == "maker"
+                except Exception as e:  # noqa: BLE001 – im Zweifel bisheriges Verhalten
+                    logger.warning(f"Order-Policy je Setup nicht verfügbar: {e}")
+            if use_maker:
                 signal["ai_maker_ok"] = True
                 signal["ai_maker_wait_sec"] = int(self.config.get("maker_wait_sec", 45) or 45)
         # Hebel-Modus (global, AI-Panel): coin = Coin-Settings entscheiden

@@ -116,6 +116,19 @@ async def ai_guard_shadow_stats(days: int = 14):
     return await guard_shadow.stats(ai_engine.db, days)
 
 
+@router.get("/api/ai/order-policy")
+async def ai_order_policy():
+    """Order-Art je Setup: Vorgabe, aktuelle (ggf. gelernte) Wahl, Begründung, Daten."""
+    from services import setup_order_policy
+    return {"policy": ai_engine.config.get("maker_policy") or "setup",
+            "rows": await setup_order_policy.table(state_db(), ai_engine.config.get("maker_setup_overrides"))}
+
+
+def state_db():
+    from core import state
+    return state.db
+
+
 @router.get("/api/ai/maker-stats")
 async def ai_maker_stats():
     """Maker-Sparstatistik: real gesparte Entry-Gebühren (Taker- minus

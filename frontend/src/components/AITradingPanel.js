@@ -26,6 +26,7 @@ import { GuardShadowPanel } from './GuardShadowPanel';
 import RegimeCockpit from './RegimeCockpit';
 import { MinSlRuleSettings } from './MinSlRuleSettings';
 import { DecisionTradeTags } from './DecisionTradeTags';
+import AIOrderPolicyTable from './AIOrderPolicyTable';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -1644,6 +1645,18 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
                 <option value="on">an (Limit wenn unkritisch)</option>
               </select>
             </label>
+            {cfg.maker_mode && (
+              <label title="Je Setup (empfohlen): Rücksetzer/Zonen/Range starten als Limit, Ausbruch/Momentum/News als Market. Der KI-Trader lernt aus Fill-Quote und echten Ergebnissen (Ø R je Order-Art, letzte 90 Tage) und schaltet je Setup selbstständig um – und auch wieder zurück, wenn es schlechter wird. Alle = bisheriges Verhalten (jede unkritische Entry als Limit).">
+                <span>Maker-Auswahl</span>
+                <select value={cfg.maker_policy || 'setup'} onChange={e => updateConfig({ maker_policy: e.target.value })} data-testid="ai-maker-policy-select">
+                  <option value="setup">je Setup (Vorgabe + Lernen)</option>
+                  <option value="all">alle unkritischen Entries</option>
+                </select>
+              </label>
+            )}
+            {cfg.maker_mode && (cfg.maker_policy || 'setup') === 'setup' && (
+              <AIOrderPolicyTable overrides={cfg.maker_setup_overrides} onOverride={v => updateConfig({ maker_setup_overrides: v })} />
+            )}
             {cfg.maker_mode && (
               <label title="Wie lange auf den Fill der Post-Only-Limit-Order gewartet wird, bevor automatisch eine Market-Order (Taker) nachgeschoben wird.">
                 <span>Maker-Wartezeit</span>

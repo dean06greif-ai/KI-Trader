@@ -11,6 +11,7 @@ import LocalWorkerPanel from './LocalWorkerPanel';
 import BenchmarkBar from './BenchmarkBar';
 import EquityChart from './EquityChart';
 import DynamicRegimeBreakdown from './DynamicRegimeBreakdown';
+import OrderCompareTable from './OrderCompareTable';
 import { LabelBasisSelect, LABEL_BASIS_HINT } from './DynamicWorkbenchFields';
 import { DynBadge } from './DynamicTradeTag';
 import StrategyCopilot from './StrategyCopilot';
@@ -93,6 +94,8 @@ export default function Backtester({ onClose }) {
   const [resultId, setResultId] = useState(null);
   const [fastPath, setFastPath] = useState(saved.fastPath !== false);
   const [dynBasis, setDynBasis] = useState(saved.dynBasis || 'live');
+  const [compareOrders, setCompareOrders] = useState(!!saved.compareOrders);
+  const [limitFallback, setLimitFallback] = useState(saved.limitFallback !== false);
   const [ram, setRam] = useState(null);
   const [applyFor, setApplyFor] = useState(null);
   const [applyMode, setApplyMode] = useState('paper');
@@ -112,11 +115,11 @@ export default function Backtester({ onClose }) {
     try {
       localStorage.setItem(STATE_KEY, JSON.stringify({
         selStrats, selCoins, days, dateMode, dateFrom, dateTo, capital,
-        fee, requireAll, fastPath, execution, tab, dynBasis,
+        fee, requireAll, fastPath, execution, tab, dynBasis, compareOrders, limitFallback,
       }));
     } catch { /* ignore */ }
   }, [selStrats, selCoins, days, dateMode, dateFrom, dateTo, capital,
-    fee, requireAll, fastPath, execution, tab, dynBasis]);
+    fee, requireAll, fastPath, execution, tab, dynBasis, compareOrders, limitFallback]);
 
   // ---- Lokaler Worker: Online-Status für die Ausführungs-Auswahl ----
   useEffect(() => {
@@ -431,6 +434,7 @@ export default function Backtester({ onClose }) {
       require_all_rules: requireAll,
       use_fast_path: fastPath,
       ...(hasDynamic ? { dynamic_label_basis: dynBasis } : {}),
+      ...(compareOrders ? { compare_order_types: true, limit_fallback_market: limitFallback } : {}),
       strategy_configs: strategyConfigs,
       execution,
       ...workerField(execution, 'backtest'),
@@ -831,6 +835,16 @@ export default function Backtester({ onClose }) {
               <LabelBasisSelect value={dynBasis} onChange={setDynBasis} testId="bt-dyn-label-basis" />
             </label>
           )}
+          <label className="bt-check" title="Rechnet dieselben Signale zusätzlich als Limit-Order (Hauptergebnis = Market) und zeigt, was besser ist – inkl. Fill-Quote. Gilt für normale Strategien (dynamische nicht). Dauert etwas länger.">
+            <input type="checkbox" checked={compareOrders} onChange={e => setCompareOrders(e.target.checked)} data-testid="bt-compare-orders" />
+            Market vs. Limit vergleichen
+          </label>
+          {compareOrders && (
+            <label className="bt-check" title="Wie im Live-Handel: Limit nicht gefüllt → Market wird nachgeschoben. Aus = nicht gefüllte Limits verfallen (Trade verpasst).">
+              <input type="checkbox" checked={limitFallback} onChange={e => setLimitFallback(e.target.checked)} data-testid="bt-limit-fallback" />
+              Limit-Fallback auf Market (wie live)
+            </label>
+          )}
           <div className="bt-exec" data-testid="bt-execution-toggle">
             <span className="bt-exec-label">Ausführung</span>
             <button className={`bt-exec-btn ${execution === 'cloud' ? 'on' : ''}`}
@@ -1035,6 +1049,8 @@ export default function Backtester({ onClose }) {
                 <DynamicRegimeBreakdown breakdown={bd} testPrefix={`bt-dyn-${bd.dynamic_id}`} />
               </div>
             ))}
+
+            {result.order_compare && <OrderCompareTable data={result.order_compare} />}
 
             <div className="bt-section-title">MATRIX: WELCHE STRATEGIE PASST ZU WELCHEM COIN?</div>
             <div className="bt-table-wrap">

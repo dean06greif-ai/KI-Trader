@@ -515,6 +515,21 @@ export default function StrategyAutoTradeModal({ strategyId, strategyName, symbo
                   <option value="off">Break-Even deaktiviert</option>
                 </select>
               </div>
+              <div className="at-field" title="Market = sofortige Ausführung (Taker-Fee). Limit = Post-Only-Limit knapp am Mark (Maker-Fee, spart ca. 2/3 der Entry-Gebühr); füllt sie nicht innerhalb der Wartezeit, wird automatisch Market nachgeschoben. Ob Limit für diese Strategie besser ist: Backtester → „Market vs. Limit vergleichen“.">
+                <label>Entry-Order</label>
+                <select value={cfg.entry_order_type || 'market'} onChange={e => update('entry_order_type', e.target.value)} data-testid="sat-entry-order">
+                  <option value="market">Market (Standard)</option>
+                  <option value="limit">Limit (Maker) → Fallback Market</option>
+                </select>
+              </div>
+              {cfg.entry_order_type === 'limit' && (
+                <div className="at-field small" title="Wie lange auf den Fill der Limit-Order gewartet wird, bevor Market nachgeschoben wird.">
+                  <label>Limit-Wartezeit (s)</label>
+                  <select value={cfg.limit_wait_sec ?? 45} onChange={e => update('limit_wait_sec', Number(e.target.value))} data-testid="sat-limit-wait">
+                    {[15, 30, 45, 60, 90, 120].map(v => <option key={v} value={v}>{v}s</option>)}
+                  </select>
+                </div>
+              )}
               {cfg.be_mode === 'crv' && (
                 <div className="at-field small">
                   <label>Break-Even ab CRV (R)</label>

@@ -1801,16 +1801,18 @@ class AutoTradeManager:
             # Verifikation unsicher -> konservativ als offen behandeln
             return pending
 
-    async def _record_maker_attempt(self, kind: str):
-        """Fill-Statistik für die Auto-Aussetzung des Maker-Modus (KI-Trader)."""
+    async def _record_maker_attempt(self, kind: str, setup: Optional[str] = None):
+        """Fill-Statistik für die Auto-Aussetzung des Maker-Modus (KI-Trader),
+        zusätzlich je Setup (services/setup_order_policy.py)."""
+        att = {"ts": datetime.now(timezone.utc).isoformat(),
+               "filled": kind in ("maker", "maker_partial")}
+        push = {"attempts": {"$each": [att], "$slice": -30}}
+        if setup:
+            push[f"by_setup.{setup}"] = {"$each": [att], "$slice": -20}
         try:
             await self.db.settings.update_one(
                 {"_id": "maker_mode_stats"},
-                {"$push": {"attempts": {
-                    "$each": [{"ts": datetime.now(timezone.utc).isoformat(),
-                               "filled": kind in ("maker", "maker_partial")}],
-                    "$slice": -30}},
-                 "$inc": {"total": 1}}, upsert=True)
+                {"$push": push, "$inc": {"total": 1}}, upsert=True)
         except Exception as e:
             logger.warning(f"Maker-Statistik fehlgeschlagen: {e}")
 
@@ -2630,9 +2632,9 @@ class AutoTradeManager:
                     m = await self._maker_entry(
                         symbol, side, qty,
                         (mark if mark and mark > 0 else entry),
-                        int(signal.get("ai_maker_wait_sec") or 45), tpf, sl,
+                        int(signal.get("ai_maker_wait_sec") or cfg.get("limit_wait_sec") or 45), tpf, sl,
                         meta=entry_meta)
-                    await self._record_maker_attempt(m.get("kind"))
+                    await self._record_maker_attempt(m.get("kind"), signal.get("ai_setup"))
                     if m.get("kind") in ("maker", "maker_partial"):
                         res = m["res"]
                         order_kind = "maker"

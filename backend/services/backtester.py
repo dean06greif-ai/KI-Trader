@@ -276,7 +276,9 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
     # TP als Limit-Order (Maker-Fee) statt Trigger-Market (Taker-Fee)
     tp_fee_pct = maker_fee_pct if str(cfg.get("tp_order_type") or "").lower() == "limit" else fee_pct
     pending: Optional[Dict] = None
-    limit_expired = 0
+    limit_expired = limit_filled = limit_fallback = 0
+    # Live-Verhalten nachbilden: nicht gefüllte Limit-Order -> Market nachschieben
+    limit_fallback_market = bool(cfg.get("limit_fallback_market"))
 
     trades: List[Dict] = []
     open_t: Optional[Dict] = None
@@ -368,8 +370,16 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
                                      c_ts, c_open, c_high, c_low, c_close, c_vol)
                 open_t["entry_order"] = "limit"
                 pending = None
+                limit_filled += 1
                 continue
             if i >= pending["exp"]:
+                if limit_fallback_market:
+                    open_t = _open_trade(pending["sig"], pending["side"], c_close, i, fee_pct,
+                                         c_ts, c_open, c_high, c_low, c_close, c_vol)
+                    open_t["entry_order"] = "limit_fallback"
+                    pending = None
+                    limit_fallback += 1
+                    continue
                 pending = None
                 limit_expired += 1
 
@@ -590,6 +600,7 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
         "end_forced_trades": sum(1 for t in trades if t.get("end_forced")),
         "time_exits": sum(1 for t in trades if t.get("time_exit")),
         "limit_expired": limit_expired,
+        "limit_filled": limit_filled, "limit_fallback": limit_fallback,
         "win_rate": round(wins / decided * 100, 1) if decided else 0.0,
         "pnl": round(pnl_total, 2),
         "pnl_pct": round(pnl_total / capital * 100, 2) if capital else 0.0,
@@ -953,6 +964,13 @@ async def run_backtest(job_id: str, strategy_ids: List[str], symbols: List[str],
     dynamic_docs = dynamic_docs or {}
     dynamic_ids = [s for s in strategy_ids if registry.is_dynamic(s) or s in dynamic_docs]
     strategy_ids = [s for s in strategy_ids if s not in dynamic_ids]
+    # Market-vs-Limit-Vergleich: Hauptlauf = Market (Standard), zweiter Lauf mit
+    # denselben Signalen als Limit-Order (services/order_compare.py).
+    compare = bool(cfg.get("compare_order_types")) and bool(strategy_ids)
+    if compare:
+        cfg = {**cfg, "entry_order_type": "market"}
+        strategy_configs = {sid: {**(strategy_configs.get(sid) or {}), "entry_order_type": "market"}
+                            for sid in set(strategy_ids) | set(strategy_configs)}
 
     # should_stop mit Pause-Unterstützung (services/job_control.py)
     cancelled = job_control.stop_check(job)
@@ -984,6 +1002,18 @@ async def run_backtest(job_id: str, strategy_ids: List[str], symbols: List[str],
                                                registry, settings, strategy_configs,
                                                default_timeframe, start_ms, end_ms,
                                                cancelled)
+        order_compare = None
+        if compare:
+            from services import order_compare as oc
+            job["phase"] = "Vergleich: dieselben Signale als Limit-Order ..."
+            lim_cfg = {**cfg, "entry_order_type": "limit"}
+            lim_scfg = {sid: {**c, "entry_order_type": "limit"} for sid, c in strategy_configs.items()}
+            lim_pairs = (await _simulate_all_sequential(
+                job, strategy_ids, symbols, days, lim_cfg, registry, settings, lim_scfg,
+                default_timeframe, start_ms, end_ms, cancelled))[0]
+            order_compare = oc.build([r for r in per_pair if r["strategy_id"] in strategy_ids],
+                                     lim_pairs, float(cfg.get("max_capital", 100.0)) or 100.0,
+                                     bool(cfg.get("limit_fallback_market")))
         dynamic_breakdown: Dict[str, Dict] = {}
         if dynamic_ids:
             from services import dynamic_backtest
@@ -1073,6 +1103,8 @@ async def run_backtest(job_id: str, strategy_ids: List[str], symbols: List[str],
         }
         if dynamic_breakdown:
             result["dynamic_breakdown"] = dynamic_breakdown
+        if order_compare:
+            result["order_compare"] = order_compare
         # Nicht auswertbare Regeln (z.B. KI-Strategie mit unbekanntem Indikator)
         # sichtbar machen – sonst bleibt "überall 0" unerklärt.
         warnings = []
