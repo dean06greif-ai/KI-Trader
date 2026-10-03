@@ -230,3 +230,23 @@ Nutzer-Wunsch (wörtlich, gekürzt): "Autopilot Verlauf … da sind nur neue dri
 - Last-Messung lokal mit KI-Keys (ohne Börsen-/Telegram-Keys, lokale DB): KI-Schleifen blockieren den Server nicht; einzige Blockade 2,6 s beim Start (ai_ml_lab._restore_model). Keys danach wieder entfernt.
 - Tests: `tests/test_workbench_extended_and_local_bt.py`; iteration_48 grün.
 
+
+## Verbesserungen 03.10.2026 (Branch conflict_021026_1550)
+Anforderung: Zusatz-Tests (DD/Monte-Carlo/Stress/Konstanz) für dynamische Strategien prüfen/ergänzen,
+500-Iterationen-Limit beheben, Werkbank lädt am Ende trotz lokalem Worker Assets auf dem Server
+(Kerzen-Cache voll), KI-Trader-Setups aus dem Backtester in eigenes „KI-Trader-Lab“ (Menü-Reihenfolge
+Backtester · Strategie-Optimizer · Regime-Lab · KI-Trader-Lab · Nacht-Serie).
+- `core/search_limits.py`: eine Quelle für Iterations-Grenzen (Cloud 2000 / Lokal 20000, Env
+  SEARCH_MAX_ITERATIONS_CLOUD/LOCAL); optimizer, regime_opt, dynamic_workbench nutzen sie; Worker setzt
+  KI_LOCAL_WORKER=1. Frontend-Spiegel `constants/searchLimits.js` (Test prüft Gleichstand).
+- Werkbank: Ergebnis-Backtest bei lokaler Ausführung NIE mehr still in der Cloud (vorher Fallback bei
+  Worker < 1.20/offline -> alle Assets in den Server-Cache). Jetzt klarer Hinweis, Backtest übersprungen.
+- KI Closed-Loop: Optimizer-Lauf nutzt einen freien lokalen Worker (prefer_local, Standard an).
+- `services/dynamic_robustness.py`: Monte-Carlo, Kosten-Stress, Konstanz, DD-Filter auf dem
+  Ergebnis-Backtest der fertigen dynamischen Strategie (rein rechnerisch, kein Kerzen-Laden), je Regime als Info.
+  DD-Filter optional auch in der Suche je Regime (regime_opt-Ranking, candidate_rank). UI: Zeile
+  „Zusatz-Tests“ + Ergebnis-Box. Alles standardmäßig aus (unverändertes Verhalten).
+- Frontend: `AITraderLab.js` (Overlay um AITraderSeeding), Backtester ohne Reiter.
+- Tests: `backend/tests/test_improvements_0310.py` (18). Unit-Suite vs. Original: identische Alt-Fehler, keine neuen.
+  Testing-Agent iteration_50: Backend+Frontend 100 %. `CI=true yarn build` grün.
+- Backlog: Zusatz-Tests auch im Backtester für dynamische Strategien; Robustheits-Ergebnis in Release-Gate einbeziehen.
