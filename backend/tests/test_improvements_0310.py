@@ -201,3 +201,48 @@ def test_tools_menu_order_and_backtester_tab_removed():
 def test_worker_sets_local_marker():
     src = (ROOT / "local_worker/worker.py").read_text()
     assert 'os.environ.setdefault("KI_LOCAL_WORKER", "1")' in src
+
+
+# ---------------- Copilot: Kontext dynamischer Strategien ----------------
+def test_copilot_dynamic_strategy_text_full_mapping():
+    from services import copilot_dynamic_context as cdc
+    doc = {"id": "dyn_x", "name": "Dyn X", "timeframe": "1h", "symbols": ["BTCUSDT", "ETHUSDT"],
+           "settings": {"analysis_id": "a1", "skipped_regimes": [2], "confidence_min": 70},
+           "verdict": {"dynamic_better": True}}
+    regimes = [{"id": 0, "label": "Aufwärtstrend", "traded": True, "strategy_id": "ema",
+                "strategy_name": "EMA Cross", "strategy_params": {"fast": 9}, "trade_params": {"sl": 1.5}},
+               {"id": 2, "label": "Seitwärts", "traded": False}]
+    perf = {"regimes": [{"regime": 0, "live": {"trades": 4, "pnl": 12.5}, "verdict": {"text": "ok"}}],
+            "total": {"trades": 4, "pnl": 12.5}, "unknown_regime_trades": 0}
+    txt = cdc.strategy_text(doc, regimes, {"BTCUSDT": {"label": "Aufwärtstrend", "confidence": 81}},
+                            "validated", perf)
+    for frag in ("Dyn X [dyn_x]", "Status validated", "EMA Cross [ema]", '"fast": 9', '"sl": 1.5',
+                 "R2 Seitwärts: NICHT HANDELN (Verlust im Walk-Forward)", "BTCUSDT: Aufwärtstrend (81 %)",
+                 "Live/Paper: trades=4, pnl=12.5", "dynamic_better"):
+        assert frag in txt, frag
+
+
+def test_copilot_workbench_text_includes_result_and_checks():
+    from services import copilot_dynamic_context as cdc
+    job = {"id": "wb_1", "kind": "refine", "status": "done", "round": 3, "progress": 100,
+           "params": {"iterations": 800, "execution": "local", "robustness": {"monte_carlo": {"enabled": True}}},
+           "regimes": {"0": {"label": "Up", "score": 1.2, "pnl": 30}},
+           "result": {"dynamic_id": "dyn_new", "walkforward": {"verdict": {"dynamic_better": False}},
+                      "backtest": {"total": {"trades": 10, "pnl": 5},
+                                   "regimes": [{"label": "Up", "traded": True, "metrics": {"pnl": 5}}],
+                                   "robustness": {"passed": False, "checks": [
+                                       {"label": "Monte-Carlo", "passed": False, "detail": "p95 hoch"}]}}}}
+    txt = cdc.workbench_text(job)
+    for frag in ("Status done", '"iterations": 800', "Up", "dynamic_better", "trades=10, pnl=5",
+                 "Zusatz-Tests: NICHT bestanden", "Monte-Carlo: ✗ p95 hoch", "dyn_new"):
+        assert frag in txt, frag
+    assert cdc.workbench_text(None) == ""
+
+
+def test_copilot_context_block_wires_dynamic_context():
+    src = (ROOT / "backend/services/strategy_copilot.py").read_text()
+    assert "copilot_dynamic_context.build_block" in src and "DYNAMISCHE\n  STRATEGIEN" in src
+    opt = (ROOT / "frontend/src/components/Optimizer.js").read_text()
+    assert "dynamic_job_id: wbCtxRef.current.job_id" in opt
+    bt = (ROOT / "frontend/src/components/Backtester.js").read_text()
+    assert "dynamic_ids: selStrats.filter" in bt

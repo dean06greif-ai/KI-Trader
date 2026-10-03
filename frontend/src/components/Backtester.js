@@ -1108,6 +1108,7 @@ export default function Backtester({ onClose }) {
             return n;
           }}
           getContext={() => ({
+            dynamic_ids: selStrats.filter(id => String(id).startsWith('dyn_')),
             settings: {
               strategies: selStrats, coins: selCoins,
               days: dateMode === 'days' ? days : null,

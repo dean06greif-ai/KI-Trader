@@ -279,6 +279,11 @@ DEIN WISSEN ÜBER DIE SUCH-MODI (wann was empfehlen):
   verliert. Leichtere Alternative: der Marktphasen-Filter im
   Auto-Trade-Setup der Strategie (regime_filter_enabled) blockiert neue Trades
   in gewählten Phasen (z.B. Seitwärts) komplett.
+  Zu bestehenden dynamischen Strategien nutzt du den Block DYNAMISCHE
+  STRATEGIEN (Regime -> Strategie/Parameter/Trade-Werte, nicht gehandelte
+  Regime, Walk-Forward-Urteil, aktuelles Live-Regime, Live/Paper je Regime) und
+  für die Werkbank die Blöcke DYNAMIK-WERKBANK (Einstellungen, Lauf, Ergebnis-
+  Backtest, Zusatz-Tests). Erfinde dort nichts – fehlt ein Block, sag es.
 Empfiehl immer Walk-Forward/Robustheits-Checks, warne vor Overfitting
 (zu viele Regeln, zu wenig Trades, zu kurzer Zeitraum).
 
@@ -802,6 +807,16 @@ class StrategyCopilot:
                              + overview)
         except Exception as e:
             logger.debug(f"Copilot: Strategie-Übersicht nicht verfügbar: {e}")
+
+        # Dynamische Strategien + Dynamik-Werkbank vollständig (Aufbau je Regime,
+        # Live-Regime, Ergebnisse, Werkbank-Lauf) – services/copilot_dynamic_context
+        try:
+            from services import copilot_dynamic_context
+            dyn_block = await copilot_dynamic_context.build_block(self._db(), registry, ctx or {})
+            if dyn_block:
+                parts.append(dyn_block)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Copilot: Dynamik-Kontext nicht verfügbar: {e}")
 
         sid = (ctx or {}).get("editing_strategy_id") or (ctx or {}).get("strategy_id")
         if sid:

@@ -203,6 +203,9 @@ export default function Optimizer({ onClose }) {
   const [lwOnline, setLwOnline] = useState(false);
   const [showLW, setShowLW] = useState(false);
   const pollRef = useRef(null);
+  // Dynamik-Werkbank-Stand für den Copilot (Einstellungen + laufender/letzter Lauf)
+  const wbCtxRef = useRef(null);
+  const setWbContext = useCallback((c) => { wbCtxRef.current = c; }, []);
 
   // ---- QoL: Auswahl lokal merken (bleibt beim Schließen/Neuöffnen erhalten) ----
   useEffect(() => {
@@ -775,7 +778,7 @@ export default function Optimizer({ onClose }) {
           ))}
         </div>
 
-        {mode === 'dynamic' && <DynamicWorkbench lwOnline={lwOnline} onManageLocal={() => setShowLW(true)} />}
+        {mode === 'dynamic' && <DynamicWorkbench lwOnline={lwOnline} onManageLocal={() => setShowLW(true)} onContext={setWbContext} />}
 
         {mode !== 'dynamic' && (<>
         <div className="opt-setup">
@@ -1299,6 +1302,11 @@ export default function Optimizer({ onClose }) {
           onApplySettings={applyCopilotSettings}
           getContext={() => ({
             strategy_id: selStrategy || baseStrategy || null,
+            ...(mode === 'dynamic' && wbCtxRef.current ? {
+              workbench: wbCtxRef.current,
+              dynamic_job_id: wbCtxRef.current.job_id,
+              dynamic_ids: [wbCtxRef.current.tab === 'refine' ? wbCtxRef.current.selection?.refine?.source : null].filter(Boolean),
+            } : {}),
             settings: {
               mode, strategy_id: selStrategy || null, base_strategy_id: baseStrategy || null,
               coins: selCoins, days, timeframe, objective, iterations,

@@ -72,7 +72,7 @@ function useWorkbenchJob() {
   return { job, setJob, poll };
 }
 
-export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
+export default function DynamicWorkbench({ lwOnline, onManageLocal, onContext }) {
   const saved = useRef(loadState()).current;
   const [tab, setTab] = useState(TABS.some(t => t.id === saved.tab) ? saved.tab : 'refine');
   const [sel, setSel] = useState({ ...DEFAULT_SEL, ...(saved.sel || {}) });
@@ -87,6 +87,11 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal }) {
   useEffect(() => {
     localStorage.setItem(STATE_KEY, JSON.stringify({ tab, sel, opts, optFlags, indicators }));
   }, [tab, sel, opts, optFlags, indicators]);
+
+  // Stand für den Strategie-Copilot (Backend lädt Lauf/Strategien selbst nach)
+  useEffect(() => {
+    if (onContext) onContext({ tab, selection: sel, settings: opts, opt_groups: optFlags, job_id: job?.id || null });
+  }, [onContext, tab, sel, opts, optFlags, job?.id]);
 
   useEffect(() => {
     fetch(`${API_URL}/api/strategies`).then(r => r.json()).then(d => {

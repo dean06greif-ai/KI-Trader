@@ -250,3 +250,9 @@ Backtester · Strategie-Optimizer · Regime-Lab · KI-Trader-Lab · Nacht-Serie)
 - Tests: `backend/tests/test_improvements_0310.py` (18). Unit-Suite vs. Original: identische Alt-Fehler, keine neuen.
   Testing-Agent iteration_50: Backend+Frontend 100 %. `CI=true yarn build` grün.
 - Backlog: Zusatz-Tests auch im Backtester für dynamische Strategien; Robustheits-Ergebnis in Release-Gate einbeziehen.
+- 03.10.2026 (2): Strategie-Copilot sieht dynamische Strategien vollständig: neues
+  `services/copilot_dynamic_context.py` (Regime -> Strategie/Parameter/Trade-Werte, nicht gehandelte Regime,
+  Wechsel-Verhalten, Release-Status, WF-Urteil, Live-Regime, Live/Paper je Regime) + Werkbank-Einstellungen
+  und Lauf/Ergebnis (inkl. Zusatz-Tests). Optimizer/Backtester senden workbench, dynamic_job_id, dynamic_ids.
+  Vorher: nur 1 Zeile je dyn. Strategie + veraltete Legacy-Dynamik-Einstellungen. E2E mit echtem LLM geprüft.
+  Backlog: Copilot-Vorschläge (proposal) für die Werkbank-Einstellungen (heute noch Legacy-Schema).
