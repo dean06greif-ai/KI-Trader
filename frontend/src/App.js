@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 import './components/extra.css';
 import Header from './components/Header';
@@ -9,17 +9,8 @@ import { useActiveSignals } from './hooks/useActiveSignals';
 import StrategyTabs from './components/StrategyTabs';
 import PerformanceAnalytics from './components/PerformanceAnalytics';
 import AlertModal from './components/AlertModal';
-import SettingsPanel from './components/SettingsPanel';
-import StrategyBuilder from './components/StrategyBuilder';
-import StrategyAutoTradeModal from './components/StrategyAutoTradeModal';
-import AITradingPanel from './components/AITradingPanel';
-import StrategyComparison from './components/StrategyComparison';
-import Backtester from './components/Backtester';
-import Optimizer from './components/Optimizer';
-import RegimeLab from './components/RegimeLab';
-import AITraderLab from './components/AITraderLab';
-import JobSeriesPanel from './components/JobSeriesPanel';
-import LiquidityPanel from './components/LiquidityPanel';
+import './lazyPanelStyles';
+import lazyWithReload from './lib/lazyWithReload';
 import ErrorBoundary from './components/ErrorBoundary';
 import AdminLogin from './components/AdminLogin';
 // mobile.css MUST be imported LAST so its media queries override
@@ -29,6 +20,19 @@ import { Toaster } from 'sonner';
 import { toast } from './lib/toast';
 import { isAdmin as isAdminFn, clearToken, authHeaders } from './auth';
 import { initTableDragScroll } from './lib/tableDragScroll';
+
+// Große Fenster erst beim Öffnen laden (schnellerer Seitenstart, kleineres Haupt-Bundle)
+const SettingsPanel = lazyWithReload(() => import('./components/SettingsPanel'));
+const StrategyBuilder = lazyWithReload(() => import('./components/StrategyBuilder'));
+const StrategyAutoTradeModal = lazyWithReload(() => import('./components/StrategyAutoTradeModal'));
+const AITradingPanel = lazyWithReload(() => import('./components/AITradingPanel'));
+const StrategyComparison = lazyWithReload(() => import('./components/StrategyComparison'));
+const Backtester = lazyWithReload(() => import('./components/Backtester'));
+const Optimizer = lazyWithReload(() => import('./components/Optimizer'));
+const RegimeLab = lazyWithReload(() => import('./components/RegimeLab'));
+const AITraderLab = lazyWithReload(() => import('./components/AITraderLab'));
+const JobSeriesPanel = lazyWithReload(() => import('./components/JobSeriesPanel'));
+const LiquidityPanel = lazyWithReload(() => import('./components/LiquidityPanel'));
 
 // Desktop: breite Tabellen (Backtester/Seeding/Edge-Register) wie am Handy
 // greifen & seitlich ziehen – ein delegierter Listener für alle Tabellen.
@@ -410,6 +414,7 @@ function App() {
       {showAlert && currentAlert && (
         <AlertModal signal={currentAlert} onClose={() => setShowAlert(false)} />
       )}
+      <Suspense fallback={<div className="lazy-panel-loading" data-testid="lazy-panel-loading">Lade …</div>}>
       {showSettings && (
         <SettingsPanel
           onClose={() => { setShowSettings(false); loadStrategies(); }}
@@ -483,6 +488,7 @@ function App() {
       {showLiquidity && (
         <LiquidityPanel symbol={selectedCoin} onClose={() => setShowLiquidity(false)} />
       )}
+      </Suspense>
     </div>
     </ErrorBoundary>
   );

@@ -264,10 +264,20 @@ def test_branding_without_mm_suffix_and_icons_present():
     assert "(MM)" not in (pub / "manifest.json").read_text()
     assert "(MM)" not in (ROOT / "frontend/src/components/Header.js").read_text()
     for f in ("favicon.svg", "favicon.ico", "apple-touch-icon.png", "icon-192.png", "icon-512.png",
-              "icon-maskable-512.png", "brand/logo-monogram.svg", "brand/logo-candles.svg", "brand/logo-bidask.svg"):
+              "icon-maskable-512.png"):
         assert (pub / f).exists(), f
 
 
 def test_frontend_yarn_lock_committed():
     gi = (ROOT / ".gitignore").read_text().splitlines()
     assert "frontend/yarn.lock" not in gi and (ROOT / "frontend/yarn.lock").exists()
+
+
+def test_big_panels_lazy_loaded_with_styles_eager():
+    app = (ROOT / "frontend/src/App.js").read_text()
+    for c in ("Backtester", "Optimizer", "RegimeLab", "AITraderLab", "JobSeriesPanel", "SettingsPanel"):
+        assert f"const {c} = lazyWithReload(() => import('./components/{c}'))" in app, c
+        assert f"import {c} from" not in app, c
+    assert "<Suspense" in app and "import './lazyPanelStyles';" in app
+    styles = (ROOT / "frontend/src/lazyPanelStyles.js").read_text()
+    assert "Backtester.css" in styles and "Optimizer.css" in styles

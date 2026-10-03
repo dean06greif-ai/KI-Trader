@@ -261,3 +261,4 @@ Backtester · Strategie-Optimizer · Regime-Lab · KI-Trader-Lab · Nacht-Serie)
   (Monogramm aktiv; Varianten candles/bidask in public/brand, Wechsel via scripts/make_icons.py), Header nutzt Logo.
   Deploy: frontend/yarn.lock wird committet (Render: kein npm-Doppel-Install, reproduzierbar).
   „No open ports detected“ bewusst gelassen (alter Render-Container läuft weiter bis Bootstrap fertig = kein Scan-Ausfall).
+- 03.10.2026 (4): Logo/Header-Icon zurück auf Original. Große Fenster per React.lazy (lib/lazyWithReload, CSS bleibt via lazyPanelStyles.js im Haupt-Bundle): main.js 656 -> 211 kB gzip.
