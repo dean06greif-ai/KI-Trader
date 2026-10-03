@@ -262,3 +262,25 @@ Backtester · Strategie-Optimizer · Regime-Lab · KI-Trader-Lab · Nacht-Serie)
   Deploy: frontend/yarn.lock wird committet (Render: kein npm-Doppel-Install, reproduzierbar).
   „No open ports detected“ bewusst gelassen (alter Render-Container läuft weiter bis Bootstrap fertig = kein Scan-Ausfall).
 - 03.10.2026 (4): Logo/Header-Icon zurück auf Original. Große Fenster per React.lazy (lib/lazyWithReload, CSS bleibt via lazyPanelStyles.js im Haupt-Bundle): main.js 656 -> 211 kB gzip.
+
+## Iteration 03.10.2026 (b) – Branch conflict_031026_1019
+Anforderung: Worker-Log „HTTP 502 auf Fortschritt“ prüfen; Backtest/KI-Trader-Lab bis 3 Jahre; neue KI-Modelle
+(free+paid) prüfen, sehr gute automatisch in den Katalog + dauerhaftes Banner im KI-Team mit Erklärung der Team-KI;
+veraltete Modelle aus dem Katalog entfernen; Autopilot-Ampel in den Farben der Erkennungsqualität; Frage Score↑/Note↓;
+neues Website-Icon mit MM-Signatur.
+- Worker 502: Prod-DB (lesend) zeigt Job 3cf6d7f85df8 sauber beendet (stopped_by_user nach 9,1 h, Ergebnis gespeichert)
+  -> kurzer Render-Proxy-Aussetzer, kein Datenverlust. Worker 1.20.1: lesbarer Grund (http_reason), Log
+  „Server wieder erreichbar“ und „Job fertig – Ergebnis hochgeladen“.
+- Zeiträume: setup_backtest MAX_DAYS 1095 + RAM-Schutz je Klasse (class_days, Env SETUP_BACKTEST_MAX_SYMBOL_DAYS,
+  Standard 13x365), Dukascopy-Backup/IBKR/Bitunix-Deckel 1095; UI-Optionen 540/730/1095 (KI-Trader-Lab), 730/1095 (Backtester/Optimizer).
+- KI-Modelle: services/ai_model_rating.py (Stufe top/good/low), ai_model_watch._auto_adopt (top + Kurztest -> automatisch,
+  bezahlte nie als Fallback), ai_model_news.py (Erklärung via Rolle supervisor, Regel-Fallback), Katalog-Endpoints
+  remove/restore/announcements dismiss, ai_providers.REMOVED_MODELS/catalog(); Supervisor sieht aktiven Katalog + Neuheiten.
+  Groq qwen3.6-27b (tot) -> qwen3.8-27b. UI: AIModelNewsBanner.js, AIModelCatalog.js.
+- Autopilot: grade_compare/grade_regressed – keine Auto-Übernahme, wenn die Note sinkt (Banner + Verlauf + Kalibrierungs-Verlauf).
+- Ampel: GradeBadge nutzt .rl-grade-badge (gleiche Farben/Verlauf wie RegimeQualityCard).
+- Icons: scripts/make_icons.py (SVG-Quelle -> favicon/PWA-PNGs), Cache-Buster v=5. Header-Icon unverändert.
+- Tests: backend/tests/test_improvements_0310b.py (19), 2 Alt-Tests auf neue Deckel angepasst, jest +1; Unit-Suite vs. Original
+  ohne neue Fehler; Testing-Agent iteration_51: 100 %.
+- Backlog: P1 KI-Trader-Lab lokal auf dem Worker rechnen (dann 3 Jahre auch für Krypto ohne Cloud-RAM-Grenze);
+  P2 Modell-Bewertung um echte Benchmark-Daten (z.B. OpenRouter-Rankings) ergänzen.
