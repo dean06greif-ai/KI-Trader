@@ -1,0 +1,34 @@
+{
+  "summary": "Iter48 covers the two user-facing fixes: (A) Dynamik-Werkbank 'Zeitraum' can now exceed the analysis period (720 days for ra_e866c510) when label_basis=Live-Sicht (options labelled '· über Analyse hinaus (Live-Sicht)'); switching to Rückblick (ideale Phasen) hides those longer options, shows the dwb-days-retro-locked hint, and disables dwb-start. (B) services/dynamic_workbench._local_result_backtest runs the final 'Ergebnis-Backtest' on the local worker when execution=local and the worker is online + supports DYNAMIC_BACKTEST_MIN_VERSION; otherwise returns None so _result_backtest falls back to the cloud path. Backend focused unit tests (test_workbench_extended_and_local_bt.py, test_grade_unify_and_dyn_basis.py, test_dynamic_backup.py, test_autopilot_history_import.py, test_autopilot_history_reference.py): 39/39 PASS. Broader regression `-m 'unit and not live' -k 'regime_opt or dynamic or workbench or backtest'` (excluding tests/test_stale_regime_api.py which errors at collection due to missing ADMIN_PASSWORD env — pre-existing, unrelated): 194 passed, 2 skipped, 2 FAILED (tests/analysis_regression/test_ap01_dynamic_apply.py::TestTransitionScope — the exact pre-existing failures flagged in iter47 and the review_request, still red at HEAD). Frontend (Chromium 1920x1080): logged in via admin-lock-button (Admin/admin), opened Optimizer -> Dynamische Strategie -> dwb-tab-refine -> dwb-dynamic-select=dyn_bf7d3517 (analysis = 720 days). dwb-days contained 15 options > 720 labelled '· über Analyse hinaus (Live-Sicht)'. Choosing 900 showed dwb-days-extended='+180 Tage vor der Analyse, live eingeteilt'. Switching dwb-label-basis to final: dwb-days-retro-locked visible with correct 720-day text, dwb-start.disabled=true, and the longer options disappear (list truncates to <=720). Regression: dpe-toggle-phases is present in the refine tab (iter47 feature). No long jobs started; no TEST_ data created.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests/analysis_regression/test_ap01_dynamic_apply.py::TestTransitionScope::{test_close_query_is_scoped_to_own_strategies_and_excludes_manual, test_multi_mapping_strategies_included}", "issue": "Pre-existing failure (also flagged in review_request + iter47): test expects $in: ['meanrev','nnfx','trend'] but dynamic_live.transition_close_query also includes the dynamic doc id 'd1'. Not caused by iter48 changes."},
+      {"endpoint": "tests/test_stale_regime_api.py", "issue": "Collection error: KeyError 'ADMIN_PASSWORD' (reads os.environ[...] at import time). Pre-existing; test is skipped via --ignore when running broad regression."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_workbench_extended_and_local_bt.py",
+    "/app/test_reports/pytest/iter48_focused.xml",
+    "/app/test_reports/pytest/iter48_broad.xml"
+  ],
+  "action_items": [
+    "Pre-existing TestTransitionScope test vs implementation drift — unchanged from iter47; main agent to decide if 'd1' should be included in transition_close_query scope or if the test fixture is stale.",
+    "Optional: guard tests/test_stale_regime_api.py against missing ADMIN_PASSWORD env (use os.environ.get with pytest.skip) so broad `-m unit` runs don't abort collection."
+  ],
+  "critical_code_review_comments": [
+    "services/regime_opt.py extra_days_for correctly computes delta over analysis days; the guard at line 339 raises the expected RuntimeError 'Rückblick (ideale Phasen) gibt es nur im Zeitraum der Analyse' for non-live label_basis with extra>0 — matches UI copy exactly.",
+    "_extended_live_segments loads candles strictly before analysis (end_ts = start_ts - 1 per symbol), applies causal phase_labels, and masks labels before `cut` so the warmup region does not leak into segments; segments are prepended to the analysis-period segments so the holdout at the end stays untouched. Good.",
+    "_EXT_SLOT is correctly cleared alongside _HISTORY_SLOT in clear_history_slot via a reuse_key filter — avoids memory bloat across runs.",
+    "services/dynamic_workbench._result_backtest routes through _local_result_backtest first; returning None on execution!=local, worker offline, or worker below DYNAMIC_BACKTEST_MIN_VERSION cleanly falls back to the cloud dynamic_backtest.simulate_dynamic path. dyn_doc strips volatile keys (last_state/runtime_state/pending_switch) before enqueueing — avoids resending transient state. Clean implementation.",
+    "Frontend DynamicWorkbench.retroLocked = (label_basis!='live') && analysis.days && days>analysis.days; canStart depends on !retroLocked — exactly matches the backend guard. dayOpts in CoreSettings filters options above maxDays unless live — list and lock state stay in sync."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% focused (39/39); 194/196 broader (2 pre-existing unrelated)", "frontend": "100% of iter48 UI invariants + iter47 regression"},
+  "test_credentials": "Admin / admin",
+  "seed_data_creation": "None. No workbench/optimizer/backtest/autopilot jobs started.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Admin login is via header icon [data-testid=admin-lock-button] -> inputs admin-username/admin-password -> Enter. The Dynamik-Werkbank refine flow: tools-menu-button -> tools-menu-optimizer -> click 'Dynamische Strategie' card -> dwb-tab-refine -> dwb-dynamic-select (value 'dyn_bf7d3517' maps to analysis ra_e866c510 = 720 days). Longer-than-analysis Zeitraum options render only when dwb-label-basis=live; selecting one of them exposes dwb-days-extended, switching to final exposes dwb-days-retro-locked and disables dwb-start. The dwb-days select has 29 options total, 15 of which are > 720 days (900..5400). test_stale_regime_api.py cannot be collected without ADMIN_PASSWORD env — use --ignore=tests/test_stale_regime_api.py for broad runs."
+}

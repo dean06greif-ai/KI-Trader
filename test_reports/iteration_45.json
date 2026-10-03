@@ -1,0 +1,24 @@
+{
+  "summary": "Iter45 verifies the new 'Bestehende optimieren' sub-tab refine flow in Optimizer → Dynamische Strategie. Backend: 17/17 unit tests in test_workbench_phases_1010.py all pass (phase_variant, carry_overrides, after_refine, lineage, phase_history, variant_from, roundtrip). New API suite test_iter45_phase_history_api.py (6/6) covers GET /api/dynamic/dyn_seed1/phase-history?regime_id=0|1 (variants list, newest first, first current:true, deduplicated), POST /api/dynamic/dyn_seed1/phase action=variant restore (bumps version from 10→11, 'reason' set, source_dynamic_id outside lineage → 400, missing confirm → 400, other phases unchanged), and GET /phases contains refined_from, refined_from_name, per-phase metrics keys. Frontend (Chromium 1920x1080 + 390x844): Admin login via /api/auth/login, Tools → tools-menu-button → tools-menu-optimizer → opt-mode-dynamic shown. dwb-tabs is a teal segmented bar with dwb-tab-refine/create/discover; active tab gets class 'dwb-subtab on'; dwb-tab-desc updates when switching. Seed dyn_seed1 selected → three dpe-row-{0,1,2} rows each exposing dpe-current/optimized/opt/only/newrules/history + apply. Sync between dpe-opt-0 (checkbox) and dwb-regime-0 (toggle button 'opt-chip on') verified both directions. dpe-only-1 sets ONLY regime 1 and dwb-mode='params'; dpe-newrules-2 sets ONLY regime 2 and dwb-mode='discovery'. dpe-history-1 opens dpv-panel-1 with dpv-variant-1-0 showing 'aktuell' badge; dpv-back-1-{i} opens dpv-confirm-1-{i} with dpv-confirm-yes/no (cancel closes). Regression: dvh-toggle and dwb-start still render. Mobile 390px: tabs wrap, docW=winW=390 (no horizontal overflow).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter45_phase_history_api.py",
+    "/app/backend/tests/test_workbench_phases_1010.py",
+    "/app/test_reports/pytest/iter45_api.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "DynamicPhaseVariants.js fetches without authHeaders(); fine because the endpoint is read-only, but inconsistent with other admin-only tooling if auth is later tightened.",
+    "DynamicWorkbench.focusPhase relies on scrollIntoView by data-testid='dwb-start' – OK, but if the button is not yet in DOM due to canStart gating the smooth scroll silently no-ops; works today because start button is always rendered.",
+    "dynamic_versions.phase_history dedupes by _variant_key, so logically identical variants from different lineage ancestors collapse to one entry – intentional per spec, good.",
+    "Routers/dynamic.py dynamic_phase_change passes body.get('version') directly into variant_from without type coercion; variant_from treats None as 'latest' – acceptable, but a type error for malformed inputs returns 500 instead of 400 (minor)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter45_phase_history_api.py"],
+  "success_rate": {"backend": "100% (17/17 unit + 6/6 API)", "frontend": "100% of covered flows"},
+  "test_credentials": "Admin / PreviewAdmin123! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "No new seeds. The variant-restore API test bumped dyn_seed1 version to 11 (previously v10 per iter44).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "dyn_seed1 is now at v11 (was v10). phase-history for regime 1 currently returns 2 variants (current + one historical). The dwb-regime-{id} element is a BUTTON with class 'opt-chip on' (NOT a native checkbox) – use el.className.includes('on') or aria to detect checked state. tools-menu-optimizer requires clicking tools-menu-button first to open the Tools modal."
+}
