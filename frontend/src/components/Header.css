@@ -35,6 +35,12 @@
   flex-shrink: 0;
 }
 
+.brand-logo {
+  flex-shrink: 0;
+  border-radius: 7px;
+  display: block;
+}
+
 .header-title {
   font-size: 18px;
   font-weight: 900;

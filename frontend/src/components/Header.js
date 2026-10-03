@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Clock, Gear, ChartLineUp, Wallet, TrendUp, TrendDown, Lock, LockOpen, Trophy, ClockCounterClockwise, MagicWand, ChartScatter, Drop, BellRinging, Flask, MoonStars, Robot } from '@phosphor-icons/react';
+import { Clock, Gear, Wallet, TrendUp, TrendDown, Lock, LockOpen, Trophy, ClockCounterClockwise, MagicWand, ChartScatter, Drop, BellRinging, Flask, MoonStars, Robot } from '@phosphor-icons/react';
 import { authHeaders } from '../auth';
 import CapitalModal from './CapitalModal';
 import SafeOverlay from './SafeOverlay';
@@ -631,10 +631,10 @@ const Header = ({ sessionActive, onSettingsClick, currentSession, customSessions
     <header className="header" data-testid="main-header">
       <div className="header-left">
         <div className="header-brand">
-          <ChartLineUp size={28} weight="bold" className="brand-icon" />
+          <img src={`${process.env.PUBLIC_URL}/favicon.svg?v=3`} alt="" width={30} height={30} className="brand-logo" data-testid="header-brand-logo" />
           <div className="header-brand-text">
             <div className="header-title-row">
-              <h1 className="header-title" title="MarketMaker (MM)" data-testid="header-brand-title">
+              <h1 className="header-title" title="MarketMaker" data-testid="header-brand-title">
                 <span className="header-title-full">MARKETMAKER</span>
                 <span className="header-title-short" aria-hidden="true">MM</span>
               </h1>

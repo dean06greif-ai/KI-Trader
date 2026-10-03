@@ -1,6 +1,6 @@
 {
   "short_name": "MM",
-  "name": "MarketMaker (MM) – Multi-Asset Daytrading",
+  "name": "MarketMaker – Multi-Asset Daytrading",
   "icons": [
     { "src": "favicon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
     { "src": "icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },

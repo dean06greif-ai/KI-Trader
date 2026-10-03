@@ -110,7 +110,7 @@ backend/.env
 frontend/.env
 .ruff_cache/
 /yarn.lock
-frontend/yarn.lock
+# frontend/yarn.lock wird committet: Render nutzt dann direkt yarn (kein npm-Doppel-Install, reproduzierbare Builds)
 frontend/node_modules/.cache/default-development/8.pack
 frontend/node_modules/.cache/default-development/2.pack_
 

@@ -6,6 +6,7 @@ import { OBJECTIVES, OPT_GROUPS, DAY_OPTIONS } from '../constants/optimizerOptio
 import NumInput from './NumInput';
 import WorkerTargetSelect from './WorkerTargetSelect';
 import { maxIterations, iterationsHint } from '../constants/searchLimits';
+import { MinTradesInfo, minTradesStats } from './DynamicMinTrades';
 
 export const MODE_LABEL = { params: 'Trade- & Strategie-Parameter', combo: 'Neue Regeln + Parameter', discovery: 'Nur neue Regeln' };
 
@@ -62,22 +63,18 @@ export function AssetToggle({ symbols, selected, onChange, disabled }) {
   );
 }
 
-const TF_MIN = { m: 1, h: 60, d: 1440 };
-const tfMinutes = (tf) => { const m = /^(\d+)([mhd])$/.exec(tf || ''); return m ? Number(m[1]) * TF_MIN[m[2]] : 60; };
 
 // Grobe Plausibilität von „Min. Trades“ (gilt JE Regime): Ø Trainings-Kerzen
 // je Regime auf der Auswahl vs. geforderte Trades.
-export function MinTradesHint({ minTrades, nAssets, nRegimes, timeframe, days, trainPct }) {
-  if (!minTrades || !nAssets || !nRegimes || !days) return null;
-  const bars = Math.round(days * 1440 / tfMinutes(timeframe) * nAssets / nRegimes * (trainPct || 100) / 100);
-  const every = bars / minTrades;
-  if (every >= 15) return null;
+export function MinTradesHint({ minTrades, ...ctx }) {
+  const st = minTrades ? minTradesStats({ minTrades, ...ctx }) : null;
+  if (!st || st.every >= 15) return null;
   return (
     <div className="dyn-verdict warn" style={{ marginTop: 6 }} data-testid="dwb-min-trades-hint">
       <b>Min. Trades {minTrades} ist für diese Auswahl sehr hoch</b>
-      <div>Der Wert gilt je Regime. Mit {nAssets} Asset{nAssets === 1 ? '' : 's'} hat ein Regime im Schnitt nur ca. {bars.toLocaleString('de-DE')} Trainings-Kerzen ({timeframe}) –
-        das verlangt einen Trade alle ~{Math.max(every, 0.1).toFixed(1)} Kerzen. Viele Regime erreichen das nicht und die Suche liefert dann nichts Brauchbares.
-        Richtwert: höchstens ca. {Math.max(Math.floor(bars / 30), 1).toLocaleString('de-DE')}.</div>
+      <div>Der Wert gilt je Regime. Mit {ctx.nAssets} Asset{ctx.nAssets === 1 ? '' : 's'} hat ein Regime im Schnitt nur ca. {st.bars.toLocaleString('de-DE')} Trainings-Kerzen ({ctx.timeframe}) –
+        das verlangt einen Trade alle ~{Math.max(st.every, 0.1).toFixed(1)} Kerzen. Viele Regime erreichen das nicht und die Suche liefert dann nichts Brauchbares.
+        Richtwert: höchstens ca. {st.maxSensible.toLocaleString('de-DE')} (empfohlen ca. {st.recommended}).</div>
     </div>
   );
 }
@@ -99,7 +96,7 @@ export function StrategyMapping({ regimes, strategies, mapping, setMapping }) {
 }
 
 /** Einstellungen wie im klassischen Optimizer (Timeframe, Zeitraum, Kapital, Hebel …). */
-export function CoreSettings({ opts, set, tab, mode, source }) {
+export function CoreSettings({ opts, set, tab, mode, source, minTradesCtx }) {
   const maxDays = source?.days || 0;
   const live = (opts.label_basis || 'live') === 'live';
   const dayOpts = DAY_OPTIONS.filter(d => !maxDays || d < maxDays || live);
@@ -141,7 +138,8 @@ export function CoreSettings({ opts, set, tab, mode, source }) {
           {OBJECTIVES.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
         </select>
       </label>
-      <label className="opt-field">Min. Trades
+      <label className="opt-field">
+        <span>Min. Trades je Regime<MinTradesInfo minTrades={Number(opts.min_trades)} tab={tab} {...(minTradesCtx || {})} /></span>
         <NumInput int min={1} value={opts.min_trades} onCommit={(v) => set('min_trades', v || 1)} data-testid="dwb-min-trades" />
       </label>
       {tab !== 'create' && <>

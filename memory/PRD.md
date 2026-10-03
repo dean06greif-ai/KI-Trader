@@ -256,3 +256,8 @@ Backtester · Strategie-Optimizer · Regime-Lab · KI-Trader-Lab · Nacht-Serie)
   und Lauf/Ergebnis (inkl. Zusatz-Tests). Optimizer/Backtester senden workbench, dynamic_job_id, dynamic_ids.
   Vorher: nur 1 Zeile je dyn. Strategie + veraltete Legacy-Dynamik-Einstellungen. E2E mit echtem LLM geprüft.
   Backlog: Copilot-Vorschläge (proposal) für die Werkbank-Einstellungen (heute noch Legacy-Schema).
+- 03.10.2026 (3): Min.-Trades-Tooltip (InfoTip.js generisch, Portal; DynamicMinTrades.js mit
+  minTradesStats + Empfehlung je Auswahl, Spiegel der Backend-Regeln). Name ohne „(MM)“. Neues Logo
+  (Monogramm aktiv; Varianten candles/bidask in public/brand, Wechsel via scripts/make_icons.py), Header nutzt Logo.
+  Deploy: frontend/yarn.lock wird committet (Render: kein npm-Doppel-Install, reproduzierbar).
+  „No open ports detected“ bewusst gelassen (alter Render-Container läuft weiter bis Bootstrap fertig = kein Scan-Ausfall).

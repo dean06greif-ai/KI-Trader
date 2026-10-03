@@ -246,3 +246,28 @@ def test_copilot_context_block_wires_dynamic_context():
     assert "dynamic_job_id: wbCtxRef.current.job_id" in opt
     bt = (ROOT / "frontend/src/components/Backtester.js").read_text()
     assert "dynamic_ids: selStrats.filter" in bt
+
+
+# ---------------- 03.10 (3): Min-Trades-Tooltip, Branding, Deploy ----------------
+def test_min_trades_tooltip_mirrors_backend_rules():
+    from services import dynamic_workbench as wbm
+    js = (ROOT / "frontend/src/components/DynamicMinTrades.js").read_text()
+    assert f"MIN_TRADES_SKIP = {wbm.MIN_TRADES_SKIP}" in js
+    assert "Math.max(Math.floor((minTrades || 0) * 0.4), 3)" in js       # == dynamic_strategy min_val
+    src = (ROOT / "backend/services/regime_opt.py").read_text()
+    assert "min_val = max(int(min_trades * 0.4), 3)" in src
+
+
+def test_branding_without_mm_suffix_and_icons_present():
+    pub = ROOT / "frontend/public"
+    assert "(MM)" not in (pub / "index.html").read_text()
+    assert "(MM)" not in (pub / "manifest.json").read_text()
+    assert "(MM)" not in (ROOT / "frontend/src/components/Header.js").read_text()
+    for f in ("favicon.svg", "favicon.ico", "apple-touch-icon.png", "icon-192.png", "icon-512.png",
+              "icon-maskable-512.png", "brand/logo-monogram.svg", "brand/logo-candles.svg", "brand/logo-bidask.svg"):
+        assert (pub / f).exists(), f
+
+
+def test_frontend_yarn_lock_committed():
+    gi = (ROOT / ".gitignore").read_text().splitlines()
+    assert "frontend/yarn.lock" not in gi and (ROOT / "frontend/yarn.lock").exists()

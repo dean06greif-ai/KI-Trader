@@ -117,6 +117,11 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal, onContext })
   const symbols = selSyms.length ? selSyms : (defaultSyms.length ? defaultSyms : allSyms);
   const running = job?.status === 'running';
   const jobOnThisTab = job && job.kind === tab;
+  const minTradesCtx = analysis ? {
+    nAssets: symbols.length, nRegimes: regimes.length || 1,
+    timeframe: opts.timeframe || analysis.timeframe, days: Number(opts.days) || analysis.days,
+    trainPct: analysis.settings?.train_pct ?? 100,
+  } : null;
 
   const patchSel = (patch) => setSel(s => ({ ...s, [tab]: { ...s[tab], ...patch } }));
   const setSource = (source) => {
@@ -231,11 +236,9 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal, onContext })
         optimizeSel={cur.regimes} onToggleOptimize={toggleRegime} onFocus={focusPhase} />}
       {tab === 'refine' && dyns.length === 0 && <div className="opt-small" style={{ marginBottom: 8 }}>Noch keine dynamische Strategie aus dem Regime-Lab vorhanden – zuerst „Neu aus Strategien“ oder „Neue Strategie je Regime“ nutzen.</div>}
 
-      <CoreSettings opts={opts} set={set} tab={tab} mode={mode} source={analysis} />
+      <CoreSettings opts={opts} set={set} tab={tab} mode={mode} source={analysis} minTradesCtx={minTradesCtx} />
       {tab !== 'create' && analysis && (
-        <MinTradesHint minTrades={Number(opts.min_trades)} nAssets={symbols.length} nRegimes={regimes.length || 1}
-          timeframe={opts.timeframe || analysis.timeframe} days={Number(opts.days) || analysis.days}
-          trainPct={analysis.settings?.train_pct ?? 100} />
+        <MinTradesHint minTrades={Number(opts.min_trades)} {...minTradesCtx} />
       )}
       {tab !== 'create' && (
         <label className="opt-check" style={{ marginTop: -6 }} title="Runde für Runde weitersuchen, bis du stoppst – nur echte Verbesserungen werden übernommen">
