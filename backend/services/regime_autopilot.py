@@ -236,13 +236,24 @@ def score_metrics(m: Optional[Dict], target_min_days: float,
     """Auswahl-Score: innere Validierung + Training (Live=Final, gemischt mit
     der detektor-unabhängigen Referenz, falls vorhanden) minus Strafe für
     Ø Live-Phasen außerhalb des Sweet Spots."""
+    bd = score_breakdown(m, target_min_days, target_max_days)
+    return bd["total"] if bd else None
+
+
+def score_breakdown(m: Optional[Dict], target_min_days: float,
+                    target_max_days: float = 0.0) -> Optional[Dict]:
+    """Zerlegung des Such-Scores in seine Bausteine (rein, EINE Formel für
+    score_metrics und die Anzeige). Zeigt, warum der Score bei ~60-66 liegt:
+    Live=Final zählt nur zu 25 % (trennt kaum), die Referenz zu 75 % – bei
+    Referenz-F1 ~55-58 ergibt das ~63-66. f1_needed: nötiger Referenz-F1
+    (Training) für Score 70/80 bei sonst gleichen Bausteinen."""
     if not m:
         return None
     train = m.get("train_direction_pct")
     if train is None:
         train = m.get("direction_pct")
-    base = _half_mix(m.get("inner_direction_pct"), train)
-    if base is None:
+    live_final = _half_mix(m.get("inner_direction_pct"), train)
+    if live_final is None:
         return None
     # Referenz v2 (klassen-balanciert, ohne Holdout) bevorzugt – dann zählt sie
     # stärker, denn Live=Final ist bei allen Detektoren ~93–98 % (kaum Trennkraft).
@@ -257,15 +268,33 @@ def score_metrics(m: Optional[Dict], target_min_days: float,
             ref_train = m.get("reference_pct")
         ref = _half_mix(m.get("inner_reference_pct"), ref_train)
         weight = REFERENCE_WEIGHT
+    base = live_final
     if ref is not None:
-        base = (1.0 - weight) * base + weight * ref
+        base = (1.0 - weight) * live_final + weight * ref
     # Plan 2.5: Regime-Nutzen (NUR Trainingsteil, kein Holdout-Leck): bestätigt
     # sich die Live-Richtung danach öfter als ein Münzwurf? ±0,5 Punkte je %-Punkt
     util = m.get("utility_train_sign_hit_pct")
+    utility = 0.0
     if util is not None:
-        base += UTILITY_WEIGHT * max(min(float(util) - 50.0, 10.0), -10.0)
+        utility = UTILITY_WEIGHT * max(min(float(util) - 50.0, 10.0), -10.0)
+        base += utility
     penalty = phase_penalty_for(m, target_min_days, target_max_days)
-    return round(float(base) - penalty, 3)
+    total = round(float(base) - penalty, 3)
+    w = weight if ref is not None else 0.0
+    live_part = (1.0 - w) * float(live_final)
+
+    def f1_needed(target: float) -> Optional[float]:
+        if not w:
+            return None
+        return round((target - live_part - utility + penalty) / w, 1)
+    return {"total": total,
+            "live_final_pct": round(float(live_final), 2), "live_final_weight": round(1.0 - w, 2),
+            "live_final_points": round(live_part, 2),
+            "reference_pct": None if ref is None else round(float(ref), 2),
+            "reference_weight": round(w, 2),
+            "reference_points": None if ref is None else round(w * float(ref), 2),
+            "utility_points": round(utility, 2), "phase_penalty": round(penalty, 2),
+            "f1_needed": {"70": f1_needed(70.0), "80": f1_needed(80.0)}}
 
 
 def phase_penalty_for(m: Dict, target_min_days: float, target_max_days: float = 0.0) -> float:
@@ -1105,6 +1134,10 @@ async def run_autopilot(job_id: str, body: Dict, db):
                   # gesättigter Score, Phase außerhalb des Sweet Spots, Eingaben
                   "warnings": regime_advice.result_warnings(
                       best["metrics"], target_min_days, target_max_days),
+                  "score_breakdown": {
+                      "best": score_breakdown(best["metrics"], target_min_days, target_max_days),
+                      "baseline": score_breakdown(base_m, target_min_days, target_max_days)},
+                  "direction_edge": regime_advice.direction_edge(best["metrics"]),
                   "settings_advice": regime_advice.settings_advice(
                       best_tf, days, len(best_ctx), target_min_days, target_max_days),
                   "created_at": datetime.now(timezone.utc).isoformat()}

@@ -309,3 +309,13 @@ neues Website-Icon mit MM-Signatur.
 - Backlog: echten Börsen-SL manueller Positionen anzeigen; Aktions-Buttons für 'Manuell (Bitunix)'
   in der UI sperren/ausblenden.
 
+
+## Verbesserung 10/2026 – Regime-Score-Transparenz & Richtungs-Edge
+- `regime_autopilot.score_breakdown()` (reine Funktion, `score_metrics` nutzt sie -> Score unverändert):
+  Live=Final×0,25 + Referenz-F1×0,75 + Nutzen − Phasen-Strafe, plus nötiger F1 für Score 70/80.
+  Ergebnis-Feld `score_breakdown` {best, baseline}.
+- `regime_advice.direction_edge()`: Richtungs-Edge vorhanden/schwach/kein (Holdout-Nutzen, Skill);
+  Ergebnis-Feld `direction_edge`, Hinweis in `warnings` bei schwach/kein.
+- Frontend: `components/RegimeScoreBreakdown.js` im Autopilot-Ergebnis.
+- KI-Trader/Setups analysiert: Live-Gate arbeitet korrekt (Sammel-Trades −0,1…−0,5R, Live ≈ ±0), keine Code-Änderung.
+- Tests: `tests/test_regime_score_breakdown.py` (4), Unit-Suite ohne neue Fehler.

@@ -12,6 +12,7 @@ import RegimeAutopilotHistory, { GradeBadge } from './RegimeAutopilotHistory';
 import { workerField } from '../lib/workerTarget';
 import { TfChainToggle, TfChainResult } from './RegimeTfChain';
 import RegimeOverfitWarning from './RegimeOverfitWarning';
+import RegimeScoreBreakdown from './RegimeScoreBreakdown';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const fmt = (v, d = 1) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
@@ -385,6 +386,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
       {banner && <EdgeBanner {...banner} testId="autopilot-banner" />}
       {lastResult?.best && <RegimeOverfitWarning result={lastResult} disabled={jobBlocked || running}
         onFineTune={() => start(true)} />}
+      {lastResult?.best && <RegimeScoreBreakdown result={lastResult} />}
       {(lastResult?.warnings || []).length > 0 && (
         <ul className="regime-advice-list warn" data-testid="autopilot-result-warnings">
           {lastResult.warnings.map(w => <li key={w}>{w}</li>)}

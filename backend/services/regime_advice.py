@@ -60,7 +60,45 @@ def result_warnings(best_metrics: Optional[Dict], min_days: float, max_days: flo
             out.append(f"Ø Live-Phase {fmt_days(ph, max_days)} Tage liegt über der Obergrenze {max_days:g}.")
         if min_days and float(ph) < min_days:
             out.append(f"Ø Live-Phase {fmt_days(ph, min_days)} Tage liegt unter der Untergrenze {min_days:g}.")
+    edge = direction_edge(m)
+    if edge and edge["verdict"] != "vorhanden":
+        out.append(edge["text"])
     return out
+
+
+EDGE_HIT_GOOD = 55.0   # Richtung bestätigt sich danach deutlich öfter als ein Münzwurf
+
+
+def direction_edge(m: Optional[Dict]) -> Optional[Dict]:
+    """Taugt die Live-Richtung als Vorhersage (Edge) – oder nur als Filter? (rein)
+    Basis: Regime-Nutzen im Holdout (services/regime_utility): Treffer des
+    Vorzeichens nach 3 Tagen, Rendite-Abstand auf−ab, Skill ggü. Mehrheitsklasse.
+    Gute Phasen-Erkennung (F1) heißt NICHT automatisch Vorhersagekraft."""
+    m = m or {}
+    hit = m.get("utility_sign_hit_pct")
+    if hit is None:
+        hit = m.get("utility_train_sign_hit_pct")
+    if hit is None:
+        return None
+    hit = float(hit)
+    sep = m.get("utility_separation_pct")
+    skill = m.get("holdout_skill_pct")
+    facts = f"Richtung bestätigt sich in {hit:.1f} % der Fälle (Münzwurf = 50 %)"
+    if sep is not None:
+        facts += f", Aufwärts- vs. Abwärtsphasen {float(sep):+.1f} % Rendite-Abstand"
+    if skill is not None:
+        facts += f", Skill {float(skill):+.1f} %"
+    if hit >= EDGE_HIT_GOOD and (sep is None or sep > 0) and (skill is None or skill > 0):
+        return {"verdict": "vorhanden", "hit_pct": hit,
+                "text": f"Richtungs-Edge vorhanden: {facts}."}
+    if hit <= 50.0 or (sep is not None and sep <= 0):
+        return {"verdict": "kein", "hit_pct": hit,
+                "text": (f"Kein Richtungs-Edge: {facts}. Die Erkennung beschreibt Phasen, sagt die "
+                         "Richtung aber nicht voraus – nur als Filter/Umschalter für Strategien mit "
+                         "eigenem Edge nutzen, nicht als Einstiegssignal.")}
+    return {"verdict": "schwach", "hit_pct": hit,
+            "text": (f"Schwacher Richtungs-Edge: {facts}. Als Filter/Umschalter für Strategien mit "
+                     "eigenem Edge geeignet (vorher im Shadow/Paper prüfen), allein kein Einstiegssignal.")}
 
 
 def fmt_days(value: float, bound: float) -> str:
