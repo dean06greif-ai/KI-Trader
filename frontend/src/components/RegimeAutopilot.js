@@ -78,6 +78,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [maxPhase, setMaxPhase] = useState(saved.maxPhase ?? 15);
   const [searchDet, setSearchDet] = useState(saved.searchDet ?? true);
   const [warmStart, setWarmStart] = useState(saved.warmStart ?? true);
+  const [gradeLock, setGradeLock] = useState(saved.gradeLock ?? true);
   const [autoChain, setAutoChain] = useState(saved.autoChain ?? true);
   // Timeframe-Kette: bewusst NICHT gespeichert – bei jedem Öffnen standardmäßig aus
   const [tfChain, setTfChain] = useState(false);
@@ -88,8 +89,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
   const [lastDecision, setLastDecision] = useState(null);
 
   useEffect(() => {
-    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, warmStart, autoChain, phaseV: PHASE_V })); } catch { /* quota */ }
-  }, [maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, warmStart, autoChain]);
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, warmStart, gradeLock, autoChain, phaseV: PHASE_V })); } catch { /* quota */ }
+  }, [maxMin, targetPct, maxRounds, plateau, minPhase, maxPhase, searchDet, warmStart, gradeLock, autoChain]);
 
   const loadRuns = () => fetch(`${API_URL}/api/regime-lab/autopilot/runs?limit=60`).then(r => r.json())
     .then(d => setRuns(d.runs || [])).catch(() => {});
@@ -182,6 +183,8 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
         + gradeText(lastResult.grade_compare)
         + ` · Ø Richtungs-Phase ${fmt(m.live_direction_phase_days)}d · Ø Live-Phase ${fmt(m.avg_live_phase_days)}d`
         + (lastResult.warmstart?.tested ? ` · Warmstart: ${lastResult.warmstart.tested} bewährte getestet${lastResult.warmstart.adopted ? ` – beste Basis: ${lastResult.warmstart.adopted.source}` : ' – keine besser als der Start'}` : '')
+        + (lastResult.grade_held ? ` · Note-Schutz: ${lastResult.grade_held} Varianten mit höherem Score, aber schlechterer Note nicht übernommen` : '')
+        + (lastResult.search_benchmark?.best ? ` · Benchmark (innere Val.) ${lastResult.search_benchmark.baseline?.passed}/${lastResult.search_benchmark.baseline?.total} → ${lastResult.search_benchmark.best.passed}/${lastResult.search_benchmark.best.total}` : '')
         + (lastResult.guard_rejected ? ` · ${lastResult.guard_rejected} Varianten verworfen (innere Val. > ${fmt(lastResult.max_inner_drop_pp, 0)} Pkt. eingebrochen)` : '')
         + ` · Ende: ${STOP[lastResult.stop_reason] || lastResult.stop_reason || '–'}`
         + (lastResult.evidence === 'insufficient_evidence' ? ' · ⚠ zu wenig Holdout-Daten' : '')
@@ -221,7 +224,7 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
     symbols: selCoins, timeframe, days, train_pct: trainPct, engine_config: engineConfig || {},
     max_minutes: maxMin, target_pct: targetPct, max_rounds: maxRounds, plateau_rounds: plateau,
     min_phase_days_target: minPhase, max_phase_days_target: maxPhase, search_detectors: searchDet, execution, ...workerField(execution, 'regime_lab'),
-    auto_chain: autoChain, warm_start: warmStart, tf_chain: tfChain,
+    auto_chain: autoChain, warm_start: warmStart, tf_chain: tfChain, grade_lock: gradeLock,
   });
 
   const validate = () => {
@@ -328,6 +331,11 @@ export default function RegimeAutopilot({ selCoins, timeframe, days, trainPct, e
           <input type="checkbox" checked={warmStart} onChange={e => setWarmStart(e.target.checked)}
             data-testid="autopilot-warm-start" />
           {' '}Warmstart (bewährte zuerst)
+        </label>
+        <label className="opt-check" title="Note-Schutz (empfohlen): Erst zählt die Erkennungsqualität (wie viele „sehr gut“-Kriterien erfüllt sind: Referenz-F1, Live=Final, Lag, verpasste Phasen, Sweet Spot 5–15 Tage, Validierung – gemessen auf der inneren Validierung, der Holdout bleibt Abschlusstest). Erst bei GLEICHER Stufe entscheidet der höhere Score. So überschreibt eine Variante mit höherem Score, aber schlechterer Note, nie mehr die bessere Erkennung.">
+          <input type="checkbox" checked={gradeLock} onChange={e => setGradeLock(e.target.checked)}
+            data-testid="autopilot-grade-lock" />
+          {' '}Note-Schutz (Note vor Score)
         </label>
         <label className="opt-check" title="Vollautomatik: nach einer gefundenen Verbesserung wird „Regime suchen & speichern“ mit der besten Erkennung automatisch in die Job-Warteschlange gestellt – auch nachts ohne offenen Browser">
           <input type="checkbox" checked={autoChain} onChange={e => setAutoChain(e.target.checked)}

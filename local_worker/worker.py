@@ -38,6 +38,9 @@ Neu in 1.19.0: Regime-Autopilot mit optionaler Timeframe-Kette (tf_chain,
 services/regime_tf_chain.py) – Scoring + Fallback über benachbarte Timeframes.
 Neu in 1.20.0: Backtest dynamischer Strategien lokal (die Strategie-Dokumente
 kommen im Auftrag mit: args.dynamic_docs) – identisch zum Cloud-Backtester.
+Neu in 1.21.0: KI-Trader-Lab lokal (services/setup_backtest/local_run: MemDB +
+Replay auf dem Server) ohne Cloud-RAM-Deckel – z.B. 3 Jahre Krypto; Autopilot
+mit Note-Schutz (grade_lock).
 Neu in 1.20.1: lesbare Meldung bei kurzen Server-Aussetzern (Render-Proxy 502),
 Log „Server wieder erreichbar“ und „Job fertig – Ergebnis hochgeladen“.
 """
@@ -53,7 +56,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "1.20.1"
+VERSION = "1.21.0"
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = SCRIPT_DIR / "worker_config.json"
 # Zweiter Speicherort im Benutzerordner: überlebt das Neu-Entpacken des Pakets
@@ -540,6 +543,30 @@ def run_regime_job(job_id, payload):
         "error": jobd.get("error"), "result": jobd.get("result")})
 
 
+def run_ai_seed_job(job_id, payload):
+    """KI-Trader-Lab (Setup-Backtest) lokal: runner.run_job gegen eine MemDB,
+    die Schreibzugriffe gehen als Protokoll zurück (Server: local_run.replay)."""
+    from services.setup_backtest import local_run, runner
+    args = payload.get("args") or {}
+    params = args.get("params") or {}
+    jobd = new_job_dict(runner.JOBS, job_id, params)
+    jobd["kind"] = "ai_seed"
+    stop_evt = threading.Event()
+    rep = threading.Thread(target=progress_reporter, args=(job_id, jobd, stop_evt), daemon=True)
+    rep.start()
+    out = {"log": []}
+    try:
+        out = asyncio.run(local_run.run_on_worker(job_id, params, args.get("snapshot") or {}))
+    except Exception as e:  # noqa: BLE001
+        jobd["status"], jobd["error"] = "error", str(e)[:300]
+    finally:
+        stop_evt.set()
+    upload_result(job_id, {"kind": "ai_seed", "status": jobd.get("status") or "error",
+                           "input_hash": (payload or {}).get("_input_hash"),
+                           "error": jobd.get("error"), "result": jobd.get("result"),
+                           "log": out.get("log") if jobd.get("status") == "done" else []})
+
+
 # ---------------- Daten-Jobs ----------------
 async def _download_symbols(jobd, symbols, days):
     import aiohttp
@@ -656,6 +683,8 @@ def dispatch(job):
         target, args = run_optimizer_job, (jid, payload)
     elif kind == "regime_lab":
         target, args = run_regime_job, (jid, payload)
+    elif kind == "ai_seed":
+        target, args = run_ai_seed_job, (jid, payload)
     elif kind in ("data_download", "data_update", "data_delete", "data_repair"):
         target, args = run_data_job, (jid, kind, payload)
     else:

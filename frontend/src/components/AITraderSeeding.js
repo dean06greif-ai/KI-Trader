@@ -5,6 +5,8 @@ import EventSetupSeeding, { EVENT_META, eventCell } from './EventSetupSeeding';
 import EdgeRegister from './EdgeRegister';
 import { toast } from '../lib/toast';
 import { authHeaders, isAdmin } from '../auth';
+import { workerField } from '../lib/workerTarget';
+import WorkerTargetSelect from './WorkerTargetSelect';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const CLASS_LABELS = { crypto: 'Krypto', indices: 'Indizes', resources: 'Rohstoffe', forex: 'Forex' };
@@ -51,6 +53,7 @@ export default function AITraderSeeding() {
   const [info, setInfo] = useState(null);
   const [classes, setClasses] = useState(saved.classes || ['crypto']);
   const [days, setDays] = useState(saved.days || 90);
+  const [execution, setExecution] = useState(saved.execution || 'cloud');
   const [mode, setMode] = useState(saved.mode || 'single');
   const [aiRevise, setAiRevise] = useState(saved.aiRevise ?? true);
   const [aiRounds, setAiRounds] = useState(saved.aiRounds || 3);
@@ -66,8 +69,8 @@ export default function AITraderSeeding() {
   const admin = isAdmin();
 
   useEffect(() => {
-    try { localStorage.setItem(STATE_KEY, JSON.stringify({ classes, days, mode, aiRevise, aiRounds, targetPassed })); } catch { /* ignore */ }
-  }, [classes, days, mode, aiRevise, aiRounds, targetPassed]);
+    try { localStorage.setItem(STATE_KEY, JSON.stringify({ classes, days, mode, aiRevise, aiRounds, targetPassed, execution })); } catch { /* ignore */ }
+  }, [classes, days, mode, aiRevise, aiRounds, targetPassed, execution]);
 
   // Ergebnis-Tabelle bleibt stabil: die Playbook-Zeilen des letzten Laufs
   // werden NIE geleert (auch nicht bei Start/Abbruch/Fehler) – sonst rutschen
@@ -124,7 +127,10 @@ export default function AITraderSeeding() {
       if (ok) toast.success(`Event-Setups laufen mit: ${evSel.map(e => e.toUpperCase()).join(', ')}`);
     }
     if (!classes.length) return; // nur Event-Setups gewählt
-    const body = { asset_classes: classes, days, mode, ai_revise: aiRevise, ai_rounds: aiRounds, target_passed: targetPassed };
+    if (execution === 'local' && !lwOnline) { toast.error('Kein lokaler Worker verbunden – Worker starten oder Cloud wählen'); return; }
+    if (execution === 'local' && mode === 'ai_loop') { toast.error('KI-Schleife braucht die Cloud (KI-Keys) – lokal Einmal-Durchlauf, Auto-Schleife oder Optimierer wählen'); return; }
+    const body = { asset_classes: classes, days, mode, ai_revise: aiRevise, ai_rounds: aiRounds, target_passed: targetPassed,
+      execution, ...workerField(execution, 'ai_seed') };
     const r = await fetch(`${API_URL}/api/ai/playbook/backtest/run`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { toast.error(d.detail || 'Start fehlgeschlagen'); return; }
@@ -292,11 +298,12 @@ export default function AITraderSeeding() {
         )}
         <div className="bt-exec" data-testid="ai-seed-execution-toggle">
           <span className="bt-exec-label">Ausführung</span>
-          <button className="bt-exec-btn on" data-testid="ai-seed-exec-cloud" title="Berechnung auf dem Server">
+          <button className={`bt-exec-btn ${execution === 'cloud' ? 'on' : ''}`} onClick={() => setExecution('cloud')}
+            data-testid="ai-seed-exec-cloud" title="Berechnung auf dem Server (große Klassen über 1 Jahr aus RAM-Schutz gekappt)">
             <Cloud size={13} weight="bold" /> Cloud
           </button>
-          <button className="bt-exec-btn" disabled style={{ opacity: 0.55, cursor: 'not-allowed' }} data-testid="ai-seed-exec-local"
-            title="Lokal noch nicht verfügbar: Der Setup-Backtest schreibt Playbook-Daten (Reife-Gate, Setup-Stand) direkt in die Datenbank und läuft deshalb serverseitig. Lokaler Worker: Marktdaten & Strategie-Backtests.">
+          <button className={`bt-exec-btn ${execution === 'local' ? 'on' : ''}`} onClick={() => setExecution('local')} data-testid="ai-seed-exec-local"
+            title="Auf deinem PC über den lokalen Worker (≥ 1.21): kein Cloud-RAM-Deckel – z.B. 3 Jahre Krypto. Ergebnisse (Edges, Setup-Stand, Trades) speichert danach der Server – identisch zur Cloud. KI-Revision (KI-Schleife) nur in der Cloud.">
             <Desktop size={13} weight="bold" /> Lokal
             <span className={`bt-exec-dot ${lwOnline ? 'on' : ''}`} data-testid="ai-seed-exec-dot" />
           </button>
@@ -305,6 +312,7 @@ export default function AITraderSeeding() {
             <Gear size={13} weight="bold" />
           </button>
         </div>
+        <WorkerTargetSelect area="ai_seed" execution={execution} testPrefix="ai-seed" />
         {admin ? (
           <>
             <button className="bt-run" onClick={run} disabled={anyRunning} data-testid="ai-seed-run">

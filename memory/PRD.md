@@ -284,3 +284,11 @@ neues Website-Icon mit MM-Signatur.
   ohne neue Fehler; Testing-Agent iteration_51: 100 %.
 - Backlog: P1 KI-Trader-Lab lokal auf dem Worker rechnen (dann 3 Jahre auch für Krypto ohne Cloud-RAM-Grenze);
   P2 Modell-Bewertung um echte Benchmark-Daten (z.B. OpenRouter-Rankings) ergänzen.
+
+## 2026-06 (Fork) – Abschluss Noten-Schutz / Lab auf Worker / Dukascopy
+- Noten-Schutz (grade_lock) im Autopilot: fertig (Einstellung bleibt nur im Browser, Wunsch des Nutzers)
+- KI-Trader-Lab auf lokalem Worker (ai_seed, Worker >= 1.21): fertig; Fix: Replay-Fehler wird jetzt als Fehler gemeldet (local_exec.apply_result)
+- Dukascopy: exponentielles Backoff + Jitter, Retry-After, Abkühlpause (90 s) + adaptives Tempo vor Abbruch (history_sources._duka_day/fetch_backup)
+- Tests: backend/tests/test_duka_retry_and_replay.py (3 bestanden)
+## Backlog
+- P2: Lab-Ergebnisse live mit echtem Worker gegen 3 Jahre Krypto prüfen (nur mit verbundenem Worker möglich)

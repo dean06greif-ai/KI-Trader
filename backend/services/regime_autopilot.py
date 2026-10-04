@@ -525,6 +525,41 @@ def grade_compare(best_m: Optional[Dict], base_m: Optional[Dict]) -> Optional[Di
             "failed_after": after}
 
 
+def search_benchmark(m: Optional[Dict]) -> Dict:
+    """Benchmark „sehr gut“ auf den Such-Daten (rein) – für den Note-Schutz der
+    Suche. Gleiche Schwellen wie regime_quality.benchmark_checks, aber mit den
+    Kennzahlen der inneren Validierung statt des Holdouts (der Holdout bleibt
+    unberührter Abschlusstest). Skill/Holdout-Größe gibt es nur im Holdout ->
+    werden erst am Ende geprüft (grade_regressed)."""
+    from services import regime_quality as rq, regime_reference
+    m = m or {}
+    ref = m.get("inner_reference_f1_pct")
+    if ref is None:
+        ref = m.get("train_reference_f1_pct")
+    phases = [float(v) for v in (m.get("live_direction_phase_days"), m.get("avg_live_phase_days"))
+              if v is not None]
+    phase = m.get("live_direction_phase_days") or (min(phases) if phases else None)
+    lag, missed, lf = m.get("reference_lag_days"), m.get("reference_missed_pct"), m.get("inner_direction_pct")
+    lo, hi = rq.SWEET_SPOT_DAYS
+    checks = [("Referenz Macro-F1 (innere Val.)", ref is not None and ref >= regime_reference.F1_GOOD),
+              ("Live=Final (innere Val.)", lf is not None and lf >= rq.VG_LIVE_FINAL),
+              ("Referenz-Lag ≤ ⅓ Phase", lag is not None and phase is not None and lag <= phase * rq.VG_LAG_SHARE),
+              ("Verpasste Phasen ≤ 15 %", missed is not None and missed <= rq.VG_MISSED_MAX),
+              ("Ø Richtungs-Phase 5–15 Tage", phase is not None and lo <= float(phase) <= hi),
+              ("Plausibilitäts-Validierung", m.get("validation_passed") is not False)]
+    return {"passed": sum(1 for _, ok in checks if ok), "total": len(checks),
+            "failed": [label for label, ok in checks if not ok]}
+
+
+def grade_lock_better(cand_m: Dict, cand_score: float, best: Dict, normal_better: bool) -> bool:
+    """Note-Schutz (rein): erst die Benchmark-Stufe (mehr erfüllte Kriterien),
+    nur bei GLEICHER Stufe entscheidet der Score. Eine Variante mit höherem
+    Score, die Kriterien verliert, überschreibt die bessere Note nicht mehr."""
+    nc = search_benchmark(cand_m)["passed"]
+    nb = search_benchmark(best.get("metrics"))["passed"]
+    return nc > nb or (nc == nb and normal_better)
+
+
 def grade_regressed(best_m: Optional[Dict], base_m: Optional[Dict]) -> bool:
     gc = grade_compare(best_m, base_m)
     return bool(gc and gc["regressed"])
@@ -746,6 +781,9 @@ async def run_autopilot(job_id: str, body: Dict, db):
         target_pct = min(max(float(body.get("target_pct") or 0), 0.0), 100.0)
         max_rounds = max(int(body.get("max_rounds") or 0), 0)
         fine_mode = bool(body.get("fine_mode"))
+        # Note-Schutz (Standard an): Benchmark-Stufe vor Score (grade_lock_better)
+        grade_lock = body.get("grade_lock") is not False
+        grade_held = 0
         search_detectors = bool(body.get("search_detectors", True)) and not fine_mode
         plateau_rounds = max(int(body.get("plateau_rounds", PLATEAU_ROUNDS_DEFAULT) or 0), 0)
         target_min_days = min(max(float(body.get("min_phase_days_target") or SWEET_SPOT_DAYS[0]), 0.0), 30.0)
@@ -989,6 +1027,14 @@ async def run_autopilot(job_id: str, body: Dict, db):
             del history[MAX_HISTORY:]
             better = (tf_chain.accepts(sc, active, best.get("score"), best_tf, MIN_GAIN) if chain_on
                       else sc > (best.get("score") or -1e9) + MIN_GAIN)
+            same_level = True
+            if grade_lock:
+                nc = search_benchmark(m)["passed"]
+                nb = search_benchmark(best.get("metrics"))["passed"]
+                same_level = nc == nb
+                if better and nc < nb:
+                    grade_held += 1
+                better = grade_lock_better(m, sc, best, better)
             if better:
                 best = {"engine_config": cand, "metrics": m, "score": sc}
                 best_tf = active
@@ -997,7 +1043,7 @@ async def run_autopilot(job_id: str, body: Dict, db):
                 job["best"] = public_best()
                 if ck in seed_src:
                     warm["adopted"] = {"source": seed_src[ck], "score": round(sc, 1)}
-            elif active == best_tf and sc >= (best.get("score") if best.get("score") is not None else -1e9) \
+            elif same_level and active == best_tf and sc >= (best.get("score") if best.get("score") is not None else -1e9) \
                     and robustness_key(m, band) > robustness_key(best.get("metrics"), band):
                 # Score-Gleichstand (z.B. beide ~100): robustere Variante nur bei
                 # GLEICHEM oder höherem Score übernehmen (Fix 09/2026: vorher bis
@@ -1031,6 +1077,9 @@ async def run_autopilot(job_id: str, body: Dict, db):
                   "inner_regressed": inner_regressed(best["metrics"], base_by_tf.get(best_tf)),
                   "grade_compare": grade_compare(best["metrics"], base_m),
                   "grade_regressed": grade_regressed(best["metrics"], base_m),
+                  "grade_lock": grade_lock, "grade_held": grade_held,
+                  "search_benchmark": {"baseline": search_benchmark(base_m),
+                                       "best": search_benchmark(best["metrics"])},
                   "guard_rejected": guard_rejected, "max_inner_drop_pp": MAX_INNER_DROP_PP,
                   "history": history, "stop_reason": stop_reason,
                   "warmstart": warm,
@@ -1048,7 +1097,8 @@ async def run_autopilot(job_id: str, body: Dict, db):
                                "max_rounds": max_rounds, "search_detectors": search_detectors,
                                "min_phase_days_target": target_min_days,
                                "max_phase_days_target": target_max_days,
-                               "tf_chain": chain_on, "fine_mode": fine_mode},
+                               "tf_chain": chain_on, "fine_mode": fine_mode,
+                               "grade_lock": grade_lock},
                   "symbols": list(best_ctx.keys()), "timeframe": best_tf,
                   "days": days, "train_pct": train_pct,
                   # Plausibilität (services/regime_advice.py): fehlende Referenz,

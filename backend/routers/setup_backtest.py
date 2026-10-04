@@ -42,10 +42,33 @@ async def seeding_run(body: Dict, _: bool = Depends(require_admin)):
     ai = runner.ai_options(body)
     params = {"kind": "ai_seed", "asset_classes": classes, "days": days, "mode": mode,
               "setups": setups, **ai}
+    if body.get("execution") == "local":
+        return await _start_local(body, params)
     job_id = runner.create_job(params)
     queued = ram_queue.submit(runner.JOBS, job_id, lambda: runner.run_job(
         job_id, state.db, classes, days, mode, setups, ai=ai), kind="ai_seed")
     return {"status": "started", "job_id": job_id, "ram_queued": queued, "params": params}
+
+
+async def _start_local(body: Dict, params: Dict) -> Dict:
+    """KI-Trader-Lab auf dem lokalen Worker (kein Cloud-RAM-Deckel, z.B. 3 Jahre Krypto).
+    KI-Revision (LLM) bleibt in der Cloud -> lokal ohne KI-Modi."""
+    from services import local_exec
+    from services.setup_backtest import local_run
+    if params["mode"] == "ai_loop":
+        raise HTTPException(status_code=400, detail="KI-Schleife braucht die Cloud (KI-Keys) – lokal "
+                                                    "Einmal-Durchlauf, Auto-Schleife oder Setup-Optimierer wählen")
+    wid = local_exec.target_from_body(body)
+    if not local_exec.worker_supports(local_run.MIN_WORKER_VERSION, wid):
+        raise HTTPException(status_code=409, detail="Kein lokaler Worker ≥ 1.21 verbunden – Worker-Paket "
+                                                    "neu laden und starten oder Cloud wählen")
+    params = {**params, "ai_revise": False, "execution": "local"}
+    snapshot = await local_run.build_snapshot(state.db, params["asset_classes"])
+    job_id = runner.create_job(params)
+    runner.JOBS[job_id]["phase"] = "Wartet auf lokalen Worker…"
+    local_exec.enqueue_compute("ai_seed", job_id, {"args": {"params": params, "snapshot": snapshot}},
+                               worker_id=wid)
+    return {"status": "started", "job_id": job_id, "execution": "local", "params": params}
 
 
 @router.get("/api/ai/playbook/backtest/status/{job_id}")

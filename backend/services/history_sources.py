@@ -498,27 +498,32 @@ def scale_to_anchor(m: np.ndarray, anchor_price: float) -> np.ndarray:
     return out
 
 
-async def _duka_day(session, ref: str, day_dt: datetime) -> Optional[bytes]:
+async def _duka_day(session, ref: str, day_dt: datetime, attempts: int = 6) -> Optional[bytes]:
     """Eine Tagesdatei laden. b'' = Tag ohne Daten (Wochenende/Feiertag),
-    None = dauerhaft nicht ladbar (Ratelimit/Netz) -> Aufrufer bricht ab."""
+    None = dauerhaft nicht ladbar (Ratelimit/Netz) -> Aufrufer bricht ab.
+    Exponentielles Backoff mit Jitter; Retry-After wird respektiert."""
+    import random
     url = DUKA_URL.format(ref=ref, y=day_dt.year, m=day_dt.month - 1, d=day_dt.day)
     err = ""
-    for attempt in range(5):
+    for attempt in range(attempts):
+        wait = min(60.0, 3.0 * (2 ** attempt)) + random.uniform(0, 1.5)
         try:
             async with session.get(url, headers=YAHOO_HEADERS,
-                                   timeout=aiohttp.ClientTimeout(total=25)) as r:
+                                   timeout=aiohttp.ClientTimeout(total=30, sock_connect=15)) as r:
                 if r.status == 404:
                     return b""
+                if r.status == 200:
+                    return await r.read()
+                err = f"HTTP {r.status}" + (" (Ratelimit)" if r.status in (429, 503) else "")
+                ra = r.headers.get("Retry-After")
+                if ra and ra.isdigit():
+                    wait = min(120.0, max(wait, float(ra)))
                 if r.status in (429, 503):
-                    err = f"HTTP {r.status} (Ratelimit)"
-                else:
-                    if r.status != 200:
-                        err = f"HTTP {r.status}"
-                    else:
-                        return await r.read()
-        except Exception as e:  # noqa: BLE001
+                    _DUKA_RATELIMITED[ref] = True
+        except Exception as e:  # noqa: BLE001  (ClientConnectorError/SSL/Timeout)
             err = (f"{type(e).__name__}: {e}" if str(e) else type(e).__name__)[:120]
-        await asyncio.sleep(4.0 * (attempt + 1))
+            _DUKA_RATELIMITED[ref] = True
+        await asyncio.sleep(wait)
     _DUKA_LAST_ERR[ref] = err
     return None
 
@@ -527,6 +532,9 @@ async def _duka_day(session, ref: str, day_dt: datetime) -> Optional[bytes]:
 # Tag -> je (Instrument, Tag) nur alle 6 h EINE zusammengefasste Log-Zeile.
 DUKA_LOG_TTL_S = 6 * 3600
 _DUKA_LAST_ERR: Dict[str, str] = {}
+_DUKA_RATELIMITED: Dict[str, bool] = {}
+DUKA_COOLDOWN_S = 90.0         # einmalige Abkühlpause vor dem endgültigen Abbruch
+DUKA_PACE_MAX = 2.0
 _DUKA_LOGGED: Dict[tuple, float] = {}
 
 
@@ -560,14 +568,25 @@ async def fetch_backup(session, symbol: str, start_ms: int, end_ms: int,
         hour=0, minute=0, second=0, microsecond=0)
     blocks: List[np.ndarray] = []
     empty_streak = 0
+    cooled = False
     total_days = max(1, int((day - first).days) + 1)
     done = 0
     while day >= first:
         await _check_cancel(job)
         raw = await _duka_day(session, ref, day)
+        if raw is None and not cooled:
+            # Verbindungsabbruch/Ratelimit: einmal abkühlen, Tempo drosseln, Tag erneut
+            cooled = True
+            if job is not None:
+                job["phase"] = f"Dukascopy drosselt ({symbol}) – kurze Pause…"
+            await asyncio.sleep(DUKA_COOLDOWN_S)
+            pace = min(DUKA_PACE_MAX, max(pace, 0.3) * 3)
+            raw = await _duka_day(session, ref, day)
         if raw is None:
             _log_duka_stop(ref, day, _DUKA_LAST_ERR.pop(ref, ""))
             break
+        if _DUKA_RATELIMITED.pop(ref, False):
+            pace = min(DUKA_PACE_MAX, max(pace, 0.3) * 1.5)  # adaptiv langsamer
         m = decode_duka_day(raw, int(day.timestamp() * 1000), point)
         if m is None:
             empty_streak += 1

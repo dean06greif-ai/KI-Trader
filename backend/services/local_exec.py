@@ -179,6 +179,7 @@ FN_MIN_VERSION = {"calibrate": (1, 7), "autopilot": (1, 12), "ablation": (1, 14)
 DATA_REPAIR_MIN_VERSION = (1, 17)
 # Backtest dynamischer Strategien (Dokumente im Auftrag: args.dynamic_docs)
 DYNAMIC_BACKTEST_MIN_VERSION = (1, 20)
+AI_SEED_MIN_VERSION = (1, 21)
 
 
 def worker_supports(min_ver: tuple, worker_id: Optional[str] = None) -> bool:
@@ -518,7 +519,15 @@ def _get_job(job_id: str, kind: str) -> Optional[Dict]:
         return opt.JOBS.get(job_id)
     if kind == "regime_lab":
         return rlab.JOBS.get(job_id)
+    if kind == "ai_seed":
+        from services.setup_backtest import runner
+        return runner.JOBS.get(job_id)
     return DATA_JOBS.get(job_id)
+
+
+def _seed_jobs():
+    from services.setup_backtest import runner
+    return runner.JOBS
 
 
 # ---------------- Neustart-Resilienz (Render 512 MB / Deploys) ----------------
@@ -528,7 +537,7 @@ def _get_job(job_id: str, kind: str) -> Optional[Dict]:
 # minimales Job-Meta in Mongo gespiegelt (db.local_jobs) und bei Bedarf
 # wiederhergestellt – Berechnungen überleben so jeden Server-Neustart.
 _KIND_STORES = {"backtest": lambda: bt.JOBS, "optimizer": lambda: opt.JOBS,
-                "regime_lab": lambda: rlab.JOBS}
+                "regime_lab": lambda: rlab.JOBS, "ai_seed": _seed_jobs}
 
 
 def _bg_task(coro):
@@ -737,6 +746,10 @@ def claim(worker_id: str, want_compute: bool = True, want_data: bool = True) -> 
                 if w_ver < need:
                     skipped.append(item)
                     continue
+            # KI-Trader-Lab lokal erst ab Worker 1.21 (MemDB + Replay)
+            if item["kind"] == "ai_seed" and w_ver < AI_SEED_MIN_VERSION:
+                skipped.append(item)
+                continue
             # Dynamische Strategien im Backtest nur an Worker, die den Pfad kennen
             if item["kind"] == "backtest" and w_ver < DYNAMIC_BACKTEST_MIN_VERSION and \
                     (((item.get("payload") or {}).get("args") or {}).get("dynamic_docs")):
@@ -954,6 +967,24 @@ async def apply_result(job_id: str, data: Dict, db):
                     await deep_explore.persist_best(db, job["result"])
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"explore persist failed: {e}")
+    elif kind == "ai_seed":
+        # Worker rechnete gegen eine MemDB -> Schreibzugriffe hier auf Mongo anwenden
+        job["result"] = data.get("result")
+        if status == "done" and db is not None:
+            try:
+                from services import ai_playbook
+                from services.setup_backtest import local_run
+                n = await local_run.replay(db, data.get("log") or [])
+                ai_playbook.invalidate_cache()
+                await ai_playbook.refresh(db)
+                logger.info(f"local ai_seed {job_id}: {n} Schreibzugriffe übernommen")
+                job["phase"] = "Fertig"
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"local ai_seed replay failed: {e}")
+                status = "error"
+                job["status"], job["phase"] = "error", "Fehler"
+                job["error"] = f"Ergebnis konnte nicht gespeichert werden: {str(e)[:200]}"
+                job.pop("finalizing", None)
     elif kind == "regime_lab":
         job["result"] = data.get("result")
         if status == "done" and db is not None:

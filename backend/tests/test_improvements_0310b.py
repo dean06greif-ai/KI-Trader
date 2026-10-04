@@ -226,5 +226,68 @@ def test_worker_http_reason_html_502():
         status_code, text = 409, '{"detail":"x"}'
     assert "Render-Proxy" in ns["http_reason"](R)
     assert ns["http_reason"](J) == '{"detail":"x"}'
-    assert 'VERSION = "1.20.1"' in src
+    assert "def http_reason" in src
     assert "Server wieder erreichbar" in src
+
+
+# ---------------- Note-Schutz in der Suche (grade_lock) ----------------
+def test_search_benchmark_and_grade_lock():
+    base = {**BASE_M, "inner_reference_f1_pct": 55.5}
+    best = {**BEST_M, "inner_reference_f1_pct": 57.9}
+    sb, sx = ap.search_benchmark(base), ap.search_benchmark(best)
+    assert sb["passed"] == 6 and sx["passed"] == 4
+    # höherer Score, aber weniger Kriterien -> nicht besser
+    assert not ap.grade_lock_better(best, 65.2, {"metrics": base, "score": 63.7}, True)
+    # mehr Kriterien gewinnt auch bei niedrigerem Score; gleiche Stufe -> Score entscheidet
+    assert ap.grade_lock_better(base, 60.0, {"metrics": best, "score": 65.2}, False)
+    assert ap.grade_lock_better(base, 64.0, {"metrics": base, "score": 63.7}, True)
+
+
+# ---------------- KI-Trader-Lab lokal: MemDB + Replay ----------------
+def test_memdb_replay_matches_real_mongo():
+    """Edges-Operationen gegen die MemDB protokollieren, auf Mongo nachspielen ->
+    gleicher Endzustand wie direkt in der MemDB (inkl. neu eingefügter IDs)."""
+    import os
+    from motor.motor_asyncio import AsyncIOMotorClient
+    from services.setup_backtest import edges, local_run
+
+    async def go():
+        client = AsyncIOMotorClient(os.environ.get("MONGO_URL") or "mongodb://localhost:27017",
+                                    serverSelectionTimeoutMS=2000)
+        try:
+            await client.server_info()
+        except Exception:  # noqa: BLE001
+            pytest.skip("keine lokale Mongo")
+        real = client["test_memdb_replay"]
+        await real[edges.COLLECTION].delete_many({})
+        await real[edges.COLLECTION].insert_one({"id": "old1", "asset_class": "crypto", "setup": "s1",
+                                                 "fingerprint": "f0", "status": "active", "best_robust": 1.0})
+        snap = await real[edges.COLLECTION].find({}).to_list(100)
+        for d in snap:
+            d["_id"] = str(d["_id"])
+        mem = local_run.MemDB({edges.COLLECTION: snap})
+        summ = {"fingerprint": "f1", "is": {}, "oos": {}, "robust": 2.0, "passed": True, "params": {},
+                "name": "v", "variant": 1, "source": "check", "diag": {}, "flags": {}}
+        doc = await edges.record(mem, "crypto", "s1", summ, days=1095, job_id="j", oos_trades=[{"x": 1}])
+        await edges.set_active(mem, "crypto", "s1", doc["id"], reason="test")
+        await edges.prune(mem, "crypto", "s1")
+        await mem.settings.update_one({"_id": "setup_backtest_state"}, {"$set": {"classes": {"crypto": {}}}}, upsert=True)
+        n = await local_run.replay(real, mem.log)
+        got = {d["id"]: d["status"] for d in await real[edges.COLLECTION].find({}).to_list(100)}
+        want = {d["id"]: d["status"] for d in mem[edges.COLLECTION].docs}
+        st = await real.settings.find_one({"_id": "setup_backtest_state"})
+        await client.drop_database("test_memdb_replay")
+        return n, got, want, st
+    n, got, want, st = asyncio.run(go())
+    assert n >= 4 and got == want and got["old1"] == "retired"
+    assert st["classes"] == {"crypto": {}}
+
+
+def test_ai_seed_wired_into_local_exec():
+    from services import local_exec
+    from services.setup_backtest import runner
+    assert "ai_seed" in local_exec._KIND_STORES and local_exec.AI_SEED_MIN_VERSION == (1, 21)
+    runner.JOBS["t_seed"] = {"id": "t_seed", "status": "running"}
+    assert local_exec._get_job("t_seed", "ai_seed") is runner.JOBS.pop("t_seed")
+    src = _worker_src()
+    assert 'VERSION = "1.21.0"' in src and 'kind == "ai_seed"' in src
