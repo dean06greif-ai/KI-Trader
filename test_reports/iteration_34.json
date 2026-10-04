@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 34: verified all three follow-up features. Backend + unit tests pass (33/33). API for data-repair (Feature 1), regime-performance (Feature 2), and regime-lab build with skip_regimes (Feature 3) all behave as spec'd. UI verification: Feature 2 (DynamicRegimePerformance) and Feature 3 (Werkbank skip-losing chip visibility tied to walkforward) work correctly. Feature 1 UI is BROKEN: LocalWorkerPanel does not render the HYPEUSDT row with the expected data-testid because the frontend treats worker's data.symbols (list of strings) as objects with .symbol/.candles and reads data.dir instead of data.data_dir. Buttons render as lw-data-repair-undefined / lw-data-delete-undefined and summary shows 'Worker offline – keine Daten-Info' even though worker v1.17.0 is online.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "LocalWorkerPanel.js (rows 400-490)",
+        "issue": "Frontend consumes worker heartbeat data incorrectly: iterates data.symbols (list of strings from worker.data_info) as objects with .symbol/.candles/.first_ts/.last_ts/.bytes/.updated, and reads data.dir instead of data.data_dir. Result: table row renders empty cells with data-testid lw-data-row-undefined, buttons render as lw-data-repair-undefined / lw-data-delete-undefined, and summary shows the offline fallback text although worker is online (v1.17.0, HYPEUSDT present). The repair button data-testid 'lw-data-repair-HYPEUSDT' required by the spec is therefore missing.",
+        "selector": "[data-testid='lw-data-repair-HYPEUSDT']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter34_followups.py",
+    "/app/backend/tests/test_regime_followups_3009.py",
+    "/app/backend/tests/test_regime_dynamic_consistency_3009.py",
+    "/app/test_reports/pytest/iter34.xml"
+  ],
+  "action_items": [
+    "Fix LocalWorkerPanel.js to iterate over data.detail (list of {symbol, bytes, mtime, candles?, first_ts?, last_ts?, ...}) instead of data.symbols; use data.data_dir instead of data.dir for the summary. This will make the HYPEUSDT row and the lw-data-repair-HYPEUSDT button appear so users can trigger the new 'Datenlücken reparieren' feature from the UI (Feature 1). Alternatively, enrich the API response in local_exec.workers_public() to normalize the data payload (add data.dir alias, and expand data.symbols to list of objects) so the frontend contract matches.",
+    "Optionally, ensure candle_cache.list_disk_symbols returns candles/first_ts/last_ts so the row shows meaningful values once the FE reads data.detail."
+  ],
+  "critical_code_review_comments": [
+    "LocalWorkerPanel.js line 400-490: brittle contract between worker heartbeat schema and FE render. Consider a serializer in the backend that shapes the data payload for the UI to avoid duplicating knowledge across worker/backend/frontend.",
+    "Backend router POST /api/localworker/data/repair validates missing symbol (400) correctly. Repair job records summary with primary_source=bitunix, secondary_source=binance and counts as specified – good.",
+    "GET /api/dynamic/{did}/regime-performance returns walkforward numbers for regime 2 and live aggregations across trades correctly; win_rate expressed as percent (0-100). Consistent, no issues.",
+    "POST /api/regime-lab/{ra}/build correctly rejects with 400 'Alle Regime abgeschaltet' when skip_regimes covers every assigned regime; happy path returns 200. Good.",
+    "Frontend Feature 3 chip 'dwb-skip-losing' toggles visibility with 'dwb-walkforward' state as specified – works."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter34_followups.py"],
+  "success_rate": {"backend": "100% (33/33 pytest)", "frontend": "2/3 features (Feature 1 UI broken, Features 2 & 3 pass)"},
+  "test_credentials": "Admin / LocalTest06! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Inserted 2 TEST_it34 paper trades into auto_trades for aggregation verification (regime 2, one win, one loss); cleaned up in test teardown.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend endpoints for the 3 follow-ups all pass. When retesting Feature 1 UI, verify that LocalWorkerPanel now renders row 'lw-data-row-HYPEUSDT' with button 'lw-data-repair-HYPEUSDT' by opening Tools menu (data-testid=tools-menu-button) -> Backtester -> gear (bt-exec-manage). Confirm 'lw-data-summary' no longer shows the offline fallback when worker is online. Panel path is confirmed; Optimizer tools-menu route works for Feature 3 Werkbank tests.",
+  "rca of the issue": "LocalWorkerPanel expects data payload shape {dir, symbols:[{symbol, candles, first_ts, last_ts, bytes, updated}]}, but the worker (v1.17.0, worker.py data_info()) returns {data_dir, symbols:[str], detail:[{symbol, bytes, mtime}]}. local_exec.workers_public() passes the raw dict through without normalization, so the frontend keeps rendering empty rows and 'Worker offline' summary even for an online worker with data present. Fix in FE (map data.detail, read data.data_dir) or add a serializer in backend to bridge both shapes."
+}

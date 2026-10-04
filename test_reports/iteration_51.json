@@ -1,0 +1,53 @@
+{
+  "summary": "Full backend + frontend verification of iteration-51 improvements (AI model catalog with pending/announcements/hidden/removed, admin remove/restore/dismiss endpoints with auth guards, autopilot grade-regression safety for run 3cf6d7f85df8, favicon.svg with MM signature, KI-Team news banner + model catalog UI, Regime-Lab grade badges matching Erkennungsqualitaet colors, KI-Trader-Lab 3-year Zeitraum options). Wrote /app/backend/tests/test_iter51_ai_catalog_announcements.py (13 API tests, all pass). Re-ran existing unit suite /app/backend/tests/test_improvements_0310b.py (19/19 pass with PYTHONPATH=/app/backend). Playwright-exercised all requested UI flows against the public preview URL. No announcements were dismissed and the one builtin removed (cerebras/gemma-4-31b) was restored.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter51_ai_catalog_announcements.py",
+    "/app/test_reports/pytest/iter51_results.xml",
+    "/app/backend/tests/test_improvements_0310b.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "test_improvements_0310b.py requires PYTHONPATH=/app/backend to import 'services' - not a bug, but worth a conftest.py path hook so a plain `pytest backend/tests/...` from /app works."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter51_ai_catalog_announcements.py"
+  ],
+  "success_rate": {"backend": "100% (13/13 API + 19/19 unit)", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (POST /api/auth/login -> token, stored in localStorage admin_token + admin_token_ts).",
+  "seed_data_creation": "None (remove+restore of cerebras/gemma-4-31b was performed and reverted).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend watch doc already populated (4 adopted auto models, 1 non-dismissed announcement id 6013d566f33a, 60 pending). Do NOT call /api/ai/models/watch/run (costs API tokens). Autopilot runs seeded; run id 3cf6d7f85df8 has rating.label='gut' and 'Note gesunken (sehr gut \u2192 gut)' in rating.why. If a next test wants to dismiss an announcement, use id 6013d566f33a via POST /api/ai/models/announcements/6013d566f33a/dismiss with admin bearer token (currently NOT dismissed).",
+  "details_verified": {
+    "catalog_keys": ["active","pending","hidden","removed","announcements","checked_at","builtin","discovered","watch_running","weights","paid","backup_keys","providers"],
+    "pending_count": 60,
+    "announcements_count": 1,
+    "announcement_id": "6013d566f33a",
+    "remove_in_use_409": "returns 409 with detail containing 'verwendet' for in-use builtins",
+    "remove_unused_builtin_200": "cerebras/gemma-4-31b removed -> active list excluded, hidden list contained it, builtin[cerebras] filtered",
+    "restore_200": "same model restored -> back in active list",
+    "dismiss_404": "unknown announcement id returns 404",
+    "auth_guards": "POST /remove /restore /announcements/{id}/dismiss without bearer -> 401/403",
+    "autopilot_run_3cf6d7f85df8": {"label": "gut", "contains_note_gesunken": true},
+    "favicon_svg": "contains mmLine linearGradient + path elements",
+    "index_html_ref": "favicon.svg?v=5 present",
+    "ki_team_news_banner": {"id": "6013d566f33a", "model_cards": 4, "apply_buttons": 5, "dismiss_button_present": true},
+    "ai_model_catalog_ui": {"weak_toggle": true, "active_toggle": true, "remove_buttons": 25, "sehr_gut_tier_badges": 5},
+    "regime_lab_grade_badges": {
+      "count": 9,
+      "nowrap": true,
+      "SEHR_GUT_bg": "linear-gradient(90deg, rgb(79,141,255) 0%, rgb(79,176,180) 50%, rgb(92,201,138) 100%)",
+      "GUT_bg": "rgba(0,229,160,0.18)",
+      "MITTEL_bg": "rgba(255,165,2,0.18)",
+      "SCHWACH_bg": "rgba(255,71,87,0.18)"
+    },
+    "ai_trader_lab_zeitraum": {
+      "ai-seed-days_options": ["30","60","90","180","365","540","730","1095"],
+      "ai-seed-auto-days_options": ["30","60","90","180","365","540","730","1095"],
+      "1095_present": true,
+      "label_includes_3_J": "'1095 Tage (\u2248 3 J.)'"
+    }
+  }
+}

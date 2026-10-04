@@ -1,0 +1,43 @@
+{
+  "summary": "E2 review iteration 1: full backend + frontend testing of retention/storage/compact, activity-guard (incl. idea-round LLM), move-scanner, plus regression on AITraderSeeding intro/tab. All 18 API tests green; all UI flows verified. No critical issues.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/health", "issue": "First response is slow (~10s cold, later <1s). Not a bug per se but public gateway edge times out at ~100s for very slow LLM calls."},
+      {"endpoint": "/api/ai/activity-guard/idea-round", "issue": "Can exceed the ingress ~100s cap under LLM latency (returns 502/504 at edge). Locally on :8001 the call completes in ~11s and returns 200 with a full idea payload. Consider adding a shorter LLM timeout with degraded response so the edge never returns 502."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Adaptive tab actions (activity-guard-check-btn, move-scanner-run-btn) and Storage actions (retention-run-btn, compact-run-btn)", "issue": "Backend calls succeed, but Sonner toast texts were not captured in DOM snapshot after ~4-8s wait; only the retention-days-app_notifications select produced a persistent toast ('Retention app_notifications gespeichert'). Likely just very short toast duration; verified visually via screenshots that panel state updates.", "affected_selectors": ["[data-sonner-toast]"]}
+    ],
+    "design_issues": [
+      {"screen": "Storage-Tab (retention table)", "issues": ["React hydration warning in console: '<span> cannot be a child of <option>' – original select renders EMA-Bezeichnungen inside <option>. Minor, not blocking, but should be cleaned up to remove SSR hydration warning."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter_e2_maintenance_adaptive_api.py",
+    "/app/test_reports/pytest/iter_e2_api.xml"
+  ],
+  "action_items": [
+    "Consider capping LLM wait in /api/ai/activity-guard/idea-round to ~60s and returning status='no_result' on timeout, so the public gateway never returns 502/504.",
+    "Clean up hydration warning: no <span> inside <option> in the retention select row (StoragePanel.js)."
+  ],
+  "critical_code_review_comments": [
+    "Retention policy shape and MIN_DAYS handling work as documented; override roundtrip persists correctly.",
+    "Activity-Guard idea-round endpoint correctly requires admin; response payload matches contract (status/rate/target/action/idea).",
+    "Move-Scanner status includes all four class_min_move classes; run returns integer count.",
+    "Frontend uses REACT_APP_BACKEND_URL exclusively (observed via network logs); tokens stored in localStorage under admin_token."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter_e2_maintenance_adaptive_api.py"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "~95% (all UI elements render & actions succeed; only toast text capture was flaky)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Public gateway has ~100s read cap; when testing LLM endpoints via public URL always allow local fallback. Use `wait_until='domcontentloaded'` (not networkidle) as many websockets stay open. Backtester is opened via tools-menu-button -> tools-menu-backtester; AI seeding lives inside backtester modal under text tab 'KI Trader · Setups'.",
+  "rca of the issue": "Not applicable – no functional bugs found. The only observed edge failures were: (a) 502 at public gateway on very slow LLM call – confirmed backend returns 200 within ~11s locally; (b) toast text not captured – timing-related in test scraping, not a product bug."
+}

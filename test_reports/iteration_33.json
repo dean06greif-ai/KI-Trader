@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 33 – Regime-Lab label_basis + Assignment-Gated Walkforward + Dynamic Build end-to-end getestet. Alle 4 vorgeschriebenen Backend-Unit-Testdateien (test_regime_dynamic_consistency_3009.py, test_dynamic_backtest_workbench.py, test_dynamic_trading_0926.py, analysis_regression/test_ap07_research_validation.py) grün (53/53). Neue E2E API-Tests (5/5) grün: (a) optimize label_basis=live -> result.label_basis=='causal_live'; (b) label_basis=final -> 'retrospective_reference'; (c) default (omit) -> 'causal_live'; (d) assign regime 2 + walkforward -> per_regime enthält nur Regime 2, untraded_bars > 0, label_basis=='causal_live'; (e) build -> dyn_8f1af31e mit regime_strategies == {'2':'nnfx_trend'}. Frontend verifiziert: Regime-Lab -> ra_cceda77f ('E2E kombi 3') -> Panel Regime 2 hat select 'regime-opt-label-basis-2' (default 'live'), Options exakt 'Live-Sicht (wie im Handel, empfohlen)' + 'Rückblick (ideale Phasen)'; 'regime-opt-label-basis-out-2' Text 'Abschnitte: Live-Sicht' im Code an result.label_basis==='causal_live' gebunden (via API bestätigt). Strategy Optimizer -> Dynamik-Werkbank: 'dwb-label-basis' vorhanden in Tab 'refine' (default live) und 'discover' (default live), NICHT vorhanden in 'create' – Tabwechsel refine->create->discover->refine funktioniert stabil. Keine funktionalen Konsolen-Errors (nur transient 401/Failed-to-fetch bevor Token gesetzt wurde + 1 React-hydration-warning: '<span> cannot be a child of <option>' in einem Select).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Strategy-Optimizer (Dynamik-Werkbank)", "issues": ["React-Warnung: '<span> cannot be a child of <option>' – vermutlich in DynamicWorkbenchFields.js LabelBasisSelect wird ein <span> innerhalb <option> gerendert; Hydration-Warnung, aber Funktion OK."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter33_regime_lab_e2e.py",
+    "/app/test_reports/pytest/iter33.xml"
+  ],
+  "action_items": [
+    "Optional (kein Bug): Hydration-Warnung <span> in <option> in LabelBasisSelect entfernen (nur Text im <option> lassen)."
+  ],
+  "critical_code_review_comments": [
+    "Alle Änderungen der vorgeschriebenen Testdateien schlüssig – label_basis-Propagation via services/regime_opt.py:label_basis_of() korrekt, walkforward filtert test_segs anhand assignments (unassigned regimes werden zu untraded_bars).",
+    "routers/dynamic.py: kein GET /api/dynamic (nur /api/dynamic/list) – Test-Skripten sollte darauf achten."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter33_regime_lab_e2e.py (neu)"
+  ],
+  "success_rate": {"backend": "100% (53/53 Unit + 5/5 E2E)", "frontend": "100% (alle geforderten Selektoren + Tab-Sichtbarkeit verifiziert)"},
+  "test_credentials": "Admin / LocalTest06! (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "keine – vorhandene ra_cceda77f + neue dyn_8f1af31e via build-endpoint",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Alle geforderten Features aus Aufgabenstellung verifiziert (Unit-Tests + API + Frontend). E2E-Tests unter /app/backend/tests/test_iter33_regime_lab_e2e.py – wegen 409 (nur ein Regime-Lab-Job gleichzeitig) sequentiell laufen lassen: 'python -m pytest tests/test_iter33_regime_lab_e2e.py -o addopts=\"\"'. Frontend-Login: POST /api/auth/login -> Token in localStorage.admin_token, dann reload.",
+  "rca of the issue": "n/a – alle geprüften Features funktionieren wie in der Aufgabenstellung spezifiziert."
+}

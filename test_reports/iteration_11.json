@@ -1,0 +1,31 @@
+{
+  "summary": "Verified all backend regression tests (51/51 pass in the requested 7 test files), all regime-lab API endpoints (list/detail slim/detail full/chart known/chart unknown/404), and all requested Regime-Lab UI flows (open via tools-menu, step3 placeholder, selecting analysis shows AUSGEWÄHLT tag + loading text, detail loads, banner + step3 label reflect analysis name, scope-tabs placed under FREIGABE-block, coin tab shows 'BTC · ausgewählt' with a single chart, scope select options match, deselect restores placeholder, mobile 390x844 has no horizontal overflow). No writes performed on production DB.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_risk_budget_scale_fit.py",
+    "/app/backend/tests/test_regime_lab_detail_slim.py",
+    "/app/backend/tests/test_risk_budget.py",
+    "/app/backend/tests/test_entry_guard.py",
+    "/app/backend/tests/test_capital_fit.py",
+    "/app/backend/tests/test_manual_web_trades.py",
+    "/app/backend/tests/test_local_engine_guard.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Note: `quality` field is returned at the top-level of GET /api/regime-lab/{id} response (alongside `analysis` and `charts_included`), not inside `analysis` – behavior matches routers/regime_lab.py:468, review-request wording could be misread otherwise; no bug.",
+    "Console shows several 401/Failed-to-fetch for unauthenticated session/notification endpoints on landing – expected because no login was used; but consider swallowing these to console.debug to reduce noise."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "Not used (read-only session per constraints).",
+  "seed_data_creation": "None – production DB, read-only.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 51 targeted backend unit tests pass. Regime-Lab detail endpoint verified: slim ~130KB (no chart/chart_emas), full ~4MB with chart+chart_emas. /chart/{symbol} returns prices as [[ts,close],...] and emas keys 9/21/50/200. UI selectors used: [data-testid='tools-menu-button'], [data-testid='tools-menu-regime-lab'], [data-testid='regime-lab-overlay'], [data-testid='regime-step3-label'], [data-testid='regime-step3-placeholder'], [data-testid='regime-step3-loading'], [data-testid^='regime-analysis-row-'], [data-testid^='regime-analysis-selected-'], [data-testid='regime-analysis-detail'], [data-testid='regime-base-banner'], [data-testid='regime-scope-tabs'], [data-testid='regime-scope-tab-coin:BTCUSDT'], [data-testid='regime-scope']. Detail load ~15s (Atlas). Only one saved analysis exists ('Regime All 1 Std.', id=ra_ce9cb3e8, 24 assets).",
+  "rca of the issue": "N/A – no bugs found; all bug-fix acceptance criteria met."
+}
