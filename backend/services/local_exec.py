@@ -177,8 +177,9 @@ def ui_data_info(d: Optional[Dict]) -> Dict:
 
 FN_MIN_VERSION = {"calibrate": (1, 7), "autopilot": (1, 12), "ablation": (1, 14), "reevaluate": (1, 15)}
 DATA_REPAIR_MIN_VERSION = (1, 17)
-# Backtest dynamischer Strategien (Dokumente im Auftrag: args.dynamic_docs)
-DYNAMIC_BACKTEST_MIN_VERSION = (1, 20)
+# Backtest dynamischer Strategien (Dokumente im Auftrag: args.dynamic_docs);
+# 1.22: vorher scheiterte er auf dem Worker an "No module named 'telegram'"
+DYNAMIC_BACKTEST_MIN_VERSION = (1, 22)
 AI_SEED_MIN_VERSION = (1, 21)
 
 

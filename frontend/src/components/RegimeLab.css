@@ -199,3 +199,6 @@
 .rl-overfit > b { display: flex; align-items: center; gap: 6px; }
 .rl-overfit div { color: #d8dbe6; }
 .rl-overfit .opt-chip { align-self: flex-start; }
+
+/* Ausreißer-Assets der Erkennung (RegimeQualityCard) */
+.rl-quality-outliers { margin: 6px 0; padding: 6px 8px; border-left: 3px solid #f59e0b; background: rgba(245, 158, 11, 0.06); color: #f5c58a; }

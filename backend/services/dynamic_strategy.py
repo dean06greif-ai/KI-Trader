@@ -52,6 +52,8 @@ def metrics_from_rows(rows: List[Dict], capital: float) -> Dict:
         dd = max(dd, peak - eq)
     decided = wins + losses
     cap = float(capital or 100)
+    from services import regime_outliers
+    dom = regime_outliers.dominance([r.get("pnl") for r in rows])
     return {"trades": len(rows), "wins": wins, "losses": losses,
             "breakevens": breakevens,
             "win_rate": round(wins / decided * 100, 1) if decided else 0.0,
@@ -59,7 +61,9 @@ def metrics_from_rows(rows: List[Dict], capital: float) -> Dict:
             "max_drawdown": round(dd, 2),
             "avg_pnl": round(pnl / len(rows), 3) if rows else 0.0,
             "pnl_pct": round(pnl / cap * 100, 1),
-            "max_drawdown_pct": round(dd / cap * 100, 1)}
+            "max_drawdown_pct": round(dd / cap * 100, 1),
+            # Ausreißer-Dominanz (services/regime_outliers): PnL ohne die 2 besten Trades
+            "pnl_ex_top2": dom["pnl_ex_top"], "top2_share_pct": dom["top_share_pct"]}
 
 
 def build_segments(histories: Dict[str, List[Dict]], labels_map: Dict[str, List],

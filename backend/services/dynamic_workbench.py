@@ -25,6 +25,7 @@ from typing import Dict, List, Optional
 
 from services import job_control
 from services import regime_lab as lab
+from services import regime_outliers
 
 logger = logging.getLogger(__name__)
 
@@ -91,12 +92,14 @@ def running_job() -> Optional[Dict]:
 
 
 def candidate_rank(entry: Optional[Dict]) -> tuple:
-    """Vergleichsschlüssel eines Kandidaten (rein): bestandene Regime-Validierung
-    vor Score – eine Suche übernimmt nur, was diesen Schlüssel verbessert."""
+    """Vergleichsschlüssel eines Kandidaten (rein): ROBUST bestandene Regime-
+    Validierung vor Score – eine Suche übernimmt nur, was diesen Schlüssel
+    verbessert. Robust = Walk-Forward positiv UND Training nicht negativ UND
+    Gewinn hängt nicht an 1-2 Ausreißer-Trades (services/regime_outliers)."""
     if not entry:
         return (-1, -1, -1e9)
     # Drawdown-Filter (optional): durchgefallene Kandidaten zählen erst danach
-    return (1 if entry.get("validation_passed") else 0,
+    return (1 if regime_outliers.robust_validated(entry) else 0,
             0 if entry.get("dd_pass") is False else 1,
             float(entry.get("score") or -1e9))
 
@@ -113,6 +116,17 @@ def candidate_from_result(res: Dict, entry: Dict, job_id: str) -> Dict:
             "source_job_id": job_id, "score": entry.get("score"),
             "validation_passed": entry.get("validation_passed"),
             **{k: entry[k] for k in ("dd_pass", "dd_ratio_pct") if k in entry}}
+
+
+def rejected_entry(label: str, cand: Dict) -> Dict:
+    """Anzeige eines Regimes, dessen bester Kandidat NICHT übernommen wurde (rein)."""
+    m = cand.get("metrics") or {}
+    flags = regime_outliers.flag_texts(regime_outliers.candidate_flags(cand))
+    return {"label": label, "score": cand.get("score"), "pnl": m.get("pnl"),
+            "trades": m.get("trades"), "validation_passed": regime_outliers.robust_validated(cand),
+            "flags": flags, "rejected": True,
+            "note": "bestehende Zuordnung bleibt (Kandidat nicht besser"
+                    + (f": {flags[0]}" if flags else "") + ")"}
 
 
 def _log(job: Dict, msg: str):
@@ -166,7 +180,16 @@ def _mirror_sub(job: Dict, lj: Dict) -> None:
     job["paused"] = bool(lj.get("paused")) and want
     job["sub_progress"] = lj.get("progress")
     job["sub_phase"] = lj.get("phase")
-    job["sub_eta_seconds"] = lj.get("eta_seconds")
+    job["sub_eta_seconds"] = lj.get("eta_seconds") or _sub_eta(lj)
+
+
+def _sub_eta(lj: Dict):
+    """Restzeit des Unterjobs (services/job_eta über core.utils._job_public)."""
+    try:
+        from core.utils import _job_public
+        return _job_public(lj).get("eta_seconds")
+    except Exception:  # noqa: BLE001 – Anzeige darf den Lauf nie stören
+        return None
 
 
 async def _await_lab_job(job: Dict, lab_job_id: str, db=None) -> Dict:
@@ -402,6 +425,7 @@ async def run(job_id: str, p: Dict, deps: Dict):
             raise RuntimeError("Keine Regime ausgewählt")
         kind = job["kind"]
         best: Dict[int, Dict] = {int(k): v for k, v in (p.get("current") or {}).items() if v}
+        improved: set = set()
         last_errors: List[str] = []
 
         if kind == "create":
@@ -463,17 +487,21 @@ async def run(job_id: str, p: Dict, deps: Dict):
                     prev = best.get(rid)
                     if cand and candidate_rank(cand) > candidate_rank(prev):
                         best[rid] = cand
+                        improved.add(rid)
                         improved_round += 1
                         st["stale"] = 0
                         job["regimes"][str(rid)] = {
                             "label": label, "score": cand.get("score"),
-                            "validation_passed": cand.get("validation_passed"),
+                            "validation_passed": regime_outliers.robust_validated(cand),
+                            "flags": regime_outliers.flag_texts(regime_outliers.candidate_flags(cand)),
                             "pnl": (cand.get("metrics") or {}).get("pnl"),
                             "trades": (cand.get("metrics") or {}).get("trades"),
                             "strategy": cand.get("strategy_name") or "Eigene Regeln",
                             "improved_round": round_no}
                     else:
                         st["stale"] += 1
+                        if cand and str(rid) not in job["regimes"]:
+                            job["regimes"][str(rid)] = rejected_entry(label, cand)
                         if st["stale"] >= PLATEAU_ROUNDS and str(rid) in job["regimes"]:
                             job["regimes"][str(rid)]["state"] = (
                                 f"ausgereizt – nur jede {RETRY_EVERY}. Runde")
@@ -498,6 +526,18 @@ async def run(job_id: str, p: Dict, deps: Dict):
             hint = last_errors[0] if last_errors else None
             raise RuntimeError("Kein verwertbares Ergebnis – kein Regime hat eine Strategie"
                                + (f" (zuletzt: {hint})" if hint else ""))
+        if kind == "refine" and not improved:
+            # Keine echte Verbesserung: KEINE neue (identische) Version anlegen –
+            # die bestehende dynamische Strategie bleibt wie sie ist.
+            job["result"] = {"dynamic_id": None, "no_improvement": True, "analysis_id": aid,
+                             "regimes": job["regimes"], "rounds": job["round"],
+                             "source_dynamic_id": p.get("dynamic_id"), "walkforward": None,
+                             "symbols": list(subset) if subset else list(analysis.get("symbols") or []),
+                             "subset": bool(subset), "search_state": job.get("search_state")}
+            job["status"] = "done"
+            job["progress"] = 100
+            _log(job, "Fertig – keine robuste Verbesserung gefunden, bestehende Strategie bleibt unverändert")
+            return
         # Zuordnungen schreiben: gesuchte/gewählte Regime + übernommene übrige
         for rid in regimes:
             if rid in targets or rid in best:

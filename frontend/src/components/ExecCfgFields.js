@@ -3,6 +3,21 @@ import React from 'react';
 const num = (v, int = false) => (v === '' ? '' : (int ? parseInt(v, 10) : parseFloat(v)));
 const sideVal = (a) => (Array.isArray(a) && a.length === 1 ? a[0] : '');
 
+const FILL_HINT = 'Realistisch (Standard): Limit wird erst gefüllt, wenn der Kurs es um ~1 Tick DURCHBRICHT (bei bloßer Berührung steht die Order meist noch in der Warteschlange), Kurslücken füllen zum Eröffnungskurs, und läuft die Fill-Kerze bis zum Stop, zählt der Stop. Verpasste Durchstarter werden dadurch sichtbar. Optimistisch = altes Verhalten (Berührung reicht).';
+
+/** Fill-Modell für Limit-Orders (Backend: services/limit_fill.py). */
+export function LimitFillSelect({ value, onChange, testId }) {
+  return (
+    <label className="bt-check" title={FILL_HINT}>
+      Limit-Fill
+      <select value={value || 'realistic'} onChange={e => onChange(e.target.value)} data-testid={testId}>
+        <option value="realistic">Realistisch (Durchbruch)</option>
+        <option value="touch">Optimistisch (Berührung, alt)</option>
+      </select>
+    </label>
+  );
+}
+
 /** Ausführungs-Einstellungen je Strategie: Zeit-Exit, Entry-Ordertyp (Limit/Maker), Richtung. */
 export default function ExecCfgFields({ s, cfg, updateCfg }) {
   const limit = cfg.entry_order_type === 'limit';
@@ -28,6 +43,13 @@ export default function ExecCfgFields({ s, cfg, updateCfg }) {
               <input type="number" min={1} placeholder="5" value={cfg.limit_expiry_bars ?? ''}
                 onChange={e => updateCfg(s.id, 'limit_expiry_bars', num(e.target.value, true))}
                 data-testid={`bt-cfg-limitexpiry-${s.id}`} />
+            </label>
+          )}
+          {limit && (
+            <label title="Abstand des Limits zum Signalpreis: Long darunter, Short darüber. Besserer Einstieg, dafür mehr verpasste Trades. 0 = am Signalpreis (wie live Post-Only am Best-Bid/Ask).">Limit-Abstand %
+              <input type="number" min={0} step={0.01} placeholder="0" value={cfg.limit_offset_pct ?? ''}
+                onChange={e => updateCfg(s.id, 'limit_offset_pct', num(e.target.value))}
+                data-testid={`bt-cfg-limitoffset-${s.id}`} />
             </label>
           )}
           <label>Maker-Fee %

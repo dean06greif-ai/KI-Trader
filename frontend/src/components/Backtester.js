@@ -1,4 +1,5 @@
-import ExecCfgFields from './ExecCfgFields';
+import ExecCfgFields, { LimitFillSelect } from './ExecCfgFields';
+import BacktestRobustness, { BacktestRobustnessFields, DEFAULT_BT_ROBUST, robustActive } from './BacktestRobustness';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Play, Pause, Trophy, ClockCounterClockwise, Gear, DownloadSimple, ArrowCounterClockwise, Cloud, Desktop, MoonStars } from '@phosphor-icons/react';
 import { toast } from '../lib/toast';
@@ -95,6 +96,8 @@ export default function Backtester({ onClose }) {
   const [dynBasis, setDynBasis] = useState(saved.dynBasis || 'live');
   const [compareOrders, setCompareOrders] = useState(!!saved.compareOrders);
   const [limitFallback, setLimitFallback] = useState(saved.limitFallback !== false);
+  const [limitFillMode, setLimitFillMode] = useState(saved.limitFillMode || 'realistic');
+  const [robust, setRobust] = useState(saved.robust || DEFAULT_BT_ROBUST);
   const [ram, setRam] = useState(null);
   const [applyFor, setApplyFor] = useState(null);
   const [applyMode, setApplyMode] = useState('paper');
@@ -111,11 +114,11 @@ export default function Backtester({ onClose }) {
     try {
       localStorage.setItem(STATE_KEY, JSON.stringify({
         selStrats, selCoins, days, dateMode, dateFrom, dateTo, capital,
-        fee, requireAll, fastPath, execution, dynBasis, compareOrders, limitFallback,
+        fee, requireAll, fastPath, execution, dynBasis, compareOrders, limitFallback, limitFillMode, robust,
       }));
     } catch { /* ignore */ }
   }, [selStrats, selCoins, days, dateMode, dateFrom, dateTo, capital,
-    fee, requireAll, fastPath, execution, dynBasis, compareOrders, limitFallback]);
+    fee, requireAll, fastPath, execution, dynBasis, compareOrders, limitFallback, limitFillMode, robust]);
 
   // ---- Lokaler Worker: Online-Status für die Ausführungs-Auswahl ----
   useEffect(() => {
@@ -398,7 +401,8 @@ export default function Backtester({ onClose }) {
           'trail_after_tp1', 'trail_atr_mult',
           'profit_secure_enabled', 'profit_secure_trigger_pct', 'profit_lock_pct',
           'auto_leverage_enabled', 'auto_lev_mode', 'auto_lev_value', 'auto_lev_max',
-          'max_hold_minutes', 'entry_order_type', 'limit_expiry_bars', 'allowed_sides', 'tp_order_type'].reduce((o, k) => {
+          'max_hold_minutes', 'entry_order_type', 'limit_expiry_bars', 'allowed_sides', 'tp_order_type',
+          'limit_offset_pct'].reduce((o, k) => {
           if (cfgS[k] !== undefined) o[k] = cfgS[k];
           return o;
         }, {}),
@@ -431,6 +435,8 @@ export default function Backtester({ onClose }) {
       use_fast_path: fastPath,
       ...(hasDynamic ? { dynamic_label_basis: dynBasis } : {}),
       ...(compareOrders ? { compare_order_types: true, limit_fallback_market: limitFallback } : {}),
+      limit_fill_mode: limitFillMode,
+      ...(robustActive(robust) ? { robustness: robust } : {}),
       strategy_configs: strategyConfigs,
       execution,
       ...workerField(execution, 'backtest'),
@@ -827,6 +833,8 @@ export default function Backtester({ onClose }) {
               Limit-Fallback auf Market (wie live)
             </label>
           )}
+          <LimitFillSelect value={limitFillMode} onChange={setLimitFillMode} testId="bt-limit-fill-mode" />
+          <BacktestRobustnessFields value={robust} onChange={setRobust} />
           <div className="bt-exec" data-testid="bt-execution-toggle">
             <span className="bt-exec-label">Ausführung</span>
             <button className={`bt-exec-btn ${execution === 'cloud' ? 'on' : ''}`}
@@ -1033,6 +1041,7 @@ export default function Backtester({ onClose }) {
             ))}
 
             {result.order_compare && <OrderCompareTable data={result.order_compare} />}
+            <BacktestRobustness rb={result.robustness} />
 
             <div className="bt-section-title">MATRIX: WELCHE STRATEGIE PASST ZU WELCHEM COIN?</div>
             <div className="bt-table-wrap">

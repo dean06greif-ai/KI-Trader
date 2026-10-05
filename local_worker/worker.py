@@ -41,6 +41,10 @@ kommen im Auftrag mit: args.dynamic_docs) – identisch zum Cloud-Backtester.
 Neu in 1.21.0: KI-Trader-Lab lokal (services/setup_backtest/local_run: MemDB +
 Replay auf dem Server) ohne Cloud-RAM-Deckel – z.B. 3 Jahre Krypto; Autopilot
 mit Note-Schutz (grade_lock).
+Neu in 1.22.0: Ergebnis-Backtest dynamischer Strategien lokal repariert (vorher
+"No module named 'telegram'" – services.telegram_bot importiert die Telegram-
+Bibliothek jetzt optional), realistische Limit-Fills (services/limit_fill.py),
+Ausreißer-Filter je Regime (services/regime_outliers.py).
 Neu in 1.20.1: lesbare Meldung bei kurzen Server-Aussetzern (Render-Proxy 502),
 Log „Server wieder erreichbar“ und „Job fertig – Ergebnis hochgeladen“.
 """
@@ -56,7 +60,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "1.21.0"
+VERSION = "1.22.0"
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = SCRIPT_DIR / "worker_config.json"
 # Zweiter Speicherort im Benutzerordner: überlebt das Neu-Entpacken des Pakets

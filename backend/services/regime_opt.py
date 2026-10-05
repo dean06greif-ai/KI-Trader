@@ -18,6 +18,7 @@ from services import dynamic_strategy as dyn
 from services import job_control
 from services import regime as rg
 from services import regime_lab as lab
+from services import regime_outliers
 from services import research_validation
 from services.backtester import JobCancelled
 
@@ -507,8 +508,13 @@ async def run_regime_optimizer(job_id: str, body: Dict, registry, settings: Dict
                     from services import robustness
                     entry["dd_pass"], entry["dd_ratio_pct"] = robustness.dd_check(
                         entry["validation"] or m or {}, dd_max)
+                # Ausreißer-/Robustheits-Filter (services/regime_outliers): WF-Treffer
+                # mit negativem Training oder Gewinn nur aus 2 Trades zählt nicht als validiert
+                entry["robust_flags"] = regime_outliers.candidate_flags(entry, min_trades)
+                entry["robust_validated"] = regime_outliers.robust_validated(entry, min_trades)
                 top5.append(entry)
-            top5.sort(key=lambda e: (-(1 if e["validation_passed"] else 0),
+            top5.sort(key=lambda e: (-(1 if e["robust_validated"] else 0),
+                                     -(1 if e["validation_passed"] else 0),
                                      -(0 if e.get("dd_pass") is False else 1),
                                      -e["score"]))
             top5 = top5[:5]

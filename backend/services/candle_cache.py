@@ -135,9 +135,11 @@ def _total_candles() -> int:
     return sum(len(v["candles"]) for v in _MEM.values())
 
 
-async def _evict_if_needed_async():
-    while _total_candles() > MAX_CANDLES_IN_MEMORY and _MEM:
-        oldest = min(_MEM.keys(), key=lambda k: _MEM[k]["used_at"])
+async def _evict_if_needed_async(keep: Optional[str] = None):
+    """Älteste Symbole auf Disk auslagern, bis das RAM-Budget passt. `keep` (das
+    gerade angefragte Symbol) bleibt immer im RAM."""
+    while _total_candles() > MAX_CANDLES_IN_MEMORY and len(_MEM) > (1 if keep in _MEM else 0):
+        oldest = min((k for k in _MEM if k != keep), key=lambda k: _MEM[k]["used_at"])
         entry = _MEM.pop(oldest)
         if DISK_ENABLED:
             await asyncio.to_thread(_save_disk, oldest, entry["candles"])
@@ -251,6 +253,9 @@ async def get_candles(session, symbol: str, days: int, job: Dict = None,
                 entry = {"candles": disk, "last_refresh": 0, "used_at": time.time()}
                 _MEM[symbol] = entry
                 logger.info(f"candle_cache: hydrated {symbol} from disk ({len(disk)})")
+                # Vorher fehlte hier die Auslagerung: Disk-/Archiv-Hydrierung
+                # (Boot-Backfill, Charts, Nachanalyse) ließ den Cache über sein Budget wachsen
+                await _evict_if_needed_async(keep=symbol)
 
     if entry is None:
         logger.info(f"candle_cache MISS {symbol} days={days}")
@@ -268,7 +273,7 @@ async def get_candles(session, symbol: str, days: int, job: Dict = None,
         async with _LOCK:
             _MEM[symbol] = {"candles": candles, "last_refresh": time.time(),
                             "used_at": time.time()}
-            await _evict_if_needed_async()
+            await _evict_if_needed_async(keep=symbol)
         return candles.slice_from_ts(start)
 
     cached: CandleArray = entry["candles"]
@@ -322,7 +327,7 @@ async def get_candles(session, symbol: str, days: int, job: Dict = None,
         entry["candles"] = cached
         entry["last_refresh"] = now_ts
         entry["used_at"] = now_ts
-        await _evict_if_needed_async()
+        await _evict_if_needed_async(keep=symbol)
     return cached.slice_from_ts(start)
 
 

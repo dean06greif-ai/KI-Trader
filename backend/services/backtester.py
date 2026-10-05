@@ -32,7 +32,8 @@ TRADE_CFG_KEYS = ("max_capital", "leverage", "fee_percent", "tp1_crv", "tp_full_
                   "tp_mode", "tp1_percent", "tp_full_percent", "maintenance_margin_rate",
                   "auto_leverage_enabled", "auto_lev_mode", "auto_lev_value", "auto_lev_max",
                   "max_hold_minutes", "entry_order_type", "limit_expiry_bars",
-                  "maker_fee_percent", "allowed_sides", "tp_order_type")
+                  "maker_fee_percent", "allowed_sides", "tp_order_type",
+                  "limit_offset_pct", "limit_fill_mode", "limit_penetration_pct")
 
 JOBS: Dict[str, Dict] = {}
 
@@ -223,6 +224,26 @@ def effective_leverage(cfg: Dict, entry: float, sl: float) -> float:
     return round(max(1.0, min(lev, max_lev)), 2)
 
 
+def _market_phase_lookup(candles):
+    """ts -> 'bull'|'bear'|'sideways' (gleiche Klassifikation wie die Regime-
+    Aufschlüsselung im Optimizer, services.robustness.classify_regimes)."""
+    import bisect
+    from services.robustness import classify_regimes
+    try:
+        cls = classify_regimes(candles)
+        ts = candles.ts.tolist() if isinstance(candles, CandleArray) else [c["timestamp"] for c in candles]
+    except Exception:  # noqa: BLE001 – reine Zusatz-Info
+        return None
+    if not ts:
+        return None
+
+    def at(t):
+        if t is None:
+            return None
+        return cls[min(max(bisect.bisect_right(ts, t) - 1, 0), len(cls) - 1)]
+    return at
+
+
 def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
                   cfg: Dict, progress_cb=None, collect_trades: bool = False,
                   should_stop: Callable[[], bool] = None,
@@ -236,6 +257,7 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
     Modellannahme (dokumentiert): Signal auf geschlossener Kerze -> Fill zum
     Schlusskurs dieser Kerze (Close-on-close); Management ab der Folgekerze."""
     from services import fee_model
+    from services import limit_fill
     fee_pct = fee_model.fee_percent_for(
         symbol, float(cfg.get("fee_percent", 0.06)),
         notional_usd=float(cfg.get("max_capital", 100.0)) * float(cfg.get("leverage", 10))) / 100
@@ -279,6 +301,11 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
     limit_expired = limit_filled = limit_fallback = 0
     # Live-Verhalten nachbilden: nicht gefüllte Limit-Order -> Market nachschieben
     limit_fallback_market = bool(cfg.get("limit_fallback_market"))
+    # Realistische Limit-Fills (services/limit_fill.py): Durchbruch statt Berührung,
+    # optionaler Abstand, Stop in der Fill-Kerze; "touch" = altes Verhalten
+    lf = limit_fill.params(cfg)
+    lf_real = lf["mode"] == "realistic"
+    tp_limit_real = lf_real and str(cfg.get("tp_order_type") or "").lower() == "limit"
 
     trades: List[Dict] = []
     open_t: Optional[Dict] = None
@@ -364,13 +391,22 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
         # ---- Limit-Order: Fill prüfen / verfallen lassen ----
         if pending is not None and open_t is None:
             lim = pending["limit"]
-            filled = (c_low <= lim) if pending["side"] == "LONG" else (c_high >= lim)
-            if filled:
-                open_t = _open_trade(pending["sig"], pending["side"], lim, i, maker_fee_pct,
+            if lf_real:
+                fp = limit_fill.fill_price(pending["side"], lim, c_open, c_high, c_low,
+                                           lf["penetration"])
+            else:
+                fp = lim if ((c_low <= lim) if pending["side"] == "LONG" else (c_high >= lim)) else None
+            if fp is not None:
+                open_t = _open_trade(pending["sig"], pending["side"], fp, i, maker_fee_pct,
                                      c_ts, c_open, c_high, c_low, c_close, c_vol)
                 open_t["entry_order"] = "limit"
                 pending = None
                 limit_filled += 1
+                if lf_real and limit_fill.stop_in_fill_bar(open_t["side"], open_t["sl"],
+                                                           c_high, c_low):
+                    # Fill-Kerze läuft weiter bis zum Stop (konservativ)
+                    close_trade(open_t, open_t["sl"], "loss", c_ts)
+                    open_t = None
                 continue
             if i >= pending["exp"]:
                 if limit_fallback_market:
@@ -394,10 +430,16 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
                     return hi >= level
                 return lo <= level
 
+            def tp_hit(level, direction):
+                # TP als Limit-Order: wie der Entry erst bei Durchbruch gefüllt
+                if tp_limit_real:
+                    return limit_fill.tp_limit_hit(side, level, hi, lo, lf["penetration"])
+                return hit(level, direction)
+
             sl_hit = hit(t["sl"], "down" if side == "LONG" else "up")
             liq_hit = hit(t["liq"], "down" if side == "LONG" else "up")
-            tpf_hit = hit(t["tpf"], "up" if side == "LONG" else "down")
-            tp1_hit = (not t["tp1_done"]) and hit(t["tp1"], "up" if side == "LONG" else "down")
+            tpf_hit = tp_hit(t["tpf"], "up" if side == "LONG" else "down")
+            tp1_hit = (not t["tp1_done"]) and tp_hit(t["tp1"], "up" if side == "LONG" else "down")
 
             # conservative: SL/Liquidation first when both touched in same candle
             if sl_hit or liq_hit:
@@ -521,7 +563,8 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
                     continue
                 if limit_mode:
                     pending = {"sig": sig, "side": side, "exp": i + limit_expiry,
-                               "limit": float(sig.get("limit_price") or entry)}
+                               "limit": limit_fill.limit_price(
+                                   side, float(sig.get("limit_price") or entry), lf["offset_pct"])}
                     continue
                 open_t = _open_trade(sig, side, entry, i, fee_pct,
                                      c_ts, c_open, c_high, c_low, c_close, c_vol)
@@ -564,8 +607,11 @@ def simulate_pair(strategy, candles: List[Dict], symbol: str, settings: Dict,
 
     all_trades = []
     if collect_trades:
+        phase_of = _market_phase_lookup(candles) if trades else None
         for t in trades:
             all_trades.append({
+                # Marktphase (Bull/Bär/Seitwärts) zur Schließzeit – Backtester-Robustheit
+                "market_phase": phase_of(t.get("closed_ts")) if phase_of else None,
                 "opened": _iso(t.get("opened_ts")), "closed": _iso(t.get("closed_ts")),
                 "side": t["side"], "entry": t["entry"], "exit": t.get("exit"),
                 "sl_initial": t.get("sl_init"), "sl_final": t.get("sl"),
@@ -1105,6 +1151,19 @@ async def run_backtest(job_id: str, strategy_ids: List[str], symbols: List[str],
             result["dynamic_breakdown"] = dynamic_breakdown
         if order_compare:
             result["order_compare"] = order_compare
+        # Robustheits-Tests wie im Optimizer – rein aus den Trades (keine Neu-Simulation)
+        if cfg.get("robustness"):
+            try:
+                from services import backtest_robustness
+                job["phase"] = "Robustheits-Tests ..."
+                p_end = end_ms or int(time.time() * 1000)
+                result["robustness"] = backtest_robustness.evaluate(
+                    export_trades, cfg["robustness"], cap_ref,
+                    start_ms or (p_end - int(days) * 86400000), p_end,
+                    truncated=len(export_trades) >= MAX_EXPORT_TRADES)
+            except Exception as e:  # noqa: BLE001 – Zusatz-Tests dürfen den Backtest nie killen
+                logger.warning(f"backtest robustness failed: {e}")
+                result["robustness"] = {"error": str(e)[:200]}
         # Nicht auswertbare Regeln (z.B. KI-Strategie mit unbekanntem Indikator)
         # sichtbar machen – sonst bleibt "überall 0" unerklärt.
         warnings = []

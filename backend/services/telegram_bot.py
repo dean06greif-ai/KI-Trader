@@ -1,6 +1,10 @@
 import os
-from telegram import Bot
-from telegram.constants import ParseMode
+try:
+    from telegram import Bot
+    from telegram.constants import ParseMode
+except ImportError:  # lokaler Worker: python-telegram-bot ist dort nicht installiert
+    Bot = None
+    ParseMode = None
 import logging
 from typing import Dict
 
@@ -15,7 +19,7 @@ class TelegramNotifier:
         self.frontend_url = os.getenv('FRONTEND_URL', 'https://crypto-scanner-frontend-a98r.onrender.com')
         self.bot = None
         
-        if self.bot_token:
+        if self.bot_token and Bot is not None:
             try:
                 self.bot = Bot(token=self.bot_token)
                 logger.info("Telegram bot initialized")

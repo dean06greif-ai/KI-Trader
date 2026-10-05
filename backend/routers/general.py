@@ -181,8 +181,9 @@ async def system_ram():
     rss_mb = proc.memory_info().rss / 1024 / 1024
     vm = psutil.virtual_memory()
     cstats = candle_cache.stats()
-    # ~500 Bytes pro Kerze im dict-Format (Messung)
-    cache_mb = cstats["total_candles"] * 500 / 1024 / 1024
+    # Echter Speicher der spaltenbasierten CandleArrays (~48 Byte/Kerze) – die
+    # frühere Schätzung (500 Byte/Kerze, dict-Format) zeigte ~10x zu viel an
+    cache_mb = float(cstats.get("ram_mb") or 0.0)
     export_candles = 0
     export_trades = 0
     for j in bt.JOBS.values():

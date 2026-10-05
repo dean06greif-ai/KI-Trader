@@ -23,6 +23,7 @@ import './Optimizer.css';
 import NumInput from './NumInput';
 import { maxIterations, iterationsHint } from '../constants/searchLimits';
 import { OutlierVariant, RecommendationBadge } from './OptimizerOutliers';
+import { AssetFilterBar, AssetInsight } from './OptimizerAssetFilter';
 import { workerField } from '../lib/workerTarget';
 import WorkerTargetSelect from './WorkerTargetSelect';
 
@@ -196,6 +197,7 @@ export default function Optimizer({ onClose }) {
   const [dynMaxRules, setDynMaxRules] = useState(saved.dynMaxRules ?? 4);
   const [dynStartFromBase, setDynStartFromBase] = useState(!!saved.dynStartFromBase);
   const [selTop, setSelTop] = useState(0);
+  const [assetFilter, setAssetFilter] = useState(null);
   // ---- Verlauf (Robustheit über alle Läufe) ----
   const [showHistory, setShowHistory] = useState(false);
   const [queueRefresh, setQueueRefresh] = useState(0);
@@ -705,6 +707,8 @@ export default function Optimizer({ onClose }) {
   // Top-5-Auswahl: der ausgewählte Kandidat wird beim Übernehmen/Speichern verwendet
   const top5 = result?.top5 || [];
   const selEntry = top5.length ? top5[Math.min(selTop, top5.length - 1)] : null;
+  // Asset-Filter gilt je Ergebnis – bei neuem/geladenem Ergebnis zurücksetzen
+  useEffect(() => { setAssetFilter(null); }, [result]);
 
   const toggleHistory = async () => {
     const next = !showHistory;
@@ -1448,6 +1452,7 @@ export default function Optimizer({ onClose }) {
                     </span>
                   )}
                 </div>
+                <AssetFilterBar top5={top5} value={assetFilter} onChange={setAssetFilter} />
                 {top5.map((t, i) => (
                   <button key={i} type="button"
                     className={`opt-top5-card ${selTop === i ? 'sel' : ''} ${t.passed === false ? 'failed' : ''} ${t.recommendation ? `rec-${t.recommendation.level}` : ''}`}
@@ -1538,7 +1543,8 @@ export default function Optimizer({ onClose }) {
                         <span className="opt-small" style={{ alignSelf: 'center' }}>Test-PnL je Fenster (Details per Mouseover)</span>
                       </div>
                     )}
-                    {t.regimes && (
+                    {assetFilter && <AssetInsight t={t} sym={assetFilter} idx={i} />}
+                    {!assetFilter && t.regimes && (
                       <div className="opt-wf-windows" data-testid={`opt-regimes-${i}`}>
                         {[['bull', 'Bull'], ['bear', 'Bär'], ['sideways', 'Seitwärts']].map(([k, label]) => (
                           t.regimes[k] && (
@@ -1551,7 +1557,7 @@ export default function Optimizer({ onClose }) {
                         <span className="opt-small" style={{ alignSelf: 'center' }}>PnL je Marktphase (Training)</span>
                       </div>
                     )}
-                    {t.per_symbol && (
+                    {!assetFilter && t.per_symbol && (
                       <div className="opt-wf-windows" data-testid={`opt-per-symbol-${i}`}>
                         {Object.entries(t.per_symbol).map(([sym, v]) => (
                           <span key={sym} className={`opt-wf-win ${(v.pnl || 0) > 0 ? 'pos' : 'neg'}`}

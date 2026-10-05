@@ -103,13 +103,13 @@ export default function DynamicWorkbenchResult({ result, kindLabel }) {
     <div className="opt-result" data-testid="dwb-result">
       <div className="opt-section-title">
         <Trophy size={15} weight="fill" style={{ color: '#FFD700' }} />
-        ERGEBNIS · {kindLabel} · <DynBadge /> <span className="mono">{result.dynamic_id}</span>
+        ERGEBNIS · {kindLabel} · <DynBadge /> <span className="mono">{result.dynamic_id || result.source_dynamic_id}</span>
         {result.rounds > 0 && <span className="opt-small"> · {result.rounds} Runde{result.rounds > 1 ? 'n' : ''}</span>}
       </div>
-      <div className="opt-small" style={{ marginBottom: 8 }} data-testid="dwb-result-hint">
+      {!result.no_improvement && <div className="opt-small" style={{ marginBottom: 8 }} data-testid="dwb-result-hint">
         Die neue dynamische Strategie ist gespeichert und unter „Strategien verwalten“ als Reiter wählbar
         (Blitz = Live/Paper je Coin) sowie im Backtester auswählbar.
-      </div>
+      </div>}
       {result.symbols?.length > 0 && (
         <div className="opt-small" style={{ marginBottom: 8 }} data-testid="dwb-result-symbols">
           Optimiert auf: <b>{result.symbols.map(s => s.replace('USDT', '')).join(', ')}</b>
@@ -122,8 +122,15 @@ export default function DynamicWorkbenchResult({ result, kindLabel }) {
           {searched.map(([rid, r]) => (
             <span key={rid} className="opt-param-pill" title={r.strategy ? `Strategie: ${r.strategy}` : ''}>
               {r.label}: {r.note || <>Score <b>{fmt(r.score, 1)}</b> · PnL <b className={(r.pnl || 0) >= 0 ? 'pos' : 'neg'}>{fmt(r.pnl)}</b> ({r.trades} T.){r.validation_passed ? ' ✓ WF' : ''}</>}{r.state ? ` · ${r.state}` : ''}
+              {(r.flags || []).length > 0 && !r.rejected && <span className="neg" title={r.flags.join(' · ')}> · ⚠ {r.flags[0]}</span>}
             </span>
           ))}
+        </div>
+      )}
+      {result.no_improvement && (
+        <div className="dyn-verdict warn" data-testid="dwb-result-no-improvement">
+          <b>Keine robuste Verbesserung gefunden</b>
+          <div>Kein Regime hat die bestehende Zuordnung schlagen können (Walk-Forward positiv, Training nicht negativ, Gewinn nicht nur aus 1–2 Ausreißer-Trades). Es wurde KEINE neue Version angelegt – deine bestehende dynamische Strategie bleibt unverändert.</div>
         </div>
       )}
       <WalkforwardBox wf={result.walkforward} />

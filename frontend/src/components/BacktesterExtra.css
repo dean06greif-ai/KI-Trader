@@ -97,3 +97,13 @@
 .bt-select { background: #0A0A0A; border: 1px solid #2A2D3A; border-radius: 6px; padding: 3px 6px; color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
 .bt-tool-btn.on { background: rgba(0,255,102,0.12); border-color: rgba(0,255,102,0.4); color: #00FF66; }
 .bt-tools .bt-ram { margin-right: 0; }
+
+/* Ausreißer-Hinweis je Regime (DynamicRegimeBreakdown) */
+.dyn-outlier-note { margin-top: 3px; color: #FFB74D; }
+
+/* Robustheits-Tests im Backtester (BacktestRobustness.js) */
+.bt-rb-fields { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; padding: 6px 0; }
+.bt-rb-fields select { background: #12141c; color: #e8ecf1; border: 1px solid #2a2e3d; border-radius: 6px; font-size: 12px; padding: 2px 6px; }
+.bt-rb-fields input.bt-rb-num { width: 62px !important; min-width: 0; flex: 0 0 auto; background: #12141c; color: #e8ecf1; border: 1px solid #2a2e3d; border-radius: 6px; font-size: 12px; padding: 2px 4px; margin-left: 4px; }
+.bt-rb-result { margin-top: 14px; }
+.bt-rb-card { border: 1px solid #23273a; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: rgba(255, 255, 255, 0.015); }

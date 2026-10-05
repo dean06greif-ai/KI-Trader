@@ -31,6 +31,10 @@ from strategies.custom_strategy import CustomStrategy
 
 logger = logging.getLogger(__name__)
 
+# Fortschritts-Abschnitte: Suche bis SEARCH_END, Robustheits-Checks der Top-
+# Kandidaten bis FINALIZE_END, danach Trade-Export (99) -> genauere Restzeit.
+SEARCH_END = 90
+FINALIZE_END = 98
 JOBS: Dict[str, Dict] = {}
 
 TRADE_SPACES = {
@@ -80,6 +84,8 @@ TRADE_SPACES = {
     "entry_order": {
         "entry_order_type": ["market", "limit"],
         "limit_expiry_bars": [1, 3, 5, 10],
+        # Abstand des Limits zum Signalpreis (services/limit_fill.py)
+        "limit_offset_pct": [0.0, 0.05, 0.1, 0.2],
         "tp_order_type": ["market", "limit"],
     },
     # Richtung: beide / nur Long / nur Short
@@ -702,6 +708,10 @@ async def _finalize_top5(job, mode, candidates, train_hist, test_hist, settings,
     for i, cand in enumerate(candidates):
         if should_stop and should_stop():
             raise JobCancelled()
+        # Eigener Fortschritts-Abschnitt (SEARCH_END..FINALIZE_END) -> Restzeit
+        # bleibt am Ende nicht mehr minutenlang auf "~5 s" stehen
+        job["progress"] = max(job.get("progress") or 0,
+                              round(SEARCH_END + i / n * (FINALIZE_END - SEARCH_END), 1))
         job["phase"] = f"Robustheits-Checks: Kandidat {i + 1}/{n}"
         entry = {"metrics": cand.get("metrics"), "score": cand.get("score"),
                  "trade_params": cand.get("trade_params") or {}}
@@ -819,7 +829,10 @@ async def _finalize_top5(job, mode, candidates, train_hist, test_hist, settings,
         # 4. Regime-Aufschlüsselung: PnL je Marktphase (nur Info, kein Filter)
         if robust["rg_enabled"] and trades is not None:
             job["phase"] = f"Regime-Analyse: Kandidat {i + 1}/{n}"
-            entry["regimes"] = robustness.regime_breakdown(trades, train_hist)
+            entry["regimes"], regimes_by_symbol = robustness.regime_breakdown_with_symbols(
+                trades, train_hist)
+        else:
+            regimes_by_symbol = None
         if len(train_hist) > 1:
             # Multi-Coin-Check: funktioniert der Kandidat auf jedem Coin einzeln?
             job["phase"] = f"Multi-Coin-Check: Kandidat {i + 1}/{n}"
@@ -828,8 +841,15 @@ async def _finalize_top5(job, mode, candidates, train_hist, test_hist, settings,
                 sym_fs = {sym: fs_map[sym]} if fs_map and sym in fs_map else None
                 m_s = (await _evaluate_batch(job, None, [(st, s_eff, c_eff)],
                                              {sym: candles}, sym_fs, should_stop))[0]
-                per[sym] = {"pnl": m_s.get("pnl"), "trades": m_s.get("trades"),
-                            "win_rate": m_s.get("win_rate")}
+                per[sym] = asset_insight(m_s)
+                # Asset-Filter im Ergebnis: Test-Kennzahlen + Marktphasen je Asset
+                if fs_test is not None and sym in (test_hist or {}) and sym in fs_test:
+                    m_t = (await _evaluate_batch(job, None, [(st, s_eff, c_eff)],
+                                                 {sym: test_hist[sym]}, {sym: fs_test[sym]},
+                                                 should_stop))[0]
+                    per[sym]["test"] = asset_insight(m_t)
+                if regimes_by_symbol is not None:
+                    per[sym]["regimes"] = regimes_by_symbol.get(sym) or {}
             entry["per_symbol"] = per
             entry["positive_symbols_pct"] = round(
                 sum(1 for v in per.values() if (v.get("pnl") or 0) > 0) / len(per) * 100, 1)
@@ -851,11 +871,21 @@ async def _finalize_top5(job, mode, candidates, train_hist, test_hist, settings,
                                 -(e.get("wf") or {}).get("wf_score", -1e18)))
     else:
         out.sort(key=lambda e: (not e["passed"], -(e.get("score") or -1e18)))
+    job["progress"] = max(job.get("progress") or 0, FINALIZE_END)
     top5 = out[:5]
     for r, e in enumerate(top5):
         e["rank"] = r + 1
         e["rank_reason"] = robustness.rank_reason(e, robust)
     return top5
+
+
+def asset_insight(m: Dict) -> Dict:
+    """Kennzahlen EINES Assets für den Asset-Filter im Optimizer-Ergebnis (rein).
+    pnl/trades/win_rate wie bisher (services/optimizer_outliers nutzt sie)."""
+    m = m or {}
+    keys = ("pnl", "trades", "win_rate", "max_drawdown", "profit_factor",
+            "avg_pnl", "long_trades", "short_trades", "fees")
+    return {k: m.get(k) for k in keys if k in ("pnl", "trades", "win_rate") or m.get(k) is not None}
 
 
 async def _outlier_variant(job, ol, st, s_eff, c_eff, train_hist, fs_map, test_hist,
@@ -1421,7 +1451,7 @@ async def run_optimizer(job_id: str, body: Dict, registry, settings: Dict,
                 raise RuntimeError("Strategie nicht gefunden")
 
             def prog(done, total, phase):
-                job["progress"] = 10 + round(done / max(total, 1) * 89)
+                job["progress"] = 10 + round(done / max(total, 1) * (SEARCH_END - 10))
                 job["phase"] = wf_prefix + phase
 
             rule_tf_space = None
@@ -1454,7 +1484,7 @@ async def run_optimizer(job_id: str, body: Dict, registry, settings: Dict,
             fs_test = {s: fast_sim.FastSeries(c) for s, c in (test_hist or {}).items()}
 
             def prog_e(pct, phase):
-                job["progress"] = 10 + round(min(max(pct, 0), 100) * 0.85)
+                job["progress"] = 10 + round(min(max(pct, 0), 100) * (SEARCH_END - 10) / 100)
                 job["phase"] = phase
 
             champions, explore_report = await deep_explore.run(
@@ -1481,7 +1511,7 @@ async def run_optimizer(job_id: str, body: Dict, registry, settings: Dict,
                 deep_depth = "deep"
             do_refine = mode == "combo" and not deep
             do_trade = bool(trade_space)
-            span_end = 99
+            span_end = SEARCH_END
             if (do_refine or deep) and do_trade:
                 span_end = 55
             elif do_refine or do_trade or deep:
@@ -1509,7 +1539,7 @@ async def run_optimizer(job_id: str, body: Dict, registry, settings: Dict,
             refine_log = list(deep_refine_log)
             refine_end = span_end
             if do_refine and best_m:
-                refine_end = 80 if do_trade else 99
+                refine_end = 80 if do_trade else SEARCH_END
 
                 def prog_r(done, total, phase, _s=span_end, _e=refine_end):
                     job["progress"] = _s + round(done / max(total, 1) * (_e - _s))
@@ -1523,7 +1553,7 @@ async def run_optimizer(job_id: str, body: Dict, registry, settings: Dict,
             best_trade_params = {}
             if do_trade and best_m:
                 def prog_t(done, total, phase, _s=refine_end):
-                    job["progress"] = _s + round(done / max(total, 1) * (99 - _s))
+                    job["progress"] = _s + round(done / max(total, 1) * (SEARCH_END - _s))
                     job["phase"] = wf_prefix + phase
 
                 best_trade_params, best_m, best_sc = await _optimize_trade_settings(

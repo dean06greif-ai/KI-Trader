@@ -370,6 +370,13 @@ def classify_regimes(candles, thresh_pct: float = 1.0) -> List[str]:
 def regime_breakdown(trades: List[Tuple[str, float, float]],
                      histories: Dict[str, List[Dict]]) -> Dict:
     """Trade-PnL je Marktphase (Regime zur Schließzeit des Trades)."""
+    return regime_breakdown_with_symbols(trades, histories)[0]
+
+
+def regime_breakdown_with_symbols(trades: List[Tuple[str, float, float]],
+                                  histories: Dict[str, List[Dict]]) -> Tuple[Dict, Dict]:
+    """(gesamt, je Symbol): Trade-PnL je Marktphase – EINE Klassifikation je
+    Symbol, die Aufteilung je Asset kostet keine zusätzliche Simulation."""
     import bisect
     from services.candles import CandleArray
     cls, ts_idx = {}, {}
@@ -377,17 +384,25 @@ def regime_breakdown(trades: List[Tuple[str, float, float]],
         cls[sym] = classify_regimes(candles)
         ts_idx[sym] = candles.ts.tolist() if isinstance(candles, CandleArray) \
             else [c["timestamp"] for c in candles]
-    agg = {k: {"pnl": 0.0, "trades": 0} for k in ("bull", "bear", "sideways")}
+
+    def _empty():
+        return {k: {"pnl": 0.0, "trades": 0, "wins": 0} for k in ("bull", "bear", "sideways")}
+    agg, per = _empty(), {}
     for sym, ts, pnl in trades:
         if sym not in ts_idx or not ts_idx[sym]:
             continue
         i = min(max(bisect.bisect_right(ts_idx[sym], ts) - 1, 0), len(cls[sym]) - 1)
         reg = cls[sym][i]
-        agg[reg]["pnl"] += pnl
-        agg[reg]["trades"] += 1
-    for v in agg.values():
-        v["pnl"] = round(v["pnl"], 2)
-    return agg
+        for bucket in (agg, per.setdefault(sym, _empty())):
+            bucket[reg]["pnl"] += pnl
+            bucket[reg]["trades"] += 1
+            bucket[reg]["wins"] += 1 if pnl > 1e-6 else 0
+    for bucket in [agg, *per.values()]:
+        for v in bucket.values():
+            v["pnl"] = round(v["pnl"], 2)
+            wins = v.pop("wins")
+            v["win_rate"] = round(wins / v["trades"] * 100, 1) if v["trades"] else 0.0
+    return agg, per
 
 
 # ---------------- Transparenz: Check-Aufschlüsselung & Ranking-Begründung ----------------

@@ -1,4 +1,9 @@
-# Lokaler Worker (v1.15.0)
+# Lokaler Worker (v1.22.0)
+
+## Neu in 1.22.0
+- Ergebnis-Backtest dynamischer Strategien läuft lokal wieder (Fehler „No module named 'telegram'“ behoben).
+- Realistische Limit-Order-Simulation und Ausreißer-Filter je Regime (gleicher Code wie die Website).
+- Bitte das Worker-Paket neu herunterladen und den Worker neu starten.
 
 ## Neu in 1.15.0
 - Gespeicherte Regime-Analysen lokal neu bewerten (Referenz v2 / Macro-F1 / Regime-Nutzen).

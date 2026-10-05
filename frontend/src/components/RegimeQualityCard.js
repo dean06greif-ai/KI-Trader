@@ -30,6 +30,21 @@ function Metric({ label, value, unit = '', help }) {
   );
 }
 
+const METRIC_LABEL = { reference_holdout_f1_pct: 'Referenz Macro-F1 (Holdout)', reference_holdout_pct: 'Referenz-Treffer (Holdout)', holdout_direction_pct: 'Holdout Live=Final' };
+
+/** Ausreißer-Assets der Erkennung (Backend: services/regime_outliers.detection_outliers). */
+function DetectionOutliers({ o }) {
+  if (!o || !(o.symbols || []).length) return null;
+  return (
+    <div className="opt-small rl-quality-outliers" data-testid="regime-quality-outliers">
+      ⚠ <b>Ausreißer-Assets der Erkennung:</b> {o.symbols.map(s => s.replace('USDT', '')).join(', ')} – {METRIC_LABEL[o.metric] || o.metric} klar unter den übrigen
+      (Median {fmt(o.median_all)}% → ohne sie {fmt(o.median_without)}%).
+      {' '}Für diese Assets ggf. eine eigene Erkennung (je Coin) nutzen oder sie aus der gemeinsamen Erkennung herausnehmen.
+      <div>{o.symbols.map(s => <div key={s}>• {s.replace('USDT', '')}: {o.reasons?.[s]}</div>)}</div>
+    </div>
+  );
+}
+
 /**
  * "Wie gut ist die Regime-Erkennung?" – eine Übersicht je Anlageklasse für den
  * gewählten Bereich der Analyse. Hauptkennzahl: Live=Final im Holdout.
@@ -120,6 +135,7 @@ export default function RegimeQualityCard({ quality }) {
           ))}
         </div>
       )}
+      <DetectionOutliers o={quality.outlier_symbols} />
       {(quality.symbols || []).length > 1 && (
         <div className="rl-quality-classes" data-testid="regime-quality-symbols">
           {quality.symbols.map(s => (

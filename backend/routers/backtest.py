@@ -84,9 +84,13 @@ async def start_backtest(body: Dict, _: bool = Depends(require_admin)):
               "tp_mode", "tp1_percent", "tp_full_percent",
               "maintenance_margin_rate", "use_fast_path", "sl_ticks", "trade_pre_signals",
               "auto_leverage_enabled", "auto_lev_mode", "auto_lev_value", "auto_lev_max",
-              "dynamic_label_basis", "compare_order_types", "limit_fallback_market"):
+              "dynamic_label_basis", "compare_order_types", "limit_fallback_market",
+              "limit_fill_mode", "limit_offset_pct", "limit_penetration_pct"):
         if body.get(k) is not None:
             cfg[k] = body[k]
+    # Robustheits-Tests wie im Optimizer (services/backtest_robustness.py)
+    if isinstance(body.get("robustness"), dict):
+        cfg["robustness"] = body["robustness"]
     strategy_configs = body.get("strategy_configs") or {}
     if not isinstance(strategy_configs, dict):
         strategy_configs = {}
@@ -389,7 +393,7 @@ async def backtest_apply(body: Dict, _: bool = Depends(require_admin)):
                "maintenance_margin_rate",
                "auto_leverage_enabled", "auto_lev_mode", "auto_lev_value", "auto_lev_max",
                "max_hold_minutes", "entry_order_type", "limit_expiry_bars", "allowed_sides",
-               "tp_order_type")
+               "tp_order_type", "limit_offset_pct", "limit_fill_mode", "limit_penetration_pct")
     applied = []
     now_iso = datetime.now(timezone.utc).isoformat()
     for sym in symbols:

@@ -22,6 +22,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from services import dynamic_strategy as dyn
 from services import regime as rg
 from services import regime_lab as lab
+from services import regime_outliers
 from services import strategy_plan
 
 logger = logging.getLogger(__name__)
@@ -257,7 +258,11 @@ async def simulate_dynamic(doc: Dict, symbols: List[str], days: int, cfg: Dict,
                  "metrics": dyn.metrics_from_rows(by_regime.get(rid, []), capital) if p["traded"] else None,
                  "alternatives": sorted(alternatives.get(rid) or [],
                                         key=lambda a: -float((a["metrics"] or {}).get("pnl") or 0))}
-        entry["recommendation"] = recommend(entry, entry["alternatives"])
+        # Ausreißer-Filter je Regime (Assets aus dem Raster, Gewinn nur aus 2 Trades)
+        entry["outliers"] = (regime_outliers.regime_report(by_regime.get(rid, []))
+                             if p["traded"] and by_regime.get(rid) else None)
+        entry["recommendation"] = regime_outliers.adjust_recommendation(
+            recommend(entry, entry["alternatives"]), entry["outliers"])
         regimes_out.append(entry)
 
     per_pair = []
@@ -275,6 +280,7 @@ async def simulate_dynamic(doc: Dict, symbols: List[str], days: int, cfg: Dict,
                           "label_basis": "retrospective_reference" if retro else "causal_live",
                           "symbols": list(histories.keys()), "switches": switches,
                           "total": total_m, "regimes": regimes_out,
+                          "outliers": regime_outliers.regime_report(rows) if rows else None,
                           "points": _equity_points(rows, labels_of)[:8000],
                           "untraded_regimes": [labels_of[r] for r, p in plans.items() if not p["traded"]],
                           "skip_recommended": [e["label"] for e in regimes_out

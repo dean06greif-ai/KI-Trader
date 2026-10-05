@@ -216,12 +216,12 @@ def _lx_clean():
 def test_dynamic_backtest_only_claimed_by_new_worker(_lx_clean):
     from services import backtester as bt
     lx.heartbeat("old", {"name": "old", "version": "1.19.0", "running_jobs": []})
-    lx.heartbeat("new", {"name": "new", "version": "1.20.0", "running_jobs": []})
+    lx.heartbeat("new", {"name": "new", "version": "1.22.0", "running_jobs": []})
     jid = bt.create_job({"execution": "local"})
     lx.enqueue_compute("backtest", jid, {"kind": "backtest", "args": {"dynamic_docs": {"dyn_a": {}}}})
     assert lx.claim("old") is None
     assert lx.claim("new")["job_id"] == jid
-    assert lx.worker_supports((1, 20), "new") and not lx.worker_supports((1, 20), "old")
+    assert lx.worker_supports(lx.DYNAMIC_BACKTEST_MIN_VERSION, "new") and not lx.worker_supports(lx.DYNAMIC_BACKTEST_MIN_VERSION, "old")
 
 
 def test_run_backtest_uses_shipped_dynamic_docs(monkeypatch):

@@ -14,6 +14,28 @@ const ACTION_LABEL = {
   untraded: { cls: '', text: '– nicht gehandelt' },
 };
 
+/** Ausreißer-Filter je Regime (Backend: services/regime_outliers.regime_report). */
+export function RegimeOutlierNote({ o, testId }) {
+  if (!o || !(o.flags || []).length) return null;
+  const assets = o.outlier_assets || [];
+  return (
+    <div className="opt-small dyn-outlier-note" data-testid={testId}>
+      {(o.flags || []).includes('outlier_dominated') && (
+        <div title={`Anteil der 2 besten Trades am Brutto-Gewinn: ${fmt(o.dominance?.top_share_pct, 0)}%`}>
+          ⚠ Ausreißer-Dominanz: ohne die 2 besten Trades PnL <b className={(o.dominance?.pnl_ex_top || 0) >= 0 ? 'pos' : 'neg'}>{fmt(o.dominance?.pnl_ex_top)}</b>
+        </div>
+      )}
+      {assets.length > 0 && (
+        <div title={assets.map(s => `${s.replace('USDT', '')}: ${o.outlier_reasons?.[s] || ''}`).join('\n')}>
+          ⚠ Ausreißer-Assets: <b>{assets.map(s => s.replace('USDT', '')).join(', ')}</b>
+          {o.pnl_without_outliers != null && <> · ohne sie PnL <b className={o.pnl_without_outliers >= 0 ? 'pos' : 'neg'}>{fmt(o.pnl_without_outliers)}</b></>}
+        </div>
+      )}
+      {(o.flags || []).includes('few_trades') && <div>ℹ zu wenige Trades für eine belastbare Aussage</div>}
+    </div>
+  );
+}
+
 export function RecommendationPill({ rec, testId }) {
   const a = ACTION_LABEL[rec?.action] || ACTION_LABEL.unclear;
   return (
@@ -99,6 +121,7 @@ export default function DynamicRegimeBreakdown({ breakdown, testPrefix = 'dyn-bd
                   <td className="opt-small" data-testid={`${testPrefix}-rec-${r.regime}`}>
                     <RecommendationPill rec={rec} testId={`${testPrefix}-rec-pill-${r.regime}`} />
                     <div style={{ marginTop: 2 }}>{rec.text}</div>
+                    <RegimeOutlierNote o={r.outliers} testId={`${testPrefix}-outliers-${r.regime}`} />
                     {alt && (
                       <div style={{ color: '#8A8FA3' }}>
                         Alternative: <b>{alt.strategy_name}</b> · {alt.metrics?.trades} Trades · PnL {fmt(alt.metrics?.pnl)} · WR {fmt(alt.metrics?.win_rate, 0)}%

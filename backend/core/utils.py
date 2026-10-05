@@ -1,4 +1,5 @@
 """Gemeinsame Helfer (aus server.py verschoben, Logik unverändert)."""
+import time
 import logging
 from datetime import datetime, timezone
 from typing import Dict, List
@@ -264,7 +265,7 @@ def _watch_job_task(task, jobs: Dict, job_id: str):
 def _job_public(job: Dict) -> Dict:
     """Job ohne Export-Rohdaten (sonst riesige Antworten) + ETA."""
     j = {k: v for k, v in job.items()
-         if k not in ("export_candles", "export_trades", "_bench",
+         if k not in ("export_candles", "export_trades", "_bench", "_eta",
                       "phase_before_pause", "paused_at", "_conn_lost")}
     try:
         from services import job_control
@@ -291,7 +292,10 @@ def _job_public(job: Dict) -> Dict:
         p = j.get("progress") or 0
         if job.get("status") == "running" and p >= 2 and not job.get("paused") \
                 and not endless:
-            j["eta_seconds"] = int(elapsed / p * (100 - p))
+            from services import job_eta
+            eta = job_eta.estimate(job, elapsed, p, time.time())
+            if eta is not None:
+                j["eta_seconds"] = eta
     except Exception:
         pass
     return j

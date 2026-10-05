@@ -209,7 +209,10 @@ def summarize_scope(per_symbol: Dict[str, Dict]) -> Optional[Dict]:
         by_class.setdefault(r["asset_class"], []).append(r)
     classes = {cls: {"label": LABELS.get(cls, cls), **_aggregate(rs)}
                for cls, rs in by_class.items()}
+    from services import regime_outliers
     return {"overall": _aggregate(rows), "classes": classes, "symbols": rows,
+            # Ausreißer-Assets der Erkennung (services/regime_outliers) – nur Hinweis
+            "outlier_symbols": regime_outliers.detection_outliers(rows),
             "thresholds": {"good": GRADE_GOOD, "ok": GRADE_OK,
                            "reference_good": regime_reference.REF_GOOD,
                            "reference_ok": regime_reference.REF_OK,
