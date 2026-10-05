@@ -24,6 +24,10 @@ Frontend neu: OptimizerAssetFilter.js, BacktestRobustness.js
 - Worker 1.22.0 (telegram optional importiert); Backtester-Robustheitstests (WF single/rolling/anchored, DD, Konstanz, Stress, MC, Marktphasen, Multi-Coin, Ausreißer)
 - Regressionstests: backend/tests/test_improvements_1010_limit_outliers_eta.py (+ Testagent iter52)
 
+## Umgesetzt (05.10.2026, Runde 2)
+- Dynamisch „Bestehende optimieren“: Such-Modus je Phase (Parameter / Regeln+Parameter / komplett neue Strategie), auch über „Strategie ändern → Komplett neue Strategie suchen…“ (Backend: regime_modes)
+- Optimizer: „Als eigene Strategie sichern“ je Top-Ergebnis + „Zwischenstand sichern“ während laufender Suche (apply type=save_copy, services/strategy_copies.py; Kopie nicht aktiviert)
+
 ## Backlog
 - P1: Optimizer-UI: Auswahl Limit-Fill-Modus (aktuell Standard realistisch)
 - P1: Regime-Lab: Ausreißer-Assets direkt per Klick aus gemeinsamer Erkennung herausnehmen
