@@ -548,7 +548,7 @@ async def _discover(job, histories, settings, cfg, objective, min_trades,
                          "metrics": m0, "score": round(best_score, 3)})
         steps.append({"round": 0, "added": "Basis-Strategie",
                       "score": round(best_score, 3), "metrics": m0})
-        job["best"] = {"rules": _labels(definition), "metrics": m0}
+        job["best"] = {"rules": _labels(definition), "metrics": m0, "definition": _snap(definition)}
     total = len(cands) * max_rules
     done = 0
     chunk_size = max(1, int(workers))
@@ -595,7 +595,7 @@ async def _discover(job, histories, settings, cfg, objective, min_trades,
         used.add(cand["label"])
         steps.append({"round": round_i + 1, "added": cand["label"],
                       "score": round(sc, 3), "metrics": m})
-        job["best"] = {"rules": _labels(definition), "metrics": m}
+        job["best"] = {"rules": _labels(definition), "metrics": m, "definition": _snap(definition)}
     return definition, best_metrics, best_score, steps
 
 
@@ -634,7 +634,7 @@ async def _refine(job, definition, base_score, base_metrics, histories, settings
             log.append({"iteration": it + 1,
                         "change": f"{r['indicator']} {r['op']} {r['value']}",
                         "score": round(sc, 3), "metrics": m})
-            job["best"] = {"rules": _labels(d), "metrics": m}
+            job["best"] = {"rules": _labels(d), "metrics": m, "definition": _snap(d)}
     return best_def, best_m, log
 
 
@@ -675,7 +675,8 @@ async def _optimize_trade_settings(job, definition, base_score, base_metrics,
             progress(it, iterations, f"Trade-Einstellungen {it}/{iterations}")
             if sc > best_score:
                 best_score, best_tp, best_m = sc, tp, m
-                job["best"] = {"rules": _labels(definition), "metrics": m, "trade_params": tp}
+                job["best"] = {"rules": _labels(definition), "metrics": m, "trade_params": tp,
+                               "definition": _snap(definition)}
     return best_tp, best_m, best_score
 
 
@@ -877,6 +878,13 @@ async def _finalize_top5(job, mode, candidates, train_hist, test_hist, settings,
         e["rank"] = r + 1
         e["rank_reason"] = robustness.rank_reason(e, robust)
     return top5
+
+
+def _snap(definition: Dict) -> Dict:
+    """Unveränderliche Kopie der aktuellen Bestand-Definition für job["best"] –
+    damit ein laufender Bestand im UI schon als eigene Strategie gesichert werden kann."""
+    import copy
+    return copy.deepcopy(definition)
 
 
 def asset_insight(m: Dict) -> Dict:

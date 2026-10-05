@@ -258,3 +258,22 @@ def test_simulate_pair_tags_market_phase():
     r = simulate_pair(None, c, "BTCUSDT", {}, {**DEFAULT_COIN_CFG}, collect_trades=True,
                       signal_provider=lambda i: sig if i == 100 else None)
     assert r["all_trades"] and r["all_trades"][0]["market_phase"] in ("bull", "bear", "sideways")
+
+
+# ---------------- Dynamisch: Such-Modus je Phase ----------------
+def test_targets_for_refine_per_phase_modes():
+    from services import dynamic_workbench as wb
+    doc = {"model": {"regimes": [{"id": 0}, {"id": 1}, {"id": 2}]},
+           "regime_strategies": {"0": "rsi_only", "1": "rsi_only", "2": "rsi_only"},
+           "sub_strategies": {"2": {"long_rules": [1]}}}
+    t = wb.targets_for_refine(doc, [0, 1, 2], "params", {"1": "discovery"})
+    assert t[0]["mode"] == "params" and t[1]["mode"] == "discovery" and t[2]["mode"] == "combo"
+    assert wb.targets_for_refine(doc, [0], "params")[0]["mode"] == "params"   # rückwärtskompatibel
+
+
+def test_optimizer_best_snapshot_is_independent():
+    from services.optimizer import _snap
+    d = {"long_rules": [{"a": 1}]}
+    s = _snap(d)
+    d["long_rules"].append({"b": 2})
+    assert len(s["long_rules"]) == 1

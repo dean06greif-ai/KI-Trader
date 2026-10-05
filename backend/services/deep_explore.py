@@ -170,6 +170,8 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
         champions.sort(key=lambda x: -x["wf"]["wf_score"])
         del champions[10:]
         job["best"] = {"rules": entry["rules"], "metrics": entry["metrics"],
+                       "definition": entry.get("definition"),
+                       "trade_params": entry.get("trade_params"),
                        "explore": {"champions": len(champions),
                                    "wf_score": entry["wf"]["wf_score"],
                                    "test_pnl": (entry["test_metrics"] or {}).get("pnl")}}

@@ -558,3 +558,5 @@
 .opt-asset-insight { margin: 6px 0; padding: 8px 10px; border: 1px solid rgba(179, 136, 255, 0.28); border-radius: 8px; background: rgba(179, 136, 255, 0.05); }
 .opt-asset-insight-head { display: flex; gap: 8px; align-items: center; font-size: 12px; margin-bottom: 4px; color: #e8ecf1; }
 .dyn-outlier-note { margin-top: 3px; color: #FFB74D; }
+.opt-save-copy { cursor: pointer; margin-left: auto; font-size: 11px; }
+.opt-save-copy.on { color: #4ade80; border-color: rgba(74, 222, 128, 0.45); cursor: default; }

@@ -36,7 +36,7 @@ const DEFAULT_OPTS = {
 };
 // Auswahl je Reiter – bleibt beim Reiter-Wechsel erhalten (nur die Quelle setzt zurück)
 const DEFAULT_SEL = {
-  refine: { source: '', regimes: [], mode: 'params' },
+  refine: { source: '', regimes: [], mode: 'params', modes: {} },
   create: { source: '', mapping: {} },
   discover: { source: '', regimes: [], mode: 'discovery' },
 };
@@ -128,20 +128,27 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal, onContext })
     // Quelle gewechselt -> Auswahl neu (alle Regime vorbelegt), Mapping leer
     const src = tab === 'refine' ? dyns.find(d => d.id === source) : analyses.find(a => a.id === source);
     const ids = ((tab === 'refine' ? src?.dynamic?.regimes : src?.regimes) || []).map(r => r.id);
-    patchSel({ source, regimes: ids, mapping: {}, symbols: undefined });
+    patchSel({ source, regimes: ids, mapping: {}, symbols: undefined, modes: {} });
   };
   // Phasen-Editor: nur EINE Phase weiter optimieren (Parameter oder neue Regeln)
   const focusPhase = (phase, m) => {
-    patchSel({ regimes: [phase.regime], mode: m });
+    patchSel({ regimes: [phase.regime], mode: m, modes: {} });
     toast.info(`Nur „${phase.label}“ ist markiert (${MODE_LABEL[m]}). Unten „Optimierung starten“. Die anderen Phasen bleiben unverändert.`);
     setTimeout(() => document.querySelector('[data-testid="dwb-start"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   };
+  // Eigener Such-Modus je Phase (z.B. komplett neue Strategie nur für eine Phase)
+  const phaseModes = tab === 'create' ? {} : (cur.modes || {});
+  const setPhaseMode = (id, m) => patchSel({
+    modes: { ...phaseModes, [id]: m || undefined },
+    regimes: cur.regimes.includes(id) ? cur.regimes : [...cur.regimes, id],
+  });
+  const needsRules = mode !== 'params' || (cur.regimes || []).some(r => ['discovery', 'combo'].includes(phaseModes[r]));
   const toggleRegime = (id) => patchSel({ regimes: cur.regimes.includes(id) ? cur.regimes.filter(x => x !== id) : [...cur.regimes, id] });
   const set = (k, v) => (k === 'mode' ? patchSel({ mode: v }) : setOpts(o => ({ ...o, [k]: v })));
 
   const start = async () => {
     if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
-    if (mode !== 'params' && indicators.length === 0) { toast.error('Mind. 1 Indikator anhaken'); return; }
+    if (needsRules && indicators.length === 0) { toast.error('Mind. 1 Indikator anhaken'); return; }
     if (opts.execution === 'local' && !lwOnline) { toast.error('Kein lokaler Worker verbunden – Worker starten oder Cloud wählen'); return; }
     const body = {
       kind: tab, mode, iterations: Number(opts.iterations), min_trades: Number(opts.min_trades),
@@ -151,12 +158,14 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal, onContext })
       timeframe: opts.timeframe || undefined, days: opts.days ? Number(opts.days) : undefined,
       sessions: opts.sessions || undefined, max_capital: Number(opts.max_capital),
       leverage: Number(opts.leverage), fee_percent: Number(opts.fee_percent),
-      optimize: optFlags, indicators: mode !== 'params' ? indicators : undefined,
+      optimize: optFlags, indicators: needsRules ? indicators : undefined,
       regime_walk_forward: opts.regime_walk_forward, regime_train_pct: Number(opts.regime_train_pct),
       direction_bias: opts.direction_bias, label_basis: opts.label_basis, skip_losing: opts.skip_losing,
       ...extraChecksBody(opts),
     };
     body.symbols = symbols;
+    const regimeModes = Object.fromEntries((cur.regimes || []).filter(r => phaseModes[r]).map(r => [r, phaseModes[r]]));
+    if (tab !== 'create' && Object.keys(regimeModes).length) body.regime_modes = regimeModes;
     if (tab === 'refine') Object.assign(body, { dynamic_id: cur.source, regime_ids: cur.regimes });
     else if (tab === 'create') Object.assign(body, { analysis_id: cur.source, scope: 'combined', mapping: cur.mapping });
     else Object.assign(body, { analysis_id: cur.source, scope: 'combined', regime_ids: cur.regimes });
@@ -233,10 +242,11 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal, onContext })
         )}
       </div>
       {tab === 'refine' && dyn && <DynamicPhaseEditor dynamicId={dyn.id} strategies={strategies} disabled={running}
-        optimizeSel={cur.regimes} onToggleOptimize={toggleRegime} onFocus={focusPhase} />}
+        optimizeSel={cur.regimes} onToggleOptimize={toggleRegime} onFocus={focusPhase}
+        phaseModes={phaseModes} globalMode={mode} onSetMode={setPhaseMode} />}
       {tab === 'refine' && dyns.length === 0 && <div className="opt-small" style={{ marginBottom: 8 }}>Noch keine dynamische Strategie aus dem Regime-Lab vorhanden – zuerst „Neu aus Strategien“ oder „Neue Strategie je Regime“ nutzen.</div>}
 
-      <CoreSettings opts={opts} set={set} tab={tab} mode={mode} source={analysis} minTradesCtx={minTradesCtx} />
+      <CoreSettings opts={opts} set={set} tab={tab} mode={mode} needsRules={needsRules} source={analysis} minTradesCtx={minTradesCtx} />
       {tab !== 'create' && analysis && (
         <MinTradesHint minTrades={Number(opts.min_trades)} {...minTradesCtx} />
       )}
@@ -258,7 +268,7 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal, onContext })
       {tab !== 'create' && <OptGroups flags={optFlags} toggle={(k) => setOptFlags(f => ({ ...f, [k]: !f[k] }))} />}
       <RobustnessRow opts={opts} set={set} tab={tab} holdout={holdout} />
       <ExtraChecksRow opts={opts} set={set} tab={tab} />
-      {mode !== 'params' && <IndicatorPicker indicators={indicators} setIndicators={setIndicators} testPrefix="dwb"
+      {needsRules && <IndicatorPicker indicators={indicators} setIndicators={setIndicators} testPrefix="dwb"
         label="INDIKATOREN FÜR DIE REGEL-SUCHE (Häkchen = wird je Regime getestet)" />}
 
       <ExecutionRow execution={opts.execution} setExecution={(v) => set('execution', v)} lwOnline={lwOnline}

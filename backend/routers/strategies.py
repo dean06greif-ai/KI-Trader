@@ -232,26 +232,18 @@ async def duplicate_strategy(strategy_id: str, body: Dict = None, _: bool = Depe
     base_name = getattr(strat, "STRATEGY_NAME", strategy_id)
     new_name = str(body.get("name") or f"{base_name} (Kopie)").strip()[:80]
 
+    from services import strategy_copies
     if getattr(strat, "IS_CUSTOM", False):
-        new_id = f"custom_{uuid.uuid4().hex[:8]}"
-        definition = dict(strat.definition)
-        definition["id"] = new_id
-        definition["name"] = new_name
-        definition.setdefault("timeframe", "1m")
-        await state.db.custom_strategies.update_one({"id": new_id}, {"$set": definition}, upsert=True)
-        strategy_registry.upsert_custom(definition)
+        definition = await strategy_copies.create_custom_copy(
+            state.db, strategy_registry, strat.definition, new_name, strat.definition.get("timeframe"))
     else:
         # Variante einer Variante zeigt auf die ursprüngliche Code-Strategie
-        base_id = getattr(strat, "BASE_STRATEGY_ID", None) or strategy_id
-        new_id = f"variant_{uuid.uuid4().hex[:8]}"
         tf = scanner.settings.get("strategy_timeframes", {}).get(strategy_id) \
             or getattr(strat, "STRATEGY_TIMEFRAME", "1m")
-        definition = {"kind": "variant", "id": new_id, "base_id": base_id, "name": new_name,
-                      "description": getattr(strat, "STRATEGY_DESCRIPTION", ""), "timeframe": tf,
-                      "created_at": datetime.now(timezone.utc).isoformat()}
-        if strategy_registry.upsert_variant(definition) is None:
+        definition = await strategy_copies.create_variant(state.db, strategy_registry, strat, new_name, tf)
+        if definition is None:
             raise HTTPException(status_code=400, detail="Basis-Strategie nicht duplizierbar")
-        await state.db.strategy_variants.update_one({"id": new_id}, {"$set": definition}, upsert=True)
+    new_id = definition["id"]
 
     await _copy_strategy_settings(strategy_id, new_id, definition.get("timeframe"))
     return {"status": "success", "id": new_id, "name": new_name, "definition": definition,

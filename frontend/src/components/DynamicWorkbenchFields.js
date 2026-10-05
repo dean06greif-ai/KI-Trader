@@ -96,7 +96,7 @@ export function StrategyMapping({ regimes, strategies, mapping, setMapping }) {
 }
 
 /** Einstellungen wie im klassischen Optimizer (Timeframe, Zeitraum, Kapital, Hebel …). */
-export function CoreSettings({ opts, set, tab, mode, source, minTradesCtx }) {
+export function CoreSettings({ opts, set, tab, mode, needsRules, source, minTradesCtx }) {
   const maxDays = source?.days || 0;
   const live = (opts.label_basis || 'live') === 'live';
   const dayOpts = DAY_OPTIONS.filter(d => !maxDays || d < maxDays || live);
@@ -104,7 +104,7 @@ export function CoreSettings({ opts, set, tab, mode, source, minTradesCtx }) {
   return (
     <div className="opt-setup">
       {tab !== 'create' && (
-        <label className="opt-field">Was optimieren
+        <label className="opt-field" title={tab === 'refine' ? 'Standard für alle markierten Phasen – je Phase im Phasen-Editor abweichend wählbar (z.B. komplett neue Strategie)' : undefined}>{tab === 'refine' ? 'Was optimieren (Standard)' : 'Was optimieren'}
           <select value={mode} onChange={e => set('mode', e.target.value)} data-testid="dwb-mode">
             {(tab === 'discover' ? ['discovery', 'combo'] : ['params', 'combo', 'discovery']).map(m => <option key={m} value={m}>{MODE_LABEL[m]}</option>)}
           </select>
@@ -150,7 +150,7 @@ export function CoreSettings({ opts, set, tab, mode, source, minTradesCtx }) {
             <span className="neg opt-small" data-testid="dwb-iterations-capped">wird auf {maxIterations(opts.execution)} begrenzt</span>
           )}
         </label>
-        {mode !== 'params' && (
+        {(needsRules ?? mode !== 'params') && (
           <label className="opt-field">Max. Regeln
             <NumInput int min={1} max={8} value={opts.max_rules} onCommit={(v) => set('max_rules', v || 4)} data-testid="dwb-max-rules" />
           </label>

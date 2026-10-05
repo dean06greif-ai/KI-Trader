@@ -648,4 +648,64 @@ async def optimizer_apply(body: Dict, _: bool = Depends(require_admin)):
         return {"status": "success", "id": sid, "definition": definition,
                 "updated": bool(body.get("update_strategy_id")),
                 "excluded_symbols": excluded}
-    raise HTTPException(status_code=400, detail="type muss params|strategy|backtest sein")
+    if apply_type == "save_copy":
+        return await _save_result_copy(body)
+    raise HTTPException(status_code=400, detail="type muss params|strategy|backtest|save_copy sein")
+
+
+async def _save_result_copy(body: Dict) -> Dict:
+    """Ein Optimizer-Ergebnis (Top-Ergebnis oder laufender Bestand) als EIGENE,
+    neue Strategie sichern – Ergebnisse bleiben erhalten, die Suche kann weiter-
+    laufen. Bestehende Strategien werden NICHT verändert und die Kopie wird NICHT
+    aktiviert (kein Scanner-Signal, Live/Paper bleibt 'off').
+    Mit Regeln (Discovery/Combo/Endlos) -> Custom-Strategie, sonst Variante der
+    optimierten Strategie mit den gefundenen Parametern."""
+    from services import strategy_copies
+    params = body.get("params") or {}
+    trade_params = body.get("trade_params") or {}
+    tf = body.get("timeframe")
+    m = body.get("metrics") or {}
+    origin = {"optimizer_origin": {
+        "job_id": body.get("job_id"), "rank": body.get("rank"),
+        "pnl": m.get("pnl"), "trades": m.get("trades"), "win_rate": m.get("win_rate"),
+        "saved_at": datetime.now(timezone.utc).isoformat()}}
+    definition = body.get("definition")
+    strat = strategy_registry.get(body.get("strategy_id") or "")
+    label = f"#{body['rank']}" if body.get("rank") else "Zwischenstand"
+    if isinstance(definition, dict) and definition.get("long_rules"):
+        name = str(body.get("name") or f"{definition.get('name') or 'Optimizer Strategie'} · {label}").strip()[:80]
+        doc = await strategy_copies.create_custom_copy(
+            state.db, strategy_registry, {**definition, "description": definition.get("description")
+                                          or "Vom Optimizer gesichertes Ergebnis"}, name, tf, origin)
+    else:
+        if not strat:
+            raise HTTPException(status_code=400, detail="Gültige strategy_id oder definition erforderlich")
+        if strategy_registry.is_dynamic(strat.STRATEGY_ID) or strat.STRATEGY_ID == "ai_trader":
+            raise HTTPException(status_code=400, detail="Diese Strategie kann nicht als Kopie gesichert werden")
+        name = str(body.get("name") or f"{strat.STRATEGY_NAME} · Optimizer {label}").strip()[:80]
+        if getattr(strat, "IS_CUSTOM", False):
+            doc = await strategy_copies.create_custom_copy(
+                state.db, strategy_registry, strat.definition, name, tf, origin)
+        else:
+            doc = await strategy_copies.create_variant(state.db, strategy_registry, strat, name, tf, origin)
+            if doc is None:
+                raise HTTPException(status_code=400, detail="Basis-Strategie nicht kopierbar")
+    sid = doc["id"]
+    updates: Dict = {}
+    if params:
+        sp = dict(scanner.settings.get("strategy_params", {}))
+        sp[sid] = dict(params)
+        updates["strategy_params"] = sp
+    tfs = dict(scanner.settings.get("strategy_timeframes", {}))
+    tfs[sid] = doc.get("timeframe") or "1m"
+    updates["strategy_timeframes"] = tfs
+    if body.get("sessions"):
+        ss = dict(scanner.settings.get("strategy_sessions", {}))
+        ss[sid] = [body["sessions"]] if isinstance(body["sessions"], str) else body["sessions"]
+        updates["strategy_sessions"] = ss
+    await scanner.save_settings(updates)
+    await _write_backtest_config(sid, params, trade_params, doc.get("timeframe"))
+    if trade_params:
+        await _write_strategy_override(sid, trade_params)
+    return {"status": "success", "id": sid, "name": doc["name"],
+            "kind": "custom" if sid.startswith("custom_") else "variant"}

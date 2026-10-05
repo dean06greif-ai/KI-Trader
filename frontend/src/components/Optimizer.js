@@ -24,6 +24,7 @@ import NumInput from './NumInput';
 import { maxIterations, iterationsHint } from '../constants/searchLimits';
 import { OutlierVariant, RecommendationBadge } from './OptimizerOutliers';
 import { AssetFilterBar, AssetInsight } from './OptimizerAssetFilter';
+import SaveCopyButton from './OptimizerSaveCopy';
 import { workerField } from '../lib/workerTarget';
 import WorkerTargetSelect from './WorkerTargetSelect';
 
@@ -1286,6 +1287,12 @@ export default function Optimizer({ onClose }) {
                     {job.best.score < -9e8 ? ' ⚠ noch kein Kandidat mit genug Trades' : ' ⚠ noch kein Kandidat erfüllt den DD-Filter'}
                   </span>
                 )}
+                {mode !== 'dynamic' && (job.best.definition || (selStrategy && job.best.params)) && (
+                  <SaveCopyButton resetOn={JSON.stringify(job.best.metrics || {})} testid="opt-save-copy-live" label="Zwischenstand sichern" payload={{
+                    strategy_id: selStrategy || undefined, definition: job.best.definition, params: job.best.params,
+                    trade_params: job.best.trade_params, timeframe, sessions: optSessions.trim() || undefined,
+                    metrics: job.best.metrics, job_id: job.id }} />
+                )}
                 {job.best?.explore && (
                   <span data-testid="opt-explore-live">
                     {' '}· Champions: <b>{job.best.explore.champions}</b>
@@ -1460,6 +1467,12 @@ export default function Optimizer({ onClose }) {
                     <div className="opt-top5-head">
                       <span className="opt-top5-rank">#{t.rank || i + 1}</span>
                       <RecommendationBadge rec={t.recommendation} testid={`opt-rec-${i}`} />
+                      {result.mode !== 'dynamic' && (t.definition || (result.strategy_id && t.params)) && (
+                        <SaveCopyButton resetOn={result} testid={`opt-save-copy-${i}`} payload={{
+                          strategy_id: result.strategy_id, definition: t.definition, params: t.params,
+                          trade_params: t.trade_params, timeframe: result.timeframe, sessions: result.sessions,
+                          metrics: t.metrics, rank: t.rank || i + 1 }} />
+                      )}
                       {t.wf
                         ? <span className="opt-top5-score">
                           WF-Score {fmt(t.wf.wf_score, 2)} · Übereinstimmung {fmt(t.wf.consistency_pct, 0)}%

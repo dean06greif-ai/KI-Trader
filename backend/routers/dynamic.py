@@ -651,6 +651,11 @@ async def workbench_start(body: Dict, _: bool = Depends(require_admin)):
     mode = body.get("mode") or ("discovery" if kind == "discover" else "params")
     if mode not in ("params", "discovery", "combo"):
         raise HTTPException(status_code=400, detail="mode muss params|discovery|combo sein")
+    # Optional je Phase eigener Such-Modus, z.B. eine Phase nur Parameter, eine
+    # andere komplett neue Strategie (Discovery) – in EINEM Lauf
+    regime_modes = {str(int(k)): v for k, v in (body.get("regime_modes") or {}).items() if v}
+    if any(v not in ("params", "discovery", "combo") for v in regime_modes.values()):
+        raise HTTPException(status_code=400, detail="regime_modes: params|discovery|combo je Regime")
     if kind == "refine":
         doc = await _get_doc(body.get("dynamic_id") or "")
         aid = (doc.get("settings") or {}).get("analysis_id")
@@ -662,7 +667,8 @@ async def workbench_start(body: Dict, _: bool = Depends(require_admin)):
         rids = [int(r) for r in (body.get("regime_ids") or
                                  [r["id"] for r in (doc.get("model") or {}).get("regimes") or []])]
         p.update({"analysis_id": aid, "scope": scope, "symbol": symbol, "dynamic_id": doc["id"],
-                  "targets": {str(k): v for k, v in wb.targets_for_refine(doc, rids, mode).items()},
+                  "targets": {str(k): v for k, v in
+                              wb.targets_for_refine(doc, rids, mode, regime_modes).items()},
                   "name": body.get("name") or f"{doc.get('name')} (optimiert)"})
     else:
         aid = body.get("analysis_id")
@@ -678,7 +684,8 @@ async def workbench_start(body: Dict, _: bool = Depends(require_admin)):
             if not any(mapping.values()):
                 raise HTTPException(status_code=400, detail="Mindestens einem Regime eine Strategie zuordnen")
         else:
-            p["targets"] = {str(int(r)): {"mode": mode} for r in (body.get("regime_ids") or [])}
+            p["targets"] = {str(int(r)): {"mode": regime_modes.get(str(int(r))) or mode}
+                            for r in (body.get("regime_ids") or [])}
     analysis = await state.db.regime_analyses.find_one({"id": p["analysis_id"]},
                                                        {"chart": 0, "chart_emas": 0})
     if not analysis:

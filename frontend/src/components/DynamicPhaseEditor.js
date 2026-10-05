@@ -71,7 +71,22 @@ function PhaseConfirm({ phase, choice, strategies, releaseStatus, onDone, onCanc
 }
 
 /** Optimierungs-Auswahl & Schnellaktionen einer Phase (gleiche Auswahl wie die Regime-Häkchen unten). */
-function PhaseFocus({ phase, optimizing, onToggleOptimize, onFocus, showHistory, setShowHistory, disabled }) {
+const SEARCH_MODES = [['params', 'Parameter optimieren'], ['combo', 'Neue Regeln + Parameter'], ['discovery', 'Komplett neue Strategie suchen']];
+
+/** Such-Modus dieser Phase für den nächsten Start (leer = Standard von unten). */
+function PhaseModeSelect({ phase, value, globalMode, onSetMode, disabled }) {
+  const std = SEARCH_MODES.find(([k]) => k === globalMode)?.[1] || globalMode;
+  return (
+    <select value={value || ''} disabled={disabled} onChange={e => onSetMode(phase.regime, e.target.value)}
+      data-testid={`dpe-mode-${phase.regime}`}
+      title="Wie diese Phase beim nächsten Start gesucht wird. 'Komplett neue Strategie suchen' = Discovery nur für diese Phase – übernommen wird sie nur, wenn sie die aktuelle Zuordnung robust schlägt.">
+      <option value="">Suche: Standard ({std})</option>
+      {SEARCH_MODES.map(([k, l]) => <option key={k} value={k}>Suche: {l}</option>)}
+    </select>
+  );
+}
+
+function PhaseFocus({ phase, optimizing, onToggleOptimize, onFocus, showHistory, setShowHistory, disabled, modeValue, globalMode, onSetMode }) {
   return (
     <div className="dpe-cell dpe-focus">
       {onToggleOptimize && (
@@ -80,6 +95,7 @@ function PhaseFocus({ phase, optimizing, onToggleOptimize, onFocus, showHistory,
           {' '}{optimizing ? 'wird weiter optimiert' : 'bleibt so (nicht optimieren)'}
         </label>
       )}
+      {onSetMode && optimizing && <PhaseModeSelect phase={phase} value={modeValue} globalMode={globalMode} onSetMode={onSetMode} disabled={disabled} />}
       {onFocus && <button className="opt-chip" disabled={disabled} onClick={() => onFocus(phase, 'params')} data-testid={`dpe-only-${phase.regime}`}
         title="Nur diese Phase markieren und Parameter weiter optimieren">Nur diese Phase optimieren</button>}
       {onFocus && <button className="opt-chip" disabled={disabled} onClick={() => onFocus(phase, 'discovery')} data-testid={`dpe-newrules-${phase.regime}`}
@@ -103,8 +119,18 @@ function CurrentVariant({ phase }) {
   );
 }
 
-function PhaseRow({ phase, strategies, releaseStatus, disabled, onChanged, refreshKey, optimizing, onToggleOptimize, onFocus }) {
+function PhaseRow({ phase, strategies, releaseStatus, disabled, onChanged, refreshKey, optimizing, onToggleOptimize, onFocus, modeValue, globalMode, onSetMode }) {
   const [choice, setChoice] = useState('');
+  const pick = (v) => {
+    if (v === 'search:discovery') {
+      // Kein sofortiges Speichern: Phase für den nächsten Start auf Discovery stellen
+      onSetMode(phase.regime, 'discovery');
+      setChoice('');
+      toast.info(`„${phase.label}“: beim nächsten Start wird eine komplett neue Strategie gesucht (übrige Phasen wie eingestellt). Unten „Optimierung starten“.`);
+      return;
+    }
+    setChoice(v);
+  };
   const [asking, setAsking] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   return (
@@ -113,9 +139,10 @@ function PhaseRow({ phase, strategies, releaseStatus, disabled, onChanged, refre
       <div className="dpe-cell" data-testid={`dpe-current-${phase.regime}`}><span className="opt-small">Aktuell: </span><CurrentVariant phase={phase} /></div>
       <div className="dpe-cell" data-testid={`dpe-optimized-${phase.regime}`} title={OPT_HINT}><span className="opt-small">Optimiert ⓘ: </span><OptimizedCell o={phase.optimized} /></div>
       <div className="dpe-cell dpe-act">
-        <select value={choice} disabled={disabled || asking} onChange={e => setChoice(e.target.value)} data-testid={`dpe-select-${phase.regime}`}
+        <select value={choice} disabled={disabled || asking} onChange={e => pick(e.target.value)} data-testid={`dpe-select-${phase.regime}`}
           title="Strategie dieser Phase ändern: nicht handeln, optimierte Strategie oder eine Standard-Strategie als Ausgangs-Strategie">
           <option value="">– Strategie ändern –</option>
+          {onSetMode && <option value="search:discovery">Komplett neue Strategie für diese Phase suchen…</option>}
           {phase.traded && <option value="skip">Nicht handeln</option>}
           {phase.optimized && <option value="optimized" title={OPT_HINT}>Optimierte Strategie aktivieren</option>}
           {strategies.filter(s => s.id !== phase.strategy_id || phase.own_rules).map(s => (
@@ -127,7 +154,8 @@ function PhaseRow({ phase, strategies, releaseStatus, disabled, onChanged, refre
         )}
       </div>
       <PhaseFocus phase={phase} optimizing={optimizing} onToggleOptimize={onToggleOptimize} onFocus={onFocus}
-        showHistory={showHistory} setShowHistory={setShowHistory} disabled={disabled} />
+        showHistory={showHistory} setShowHistory={setShowHistory} disabled={disabled}
+        modeValue={modeValue} globalMode={globalMode} onSetMode={onSetMode} />
       {asking && <PhaseConfirm phase={phase} choice={choice} strategies={strategies} releaseStatus={releaseStatus}
         onCancel={() => setAsking(false)} onDone={() => { setAsking(false); setChoice(''); onChanged(); }} />}
       {showHistory && <DynamicPhaseVariants phase={phase} refreshKey={refreshKey} disabled={disabled} onChanged={onChanged} />}
@@ -137,7 +165,7 @@ function PhaseRow({ phase, strategies, releaseStatus, disabled, onChanged, refre
 
 /** „Bestehende optimieren“: Strategie je Phase anzeigen, nach Bestätigung
  *  abschalten / tauschen, mit Versionsverlauf zum Zurückholen. */
-export default function DynamicPhaseEditor({ dynamicId, strategies, disabled, optimizeSel, onToggleOptimize, onFocus }) {
+export default function DynamicPhaseEditor({ dynamicId, strategies, disabled, optimizeSel, onToggleOptimize, onFocus, phaseModes, globalMode, onSetMode }) {
   const [data, setData] = useState(null);
   const [rev, setRev] = useState(0);
   const [showPhases, setShowPhases] = useState(false);
@@ -167,7 +195,8 @@ export default function DynamicPhaseEditor({ dynamicId, strategies, disabled, op
       {showPhases && data.phases.map(p => (
         <PhaseRow key={p.regime} phase={{ ...p, dynamicId }} strategies={strategies} releaseStatus={data.release_status}
           disabled={disabled || !isAdmin()} onChanged={changed} refreshKey={rev}
-          optimizing={(optimizeSel || []).includes(p.regime)} onToggleOptimize={onToggleOptimize} onFocus={onFocus} />
+          optimizing={(optimizeSel || []).includes(p.regime)} onToggleOptimize={onToggleOptimize} onFocus={onFocus}
+          modeValue={(phaseModes || {})[p.regime]} globalMode={globalMode} onSetMode={onSetMode} />
       ))}
       <DynamicVersionHistory dynamicId={dynamicId} count={data.versions} refreshKey={rev} disabled={disabled || !isAdmin()} onRestored={changed} />
     </div>

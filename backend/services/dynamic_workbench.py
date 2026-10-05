@@ -497,7 +497,7 @@ async def run(job_id: str, p: Dict, deps: Dict):
                             "pnl": (cand.get("metrics") or {}).get("pnl"),
                             "trades": (cand.get("metrics") or {}).get("trades"),
                             "strategy": cand.get("strategy_name") or "Eigene Regeln",
-                            "improved_round": round_no}
+                            "mode": mode, "improved_round": round_no}
                     else:
                         st["stale"] += 1
                         if cand and str(rid) not in job["regimes"]:
@@ -664,14 +664,17 @@ def regime_strategy_of(doc: Dict, rid: int) -> Optional[str]:
             or (None if (doc.get("sub_strategies") or {}).get(str(rid)) else doc.get("strategy_id")))
 
 
-def targets_for_refine(doc: Dict, regime_ids: List[int], mode: str) -> Dict[int, Dict]:
+def targets_for_refine(doc: Dict, regime_ids: List[int], mode: str,
+                       regime_modes: Optional[Dict[str, str]] = None) -> Dict[int, Dict]:
     """Regime mit eigenen Discovery-Regeln haben keine Registry-Strategie für
     reine Parameter-Suche -> dort 'combo' (Regeln + Parameter); übernommen wird
-    trotzdem nur, was die bestehende Zuordnung schlägt."""
+    trotzdem nur, was die bestehende Zuordnung schlägt. `regime_modes` = optional
+    eigener Modus je Phase (z.B. 'discovery' = komplett neue Strategie suchen)."""
     out = {}
     for rid in regime_ids:
         sid = regime_strategy_of(doc, int(rid))
         own = bool((doc.get("sub_strategies") or {}).get(str(rid)))
-        out[int(rid)] = {"mode": "combo" if (mode == "params" and own) else mode,
+        m = (regime_modes or {}).get(str(int(rid))) or mode
+        out[int(rid)] = {"mode": "combo" if (m == "params" and own) else m,
                          "strategy_id": sid}
     return out
