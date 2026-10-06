@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 22 end-to-end tested (min-trade overview + Regime-Lab autopilot advice). Backend: 4/4 new pytest tests pass in /app/backend/tests/test_iter22_min_trade_and_regime_advice.py: (1) GET /api/min-trade/stats?days=90 returns full shape {days, min_trades, normal, rows} with seeded values min_trades.trades=2, open=1, winrate=50, normal.trades=35, and all three rows test_mt_0/1/2 present; (2) days=30 param is echoed; (3) GET /api/regime-lab/autopilot/advice?timeframe=15m&days=1080&n_symbols=11&min_days=1&max_days=0 returns non-empty advice list; (4) same endpoint with timeframe=1h&days=720&n_symbols=5&min_days=4&max_days=14 returns advice=[] and recommended_band=[4,14]. Frontend (Playwright, admin token injected): KI-Trader strategy tab -> edit-strategy-params -> ai-equity-toggle reveals data-testid=min-trade-overview with stat cards min-trade-overview-min and min-trade-overview-normal, verdict 'Noch zu wenige abgeschlossene Mindest-Trades (2/10) für ein Urteil' with correct cls=wait, table with rows min-trade-row-test_mt_0/1/2, days select works (30 -> 90). Setup-Nutzung table still renders. Regime-Lab: tools-menu-button -> tools-menu-regime-lab opens the lab; autopilot-min-phase/autopilot-max-phase default to 4/14. Setting max_phase=0 triggers autopilot-advice with expected German text ('Keine Obergrenze der Ø Phase...'). Clicking autopilot-advice-apply-band resets inputs to min=4/max=14. autopilot-advice-ok is not shown by default because the Regime-Lab defaults ship with 15m/360d/3 coins (advice complains 'Timeframe 15m: viel Rauschen' and 'Zeitraum 360 Tage: zu wenige Phasen') – this matches the design; the backend already verifies the ok/empty-advice path with the plausible parameter combo.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter22_min_trade_and_regime_advice.py",
+    "/app/test_reports/pytest/iter22.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MinTradeOverview.js fetch has no Authorization header – works because /api/min-trade/stats is currently publicly accessible; ensure that stays intentional or add token like other AI endpoints.",
+    "RegimeAutopilotAdvice UI has no visible 'ok' state when using the shipped defaults (15m/360d) because the backend correctly flags them as implausible – consider raising defaults to 1h/540d so the plausible-ok state is visible without user tweaks. Non-blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter22_min_trade_and_regime_advice.py (new)"
+  ],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% (all required flows)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin via POST /api/auth/login; token stored in localStorage as admin_token + admin_token_ts.",
+  "seed_data_creation": "None – test_mt_0/1/2 rows and 35 normal live trades were already present in local crypto_scanner_dev; not deleted per instructions.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 22 fully green. Regime-Lab is opened via tools-menu-button -> tools-menu-regime-lab (Header.js). Autopilot inputs testids: autopilot-min-phase, autopilot-max-phase. Advice box: autopilot-advice (implausible), autopilot-advice-ok (plausible), autopilot-advice-apply-band (sets 4/14). Backend endpoint /api/regime-lab/autopilot/advice accepts min_days/max_days/timeframe/days/n_symbols and returns {advice:[], recommended_band:[4,14]}. Do not delete test_mt_* trades (main agent cleans up).",
+  "rca of the issue": "N/A – all requested checks pass."
+}

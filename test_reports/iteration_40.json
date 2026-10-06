@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 40 – Regime-Lab Autopilot history / reference-start / rating. All backend unit tests (test_autopilot_history_reference.py: 4/4) and new API tests (test_autopilot_history_api.py: 6/6) pass. Frontend E2E via Playwright: history section renders with grade badges + best-in-group star + colored border, filter 'nur sehr gut' hides weak rows, Referenz toggle shows/clears Startpunkt box with correct timeframes (1h→15m), Übernehmen and Regime-suchen from a run both show the expected toasts and trigger analyze. Admin login worked via /api/auth/login and localStorage admin_token.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Regime-Lab Autopilot-Verlauf", "issues": ["React console warning: 'Encountered two children with the same key `aptest001`' – leftover duplicate seed id in local Mongo (known per agent-to-agent note). Not a code bug but worth cleaning the duplicate doc or using a composite key to silence the warning."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_autopilot_history_reference.py",
+    "/app/backend/tests/test_autopilot_history_api.py"
+  ],
+  "action_items": [
+    "Optional: remove duplicate `aptest001` document from regime_lab_runs collection to silence React duplicate-key warning (seed script _seed_autopilot_preview.py uses replace_one which is idempotent, so the dup must have been created elsewhere). Alternatively use a composite React key (e.g. r.id + r.created_at)."
+  ],
+  "critical_code_review_comments": [
+    "retention.py now protects pinned runs and keeps per-kind quotas – good. Confirm the new _trim_group only deletes by `id` field (never _id) so documents without a stable id are safe.",
+    "RegimeAutopilotHistory uses r.id as React key; with the known duplicated aptest001 in dev DB this triggers warnings. Consider r.id || r.created_at or index-based composite key for robustness."
+  ],
+  "updated_files": ["/app/backend/tests/test_autopilot_history_api.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin via POST /api/auth/login (works).",
+  "seed_data_creation": "Seeded demo runs ap_demo_top/ap_demo_mid/ap_demo_weak already existed in local Mongo. aptest001 duplicate present (noted).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Autopilot history (iteration 40) fully covered. Regression tests: `cd /app/backend && set -a && . ./.env && set +a && python -m pytest -q -p no:cacheprovider tests/test_autopilot_history_reference.py tests/test_autopilot_history_api.py -o addopts=''`. The API test cancels any started job via /api/regime-lab/cancel/{id}; still, always call /api/regime-lab/active + cancel before starting another regime job (409 otherwise). Frontend testids used: tools-menu-button, tools-menu-regime-lab, autopilot-history-section, autopilot-history, autopilot-history-filter, autopilot-run-{id}, autopilot-run-grade-{id}, autopilot-run-best-{id}, autopilot-run-apply/analyze/reference/pin-{id}, autopilot-reference, autopilot-reference-clear.",
+  "rca of the issue": "n/a – iteration validated the fix (per-kind retention + rating + reference-start). Autopilot runs were previously evicted because retention kept only the latest 12 regime_lab_runs across ALL kinds; services/retention.py now groups by result.kind and protects pinned runs."
+}

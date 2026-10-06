@@ -1,0 +1,32 @@
+{
+  "summary": "Iter53 testing: 1) Backend regression — pytest tests/test_improvements_1010_limit_outliers_eta.py tests/test_iter52_api_live.py (25/25 passed in 11.9s). 2) New backend live tests (/app/backend/tests/test_iter53_save_copy_api.py, 8/8 passed in 25.5s) covering POST /api/optimizer/apply type=save_copy for rsi_only (returns variant_… with 'Optimizer #2' in name, kind=variant, strategy appears in GET /api/strategies but NOT in enabled_strategies; strategy_params[new_id].rsi_period==9; base rsi_only strategy_params unchanged), save_copy with definition (returns custom_… kind=custom, strategy_timeframes[new_id]=='5m'), save_copy with neither strategy_id nor definition -> 400, save_copy with ai_trader -> 400, regression duplicate rsi_only -> is_variant=true/is_custom=false, duplicate custom -> is_custom=true/is_variant=false, type=params apply still works, and POST /api/dynamic-workbench/start kind=discover with regime_modes={'0':'foo'} returns 400 with 'regime_modes' in detail BEFORE analysis lookup (validated at line 657-658 in routers/dynamic.py, prior to analysis fetch at line 689). 3) UI Optimizer: Admin login via API, token into localStorage, tools-menu-button -> tools-menu-optimizer opens; last result auto-loads 5 top5 cards; each has data-testid opt-save-copy-{0..4} (span role=button). Clicking opt-save-copy-0 changes text to 'Gesichert ✓ Smart Money RSI Reversal · Optimizer #1', the top5 card list is NOT cleared (count stays 5), a second click does not change state (no duplicate), and the card remains selectable (opt-top5-card gets 'sel' class). 4) Dynamic workbench refine tab: no dynamic strategy exists locally — code paths verified via backend 400 and existing frontend components (DynamicPhaseEditor exposes dpe-mode-{rid}, dpe-opt-{rid}, dpe-select-{rid} testids; option 'Komplett neue Strategie für diese Phase suchen…' with value search:discovery is defined). All created test strategies were deleted (fixture + manual cleanup of UI-created variant).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "App boot before token applied", "issues": ["Several initial 'TypeError: Failed to fetch' / 401 console errors on first paint before localStorage admin_token is read on reload; harmless but noisy — not iter53-related."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter53_save_copy_api.py",
+    "/app/backend/tests/test_iter52_api_live.py",
+    "/app/backend/tests/test_improvements_1010_limit_outliers_eta.py",
+    "/app/test_reports/pytest/iter53.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "optimizer.py _save_result_copy correctly branches: definition.long_rules -> custom copy; otherwise built-in/variant via strategy_copies.create_variant. Dynamic & ai_trader explicitly rejected (400).",
+    "The saved copy's params are written to scanner.settings.strategy_params[new_id] but new_id is NOT added to enabled_strategies — matches the spec 'Kopie ist nicht aktiv' and verified by test.",
+    "routers/dynamic.py workbench_start validates regime_modes (line 656-658) BEFORE loading the regime analysis (line 689), so invalid values short-circuit with a clear detail message.",
+    "services/strategy_copies.py is a clean shared module used by both duplicate_strategy (routers/strategies.py) and _save_result_copy — the refactor is consistent (is_variant/is_custom flags preserved).",
+    "OptimizerSaveCopy.js correctly guards double-save via local saved state (prevents 2nd POST on repeat click), stops event propagation (card selection still works), and uses resetOn to clear state when a new result loads."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter53_save_copy_api.py"],
+  "success_rate": {"backend": "100% (8/8 new + 25/25 regression)", "frontend": "100% (opt-save-copy flow verified)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "No persistent seed. Test created strategies auto-deleted via fixture; one UI-created variant manually deleted after run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_iter53_save_copy_api.py is the regression entry for save_copy + duplicate + workbench regime_modes validation. UI testids: opt-save-copy-{i}, opt-save-copy-live, dpe-mode-{rid}, dpe-opt-{rid}, dpe-select-{rid}. Note: live Dynamik-Werkbank refine UI testing requires an existing dynamic strategy (none locally) — create one via Regime-Lab first if needed. The short optimization run on 3 coins/40 iters was not executed in-browser to keep test time bounded; opt-save-copy-live was not clicked live, but the component renders the same SaveCopyButton (verified in Optimizer.js:1291) and backend path is identical to the tested rank>=1 variants."
+}

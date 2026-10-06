@@ -1,0 +1,32 @@
+{
+  "summary": "Backend-only regression testing of regime dataset repair/exclusion logic for walk-forward (services/regime_lab._verify_or_repair, candle_cache.repair_gaps, research_dataset.verify_histories, regime_opt dataset_excluded). Ran the 4 pytest files requested: 41 passed, 10 skipped, 0 failed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_regime_dataset_repair.py",
+    "/app/backend/tests/test_regime_lab.py",
+    "/app/backend/tests/test_regime_release.py",
+    "/app/backend/tests/test_regime_lab_clarity.py",
+    "/app/test_reports/pytest/iter29_regime_repair.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "test_regime_dataset_repair.py covers all four scenarios described in the review request (repair fills internal hole, single mismatch excluded, repair+verify keeps symbol, too many mismatches still aborts, verify_histories/min_verified semantics unchanged). Assertions confirm job['dataset_excluded'][0]['symbol']=='HYPEUSDT' and the German reason string 'Kerzenanzahl 290 ≠ Manifest 300', matching the production bug pattern for HYPEUSDT.",
+    "Frontend RegimeLab.js data-testid regime-wf-excluded-<scope> line not exercised (backend-only run as instructed) - safe to rely on code review per request."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (41/41 executed passed, 10 skipped)", "frontend": "N/A - skipped per request"},
+  "test_credentials": "Admin / Dean06Greif!/Admin - not needed, monkeypatch-based unit/integration tests",
+  "seed_data_creation": "None - tests use in-memory monkeypatched candle_cache._MEM and fake histories",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regime walk-forward dataset repair/exclusion logic is verified. If further e2e coverage is desired, would need to POST /api/regime/* to create a small analysis, tamper the stored dataset manifest for one symbol in Mongo (regime_analyses collection), and hit the walk-forward endpoint expecting completion with dataset_excluded rather than a RuntimeError. Pre-existing failures in test_iter38_watchdog_pnl_playbook_api.py and test_e1_adaptive_multiasset forex are unrelated and were not run.",
+  "rca of the issue": "Original bug: fetch_histories raised RuntimeError when any single symbol's cached 1m candle count diverged from the dataset manifest. Fix under test: services/regime_lab._verify_or_repair now (1) calls candle_cache.repair_gaps to backfill internal gaps and reloads/reverifies, (2) if still mismatching but >= min_verified (75% of manifest, min 2) verify, excludes the offending symbols into job['dataset_excluded'] and lets the walk-forward continue, (3) only raises the original RuntimeError when too few symbols verify. Tests confirm all three paths."
+}

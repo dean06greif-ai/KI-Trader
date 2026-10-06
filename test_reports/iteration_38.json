@@ -1,0 +1,26 @@
+{
+  "summary": "Iter 38 – Dynamik-Werkbank Asset-Toggle & Suchprozess-Effizienz: 29 pytest cases green (test_workbench_assets_0110.py 6/6, test_dynamic_backtest_workbench.py 11/11, test_regime_followups_3009.py 10/10, test_manifest_anchor_0110.py 2/2). Live-Backend: POST /api/dynamic-workbench/start mit symbols=['BTCUSDT'] auf ra_a523fdce (BTC+ETH) startet sauber (status=started, job_id=wb_1cbaff7193, phase 'Runde 1 · Regime Abwärtstrend' → sub_phase 'Lade Daten: BTCUSDT'), kein Abbruch mit 'Datensatz nicht reproduzierbar'; params.symbols=['BTCUSDT'] persistiert; Cancel /api/dynamic-workbench/cancel/<id> antwortet 'cancel_requested'. Fehlerpfad symbols=['XXX'] → 400 'Mindestens 1 Asset der Analyse auswählen'. Frontend Playwright (Optimizer → Dynamische Strategie → Reiter): Asset-Chips dwb-asset-BTCUSDT/ETHUSDT beim Wahl der Analyse ra_a523fdce initial beide mit Klasse 'on', Zähler '2/2 aktiv'; Klick auf ETH → 'opt-chip' (nicht on), '1/2 aktiv'; Klick auf letztes aktives BTC bleibt 'on'/count '1/2'; dwb-asset-all → '2/2 aktiv'; Auswahl bleibt beim Reiter-Wechsel discover→create→discover erhalten ('1/2 aktiv'); Analyse abwählen und neu wählen setzt wieder auf '2/2 aktiv'; MinTradesHint dwb-min-trades-hint erscheint bei 100000 und verschwindet bei 10; Reiter 'Bestehende optimieren' zeigt dwb-dynamic-select (leere Auswahl, da keine dynamische Strategie im Env vorhanden – erwartetes Verhalten mit Hinweis).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_workbench_assets_0110.py",
+    "/app/backend/tests/test_dynamic_backtest_workbench.py",
+    "/app/backend/tests/test_regime_followups_3009.py",
+    "/app/backend/tests/test_manifest_anchor_0110.py",
+    "/app/test_reports/pytest/iter38_workbench.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "DynamicWorkbench.js: symbols-Fallback ist mehrstufig (selSyms → defaultSyms → allSyms) – für Refine ohne dyn.symbols greift allSyms; body.symbols=symbols wird immer gesendet (auch wenn == allSyms). Backend norm_subset kürzt in dem Fall auf None (all-set → None) – Verhalten korrekt, aber vertretenswert, im Client bei 'alle aktiv' symbols=undefined zu senden (klarere API, kein Subset-Anker in DB).",
+    "routers/dynamic.py workbench_start: mode-Default für kind=refine setzt 'params' – falls Body 'mode' fehlt beim refine-Aufruf mit gemischter Discovery/Params-Absicht wird stumm auf params gefallen; UI setzt cur.mode explizit, daher unauffällig.",
+    "DynamicWorkbenchFields.js AssetToggle: toggle(next.length) verhindert Leere korrekt; aber wenn 'symbols' aus Analyse dupliziert wären, würde selected.filter/map die Reihenfolge kanonisieren – ok. Kein Fix nötig."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (aus /app/memory/test_credentials.md)",
+  "seed_data_creation": "Keine – bestehende Regime-Analyse ra_a523fdce (BTCUSDT+ETHUSDT, 3 Regime) genutzt; Job wb_1cbaff7193 nach Test per cancel beendet.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Env hat 7 Regime-Analysen, davon ra_a523fdce (BTCUSDT+ETHUSDT) für Multi-Asset-Tests geeignet. Kein Regime-Lab/Werkbank-Job aktiv nach Testende. Bekannte Live-datenabhängige Tests (tests/test_iter30_review.py, tests/test_iter32_dynamic_workbench.py) NICHT verändert. Der Live-Test-Job braucht ~einige Sekunden bis er 'Lade Daten' beginnt – Cancel funktioniert.",
+  "rca of the issue": "N/A – alle Review-Punkte grün (Asset-Chips A, Teilmengen-Persistenz B, Kerzen-Reuse+Plateau+Warnhinweis C1–C4 verifiziert via Unit-Tests + Live-API + UI)."
+}
