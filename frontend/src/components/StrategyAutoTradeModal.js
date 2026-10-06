@@ -48,7 +48,7 @@ const DEFAULT_CFG = {
   auto_lev_max: 50,
   regime_filter_enabled: false,
   regime_block_phases: ['seitwärts'],
-  regime_gate_source: 'own',
+  regime_gate_source: 'auto',
 };
 
 export default function StrategyAutoTradeModal({ strategyId, strategyName, symbol, onClose, onSaved }) {
@@ -706,20 +706,26 @@ export default function StrategyAutoTradeModal({ strategyId, strategyName, symbo
                   </div>
                   {/* Regime-Brücke 2.2: Quelle der Phase */}
                   <label className="at-check" style={{ marginTop: 8 }}
-                    title="Eigene Erkennung = heutiges Verhalten (1h-Kerzen, 30 Tage, eigenes 3-Regime-Modell). Freigegebene Lab-Analyse = das im Regime-Lab auf „Wirksam“ geschaltete Struktur-Modell dieser Assetklasse. Ohne Freigabe (Stufe none/shadow) oder bei veraltetem Stand bleibt das Gate fail-open – der Trade wird erlaubt.">
+                    title="Automatisch (Standard) = EINE Regime-Wahrheit: dieselbe Lab-Erkennung, die auch der KI-Trader sieht (Klassen-Freigabe bzw. Asset-Champion, Stufe „Wirksam“); ohne wirksame Lab-Erkennung Rückfall auf die eigene Schnell-Erkennung. Nur Lab = ohne wirksame Lab-Erkennung kein Filter. Nur eigene = altes Verhalten (1h-Kerzen, 30 Tage, eigenes 3-Regime-Modell).">
                     <span style={{ minWidth: 110 }}>Regime-Quelle:</span>
-                    <select value={cfg.regime_gate_source || 'own'} onChange={e => update('regime_gate_source', e.target.value)}
+                    <select value={['lab', 'own_only'].includes(cfg.regime_gate_source) ? cfg.regime_gate_source : 'auto'}
+                      onChange={e => update('regime_gate_source', e.target.value)}
                       data-testid="sat-regime-gate-source">
-                      <option value="own">eigene Erkennung</option>
-                      <option value="lab">freigegebene Lab-Analyse</option>
+                      <option value="auto">automatisch – Lab/Champion, sonst eigene</option>
+                      <option value="lab">nur freigegebene Lab-Analyse</option>
+                      <option value="own_only">nur eigene Schnell-Erkennung (alt)</option>
                     </select>
-                    {cfg.regime_gate_source === 'lab' && (
+                    {cfg.regime_gate_source !== 'own_only' && (
                       <span className="opt-small" data-testid="sat-regime-lab-hint">
                         {regimePhase?.lab?.stage === 'active'
                           ? <>Lab wirksam{regimePhase.lab.label ? <>: <b>{regimePhase.lab.label}</b></> : ''}{regimePhase.lab.state === 'stale' ? ' (Stand veraltet → Trade erlaubt)' : ''}</>
                           : regimePhase?.lab?.stage === 'shadow'
-                            ? 'Lab-Analyse nur im Shadow – Gate lässt alle Trades durch, bis sie „Wirksam“ ist'
-                            : 'Keine freigegebene Lab-Analyse für diese Assetklasse – Gate lässt alle Trades durch'}
+                            ? (cfg.regime_gate_source === 'lab'
+                              ? 'Lab-Analyse nur im Shadow – Gate lässt alle Trades durch, bis sie „Wirksam“ ist'
+                              : 'Lab-Analyse nur im Shadow – bis „Wirksam“ gilt die eigene Schnell-Erkennung')
+                            : (cfg.regime_gate_source === 'lab'
+                              ? 'Keine freigegebene Lab-Analyse für diese Assetklasse – Gate lässt alle Trades durch'
+                              : 'Keine wirksame Lab-Analyse – Rückfall auf die eigene Schnell-Erkennung')}
                       </span>
                     )}
                   </label>

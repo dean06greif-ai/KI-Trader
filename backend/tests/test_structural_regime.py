@@ -98,31 +98,40 @@ def test_resolve_without_release_unknown_and_error_stale(monkeypatch):
     sr.invalidate()
 
 
-def test_gate_source_own_unchanged_and_lab_only_known(monkeypatch):
+def test_gate_source_auto_one_truth_with_own_fallback(monkeypatch):
+    # 10/2026 „Ein Regime für alle“: Standard/Alt-Wert own -> auto (Lab zuerst,
+    # eigene Schnell-Erkennung nur als Rückfall); own_only erzwingt das Alte.
     cfg = {"regime_filter_enabled": True, "regime_block_phases": ["bär"]}
-    assert regime_gate.gate_source(cfg) == "own"
+    assert regime_gate.gate_source(cfg) == "auto"
+    assert regime_gate.gate_source({**cfg, "regime_gate_source": "own"}) == "auto"
     assert regime_gate.gate_source({**cfg, "regime_gate_source": "lab"}) == "lab"
+    assert regime_gate.gate_source({**cfg, "regime_gate_source": "own_only"}) == "own_only"
 
     async def _own(symbol):
         return {"phase": "bär", "label": "Abwärts", "confidence": 80}
     monkeypatch.setattr(regime_gate, "current_phase", _own)
-    ok, msg = asyncio.run(regime_gate.check_signal_allowed(cfg, "BTCUSDT"))
-    assert not ok and "Regime-Filter:" in msg
 
     async def _lab_none(symbol):
         return None
     monkeypatch.setattr(sr, "phase", _lab_none)
+    ok, msg = asyncio.run(regime_gate.check_signal_allowed(cfg, "BTCUSDT"))
+    assert not ok and "Regime-Filter:" in msg             # auto: Lab nicht wirksam -> eigene
     ok, _ = asyncio.run(regime_gate.check_signal_allowed({**cfg, "regime_gate_source": "lab"}, "BTCUSDT"))
-    assert ok                                             # nicht wirksam -> fail-open
+    assert ok                                             # lab: nicht wirksam -> fail-open
+
+    async def _lab_bull(symbol):
+        return "bulle"
+    monkeypatch.setattr(sr, "phase", _lab_bull)
+    ok, _ = asyncio.run(regime_gate.check_signal_allowed(cfg, "BTCUSDT"))
+    assert ok                                             # auto: Lab-Wahrheit gewinnt über eigene
+    ok, msg = asyncio.run(regime_gate.check_signal_allowed({**cfg, "regime_gate_source": "own_only"}, "BTCUSDT"))
+    assert not ok and "Regime-Filter:" in msg             # own_only: altes Verhalten
 
     async def _lab_bear(symbol):
         return "bär"
     monkeypatch.setattr(sr, "phase", _lab_bear)
-    ok, msg = asyncio.run(regime_gate.check_signal_allowed({**cfg, "regime_gate_source": "lab"}, "BTCUSDT"))
+    ok, msg = asyncio.run(regime_gate.check_signal_allowed(cfg, "BTCUSDT"))
     assert not ok and "Lab-Analyse" in msg
-    # eigener Pfad bleibt byte-identisch
-    ok, msg2 = asyncio.run(regime_gate.check_signal_allowed(cfg, "BTCUSDT"))
-    assert msg2 == msg.replace("(Quelle Lab-Analyse)", "") or "Regime-Filter:" in msg2
 
 
 def test_fingerprint_artifact_changes_combined_only_when_set():

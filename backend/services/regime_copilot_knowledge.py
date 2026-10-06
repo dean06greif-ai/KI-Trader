@@ -92,9 +92,11 @@ def static_knowledge() -> str:
         "ignorieren). Lektionen zur Struktur werden als „strukturell“ benannt; das "
         "Regime-Artefakt steht im Policy-Fingerprint.",
         "- Marktphasen-Filter je Strategie (Auto-Trade-Setup: regime_filter_enabled, "
-        "regime_block_phases, regime_gate_source): Quelle own = eigene Schnell-Erkennung "
-        "(Standard) oder lab = freigegebene Lab-Analyse, NUR bei Stufe active; unknown/stale "
-        "-> fail-open (Trade erlaubt). Das ist der einzige harte Gate-Effekt des Struktur-Regimes.",
+        "regime_block_phases, regime_gate_source): Quelle auto (Standard, EINE Regime-Wahrheit) = "
+        "wirksame Lab-Erkennung (Klassen-Freigabe bzw. Asset-Champion, Stufe active), ohne "
+        "wirksame Lab-Erkennung Rückfall auf die eigene Schnell-Erkennung; lab = nur Lab "
+        "(sonst fail-open); own_only = nur eigene Schnell-Erkennung. Das ist der einzige harte "
+        "Gate-Effekt des Struktur-Regimes.",
         "- Live-Label = Lab-Label nur mit vollem Detektor-Warmup (sonst Zustand stale); "
         "Intraday-Freigabe gilt für Scalps, Swing-Freigabe für Swing-Trades.",
         "DYNAMISCHE STRATEGIEN (Regime → Strategie, handelbar wie normale Strategien):",

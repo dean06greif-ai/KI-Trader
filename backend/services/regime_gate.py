@@ -110,8 +110,21 @@ def blocked_phases(cfg: Dict) -> List[str]:
 
 
 def gate_source(cfg: Dict) -> str:
-    """`own` (heutige Erkennung, Default) | `lab` (freigegebene Lab-Analyse, nur Stufe active)."""
-    return "lab" if str(cfg.get("regime_gate_source") or "own").lower() == "lab" else "own"
+    """Quelle des Marktphasen-Filters:
+    `auto` (Standard seit 10/2026, auch für Alt-Wert `own`): EINE Regime-Wahrheit –
+           die wirksame Lab-Erkennung (Klassen-Freigabe bzw. Asset-Champion, Stufe
+           active), die auch der KI-Trader sieht; nur ohne wirksame Lab-Erkennung
+           die eigene Schnell-Erkennung als Rückfall (bisheriges Verhalten).
+    `lab`  nur Lab-Erkennung, sonst kein Filter (fail-open).
+    `own_only` nur die eigene Schnell-Erkennung (altes Verhalten erzwingen)."""
+    raw = str(cfg.get("regime_gate_source") or "auto").lower()
+    return raw if raw in ("lab", "own_only") else "auto"
+
+
+async def _lab_phase(symbol: str, horizon: Optional[str]) -> Optional[str]:
+    from services import structural_regime, regime_release
+    return (await structural_regime.phase(symbol, regime_release.band_of_horizon(horizon))
+            if horizon else await structural_regime.phase(symbol))
 
 
 async def check_signal_allowed(cfg: Dict, symbol: str, horizon: Optional[str] = None) -> Tuple[bool, str]:
@@ -123,23 +136,26 @@ async def check_signal_allowed(cfg: Dict, symbol: str, horizon: Optional[str] = 
     blocked = blocked_phases(cfg)
     if not blocked:
         return True, ""
-    if gate_source(cfg) == "lab":
-        # PLAN_REGIME_BRUECKE 2.2: Quelle = freigegebene Lab-Analyse (Stufe active).
-        # unknown/stale/keine Freigabe -> fail-open wie heute.
+    src = gate_source(cfg)
+    if src in ("lab", "auto"):
+        # PLAN_REGIME_BRUECKE 2.2: Quelle = wirksame Lab-Erkennung (Stufe active).
         try:
-            from services import structural_regime, regime_release
-            ph = (await structural_regime.phase(symbol, regime_release.band_of_horizon(horizon))
-                  if horizon else await structural_regime.phase(symbol))
+            ph = await _lab_phase(symbol, horizon)
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"Regime-Gate {symbol}: Lab-Quelle fehlgeschlagen ({e}) – Trade erlaubt")
+            logger.warning(f"Regime-Gate {symbol}: Lab-Quelle fehlgeschlagen ({e})"
+                           + (" – Trade erlaubt" if src == "lab" else " – Rückfall eigene Erkennung"))
+            ph = None
+            if src == "lab":
+                return True, ""
+        if ph is not None:
+            if ph in blocked:
+                return False, (f"Regime-Filter (Quelle Lab-Analyse): {symbol} ist strukturell in "
+                               f"Phase '{ph}' – für diese Strategie blockiert")
             return True, ""
-        if ph is None:
+        if src == "lab":
             logger.info(f"Regime-Gate {symbol}: Lab-Regime nicht wirksam – Trade erlaubt")
             return True, ""
-        if ph in blocked:
-            return False, (f"Regime-Filter (Quelle Lab-Analyse): {symbol} ist strukturell in "
-                           f"Phase '{ph}' – für diese Strategie blockiert")
-        return True, ""
+        # auto ohne wirksame Lab-Erkennung -> bisherige eigene Schnell-Erkennung
     try:
         ent = await current_phase(symbol)
     except Exception as e:  # noqa: BLE001 – fail-open

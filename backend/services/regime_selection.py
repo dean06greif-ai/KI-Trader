@@ -86,7 +86,11 @@ def evaluate(row: Dict) -> Dict:
     if kappa is not None and kappa <= 0:
         return {**row, "eligible": False, "score": None,
                 "why": [f"Holdout-Kappa {kappa:.1f} ≤ 0 – nicht besser als Zufall"]}
-    worst = min(h, i) if i is not None else h
+    wins = [w for w in (row.get("windows") or []) if w is not None]
+    if row.get("fair") and len(wins) < len(row.get("windows") or []):
+        return {**row, "eligible": False, "score": None,
+                "why": ["fairer Vergleich: nicht in allen Teilfenstern messbar"]}
+    worst = min(wins + [h]) if wins else (min(h, i) if i is not None else h)
     gap = max((t if t is not None else h) - h, 0.0)
     raw = 0.5 * h + 0.5 * worst - GAP_WEIGHT * max(gap - GAP_FREE_PP, 0.0)
     oos_days = hb / max(float(row.get("bars_per_day") or 1.0), 1e-9)
@@ -94,7 +98,9 @@ def evaluate(row: Dict) -> Dict:
     score = PRIOR_F1 + (raw - PRIOR_F1) * shrink
     if gap > GAP_FREE_PP:
         why.append(f"Overfit-Lücke Training→Holdout {gap:.1f} Pkt.")
-    if i is None:
+    if row.get("fair"):
+        why.append(f"fair: gleicher Zeitraum, Teilfenster {'/'.join(f'{w:.0f}' for w in wins)}")
+    elif i is None:
         why.append("keine innere Validierung – nur 1 Fenster")
     if row.get("scope") == "per_coin":
         score -= PER_COIN_PENALTY
@@ -115,7 +121,12 @@ def margin_for(n_candidates: int) -> float:
 
 
 def beats_every_window(ch: Dict, inc: Dict) -> bool:
-    """Herausforderer in allen gemeinsam vorhandenen Fenstern besser (rein)."""
+    """Herausforderer in allen gemeinsam vorhandenen Fenstern besser (rein).
+    Fairer Vergleich: dieselben Teilfenster (gleiche Zeitstücke) paarweise."""
+    if ch.get("fair") and inc.get("fair") and len(ch.get("windows") or []) == len(inc.get("windows") or []):
+        pairs = list(zip(ch["windows"], inc["windows"])) + [(ch.get("holdout_f1"), inc.get("holdout_f1"))]
+        pairs = [(a, b) for a, b in pairs if a is not None and b is not None]
+        return bool(pairs) and all(a > b for a, b in pairs)
     pairs = [(ch.get(k), inc.get(k)) for k in ("holdout_f1", "inner_f1")]
     pairs = [(a, b) for a, b in pairs if a is not None and b is not None]
     if not pairs or any(a <= b for a, b in pairs):
@@ -160,6 +171,26 @@ def choose(rows: List[Dict], incumbent: Optional[Dict] = None) -> Dict:
     return out
 
 
+def apply_fair(rows: List[Dict], fair_res: Dict) -> List[Dict]:
+    """Gespeicherte Holdout-Werte durch den fairen Gleich-Zeitraum-Vergleich
+    ersetzen (rein). Kandidaten ohne fairen Messwert fallen raus – sonst würden
+    wieder unterschiedliche Zeiträume verglichen. Trainings-F1 (Overfit-Lücke)
+    und Walk-Forward-Status bleiben aus der Analyse."""
+    from services import regime as rg
+    by = {(r.get("aid"), r.get("scope")): r for r in (fair_res.get("rows") or [])}
+    out = []
+    for r in rows:
+        f = by.get((r.get("aid"), r.get("scope")))
+        if not f:
+            continue
+        bpd = rg.bars_per_day(f.get("base_timeframe") or r.get("timeframe") or "1h")
+        out.append({**r, "fair": True, "holdout_f1": f.get("f1"), "inner_f1": None,
+                    "windows": list(f.get("windows") or []), "holdout_bars": int(f.get("bars") or 0),
+                    "bars_per_day": bpd, "holdout_kappa": None,
+                    "own_holdout_f1": r.get("holdout_f1")})
+    return out
+
+
 def assignment_key(symbol: str, band: str) -> str:
     return f"{symbol}|{band}"
 
@@ -184,7 +215,9 @@ async def compute(db, symbols: List[str]) -> Dict:
     docs = await db.regime_analyses.find(
         {"settings.engine": "v2"}, {"_id": 0, "chart": 0, "chart_emas": 0}).sort(
         "created_at", -1).limit(60).to_list(60)
+    from services import regime_fair_compare as fair
     state = await load_state(db)
+    fair_res = await fair.load(db)
     out: Dict[str, Dict] = {}
     for sym in symbols:
         cls = setup_asset_class.asset_class_of(sym)
@@ -196,6 +229,10 @@ async def compute(db, symbols: List[str]) -> Dict:
                 rows += candidate_rows(d, sym, rg.bars_per_day(d.get("timeframe") or "1h"))
             if not rows:
                 continue
+            fr = fair_res.get(assignment_key(sym, band))
+            fair_used = fair.is_fresh(fr)
+            if fair_used:
+                rows = apply_fair(rows, fr)
             cur = state["assign"].get(assignment_key(sym, band))
             if not cur:
                 rel = regime_release.pick_release(
@@ -205,8 +242,12 @@ async def compute(db, symbols: List[str]) -> Dict:
                     cur = {"aid": rel["id"], "scope": (rel.get("release") or {}).get("scope") or "combined"}
             res = choose(rows, cur)
             res["candidates"] = res["candidates"][:8]
-            out[assignment_key(sym, band)] = {"symbol": sym, "band": band, "asset_class": cls,
-                                              "current": cur, **res}
+            out[assignment_key(sym, band)] = {
+                "symbol": sym, "band": band, "asset_class": cls, "current": cur, **res,
+                "fair": ({"used": True, "window": fr.get("window"), "computed_at": fr.get("computed_at"),
+                          "base_timeframe": (fr.get("rows") or [{}])[0].get("base_timeframe")}
+                         if fair_used else {"used": False, "error": (fr or {}).get("error"),
+                                            "computed_at": (fr or {}).get("computed_at")})}
     return {"mode": state["mode"], "assign": state["assign"], "results": out,
             "rules": {"min_holdout_bars": MIN_HOLDOUT_BARS, "shrink_days": SHRINK_DAYS,
                       "gap_free_pp": GAP_FREE_PP, "per_coin_penalty": PER_COIN_PENALTY,
