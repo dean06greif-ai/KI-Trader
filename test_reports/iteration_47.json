@@ -1,0 +1,32 @@
+{
+  "summary": "Iter47 verifies four features: (1) Autopilot history grade unification using regime_quality.grade_from_metrics (imp_ra_e866c510 label 'sehr gut' basis=quality; d55aad985cdb label 'gut' with why text containing 'für „sehr gut" fehlt' and 'Such-Score'); (2) Backtester dynamic label-basis field with options 'Live-Sicht (wie im Handel, empfohlen)' / 'Rückblick (ideale Phasen)' hidden until dyn strategy selected; (3) DynamicPhaseEditor refine tab: toggle button 'Phasen-Parameter anzeigen (N Phasen)' hides phase rows until clicked; placeholder '– Strategie ändern –'; Übernehmen… button appears only after selection; confirm dialog with Abbrechen cancel works; Optimiert title tooltip explains 'Optimierte Strategie = das beste gespeicherte Ergebnis…'; (4) Performance: GET /api/regime-lab/{aid} strips chart/chart_emas via NO_CHART projection. Backend unit regression: tests/test_grade_unify_and_dyn_basis.py + test_dynamic_backup.py + test_autopilot_history_import.py + test_autopilot_history_reference.py = 34/34 PASS. Live backend tests in tests/test_iter47_live.py: 7/7 PASS. Broader -m 'unit and not live' subset (-k regime/dynamic/backtest/autopilot) across tests/: 522 passed, 2 skipped, 2 FAILED (tests/analysis_regression/test_ap01_dynamic_apply.py::TestTransitionScope — pre-existing at HEAD, unrelated to iter47; expects strategy mapping without 'd1' entry). Frontend (Chromium 1920x1080): all iter47-specific UI invariants verified.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests/analysis_regression/test_ap01_dynamic_apply.py::TestTransitionScope::{test_close_query_is_scoped_to_own_strategies_and_excludes_manual, test_multi_mapping_strategies_included}", "issue": "Pre-existing failure at HEAD (unrelated to iter47): test expects $in: ['meanrev','nnfx','trend'] but implementation includes 'd1' too. Scope mismatch between test and current manual-close scoping behaviour."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter47_live.py",
+    "/app/test_reports/pytest/iter47_unit.xml",
+    "/app/test_reports/pytest/iter47_live.xml",
+    "/app/test_reports/pytest/iter47_broad.xml"
+  ],
+  "action_items": [
+    "Investigate tests/analysis_regression/test_ap01_dynamic_apply.py::TestTransitionScope (pre-existing) — decide if transition-close scope should include 'd1' (current behaviour) or if the test fixture is stale. Not blocking iter47."
+  ],
+  "critical_code_review_comments": [
+    "routers/regime_lab.py _get_doc projection correctly uses lab.NO_CHART to strip chart/chart_emas on reads — prevents multi-MB payloads on job-start endpoints. Good.",
+    "services/dynamic_backtest.py exposes label_basis + retro flag through phase_labels/simulate_dynamic, consumed by routers/backtest.py via dynamic_label_basis. Clean separation.",
+    "Autopilot run rating now consistently derived from regime_quality.grade_from_metrics; 'why' text surfaces missing 'sehr gut' criteria + Such-Score ranking — matches user feedback #3.",
+    "DynamicPhaseEditor UX now gates Übernehmen… behind an explicit selection + collapses phase rows behind a toggle — satisfies feedback #1 fully."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter47_live.py"],
+  "success_rate": {"backend": "100% iter47 unit (34/34) + 100% live API (7/7); 522/524 broader unit (2 pre-existing unrelated)", "frontend": "100% of covered iter47 flows"},
+  "test_credentials": "Admin / admin",
+  "seed_data_creation": "None. No long jobs started. No TEST_ data created (per iter46 note that confirming a phase change would require duplicate+delete).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The DynamicPhaseEditor refine tab is reached via: tools-menu-button → tools-menu-optimizer → click text 'Dynamische Strategie' card → data-testid 'dwb-tab-refine' → select dwb-dynamic-select 'dyn_bf7d3517'. Phase rows (dpe-row-<id>) are collapsed by default and revealed by dpe-toggle-phases. Options in dpe-select-<id> are 'optimized' / 'strategy:<key>' (no literal 'Nicht handeln' value — pick any non-empty option to reveal dpe-apply-<id>). The Backtester dyn-basis field (bt-dyn-basis-field + bt-dyn-label-basis with values live/final) only renders after clicking a dynamic strategy chip like bt-strat-dyn_bf7d3517. In Regime Lab autopilot history the grade testids are autopilot-run-grade-<id>; the Score column header has a title tooltip containing 'Such-Score = Rangliste der Autopilot-Suche...'. GET /api/regime-lab/autopilot/runs returns {runs:[...]} (dict), not a bare list — adjust assertions accordingly."
+}

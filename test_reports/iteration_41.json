@@ -1,0 +1,25 @@
+{
+  "summary": "Tested the new Regime-Autopilot 'Timeframe-Kette' feature end-to-end. 4/4 backend tests pass (tf-chain preview endpoint for 1h and 15m; autopilot regression without tf_chain; autopilot WITH tf_chain producing correct result keys/order). UI tests pass: admin login works, Regime-Lab opens from tools menu, autopilot-section visible, autopilot-tf-chain checkbox default UNCHECKED and NOT persisted across reload, enabling it reveals autopilot-tf-chain-preview that correctly shows '(15m · 30m · 1h)' for 15m and updates to '(1h · 30m · 2h · 4h)' when top-level TF is switched to 1h. Autopilot history already contains two chain runs rendered with 'autopilot-run-tfchain-<id>' testid showing '⛓ statt 1h' marker when best TF differed. No bugs found in the new feature.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_tf_chain_feature.py",
+    "/app/test_reports/pytest/tf_chain_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "regime_tf_chain.py is pure/isolated and clean - good separation.",
+    "AUTOPILOT_PARAM_KEYS in regime_lab.py correctly includes tf_chain and auto_chain so settings.tf_chain is persisted.",
+    "TfChainToggle uses process.env.REACT_APP_BACKEND_URL correctly; preview endpoint is called with URL-encoded timeframe.",
+    "Checkbox state is component-local React state only (no localStorage) matching the 'not persisted' requirement."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% (verified checkbox default-off, non-persisted, preview correctness for 15m and 1h, history ⛓-marker)"},
+  "test_credentials": "Admin / LocalTest123! (from /app/memory/test_credentials.md and backend/.env)",
+  "seed_data_creation": "Two prior autopilot runs with tf_chain were already present in local DB from main agent testing; left them in place (verified they appear in Autopilot-Verlauf with autopilot-run-tfchain-<id> testid and '⛓ statt 1h' label).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_tf_chain_feature.py. The autopilot run itself takes ~15-25s for 2 rounds on BTCUSDT 120d cloud; the tf_chain=true variant takes ~20-30s because the chain reuses already-loaded candles. Full UI start-to-done E2E test of a chain run from the browser was skipped (long-running + flaky over slow proxy); backend covers the result-shape assertions. UI preview, default-off, non-persistence, chain history '⛓ statt' marker, and tf-switch chain update are all explicitly covered via Playwright. Only data-testid gotcha: admin login modal uses 'admin-username'/'admin-password' (NOT 'admin-login-username').",
+  "rca of the issue": "No bugs identified."
+}

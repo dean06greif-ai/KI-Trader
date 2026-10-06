@@ -1,0 +1,39 @@
+{
+  "summary": "Verified per-timeframe (intraday/swing) structural-regime release feature end-to-end: 76 targeted backend unit tests pass, GET /api/regime-lab/releases returns 200 with correct shape and (after seeding two shadow docs 15m/4h) yields two rows each carrying band='intraday' and band='swing'. Notification config GET /api/telegram/notify-config exposes new toggle 'regime_release_ready' (default true). SettingsPanel label 'Regime bereit für „Wirksam“' is present in source. AI Trading Panel Setup section renders StructuralStagePanel with data-testid ai-structural-stage-panel, note text (ai-structural-timeframe-note) mentions both Intraday (Analyse ≤ 1h) and Swing (≥ 2h), and after seeding both crypto badges (ai-structural-stage-crypto-intraday 'Krypto Intraday: SHADOW (15m)' and ai-structural-stage-crypto-swing 'Krypto Swing: SHADOW (4h)') are rendered. Regime-Lab modal (tools-menu-regime-lab) opens with no page/runtime errors (regime-lab-modal + workflow testids present). Seed docs cleaned up afterwards (releases returned to empty list).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/regime-lab/releases", "issue": "list_releases uses r['id'] without .get() at routers/regime_lab.py:452 – any regime_analyses doc missing top-level 'id' key produces a 500. Not user-reachable in normal flow (all_releases populates id), but brittle; consider r.get('id') and skip if missing."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_regime_improvements_2309b.py",
+    "/app/backend/tests/test_structural_regime.py",
+    "/app/backend/tests/test_regime_release.py",
+    "/app/backend/tests/test_entry_guard.py",
+    "/app/backend/tests/test_regime_gate.py",
+    "/app/backend/tests/test_fixes_lev_collection_tp1_activity.py",
+    "/app/backend/tests/test_variant_stats_market_hours_backupkeys.py"
+  ],
+  "action_items": [
+    "Optional: harden routers/regime_lab.py list_releases against docs missing top-level 'id' (use r.get('id'))."
+  ],
+  "critical_code_review_comments": [
+    "routers/regime_lab.py:452 – r['id'] direct index instead of .get(), see minor issue above.",
+    "notifications.DEFAULT_CONFIG['regime_release_ready']=True correctly wired; GET/PUT round-trip via /api/telegram/notify-config confirmed.",
+    "RegimeRelease.StructuralStagePanel correctly emits per-class badges keyed by band (intraday/swing) with expected data-testid pattern."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Inserted two temporary docs into crypto_scanner_dev.regime_analyses with _id/id TEST_regime_15m and TEST_regime_4h (release.stage=shadow, asset_classes=['crypto']) to validate band=intraday/swing rendering in API and UI. Docs deleted after verification.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Feature 'per-timeframe regime release band' is fully working. If retesting locally, seed via docs with fields _id, id, symbol_class, timeframe (15m or 4h), release.stage='shadow', release.asset_classes=['crypto'], release.timeframes=[tf]. Regime-Lab modal open requires admin login (triggered by any admin-guarded action).",
+  "rca of the issue": "N/A – no bugs blocking the feature; only minor hardening suggestion for list_releases KeyError on malformed docs."
+}

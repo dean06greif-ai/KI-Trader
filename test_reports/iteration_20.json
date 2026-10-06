@@ -1,0 +1,22 @@
+{
+  "summary": "Full test of iteration 20 (LINKUSDT+SUIUSDT registry, vwap_reclaim setup, stepwise per-asset capital demotion). Backend: 3 required unit-test files all green (34/34). GET /api/coins includes LINKUSDT & SUIUSDT in coins/crypto/tradable arrays. GET /api/ai/playbook returns setups.vwap_reclaim, classes.crypto.asset_events (list), and classes.forex.excluded = ['funding_fade','vwap_reclaim']. Frontend: LINK & SUI visible in sidebar TOP 13 COINS, in Regime-Lab modal coin picker and in liquidity-symbol-select. AI Trading Panel > Verlauf: Krypto tab renders ai-asset-capital-log-empty (expected – no closed trades in local DB). Forex tab shows 'Nicht vorgesehen in Forex: funding_fade, vwap_reclaim'. vwap_reclaim listed in maturity table. No runtime errors on the panel.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_vwap_capital_coins_2309c.py",
+    "/app/backend/tests/test_setup_live_gate.py",
+    "/app/backend/tests/test_regime_improvements_2309b.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Task specification mentions GET /api/symbols, but actual endpoint is /api/coins. Not a bug, just a naming clarification."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (POST /api/auth/login)",
+  "seed_data_creation": "None – local DB has no closed AI trades, so asset_events is expected empty (empty-state testid rendered as documented in the request).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All iteration-20 checks pass end-to-end. Symbols endpoint used by frontend is /api/coins (not /api/symbols). AITradingPanel is opened via [data-testid=\"strategy-tab-ai_trader\"] then [data-testid=\"edit-strategy-params-btn\"]; then click [data-testid=\"ai-equity-toggle\"] and class tab [data-testid=\"ai-setup-class-tab-crypto\"]. Liquidity panel opened via [data-testid=\"liquidity-button\"]. Regime-Lab opened via [data-testid=\"tools-menu-regime-lab\"].",
+  "rca of the issue": "N/A – no issues found."
+}

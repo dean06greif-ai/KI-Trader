@@ -1,0 +1,44 @@
+.diag-panel {
+  margin: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(240, 185, 11, 0.25);
+  border-radius: 8px;
+  background: rgba(240, 185, 11, 0.04);
+  font-size: 12px;
+  overflow-y: auto;
+  max-height: calc(100vh - 220px);
+}
+.diag-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.diag-title { display: inline-flex; align-items: center; gap: 6px; color: #f0b90b; font-weight: 700; letter-spacing: 0.5px; font-size: 12px; }
+.diag-range { display: flex; gap: 4px; }
+.diag-range button {
+  background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #aab;
+  border-radius: 4px; padding: 3px 8px; font-size: 10.5px; cursor: pointer;
+}
+.diag-range button.active { border-color: #f0b90b; color: #f0b90b; }
+.diag-sub { color: #8a8fa3; font-size: 11px; margin: 4px 0 8px; }
+.diag-err { color: #ff6b6b; margin: 6px 0; }
+.diag-empty { color: #8a8fa3; padding: 10px 0; }
+
+.diag-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.diag-stat { flex: 1 1 180px; background: rgba(255,255,255,0.04); border-radius: 6px; padding: 6px 9px; }
+.diag-stat-label { color: #8a8fa3; font-size: 10px; letter-spacing: 0.5px; }
+.diag-stat-val { margin-top: 2px; color: #dde; }
+.diag-stat .pos, .diag-table .pos { color: #2ebd85; }
+.diag-stat .neg, .diag-table .neg { color: #f6465d; }
+
+.diag-block { margin: 10px 0; }
+.diag-block-title { color: #cbd; font-weight: 700; font-size: 11px; letter-spacing: 0.4px; margin-bottom: 5px; }
+.diag-finding { display: flex; gap: 8px; align-items: baseline; padding: 5px 8px; border-radius: 5px; margin-bottom: 4px; line-height: 1.45; background: rgba(255,255,255,0.03); }
+.diag-sev { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; letter-spacing: 0.5px; padding: 1px 6px; border-radius: 3px; }
+.diag-crit .diag-sev { background: rgba(246,70,93,0.18); color: #f6465d; }
+.diag-warn .diag-sev { background: rgba(240,185,11,0.18); color: #f0b90b; }
+.diag-info .diag-sev { background: rgba(90,140,255,0.15); color: #7ea6ff; }
+
+.diag-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.diag-table th { text-align: left; color: #8a8fa3; font-weight: 600; padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.diag-table td { padding: 3px 6px; border-bottom: 1px solid rgba(255,255,255,0.04); color: #cde; }
+.diag-table tr.stale td { color: #f0b90b; }
+.diag-guards { display: flex; flex-wrap: wrap; gap: 6px; }
+.diag-guard { background: rgba(255,255,255,0.05); border-radius: 4px; padding: 3px 8px; color: #aab; }
+.diag-guard b { color: #dde; }
