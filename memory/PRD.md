@@ -45,3 +45,15 @@ Aufgabe: Regime-Anzahl-Bug (5 eingestellt -> 9 Regime), Regime-System prüfen + 
 - P1: Regime-Gate (source=own) auf Lab-Champion umstellen (zweite Wahrheit entfernen)
 - P1: Champion-Vergleich auf identischem Holdout-Zeitraum (gleiche Daten je TF) statt je Analyse
 - P2: Setup-Trigger Lab-Live: Tageslimit/Asset-Liste je Setup in der UI
+
+## 06.10.2026 – Abschluss „Ein Regime für alle“ + „Fairer Zeitraum-Vergleich“
+- Prüfung des vorherigen (abgebrochenen) Laufs: Gate-Quelle `auto` (Lab/Champion → Rückfall eigene) war fertig; Fair-Vergleich-Modul existierte, wurde aber NIE ausgelöst (kein Endpoint/kein Hintergrund-Lauf/keine UI) → jetzt fertiggestellt.
+- `services/regime_fair_compare.py`: zu frische (< 21 Tage OOS) und grenzlose Analysen werden ausgeschlossen statt den Vergleich zu blockieren; `status_for` (frisch ≤ 7 Tage, alle Kandidaten geprüft, Amtsinhaber messbar – sonst Alt-Verhalten); `needs_refresh`; Hintergrund-Job `start_job/run_many`.
+- `regime_selection.compute` nutzt `status_for`; faire Zeilen mit Mindest-OOS in Tagen (`min_bars`).
+- `structural_regime._auto_fair`: stündlich max. 2 fällige Paare (nur Champion-Modus suggest/auto).
+- Endpoints: `POST /api/regime-lab/champions/fair-compare` (Admin), `GET /api/regime-lab/champions/fair-compare/status`.
+- UI: `RegimeFairCompare.js` (Button + Fortschritt + Badge-Spalte „Vergleich“) in `RegimeChampions.js`; Auto-Trade-Modal zeigt die tatsächlich wirksame Phase (Lab/eigene).
+- Tests: `backend/tests/test_improvements_0710_one_regime_fair_compare.py` (17), Live `test_iter55_fair_compare_live.py` (8) – alle grün.
+### Backlog
+- P1: Champion-Modus „Vorschlagen“ aktivieren und Fair-Ergebnisse einige Tage beobachten, dann ggf. „Automatisch“.
+- P2: Fair-Vergleich-Details (Teilfenster je Kandidat) als Aufklapp-Ansicht.

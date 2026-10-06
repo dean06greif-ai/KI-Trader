@@ -99,6 +99,11 @@ def static_knowledge() -> str:
         "Gate-Effekt des Struktur-Regimes.",
         "- Live-Label = Lab-Label nur mit vollem Detektor-Warmup (sonst Zustand stale); "
         "Intraday-Freigabe gilt für Scalps, Swing-Freigabe für Swing-Trades.",
+        "- Regime-Champion je Asset: fairer Zeitraum-Vergleich (regime_fair_compare) misst alle "
+        "Erkennungen auf EXAKT demselben ungesehenen Zeitraum (nach dem spätesten Trainingsende, "
+        "Achse = feinster Timeframe, gröbere Labels kausal, eine Referenz, 3 Teilfenster); zu frische "
+        "Analysen (< 21 Tage OOS) werden ausgeschlossen. Nur frisch (≤ 7 Tage) + vollständig + "
+        "Amtsinhaber messbar -> ersetzt die gespeicherten Holdout-Werte, sonst Alt-Verhalten.",
         "DYNAMISCHE STRATEGIEN (Regime → Strategie, handelbar wie normale Strategien):",
         "- Bau im Optimizer (Dynamik-Werkbank) oder Regime-Lab: je Regime eigene Strategie "
         "oder Regel-/Parameter-Set (explizite Zuordnung), Walk-Forward je Regime auf dem Holdout.",
