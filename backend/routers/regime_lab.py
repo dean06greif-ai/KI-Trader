@@ -1136,3 +1136,22 @@ async def start_walkforward(aid: str, body: Dict, _: bool = Depends(require_admi
         job_id, body, strategy_registry, scanner.settings, DEFAULT_COIN_CFG, state.db),
         kind="regime_walkforward")
     return {"status": "started", "job_id": job_id, "ram_queued": queued}
+
+
+@router.post("/api/regime-correlation")
+async def start_correlation(body: Dict, _: bool = Depends(require_admin)):
+    from services import asset_correlation as ac
+    if ac.JOB["running"]:
+        raise HTTPException(409, "Korrelation läuft bereits")
+    symbols = [s for s in (body.get("symbols") or []) if isinstance(s, str)]
+    if len(symbols) < 2:
+        raise HTTPException(400, "Mindestens 2 Coins")
+    ac.JOB["running"] = True
+    asyncio.create_task(ac.run(state.db, symbols, body.get("timeframe") or "1h", int(body.get("days") or 360)))
+    return {"status": "started"}
+
+
+@router.get("/api/regime-correlation")
+async def get_correlation():
+    from services import asset_correlation as ac
+    return {"job": dict(ac.JOB), "result": await ac.latest(state.db)}

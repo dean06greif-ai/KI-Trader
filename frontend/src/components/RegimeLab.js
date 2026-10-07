@@ -27,6 +27,7 @@ import RegimeLabHelp from './RegimeLabHelp';
 import RegimeInsights from './RegimeInsights';
 import { JobProgress, SOFT_STOP_KINDS, useLabJobControls } from './RegimeJobProgress';
 import RegimeAutopilot from './RegimeAutopilot';
+import RegimeCorrelation from './RegimeCorrelation';
 import RegimeQueueStrip from './RegimeQueueStrip';
 import { saveEngineSnapshot } from '../lib/regimeSnapshots';
 import AnalysisRename from './AnalysisRename';
@@ -1146,6 +1147,7 @@ export default function RegimeLab({ onClose }) {
                 data-testid={`regime-coin-${c}`}>{c.replace('USDT', '')}</button>
             ))}
           </div>
+          <RegimeCorrelation coins={coins} timeframe={timeframe} days={days} onApply={setSelCoins} />
           <RegimeEngineSettings engine={engine} setEngine={setEngine}
             config={engineConfig} setConfig={setEngineConfig}
             calibApplied={calibApplied} setCalibApplied={setCalibApplied}

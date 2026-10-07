@@ -778,6 +778,13 @@ class StrategyCopilot:
         if (ctx or {}).get("regime"):
             parts.append("REGIME-LAB-STAND (darauf beziehen): "
                          + _dumps(ctx["regime"], 3200))
+        try:
+            from services import asset_correlation as ac
+            blk = ac.copilot_block(await ac.latest(self._db()))
+            if blk:
+                parts.append(blk)
+        except Exception as e:  # noqa: BLE001 – Zusatzwissen, nie Blocker
+            logger.debug(f"Regime-Copilot: Korrelation nicht verfügbar: {e}")
         return "\n\n".join(parts)
 
     async def _context_block(self, ctx: Dict) -> str:  # noqa: C901
