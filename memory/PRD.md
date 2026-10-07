@@ -57,3 +57,12 @@ Aufgabe: Regime-Anzahl-Bug (5 eingestellt -> 9 Regime), Regime-System prüfen + 
 ### Backlog
 - P1: Champion-Modus „Vorschlagen“ aktivieren und Fair-Ergebnisse einige Tage beobachten, dann ggf. „Automatisch“.
 - P2: Fair-Vergleich-Details (Teilfenster je Kandidat) als Aufklapp-Ansicht.
+
+## 07.10.2026 – Regime-Phasendauer fair je Regime-Anzahl + Such-Presets
+- Problem: nur 9 Regime erreichten Ø Phase > 5 d. Ursachen (Bericht `REGIME_PHASENDAUER_UND_PRESETS_0710.md`): Glättungs-Wahl je Regime-Anzahl, Unterachse ohne Mindestdauer (5er 1,4 d), gleiche Untergrenze für Regime-Phase, Referenz-Richtung modusabhängig (+5 F1 für 9er), Unterachse nicht suchbar, KI-Prompt „seit X Tagen“.
+- Neu: `services/regime_phase.py`, Config `sub_min_days` (1,5 d; Alt-Modelle unverändert), Suchraum je Modus, `phase_targets` im Score, Referenz-Revision 2.1, `direction_since`.
+- Presets: `lib/searchPresets.js` + `SearchPresetBar` in Optimizer, Regime-Optimierung (★ je Regime), Dynamik-Werkbank (+ Je-Regime-Auto, Backend `regime_presets`), Autopilot-Such-Profile.
+- Tests: test_regime_phase_fairness.py, test_search_presets_workbench.py, test_iter56_review.py – grün.
+### Backlog
+- P1: Kriterium „Verpasste Phasen ≤ 15 %“ gezielt angehen (Lag/Missed-Term im Such-Score).
+- P2: Presets speicherbar (eigene Presets je Nutzer).
