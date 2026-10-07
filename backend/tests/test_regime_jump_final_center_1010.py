@@ -107,3 +107,21 @@ def test_drift_reclassify_helper():
     assert (rx.drift_reclassify(lab, up, dv, cfg, bpd, 10) == 2).all()
     assert (rx.drift_reclassify(lab, flat, dv, cfg, bpd, 10) == 1).all()
     assert (lab == 1).all(), "Eingabe darf nicht verändert werden"
+
+
+def test_known_truth_synthetic_improves():
+    """Serien mit BEKANNTER Wahrheit (scripts/regime_jump_final_validation.py):
+    die neue Rückblick-Sicht trifft die Wahrheit im Mittel besser."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from regime_jump_final_validation import labels, macro_f1, synth_series
+    rng = np.random.default_rng(2026)
+    old, new = [], []
+    for _ in range(6):
+        c, truth = synth_series(rng, days=240)
+        for ratio, acc in ((1.0, old), (rj.FINAL_CENTER_RATIO, new)):
+            cfg, _live, fin = labels(c, "1h", jump_final_center_ratio=ratio)
+            w = int(cfg.get("warmup_bars") or 0)
+            acc.append(macro_f1(fin[w:], truth[w:]))
+    assert np.mean(new) > np.mean(old) + 3
