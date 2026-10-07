@@ -66,3 +66,12 @@ Aufgabe: Regime-Anzahl-Bug (5 eingestellt -> 9 Regime), Regime-System prüfen + 
 ### Backlog
 - P1: Kriterium „Verpasste Phasen ≤ 15 %“ gezielt angehen (Lag/Missed-Term im Such-Score).
 - P2: Presets speicherbar (eigene Presets je Nutzer).
+
+## 07.10.2026 – Asset-Korrelation im Regime-Lab (abgeschlossen)
+- Vorheriger Lauf war halb fertig (Service + Top-Paare-Liste, eigener In-Memory-Job ohne RAM-/Lab-Schutz, keine Matrix, Copilot ohne Hinweis falls nichts berechnet).
+- Fertiggestellt: Lauf als normaler Regime-Lab-Job (`kind=correlation`: Haupt-Balken, Abbruch/Pause, RAM-Queue, 1-Job-Schutz), Kerzen je Coin geladen + sofort verdichtet (RAM-schonend für die ganze Watchlist), Detektor der Lab-Einstellung (3 Regime), Holdout-Werte (r/Richtung/Kerzen im letzten Testabschnitt), fehlende Coins mit Grund.
+- UI: `RegimeCorrelation.js` + `RegimeCorrelationMatrix.js` – Umfang Watchlist / Nur Krypto / Auswahl, Heatmap-Matrix (Score, Rendite r, Richtung %, Holdout r), Gruppen-Vorschläge mit „Gruppe für Regime-Suche übernehmen“, Warnung bei abweichendem TF/Zeitraum.
+- Copilot: Werte inkl. Holdout + Veraltet-Warnung; ohne Ergebnis Hinweis auf den Knopf.
+- Tests: `backend/tests/test_asset_correlation.py` (9), `backend/tests/test_regime_correlation_api.py` (Live) – grün. Bericht `REGIME_ASSET_KORRELATION_0710.md`.
+### Backlog
+- P2: Korrelation optional nachts automatisch aktualisieren.

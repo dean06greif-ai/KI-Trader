@@ -1,0 +1,33 @@
+{
+  "summary": "Tested the new Regime-Lab Asset-Korrelation feature end-to-end (backend API + frontend UI). All acceptance criteria from the review request met: GET returns {job,result} shape, POST requires admin (401), POST validates <2 symbols (400), job appears in /api/regime-lab/active with kind='correlation', 2nd POST while running returns 409, finished result contains pairs with ret_corr/agree_pct/score/ret_corr_holdout/agree_pct_holdout/n_holdout plus groups/symbols/detector. Frontend: Regime-Lab opens, regime-correlation block renders, scope chips (watchlist 25 / crypto 13 / selection N) update the start-button count, toggle shows result with matrix, all four metric chips present, stale warning appears when lab timeframe/days differ from result, Gruppe übernehmen sets coin selection (regime-coin-BTCUSDT -> 'opt-chip on') and shows success toast.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/regime-correlation", "issue": "Observed one transient 502 from ingress while a long correlation job was finishing; subsequent manual curls returned 200 consistently. Test now retries 3x; not reproducible without load."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_regime_correlation_api.py",
+    "/app/test_reports/pytest/regime_correlation.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "asset_correlation.run excludes _id properly (via latest() pop) and uses async/await for DB and asyncio.to_thread for CPU parts — looks clean.",
+    "RegimeCorrelation.js uses REACT_APP_BACKEND_URL and authHeaders() correctly; data-testid coverage is complete for the feature.",
+    "Minor: start_correlation returns 200 'started' on success and relies on _guard_no_running to raise 409 — behavior verified live."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_regime_correlation_api.py (new)"
+  ],
+  "success_rate": {"backend": "100% (3/3 feature flow tests; 1 flaky GET on transient ingress 502 retried)", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from backend/.env; also stored by test in localStorage admin_token + admin_token_ts)",
+  "seed_data_creation": "Correlation job executed live against external exchanges with {BTCUSDT,ETHUSDT,SOLUSDT}, 1h, 30d — produced regime_correlation doc in local Mongo.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file at /app/backend/tests/test_regime_correlation_api.py. Keep correlation jobs small (<=4 crypto, 1h, 30d) because external candle fetch is slow. /api/regime-lab/active returns {'active': {...}} with a single running job object (not a list). Admin login endpoint: POST /api/auth/login with {username,password}; frontend stores admin_token + admin_token_ts in localStorage. Preview URL in /app/frontend/.env."
+}
