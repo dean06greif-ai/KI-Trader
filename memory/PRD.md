@@ -75,3 +75,9 @@ Aufgabe: Regime-Anzahl-Bug (5 eingestellt -> 9 Regime), Regime-System prüfen + 
 - Tests: `backend/tests/test_asset_correlation.py` (9), `backend/tests/test_regime_correlation_api.py` (Live) – grün. Bericht `REGIME_ASSET_KORRELATION_0710.md`.
 ### Backlog
 - P2: Korrelation optional nachts automatisch aktualisieren.
+
+## 10.10.2026 – Jump-Detektor: zu viel Seitwärts (3 Regime) behoben
+- Ursache: Rückblick-Sicht nutzte dasselbe Trend-Zentrum wie Live auf geglätteten Features -> 85–90 % Seitwärts.
+- Fix: `jump_final_center_ratio` (0,65) + gemeinsame Drift-Regel `drift_reclassify`; Live/Handel unverändert.
+- Final-F1 vs. Referenz: BTC 58->75, ETH 64->72, SOL 61->77 (1h); 4h +9. Bericht `REGIME_JUMP_SEITWAERTS_1010.md`.
+- Tests: `backend/tests/test_regime_jump_final_center_1010.py`.

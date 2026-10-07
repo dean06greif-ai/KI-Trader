@@ -22,9 +22,14 @@ from typing import Dict
 
 import numpy as np
 
-from services.regime_reactive import _absorb_short
+from services.regime_reactive import _absorb_short, drift_reclassify
 
 STATES = 3  # 0 = ab, 1 = seitwärts, 2 = auf
+# Final-Sicht: Trend-Zentrum = jump_center x Faktor. Die zentrierten Features
+# rauschen viel weniger als die kausalen; mit demselben Zentrum wurden langsame
+# Trends (z.B. BTC -50 % in 4 Monaten) rückblickend "seitwärts" (85-89 %).
+# Prüfung 10/2026 (BTC/ETH/SOL 1h 540d, Referenz v2): siehe REGIME_JUMP_SEITWAERTS_1010.md
+FINAL_CENTER_RATIO = 0.65
 
 
 def _alpha(halflife_bars: float) -> float:
@@ -53,8 +58,10 @@ def params(cfg: Dict) -> Dict:
     slow = max(float(cfg.get("jump_slow_days") or 14.0), fast)
     c = max(float(cfg.get("jump_center") or 0.6), 0.02)
     pen_days = max(float(cfg["jump_penalty_days"] if cfg.get("jump_penalty_days") is not None else 1.5), 0.0)
+    ratio = cfg.get("jump_final_center_ratio")
+    ratio = min(max(float(FINAL_CENTER_RATIO if ratio is None else ratio), 0.2), 1.0)
     return {"bpd": bpd, "fast_bars": fast * bpd, "slow_bars": slow * bpd, "c": c,
-            "lam": pen_days * bpd * c * c}
+            "lam": pen_days * bpd * c * c, "c_final": c * ratio}
 
 
 def features(close: np.ndarray, dvol_pct: np.ndarray, p: Dict, centered: bool = False) -> np.ndarray:
@@ -131,12 +138,16 @@ def detect_jump(f: Dict, cfg: Dict) -> Dict:
     L_live = losses(x_live, c)
     live3, V = online_filter(L_live, lam)
 
-    final3 = viterbi(losses(features(close, dvol, p, centered=True), c), lam)
+    cf = p["c_final"]
+    final3 = viterbi(losses(features(close, dvol, p, centered=True), cf), lam * (cf / c) ** 2)
     mp_days = float(cfg.get("min_phase_days") or 0.0)
     if mp_days <= 0:
         mp_days = min(max(n / p["bpd"] * 0.007, 1.0), 7.0)
     mp_bars = max(int(round(mp_days * p["bpd"])), 2)
     final3 = _absorb_short(final3, mp_bars)
+    # gleiche Plausibilitäts-Regel wie beim reaktiven Detektor: Seitwärts mit
+    # klarer Netto-Richtung ist ein langsamer Trend
+    final3 = drift_reclassify(final3, close, f.get("daily_vol_pct"), cfg, p["bpd"], mp_bars)
 
     # Sicherheit des Live-Zustands: Abstand zum nächstbesten Zustand in
     # Einheiten der Sprungkosten (1 = Wechsel wäre voll "bezahlt").

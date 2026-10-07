@@ -143,6 +143,7 @@ DEFAULT_CONFIG: Dict = {
     "jump_slow_days": 14.0,           # Halbwertszeit langsames Trend-Feature (Tage)
     "jump_center": 0.6,               # Trend-Zentrum in Tagesvola-Einheiten
     "jump_penalty_days": 1.5,         # Sprungkosten ≈ so viele Tage Gegenbeleg
+    "jump_final_center_ratio": 0.65,  # Rückblick-Zentrum = Trend-Zentrum x Faktor (1 = alt)
     # --- Höherer-TF-Filter (Plan 2.1, alle Detektoren, nur Live-Sicht) ---
     "htf_confirm": False,             # Live-Richtung gegen höhere Zeitebene prüfen
     "htf_days": 4.0,                  # EMA-Spanne der höheren Zeitebene (Tage)
@@ -230,6 +231,10 @@ CONFIG_META = [
     ("jump_penalty_days", "Jump: Sprungkosten (Tage)", "Nur Detektor 'jump': "
      "ein Wechsel braucht ungefähr so viele Tage Gegenbeleg. Größer = längere, "
      "ruhigere Phasen; 0 = keine Persistenz (flackert)."),
+    ("jump_final_center_ratio", "Jump: Rückblick-Zentrum (x Trend-Zentrum)", "Nur Detektor "
+     "'jump', nur Rückblick-/Analyse-Sicht: die geglätteten Rückblick-Werte schwanken "
+     "weniger, deshalb gilt dort ein kleineres Trend-Zentrum. 1 = wie Live (viel "
+     "Seitwärts), 0,65 = Standard. Live-Erkennung/Handel bleiben unverändert."),
     ("ema_regime_days", "EMA-Regime: Periode (Tage)", "Nur Detektor 'ema': "
      "diese EMA bestimmt das Regime. 14 = Standard (ruhig, beste Holdout-"
      "Trefferquote im Test), 9 oder 5 = feiner fürs Daytrading (mehr Wechsel, "
@@ -406,7 +411,8 @@ _grp("Kombi-Detektor (EMA + Umkehrpunkte)", ["kombi"],
      "kombi_ema_days", "kombi_thr", "kombi_slope_days", "kombi_persist_days",
      "kombi_dominance_days", "kombi_pivot_accel")
 _grp("Jump-Modell (Detektor 'jump')", ["jump"],
-     "jump_fast_days", "jump_slow_days", "jump_center", "jump_penalty_days")
+     "jump_fast_days", "jump_slow_days", "jump_center", "jump_penalty_days",
+     "jump_final_center_ratio")
 _grp("Phasen-Glättung", ["reactive", "ema", "kombi", "jump"], "min_phase_days", "sub_min_days")
 _grp("Höherer-TF-Filter", ["reactive", "ema", "kombi", "jump"],
      "htf_confirm", "htf_days", "htf_thr", "htf_promote_thr")
@@ -645,6 +651,7 @@ def resolve_config(config: Optional[Dict], timeframe: str, n_bars: int = 10 ** 9
     _f("jump_slow_days", max(cfg["jump_fast_days"], 0.5), 90.0)
     _f("jump_center", 0.02, 5.0)
     _f("jump_penalty_days", 0.0, 30.0)
+    _f("jump_final_center_ratio", 0.2, 1.0)
     _f("ema_regime_days", 2.0, 100.0)
     _f("ema_regime_thr", 0.05, 1.0)
     _f("ema_regime_smooth_days", 0.25, 10.0)

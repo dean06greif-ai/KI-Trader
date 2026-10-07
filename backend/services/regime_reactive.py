@@ -764,22 +764,7 @@ def _detect_reactive(f: Dict, cfg: Dict) -> Dict:
     # Beobachtung: zäher Abwärtstrend wird als Seitwärts angezeigt).
     # Kriterien bewusst konservativ: deutliche Bewegung pro Tag UND
     # Gesamtbewegung klar über dem Vola-Rauschen des Zeitraums.
-    dvol_f = np.nan_to_num(np.asarray(f.get("daily_vol_pct"), dtype=float),
-                           nan=2.0)
-    side_max = float(cfg.get("validate_side_max_pct_per_day") or 0.35)
-    vmult = float(cfg.get("validate_vol_tol_mult") or 1.5)
-    s0 = 0
-    for i in range(1, n + 1):
-        if i < n and final3[i] == final3[s0]:
-            continue
-        if final3[s0] == 1 and i - s0 >= max(mp_bars, 2):
-            days = (i - s0) / bpd
-            net = (close[i - 1] / max(close[s0], 1e-12) - 1.0) * 100.0
-            v = float(np.mean(dvol_f[s0:i])) or 2.0
-            tol = max(1.0, vmult * v * (days ** 0.5) * 0.75)
-            if abs(net) / max(days, 0.5) >= side_max and abs(net) >= tol:
-                final3[s0:i] = 2 if net > 0 else 0
-        s0 = i
+    final3 = drift_reclassify(final3, close, f.get("daily_vol_pct"), cfg, bpd, mp_bars)
 
     return {"live_dir": live_dir, "live3": live3, "final3": final3,
             "trendiness": trendiness, "probs": probs, "conf": conf,
@@ -789,6 +774,31 @@ def _detect_reactive(f: Dict, cfg: Dict) -> Dict:
             "ema_dir": ema_dir, "ema_crosses": ema_crosses,
             "warm": min(warm, n), "persist": persist,
             "min_phase_days": round(mp_days, 2)}
+
+
+def drift_reclassify(final3: np.ndarray, close: np.ndarray, daily_vol_pct, cfg: Dict,
+                     bpd: float, min_bars: int) -> np.ndarray:
+    """Final-Sicht: Seitwärts-Abschnitte mit klarer, stetiger Netto-Richtung
+    sind langsame Trends (Netto-%/Tag >= validate_side_max UND Netto-Move über
+    dem Vola-Rauschen des Abschnitts). Gilt für alle Detektoren mit Final-Sicht."""
+    out = np.asarray(final3).copy()
+    n = len(out)
+    dvol_f = np.nan_to_num(np.asarray(daily_vol_pct, dtype=float), nan=2.0)
+    side_max = float(cfg.get("validate_side_max_pct_per_day") or 0.35)
+    vmult = float(cfg.get("validate_vol_tol_mult") or 1.5)
+    s0 = 0
+    for i in range(1, n + 1):
+        if i < n and out[i] == out[s0]:
+            continue
+        if out[s0] == 1 and i - s0 >= max(min_bars, 2):
+            days = (i - s0) / bpd
+            net = (close[i - 1] / max(close[s0], 1e-12) - 1.0) * 100.0
+            v = float(np.mean(dvol_f[s0:i])) or 2.0
+            tol = max(1.0, vmult * v * (days ** 0.5) * 0.75)
+            if abs(net) / max(days, 0.5) >= side_max and abs(net) >= tol:
+                out[s0:i] = 2 if net > 0 else 0
+        s0 = i
+    return out
 
 
 def _absorb_short(lab: np.ndarray, min_len: int) -> np.ndarray:
