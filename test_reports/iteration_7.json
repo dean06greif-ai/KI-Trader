@@ -1,0 +1,29 @@
+{
+  "summary": "PLAN_REGIME_COCKPIT B5 acceptance test complete. Backend: 10/10 pytest cases green against public URL (regime-cockpit symbol endpoint incl. days-clamping + unknown symbol, overview endpoint + cache hit, /api/dynamic/list orphaned flag, /api/ai/config regime_context_enabled default+toggle). Frontend: full UI flow verified on 'Analyse' tab of AI Trader panel after admin login – all data-testids present (regime-cockpit, kpi-observer/structural/agreement/trades, chart, hits-observer with 12 rows, symbol/days/reload/overview-toggle). Symbol switch BTC→ETH updates KPI text and does not raise error; days=7 and reload work without regime-cockpit-error. Overview renders 23 rows (first call ~15s, cache warm), regime-cockpit-overview-row-ETHUSDT present; clicking the row updates symbol select to ETHUSDT and adds 'sel' class. Setup tab exposes ai-regime-context-select (value 'on') alongside ai-regime-block-select; toggling off↔on produces no error toast. Analyse regression: after switching back, cockpit still renders, AIDiagnosis/Reward/Policy content visible, no ErrorBoundary. No destructive actions performed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AI Trader panel", "issues": ["Pre-existing React hydration warning '<span> cannot be a child of <option>' logged on mount – not related to regime-cockpit but visible in console; cosmetic only, no functional impact."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/tests/test_regime_cockpit_api.py",
+    "/app/test_reports/pytest/regime_cockpit.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend/routers/regime_cockpit.py: broad try/except at /api/regime-cockpit/{symbol} returns 502 on ANY exception – acceptable per spec (no 500) but consider distinguishing 'unknown symbol' (404) from actual upstream failure (502) for clearer client handling.",
+    "services/regime_cockpit.overview: sequential per-symbol assemble() -> first cold call for 23 symbols is ~15s here (fast because caches warm) but can reach 60-90s cold; parallelising via asyncio.gather (bounded semaphore) would materially improve first-user latency without touching Bitunix rate limits (fetch_history is HTTP).",
+    "_overview_cache is process-local and never invalidated on write – acceptable for read-only cockpit, but note that a backend restart flushes it and re-triggers the slow warmup for the first Analyse user."
+  ],
+  "updated_files": ["/app/tests/test_regime_cockpit_api.py"],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "none – used existing local Mongo (crypto_scanner) with copied ai_market_snapshots (BTCUSDT/ETHUSDT, 15d) and closed ai_trader auto_trades.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend public URL: REACT_APP_BACKEND_URL. Admin token via POST /api/auth/login {username,password}. Regime-Cockpit read endpoints: /api/regime-cockpit/{symbol}?days=N (days clamped to [3,60]) and /api/regime-cockpit/overview?days=N[&symbols=A,B]. Overview cache TTL 600s, process-local. AI-config write: POST /api/ai/config (admin token, {regime_context_enabled: bool}); read via GET /api/ai/status -> config.regime_context_enabled. Frontend flow: strategy-tab-ai_trader → edit-strategy-params-btn → admin-login modal (Admin / Dean06Greif!/Admin) → edit-strategy-params-btn again → ai-diagnosis-toggle. Use wait_until='load' not networkidle (persistent WS). Overview first call may take 60-90s cold; here it returned in ~15s because caches were warm.",
+  "rca of the issue": "n/a – no defects found; all acceptance criteria met."
+}

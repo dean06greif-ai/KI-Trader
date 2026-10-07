@@ -1,0 +1,23 @@
+{
+  "summary": "Iteration 24 verified the crash-wick pivot flip-forever bug fix and macro-F1/kappa quality path. (A) 46/46 unit tests from the 5 requested files pass (test_pruefung_2409.py, test_regime_pruefung_2309.py, test_regime_release.py, test_etappe1_kombi.py, test_engine_split_and_regime_core.py) including test_kombi_pivot_scan_does_not_flip_forever_after_crash_wick, test_macro_f1_and_kappa_*, test_autopilot_score_prefers_f1_over_balanced, test_quality_grade_uses_f1_when_present. (B) New /app/backend/tests/test_iter24_pivot_synthetic.py – 4/4 pass: synthetic 400-bar series with a -66% wick at bar 200 -> _pivot_scan(high, low, close, thr_piv=1.5, persist=3) produces pivots where max_repeat_at_same_bar<=2 and max_delay_bars<30 (i.e. no endless flipping on the wick bar); on a 500-bar series with a crash wick, avg pivot-confirmation delay ~8 bars (before-fix: 121-347 d). Backend smoke: GET /api/regime-lab/releases returns 200 with keys shadow_by_aid+orphan_shadow (dicts); GET /api/regime-lab/list returns 200 (the /analyses path does not exist in this codebase – route is /api/regime-lab/list). (C) Frontend Playwright: Admin login OK (token 124), tools-menu-button -> tools-menu-regime-lab opens the Regime-Lab modal, page renders (Grundgerüst/Kalibrierung/Analyse/Ergebnis cards, BTC/ETH/BNB/SOL selection, v2 Regression+ADX+Vola engine, 15Min/360 Tage), no page errors. regime-quality-v1-warning is not visible because no saved analyses exist in the local dev DB – expected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter24_pivot_synthetic.py",
+    "/app/test_reports/pytest/iter24_unit.xml",
+    "/app/test_reports/pytest/iter24_api.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "regime_kombi._pivot_scan fix at lines 92-108 (j0 = min(ext_i+1, i)) correctly rebases the search window after the confirmed pivot bar; without it the crash-wick bar remained simultaneously ext_hi_i and ext_lo_i -> flip every `persist` bars. Same pattern should be audited in services/regime_reactive._detect_reactive (referenced in problem statement, lines 383-410) – the existing test test_kombi_pivot_scan_does_not_flip_forever_after_crash_wick covers regime_kombi; worth adding an analogous test on regime_reactive._detect_reactive to lock the fix on that path too.",
+    "Route naming inconsistency: request mentioned GET /api/regime-lab/analyses but backend exposes /api/regime-lab/list. Prior iteration_23 also used /releases only. Consider adding an /analyses alias or aligning docs to avoid future confusion for QA/tests."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter24_pivot_synthetic.py (new)"],
+  "success_rate": {"backend": "100% (46 unit + 4 synthetic/api = 50/50)", "frontend": "100% (Regime-Lab renders, 0 page errors)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None – synthetic in-memory numpy series only, no DB writes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "regime_kombi._pivot_scan signature is (high, low, close, thr_piv: np.ndarray, persist:int) and returns tuple (pivots, accel, retrace, rev_count, since_ext, piv_dir); each pivot is a dict with keys type/i/price/confirmed_i. Route for analyses list is /api/regime-lab/list (NOT /api/regime-lab/analyses – the latter matches /{aid}/release-check and returns 404 'Regime-Analyse nicht gefunden'). Regime-Lab modal reachable via tools-menu-button -> tools-menu-regime-lab; v1-warning card (data-testid regime-quality-v1-warning) requires seeded analyses in DB – not present in local dev DB. Login: POST /api/auth/login {username,password}, token stored as localStorage.admin_token + admin_token_ts.",
+  "rca of the issue": "Original bug: in _pivot_scan, after confirming a pivot the search window for the opposite extreme spanned [ext_i .. i] which INCLUDES the same crash-wick bar (10.10.2025 DOT/SUI -66% wick). That bar was simultaneously the ext_hi and the ext_lo, so every `persist` bars the detector flipped again on the same index -> endless pivots (up to 133 on the wick), delay 347 d, avg_delay 121 d for DOT/SUI. Fix: j0 = min(ext_i+1, i) rebases the opposite-extreme scan to start AFTER the confirmed pivot bar, so the wick can no longer be both ends. Verified independently on a synthetic -66% wick series: max_repeat_at_same_bar<=2, avg delay ~8 bars. Additionally scoring/grade now use macro-F1 + Cohen's kappa (regime_truth._f1_kappa) and RegimeQualityCard shows regime-quality-v1-warning for analyses computed under the old v1 reference."
+}

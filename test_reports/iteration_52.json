@@ -1,0 +1,26 @@
+{
+  "summary": "Iter52 testing: Backend unit tests (90) all pass; live API tests (5/5) for Backtester robustness (WF/DD/Constancy/Stress/MonteCarlo/Regime), backward compat (no robustness key when disabled), limit-fill touch vs realistic (realistic<=touch, per_pair has limit_filled/limit_expired), optimizer ETA (int eta_seconds in /optimizer/active during run), optimizer per_symbol with pnl/trades/win_rate + test + regimes bull/bear/sideways (no 'wins' key), and /api/system/ram candle_cache estimation (~48 B/candle not 500). UI: Backtester opens, all robustness toggles (bt-rb-walk_forward, bt-rb-dd_filter, bt-rb-constancy, bt-rb-stress_test, bt-rb-monte_carlo, bt-rb-regime_analysis) present, bt-rb-wf-mode appears when WF enabled, bt-limit-fill-mode select present, bt-run works, bt-robustness result card + bt-rb-card-{sid} + asset filter chips (opt-asset-filter / opt-asset-filter-ETH) + opt-asset-insight-{sid} all render. Per-strategy exec cfg: bt-cfg-limitoffset-{sid} appears when Entry-Order=Limit via bt-cfg-entryorder-{sid}. Optimizer last-result auto-loads with opt-asset-filter chips (all/BTC/ETH/SOL), selecting BTC renders opt-asset-insight-{i} in each top card + opt-asset-filter-best hint; Alle Assets restores opt-per-symbol-{i}. Mobile 390px: no horizontal overflow (scrollWidth=clientWidth=390).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter52_api_live.py",
+    "/app/backend/tests/test_improvements_1010_limit_outliers_eta.py",
+    "/app/backend/tests/test_workbench_phases_1010.py",
+    "/app/backend/tests/test_improvements_0310b.py",
+    "/app/backend/tests/test_robustness_features.py",
+    "/app/test_reports/pytest/iter52_api.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "All targeted iter52 features implemented and testable via stable data-testids (bt-rb-*, bt-rb-card-*, bt-rb-wf-mode, bt-limit-fill-mode, bt-cfg-limitoffset-*, opt-asset-filter*, opt-asset-insight-*).",
+    "Backward compatibility maintained: when 'robustness' is omitted from /api/backtest/run body, result does not include a 'robustness' key.",
+    "Candle-cache RAM estimation now uses ~48 B/candle (verified against total_candles)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter52_api_live.py"],
+  "success_rate": {"backend": "100% (90 unit + 5 live API)", "frontend": "100% (all testids and flows verified)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Live backtests + optimizer runs used public Binance candles; no persistent seed required.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_iter52_api_live.py is the regression entry point for Backtester robustness + limit-fill + optimizer ETA/asset-insight + /api/system/ram. Pre-existing unrelated failing tests (iter38 live, analysis_regression ap01/ap05/ap13, test_instruments_universe, test_iter_tz_customparams_liquidity, test_e1_adaptive_multiasset, test_dynamic_trading_0926 autopilot, test_frontend_yarn_lock_committed) remain and should be ignored as per request context."
+}

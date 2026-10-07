@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 26: Verified all seven requested acceptance items. Backend unit suites test_regime_jump + test_event_setups_and_signal_notify (20/20 tests) pass. New pytest E2E suite covers /api/regime-lab/engine/defaults (jump keys + 'Jump-Modell' group present), /api/telegram/notify-catalog (signals_only_traded + signals_collection present), /api/regime-lab/analyze with jump detector (analysis_id returned, GET analysis OK), and /api/regime-lab/autopilot end-to-end (finished in ~84s: best.detector='jump', adopt_recommended=true, holdout_metric='holdout_reference_f1_pct', no error). Frontend Playwright verified: app loads without new blocking errors; Analyse-Tools -> Regime-Lab modal exposes detector select [data-testid=engine-cfg-detector] with option 'Jump-Modell (Sprungkosten, empfohlen)' (value='jump'), and selecting it reveals 'JUMP-MODELL (DETEKTOR 'JUMP')' parameter group with jump_fast/slow/center/penalty fields; the 'Autopilot-Ergebnis übernommen (Jump-Modell (jump))' toast fires from App.js on adoption. Settings -> Telegram tab shows both new toggles ('↳ nur melden, wenn daraus wirklich ein Trade eröffnet wurde (mit Modus + Setup)' and '↳ auch Datensammel-Trades des KI-Traders melden') inside the Signale group ('Signale 6/6 an'). KI Trader tab opens without crash (DecisionTradeTags region present, empty DB so no decisions listed).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_regime_jump.py",
+    "/app/backend/tests/test_event_setups_and_signal_notify.py",
+    "/app/backend/tests/test_iter26_request.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "regime_lab.py service module is >1400 lines; consider splitting analyze/calibrate/autopilot/build subroutines into their own modules for maintainability.",
+    "regime_lab.py router is >1000 lines; grouping endpoints by concern (analyze / autopilot / release / regime-CRUD) into sub-routers would improve navigation.",
+    "Non-blocking: pre-existing unrelated test failures (test_iter38_*, test_ap13_research_ext, test_instruments_universe) remain in the repo per main-agent note; not exercised in this iteration."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter26_request.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / PreviewAdmin123 (via POST /api/auth/login; frontend stores token as localStorage 'admin_token' + 'admin_token_ts').",
+  "seed_data_creation": "None (used cached 4h BTC/ETH candles from local test MongoDB).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Autopilot with detector=kombi + jump enabled adopted the jump detector automatically on the preview DB (best.detector='jump', adopt_recommended=true). Regime-Lab jobs are single-slot -> always poll /api/regime-lab/status/{job_id} until done before starting the next. Frontend admin auth key is localStorage 'admin_token' with paired 'admin_token_ts' (24h validity). Detector select data-testid is 'engine-cfg-detector' inside the Regime-Lab modal's 'Engine-Feineinstellungen' collapsible – open it first.",
+  "rca of the issue": "No new issues found; all acceptance criteria satisfied."
+}
