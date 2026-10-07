@@ -1,0 +1,27 @@
+{
+  "summary": "Iter55 verified 'Ein Regime fuer alle' + 'Fairer Zeitraum-Vergleich'. (1) Unit tests: pytest tests/test_improvements_0710_one_regime_fair_compare.py tests/test_structural_regime.py tests/test_improvements_0610_regime_lab_live.py -> 42/42 passed in 0.38s. (2) New live API suite tests/test_iter55_fair_compare_live.py -> 8/8 passed in 9.68s: /api/health=200; GET /api/regime-lab/champions?symbols=BTCUSDT,ETHUSDT returns results with every pair carrying a 'fair' object (used:bool, reason in {missing,old,uncovered,blocked,ok}); POST /api/regime-lab/champions/fair-compare without token -> 401; GET /api/regime-lab/champions/fair-compare/status -> 200 with {running,done,total,results}; POST /api/regime-lab/champions/fair-compare with admin+keys=['ETHUSDT|intraday'] -> {started:true}, finishes within ~2min (polled status); after run ETHUSDT|intraday fair.used=true with 'fair' annotation in candidates.why; BTCUSDT|intraday & BTCUSDT|swing fair.reason in {ok,blocked,old,uncovered} or used=true (previously computed); GET /api/autotrade/regime_phase/BTCUSDT -> 200 with phase/label/lab{stage,...}. (3) Frontend (admin via localStorage.admin_token): Tools menu -> tools-menu-regime-lab opens Regime-Lab modal. Panel [data-testid=regime-champions] renders with [data-testid=regime-champions-table]; table thead contains 'Vergleich' column. 35 [data-testid^=regime-fair-badge-] badges rendered incl. 'regime-fair-badge-BTCUSDT|intraday' = 'fair · 91 Tage gemeinsames Out-of-Sample · Achse 1h', 'BTCUSDT|swing' = 'fair · 136 Tage ... Achse 2h', 'ETHUSDT|intraday' = 'fair · 91 Tage ... Achse 1h'. Button [data-testid=regime-fair-compare-start] visible & enabled (disabled attr=null) for admin. (4) StrategyAutoTradeModal static code check: [data-testid=sat-regime-gate-source] select has 3 options auto (label 'automatisch - Lab/Champion, sonst eigene'), lab, own_only; default cfg.regime_gate_source='auto' at line 51. Not opened per instructions. No trades, no mode changes, no apply clicks, no strategy config save performed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter55_fair_compare_live.py",
+    "/app/backend/tests/test_improvements_0710_one_regime_fair_compare.py",
+    "/app/backend/tests/test_structural_regime.py",
+    "/app/backend/tests/test_improvements_0610_regime_lab_live.py",
+    "/app/test_reports/pytest/iter55_live.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "regime_champions router correctly ordered before regime_lab so /api/regime-lab/champions is not shadowed by /api/regime-lab/{aid} — confirmed by live 200 responses with full champion payload.",
+    "services/regime_fair_compare.start_job/job_status/needs_refresh contract is sane: single job gate returns 409 on concurrent POST, status polls expose done/total/results — matches spec.",
+    "services/regime_selection.compute injects 'fair' per key with explicit reason enum (missing|old|uncovered|blocked|ok) so UI can decide 'fair · X Tage ... Achse Y' vs 'eigene Zeitraeume (reason)' — robust to no-data case without hiding candidates.",
+    "regime_gate.gate_source=auto correctly falls back to own detection when no effective Lab exists; UI exposes same tri-state (auto/lab/own_only) with 'automatisch' default — single-regime truth promise honored across engine & UI.",
+    "First test run saw cold-start 502 (Atlas warmup) causing 3 timeouts on default 20s read; retry after /api/health=200 passed cleanly in <10s. Not a regression; preview-only artifact."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter55_fair_compare_live.py", "/app/test_reports/iteration_55.json"],
+  "success_rate": {"backend": "100% (42/42 unit + 8/8 live)", "frontend": "100% (regime-champions + fair-compare controls verified; sat-regime-gate-source confirmed by code)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Only the harmless settings doc 'regime_fair_compare' updated by the fair-compare job for ETHUSDT|intraday (per instructions this write is OK).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_iter55_fair_compare_live.py is the regression entry for /api/regime-lab/champions {fair:{used,reason,...}} shape, fair-compare job lifecycle (admin guard, 409 while running, polling-complete <=2min), and /api/autotrade/regime_phase/BTCUSDT shape. UI selectors: tools-menu-button -> tools-menu-regime-lab -> data-testid=regime-champions (+table/-mode/-apply-all), data-testid^=regime-fair-badge-<SYMBOL|band>, data-testid=regime-fair-compare-start, data-testid=regime-fair-compare-progress (while running). StrategyAutoTradeModal: data-testid=sat-regime-gate-source (3 options). Preview backend may 502 ~60-90s after reload (Atlas warmup) — retry after /api/health=200."
+}
