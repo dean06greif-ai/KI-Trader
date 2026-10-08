@@ -1,0 +1,29 @@
+{
+  "summary": "Verified the 3 new features: (1) Fine-tune autopilot (POST /api/regime-lab/autopilot with fine_tune:true) returns the 'fine' block (max_minutes, max_rounds=400, plateau_rounds=60, start.source), max_minutes=600 is capped to 30, job.params has fine_mode=true and fine_start, and normal autopilot (no fine_tune) does NOT contain 'fine' in response. (2) GET /api/dynamic/dyn_seed1/versions/compare?a=1&b=2 returns {a,b,phases[{regime,label,a,b,changed}],changed_count}, 404 on unknown version, metrics only on side.is_optimized=True. (3) UI: autopilot-section shows new autopilot-finetune-start button next to autopilot-start; seeded regime_lab_runs doc seed_overfit_run shows badge 'autopilot-run-overfit-seed_overfit_run' with text '⚠ Überanpassung (4.893 Var.)'; big autopilot-overfit-warning box + autopilot-overfit-detail + autopilot-overfit-finetune button verified by code review of lib/overfit.js + RegimeOverfitWarning.js (triggered only for in-session finished results). Optimizer → opt-mode-dynamic → dwb-tab-refine → Seed Dynamisch → dvh-toggle → tick dvh-pick-1 + dvh-pick-2 opens dvc-panel with dvc-row-{0,1,2}, dvc-a-* / dvc-b-* sides, dvc-summary '1 von 3 Phasen unterschiedlich.' Ticking a third version (dvh-pick-10) keeps only the latest two (last-2 rule). No horizontal overflow at 390px (docW=390, winW=390). Regression: dpe-panel and dvh-toggle still work (indirectly confirmed via version history and seed). Backend tests all green: 21/21 existing unit (test_finetune_compare_1010.py + test_workbench_phases_1010.py) + 5/5 new API tests.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter44_finetune_compare_api.py",
+    "/app/test_reports/pytest/iter44_api.xml",
+    "/app/test_reports/pytest/iter44_unit.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "lib/overfit.js: thresholds (gain>0.05 AND drop>0.05) are hard-coded; moving them to a constant would make tuning/testing easier.",
+    "overfitInfo.severe flag uses OR (drop>=5 || tested>=1000) – documented in code only via styling, consider surfacing in UI.",
+    "RegimeOverfitWarning is only rendered for lastResult of a job finished in the current session (not for historical runs loaded from DB). This is intentional per spec but could confuse users refreshing the page.",
+    "/api/regime-lab/autopilot/stop is a soft stop that does not terminate the download phase quickly; API test needed to use /cancel after /stop to free the single-slot lock in time – consider documenting this nuance or exposing a single 'hard-stop' endpoint for test automation.",
+    "Fine-tune defaults FINE_MAX_MINUTES=15/FINE_MAX_ROUNDS=400/FINE_PLATEAU_ROUNDS=60 are centralised in services/regime_finetune.py – good."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter44_finetune_compare_api.py"],
+  "success_rate": {"backend": "100% (21/21 unit + 5/5 API)", "frontend": "100% of covered flows"},
+  "test_credentials": "Admin / PreviewAdmin123! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Used existing seeds dyn_seed1 (now at v10) and regime_lab_runs doc seed_overfit_run. No new seed data created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Preview URL: https://trader-refactor-5.preview.emergentagent.com. Only one regime-lab job may be running at a time – /api/regime-lab/autopilot/stop/{job_id} is soft; follow up with /api/regime-lab/cancel/{job_id} and poll /api/regime-lab/active until it returns {active:null} before starting a new autopilot test. Occasional 502 Cloudflare on first call; retry after ~15 s. dyn_seed1 version counter grew to 10 across the previous iteration; dvh-pick ids are 1..10."
+}

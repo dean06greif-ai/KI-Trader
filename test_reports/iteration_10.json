@@ -1,0 +1,22 @@
+{
+  "summary": "Iteration 10 – Wächter-Schattentrades (A), Worker 1.13.0 Restart-Detection (B) und Regime-Autopilot Vollautomatik (C). Backend 7/7 grün via public URL (test_iter10_review.py, 31s): GET /api liefert JSON {app,status}; GET /api/ai/guard-shadow/stats hat alle geforderten Keys (days, open_shadows, closed, guards, fee_guard_detail, recent, adjustments, baseline, last_adjust_ts) und kein _id in recent; POST /api/ai/config akzeptiert {guard_shadow_enabled:false, guard_autotune_enabled:false, guard_autotune_min_samples:20} und wurde am Ende sauber auf true/true/12 zurückgesetzt; GET /api/localworker/package/manifest und /api/localworker/status melden required_version 1.13.0. Fake-Worker-Flow (X-Worker-Token via /api/localworker/token): Poll -> Worker online, POST /api/optimizer/run mit strategy_id 'scalping_4_rules', symbols ['BTCUSDT'], days 3, timeframe '1m', mode 'params', execution 'local' -> job_id, nächster Poll claimt den Job. Nach 22 s Karenz (LOST_JOB_GRACE=20) und mehreren Polls mit running_jobs:[] wurde der Job automatisch neu eingereiht (phase 'Worker wurde neu gestartet …' bzw. beim nächsten Poll erneut vergeben mit phase 'Vom lokalen Worker übernommen'); anschließend via /api/optimizer/cancel/{job_id} aufgeräumt. POST /api/regime-lab/autopilot mit auto_chain:false liefert 200 job_id; /status läuft; danach /autopilot/stop/{job_id} bzw. /cancel/{job_id}. Frontend (public URL): Admin-Login (admin-lock-button / admin-username / admin-password / admin-login-submit) OK. strategy-tab-ai_trader -> edit-strategy-params-btn -> ai-setup-toggle: ai-guard-shadow-select ('on'), ai-guard-autotune-select ('on'), guard-shadow-panel + guard-shadow-summary Text 'Schattentrades (14 Tage): offen 0 · bewertet 0' vorhanden; Umschalten shadow-select off->on funktioniert. Tools-Menü -> tools-menu-regime-lab öffnet Regime-Lab, autopilot-section enthält 'Vollautomatik', Checkbox autopilot-auto-chain by default checked; abwählen setzt localStorage['regime_autopilot_v1'].autoChain=false, wieder anwählen setzt autoChain=true.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter10_review.py",
+    "/app/test_reports/pytest/iter10.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Guard-Autotune-Zustand (baseline, last_adjust_ts) und LOCAL_JOBS leben weiter im Prozess-RAM (vgl. Iter 9-Feedback). Ein Backend-Neustart mitten in einem 12-h-Cooldown verliert diese Info; für die Fee-Wächter-Kalibrierung wäre eine Mongo-Persistenz sinnvoll – aktuell in services/settings mit STATE_ID abgelegt, das ist ok, aber LOCAL_JOBS (Karenz/missing_polls) nicht.",
+    "public Preview flappt sporadisch mit 502 (Cold-Start/Restart der Preview-Route); für Retries sind längere Timeouts (>=60s) und ggf. eine kleine Warm-Up-Warteschleife nötig – im neuen Test bewusst timeout=120 gewählt."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter10_review.py"],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (AI-Setup Panel + Regime-Autopilot Vollautomatik)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (funktioniert)",
+  "seed_data_creation": "keine – Guard-Config wieder auf Defaults (true/true/12) gesetzt, gestarteter Optimizer-Job und Autopilot-Job über /cancel bzw. /autopilot/stop aufgeräumt.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Neue Datei /app/backend/tests/test_iter10_review.py deckt (a) /api/ai/guard-shadow/stats-Shape, (b) POST /api/ai/config Guard-Toggles inkl. Reset auf Defaults, (c) Worker-Package/-Status required_version 1.13.0, (d) Fake-Worker-Restart-Requeue (~30s Laufzeit inkl. 22s Grace), (e) Regime-Autopilot mit auto_chain=false ab. Läuft in ~31 s wenn Backend warm ist. WICHTIG: Preview-Backend kann 502 zurückgeben, wenn es gerade neustartet – dann 1–2 Minuten warten (curl /api/ auf 200 prüfen), dann pytest wiederholen. -n 0 verwenden (kein xdist), sonst laufen andere schwere Tests parallel und blockieren.",
+  "rca of the issue": "n/a – keine offenen Bugs."
+}

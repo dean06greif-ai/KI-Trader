@@ -1,0 +1,34 @@
+{
+  "summary": "Iter54 regime-autopilot/champions/lab-live/job-controls/event-setups verification. (1) Unit tests `pytest tests/test_improvements_0610_regime_lab_live.py tests/test_fomc_event.py tests/test_econ_event.py`: 75/75 passed in 0.43s. (2) New live-API suite /app/backend/tests/test_iter54_api_live.py (12/12 passed, 8.2s): GET /api/regime-lab/champions?symbols=BTCUSDT,ETHUSDT -> 200 with keys {mode, assign, results, rules} (not shadowed by /api/regime-lab/{aid}); POST /api/regime-lab/champions/mode without token -> 401, with admin+invalid mode -> 400; GET /api/ai/playbook/lab-live -> 200 with optin.crypto=['session_open'] and setup row {asset_class:'crypto', setup:'session_open', validated:true, opted_in:true, live_override:true}; POST /api/ai/playbook/lab-live without admin -> 401, admin+asset_class='xyz' -> 400; POST /api/ai/playbook/backtest/{pause,resume,stop}/doesnotexist with admin -> 404, without token -> 401; POST /api/ai/playbook/backtest/jobs/reset (admin) -> {status:'reset', cleared:<int>}; GET /api/event-setups/overview -> every event dict (fomc/cpi/nfp/ppi/pce) carries boolean `live_auto`. No mutating calls (no autopilot/backtest/mode-apply triggered). (3) UI (Admin logged-in via API+localStorage.admin_token): tools-menu-button -> tools-menu-regime-lab opens Regime-Lab modal and the new `data-testid=regime-champions` section renders with `regime-champions-table` and `regime-champions-mode` select (not empty). tools-menu-ai-trader-lab opens `ai-trader-lab-modal` with `lab-live-panel`; the row `lab-live-crypto-session_open` is present with checkbox checked=true and visible 'LIVE' tag; opt-in text includes 'validiert'. No apply/toggle actions performed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "lab-live-panel", "issues": ["Spec expected event-setup live checkbox label text 'automatisch (sobald validiert)' or 'AN'. In lab-live-panel (setup opt-ins) only the string 'validiert · Opt-in aus' is shown. The 'automatisch (sobald validiert)' label likely lives on the separate event-setups panel (FOMC/CPI/...), not inside lab-live-panel — not inspected here. live_auto=true on event-setups overview is confirmed at API level."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter54_api_live.py",
+    "/app/backend/tests/test_improvements_0610_regime_lab_live.py",
+    "/app/backend/tests/test_fomc_event.py",
+    "/app/backend/tests/test_econ_event.py",
+    "/app/test_reports/pytest/iter54_unit.xml",
+    "/app/test_reports/pytest/iter54_live.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/__init__.py correctly registers regime_champions before regime_lab so /api/regime-lab/champions is not shadowed by the dynamic /api/regime-lab/{aid} route — verified via live GET returning champion dict instead of 404.",
+    "/api/event-setups/overview returns live_auto per event (fomc shows live_auto=true with live_enabled=false — i.e. auto-will-flip-on-validate), aligning with fomc_event/econ_event auto-live-unless-live_opt_out spec.",
+    "Admin auth on champions/mode and lab-live POST correctly returns 401 without Bearer and 400 for invalid mode/asset_class before any state mutation — safe for production-shared DB.",
+    "Backend had one cold-start 502 window during the test run (~1-2 min after a lifecycle reload); retried after /api/health=200 and all 12 live tests passed. Not a regression; Atlas warmup.",
+    "Backtest job-controls contract (pause/resume/stop/jobs-reset) is consistent: unknown id -> 404, missing auth -> 401, reset returns {status, cleared}. Matches soft-stop/checkpoint design."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter54_api_live.py"],
+  "success_rate": {"backend": "100% (75/75 unit + 12/12 live)", "frontend": "100% (regime-champions + lab-live-panel both verified)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None — read-only + error-contract only, shared production DB.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_iter54_api_live.py is the regression entry for regime-champions endpoints (shape + admin guard + invalid mode), ai/playbook/lab-live (shape + crypto/session_open live_override + admin guard + invalid asset_class), ai/playbook/backtest/{pause,resume,stop,jobs/reset}, and /api/event-setups/overview live_auto flag. Field notes: lab-live setups rows use key `setup` (not `setup_id`) and `asset_class`. event-setups/overview returns {events:{<name>:{...live_auto}}}, not a list. UI entry: tools-menu-button -> tools-menu-{regime-lab,ai-trader-lab}; lab-live row testid pattern lab-live-{asset}-{setup}. Backend may 502 for ~60-90s after a reload (Atlas warmup) — retry after /api/health=200."
+}
