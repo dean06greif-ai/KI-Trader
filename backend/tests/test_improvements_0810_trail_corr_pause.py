@@ -200,3 +200,26 @@ def test_worker_paused_job_frees_slot():
     src = open(path, encoding="utf-8").read()
     assert "def active_compute_jobs" in src and "compute_running = active_compute_jobs()" in src
     assert 'jd.get("paused")' in src
+
+
+def test_yahoo_queries_only_its_1m_window(monkeypatch):
+    """540 Tage Forex: Yahoo wird nur für die letzten ~29 Tage gefragt (vorher Abbruch
+    nach 5 leeren Alt-Fenstern -> nie Daten -> 'ohne Daten')."""
+    from services import history_sources as hs
+    calls = []
+
+    async def fake_json(session, url, params, timeout=30, headers=None):
+        calls.append(params["period1"])
+        t = params["period1"]
+        return {"chart": {"result": [{"timestamp": [t, t + 60], "indicators": {"quote": [
+            {"open": [1, 1], "high": [1, 1], "low": [1, 1], "close": [1, 1], "volume": [0, 0]}]}}]}}
+
+    async def no_sleep(*a, **k):
+        return None
+
+    monkeypatch.setattr(hs, "_get_json", fake_json)
+    monkeypatch.setattr(hs.asyncio, "sleep", no_sleep)
+    end = 1_800_000_000_000
+    blocks = asyncio.run(hs.fetch_yahoo(None, "EURUSD=X", end - 540 * 86400000, end))
+    assert blocks and min(calls) * 1000 >= end - hs.YAHOO_MAX_DAYS * 86400000
+    assert len(calls) <= 5

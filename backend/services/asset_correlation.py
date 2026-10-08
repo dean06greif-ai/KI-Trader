@@ -35,7 +35,7 @@ DETECTORS = ("reactive", "ema", "kombi", "jump")
 # Fortschritt) – lange Erst-Downloads (z.B. 540 Tage Bitunix/Dukascopy) laufen
 # durch und liegen danach im Kerzen-Cache. Vorher: harte 300 s je Asset ->
 # Metalle/Indizes/Forex/HYPE landeten bei langen Zeiträumen immer in „ohne Daten“.
-STALL_TIMEOUT_S = 300
+STALL_TIMEOUT_S = 900
 MAX_FETCH_S = 3 * 3600
 STALL_POLL_S = 5
 PERFECT_ABS = 0.95         # |r| bzw. |Score| ab hier = (nahezu) perfekte Korrelation

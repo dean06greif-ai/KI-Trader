@@ -290,4 +290,4 @@ def test_ai_seed_wired_into_local_exec():
     runner.JOBS["t_seed"] = {"id": "t_seed", "status": "running"}
     assert local_exec._get_job("t_seed", "ai_seed") is runner.JOBS.pop("t_seed")
     src = _worker_src()
-    assert 'VERSION = "1.22.0"' in src and 'kind == "ai_seed"' in src
+    assert 'VERSION = "1.23.0"' in src and 'kind == "ai_seed"' in src

@@ -46,6 +46,7 @@ YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{}"
 
 MINUTE = 60_000
 YAHOO_CHUNK_MS = 7 * 86400 * 1000
+YAHOO_MAX_DAYS = 29            # Yahoo hält 1m-Kerzen nur ~30 Tage
 # IBKR: /iserver/marketdata/history liefert max. 48h je Request (1m-Bars);
 # Forex-Historie ~2 Jahre (wie event_assets.YEARS_CAP).
 IBKR_CHUNK_MS = 48 * 3600 * 1000
@@ -265,7 +266,11 @@ async def fetch_bitunix(session, ref: str, start_ms: int, end_ms: int,
 async def fetch_yahoo(session, ref: str, start_ms: int, end_ms: int,
                       job: Dict = None, pace: float = 0.25) -> List[np.ndarray]:
     blocks: List[np.ndarray] = []
-    cur = start_ms
+    # Nur das Fenster abfragen, das Yahoo für 1m überhaupt hält: vorher lief die
+    # Schleife bei z.B. 540 Tagen ab dem ANFANG los, brach nach 5 leeren
+    # 7-Tage-Fenstern ab und erreichte die vorhandenen letzten ~30 Tage nie ->
+    # Forex komplett „ohne Daten“, auch die Backup-Quelle (Dukascopy) griff nicht.
+    cur = max(start_ms, end_ms - YAHOO_MAX_DAYS * 86400 * 1000)
     empty_streak = 0
     while cur < end_ms:
         await _check_cancel(job)
@@ -604,7 +609,7 @@ async def fetch_backup(session, symbol: str, start_ms: int, end_ms: int,
             empty_streak = 0
             blocks.append(m)
         done += 1
-        if job is not None and done % 10 == 0:
+        if job is not None:  # je Tag – Stillstands-Erkennung (asset_correlation) sieht Fortschritt
             pct = min(99, round(done / total_days * 100))
             job["phase"] = f"Lade Backup-Historie: {symbol} ({pct}%)"
         day -= timedelta(days=1)

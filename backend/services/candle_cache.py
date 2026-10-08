@@ -260,6 +260,12 @@ async def get_candles(session, symbol: str, days: int, job: Dict = None,
     if entry is None:
         logger.info(f"candle_cache MISS {symbol} days={days}")
         candles = await _fetch_range_parallel(session, symbol, start, end, job=job)
+        if not len(candles) and history_sources.source_of(symbol) in ("yahoo", "ibkr") \
+                and not _head_exhausted(symbol, time.time()):
+            # Forex: Yahoo/IBKR liefern gar nichts (z.B. Ratelimit, Gateway nicht
+            # eingeloggt) -> komplette Historie aus Dukascopy (echte FX-Kurse,
+            # keine Skalierung nötig) statt „ohne Daten“.
+            candles = await _backup_head(session, symbol, start, end, 0.0, job=job)
         # Primärquelle deckt den Anfang nicht ab (z.B. Bitunix ab Listing) ->
         # ältere Kerzen aus der Backup-Quelle davorhängen.
         if len(candles) and int(candles.ts[0]) > start + 86400000 \
