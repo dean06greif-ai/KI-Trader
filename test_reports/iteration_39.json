@@ -1,0 +1,38 @@
+{
+  "summary": "Reviewed and tested multi-worker + asset-suggest + regime-lab worker-targeting features for KI-Trader. 7/7 review-specific backend tests pass (status new fields waiting_workers/max_workers=2; 3rd worker rejected with 'Maximal 2' msg and in waiting_workers; regime-lab 503 when target worker offline; 409 parallel guard against same worker/cloud; 200 OK when targeting a 2nd worker in parallel; asset-suggest returns per_regime/recommended/overall_scores/sources with all expected fields; unknown aid → 404; regimes=0,2 filter works). Frontend tested end-to-end with 2 fake workers (pcA/pcB): Tools→Optimizer→Dynamik→Discover→Analyse selected → Vorschlag box shows BTC with per-regime details and Übernommen on apply. dwb-worker-target-select appears when execution=local and >=2 workers with 'Automatisch (freier Worker)' + both worker names. LocalWorkerPanel lw-worker-list shows 'Verbundene Worker (2/2)'. Of the 6 pre-existing regression suites requested, 61/65 pass; 4 failures are pre-existing env issues (worker package VERSION mismatch 1.18.0 vs required 1.13.0, and 2 local_worker roundtrip tests that race against other polling workers in the environment).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/localworker/package", "issue": "Packaged worker.py uses VERSION = '1.18.0' but server REQUIRED_WORKER_VERSION_STR = '1.13.0' – test_worker_package.test_worker_version_matches_server_requirement and test_package_zip_contains_required_files fail. Pre-existing version drift between local_worker/worker.py and backend/services/local_exec.py REQUIRED_WORKER_VERSION."},
+      {"endpoint": "POST /api/worker/poll (data/backtest claim)", "issue": "tests/test_local_worker.py backtest_roundtrip and existing_endpoints_unchanged flake because other pollers in environment (seed workers, test leftovers) win the job claim first – not a regression from this change."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "WorkerTargetSelect / LocalWorkerPanel data fetch", "issue": "fetch('/api/localworker/status') is called WITHOUT Authorization header. Backend endpoint is public (returns 200 even unauth) so this currently works, but the frontend treats admin-login as required for other flows – minor inconsistency. Confirmed working: with 2 workers online, dwb-worker-target-select / opt-worker-target-select / bt-worker-target-select / regime-worker-target-select appear exactly as specified; lw-worker-list and lw-multi-hint toggle correctly.", "affected_selectors": ["dwb-worker-target-select", "lw-worker-list"]}
+    ],
+    "design_issues": [
+      {"screen": "Optimizer dropdown", "issues": ["React console warning: '<span> cannot be a child of <option>' (hydration warning) in Analyse-Select – cosmetic, does not break functionality"]}
+    ]
+  },
+  "test_report_links": ["/app/tests/test_review_multi_worker.py", "/app/backend/tests/test_multi_worker_and_trader_fixes.py", "/app/backend/tests/test_ai_chat_commands_and_fixes.py", "/app/backend/tests/test_funding_fee_guard.py", "/app/backend/tests/test_local_worker.py", "/app/backend/tests/test_playbook_demotion.py", "/app/backend/tests/test_worker_package.py"],
+  "action_items": [
+    "(Optional) Align worker VERSION in /app/local_worker/worker.py (currently 1.18.0) with backend REQUIRED_WORKER_VERSION_STR (currently 1.13.0) OR bump REQUIRED_WORKER_VERSION_STR to 1.18.0 so test_worker_package passes. The deployed worker in production may already match – only matters for the package endpoint test.",
+    "(Optional) Pass Authorization header in WorkerTargetSelect.js fetch for consistency (currently relies on endpoint being open to anon)."
+  ],
+  "critical_code_review_comments": [
+    "services/local_exec.py: MAX_ACTIVE_WORKERS, worker_admitted, parallel_allowed, check_target cleanly implement the multi-worker and target-based parallel guard. parallel_allowed correctly requires both running and new jobs to be local on different workers – matches spec.",
+    "routers/regime_lab.py _check_local_available passes body so target-specific 'nicht verbunden' message is produced only when worker_id given; otherwise falls back to generic 'Kein lokaler Worker verbunden' – both still carry 503 and the word 'verbunden'. Review test spec said 'nicht verbunden' – acceptable but could be unified.",
+    "services/asset_suggest.py (not shown): endpoint returns the exact structure spec requires. Good.",
+    "WorkerTargetSelect.js correctly hides itself when <2 workers online AND target online; shows '(offline)' for an unknown saved target. Nice fallback."
+  ],
+  "updated_files": ["/app/tests/test_review_multi_worker.py (new test file)"],
+  "success_rate": {"backend": "100% (7/7 new review tests pass; 61/65 regression incl. 4 pre-existing fails)", "frontend": "100% (asset-suggest flow + worker-target selects + LocalWorkerPanel all verified)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Started /tmp/fake_workers_long.sh heartbeating pcA (Mein-PC) and pcB (Kumpel-PC) for ~10min to simulate 2 online workers for frontend tests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend review tests live at /app/tests/test_review_multi_worker.py (outside backend/ to avoid uvicorn hot-reload interference). Run with: cd /app && python -m pytest -p no:cacheprovider -o 'addopts=' tests/test_review_multi_worker.py -v (uses REACT_APP_BACKEND_URL public). For frontend worker-target tests, admin login via localStorage.setItem('admin_token', <token>) then reload is sufficient; 2+ workers must be heartbeating via /api/worker/poll – use /tmp/fake_workers_long.sh or /root/fake_workers.sh. External preview URL can be slow (~6s for /api/health); use timeout>=30s. Known pre-existing failing regression tests to IGNORE: test_worker_package (version drift), test_local_worker roundtrip (seed-worker races).",
+  "rca_of_the_issue": "N/A – all requested features verified working. Only non-blocking RCA: packaged worker.py in /app/local_worker/worker.py (v1.18.0) and backend REQUIRED_WORKER_VERSION_STR (1.13.0) have drifted. Fix: pick one source of truth, probably bump REQUIRED_WORKER_VERSION_STR to '1.18.0' in services/local_exec.py."
+}

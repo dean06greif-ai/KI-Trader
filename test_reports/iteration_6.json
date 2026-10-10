@@ -1,0 +1,26 @@
+{
+  "summary": "Regression tests for Regime-Lab clarity patch (read-only against production MongoDB Atlas). Backend: 14/14 integration tests PASS (health, auth, /list projection & <10s perf, /calibrations, /status 404, /status calibration fallback, /analysis with quality, plus 6 read-only endpoints incl. /maintenance/backup). Plus confirmed 25/25 unit tests in test_regime_lab_clarity.py PASS. Frontend smoke: header loads, BTC/ETH sidebar, admin login (is-admin class set), Tools -> Regime Lab modal opens with '2 Welten' text, Kalibrierungs-Verlauf toggle loads 11 rows with 'Übernehmen' buttons (not clicked), clicking latest saved analysis (12 total) loads detail with regime-quality-card and grade 'GUT' displayed, modal closes cleanly. No destructive actions performed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/test_regime_lab_regression.py",
+    "/app/test_reports/pytest/regime_lab_regression.xml",
+    "/app/backend/tests/test_regime_lab_clarity.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "3 harmless 401 console entries observed on initial page load (admin-only endpoints polled before login). Not blocking; could be suppressed by gating fetches on admin state to keep the console clean."
+  ],
+  "updated_files": ["/app/tests/test_regime_lab_regression.py"],
+  "success_rate": {"backend": "100% (14/14 integration + 25/25 unit)", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "none (read-only against production DB)",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend uses live MongoDB Atlas – latency high, some detail endpoints take 20-60s. Backend hot-reload takes ~70-100s to recover; avoid touching /app/backend files. Regime-Lab list projection excludes chart_emas/chart/per_coin correctly, response <2s. Calibration history returned 11 entries, saved analyses returned 12. Quality summary keyed by scope and yielded grade 'GUT' on the newest small analysis. Tests live in /app/tests/test_regime_lab_regression.py for reuse.",
+  "rca of the issue": "n/a – no issues found"
+}

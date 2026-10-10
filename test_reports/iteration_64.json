@@ -1,0 +1,32 @@
+{
+  "summary": "Backend + frontend testing for KI Signal-Broker feature. Backend unit suite (6 files) all green: 89 passed. New API test suite /app/backend/tests/test_signal_broker_api.py (5 tests) all green: validates GET /api/ai/signal-broker shape & defaults (signal_min_ki_trades=5, signal_live_min_r=0.05, signal_rule_paper_all=true, signal_review_daily_cap=60, windows.divergence=45/momentum_news=10/htf_range=60), admin POST /api/ai/config persist+clamp (999 -> 300), window override divergence=90, signal_broker_enabled toggle reflected in GET /api/ai/setup-trigger.broker, setup-trigger GET/run endpoints. Defaults restored after each test. Frontend UI verified: admin login via admin-lock-button works, strategy-tab-ai_trader + edit-strategy-params-btn opens KI Trader panel, ai-lab-toggle + ai-lab-tab-adaptive renders the Signal-Broker card at the top with all required data-testids (signal-broker-card/meta/windows/open-table/source-empty/history-table) and admin controls (signal-broker-enabled, rule-paper, min-trades, review-cap) are visible and enabled. Setup-trigger-card continues to render below. No runtime JS errors (only expected 401s before login).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AdaptivePanel (ActivityGuardCard select, line 77 of AdaptivePanel.js)", "issues": ["React hydration warning in dev console: <span> cannot be a child of <option>. Appears to be caused by the x-source instrumentation wrapping option children in a <span>. Does not break functionality but pollutes the console."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_signal_broker_api.py",
+    "/app/test_reports/pytest/signal_broker_api.xml"
+  ],
+  "action_items": [
+    "Optional: investigate the <span> inside <option> hydration warning in AdaptivePanel.js (line 77) — likely an instrumentation artifact in dev builds; may need to render plain text children in <option>."
+  ],
+  "critical_code_review_comments": [
+    "Signal broker config endpoint correctly clamps signal_review_daily_cap at 300 and persists window overrides.",
+    "Admin auth gate is correctly enforced on POST /api/ai/config and /api/ai/setup-trigger/run.",
+    "Hot-reload-after-test-file-touch left the backend in a shutdown state once; needed a manual supervisorctl restart (preview env quirk, not an app bug)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_signal_broker_api.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Unit suite listed in review request (6 files, 89 tests) and new API suite test_signal_broker_api.py pass cleanly. UI flow to reach the broker card: admin-lock-button -> login (Admin / Dean06Greif!/Admin) -> strategy-tab-ai_trader -> edit-strategy-params-btn -> ai-lab-toggle -> ai-lab-tab-adaptive. signal-broker-min-trades and signal-broker-review-cap are <select> elements, not <input> (use select_option). Note that in preview the admin-lock sometimes needs to be clicked before the strategy-tab-ai_trader is interactive."
+}

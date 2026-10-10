@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 35 (frontend-only retest). Feature 1 UI is now FIXED: opening Tools -> Backtester -> gear opens LocalWorkerPanel where 'lw-data-summary' shows '/root/scratch/wd · 0.2 MB belegt · – GB frei' (no more offline fallback), row 'lw-data-row-HYPEUSDT' renders with 4.349 Kerzen, timespan 27.09.2026 – 30.09.2026, size 0.2 MB, updated 30.09., 18:40, and button 'lw-data-repair-HYPEUSDT' is clickable. Clicking it triggers POST /api/localworker/data/repair (200) and the RepairSummary line 'Lücken-Reparatur HYPEUSDT: 0 → 0 Lücken (0 → 0 fehlende Minuten) · +0 aus bitunix · +0 aus binance' is displayed. Feature 2 regression: DynamicRegimePerformance renders inside DynamicPanel in Optimizer (dyn-perf-{did} + dyn-perf-total-{did} 'Gesamt: 0 Trades · WR 0.0% · PnL 0.00'). Feature 3 regression: 'dwb-skip-losing' chip toggles visibility with 'dwb-walkforward' state (1 -> 0 -> 1). All three features working. No new test files were created in /app/backend/tests.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global", "issues": ["React hydration warning: '<span> cannot be a child of <option>' – pre-existing, non-blocking, but should be cleaned up in a select/option list."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_34.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "backend local_exec.ui_data_info() now correctly normalizes worker data payload: exposes both dir/data_dir aliases and shapes symbols as list of objects with candles/first_ts/last_ts/bytes/updated. Frontend LocalWorkerPanel renders correctly. Good decoupling of worker heartbeat schema from FE render contract.",
+    "React hydration warning ('<span> cannot be a child of <option>') originates from a <select> element rendering a <span> inside <option>. Not a regression from this iteration but worth cleaning up (search for '<option>' containing '<span>' in the frontend).",
+    "Auth token key in FE is 'admin_token' in localStorage with 1-day expiry (see /app/frontend/src/auth.js). If a test session lacks this token, all authed API calls (including repair) return 401 — expected behavior."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only iteration; iter34 = 100%)", "frontend": "100% (3/3 features verified)"},
+  "test_credentials": "Admin / LocalTest06! (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Repair job used the already-cached HYPEUSDT candles (no gaps, so 0/0 outcome).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 3 follow-up features (Feature 1: LocalWorkerPanel data repair button, Feature 2: DynamicRegimePerformance in DynamicPanel, Feature 3: dwb-skip-losing chip in Werkbank) are verified end-to-end via UI. Fix for Feature 1 was in backend local_exec.ui_data_info() (iter34/35). If retesting: (1) log in via POST /api/auth/login, store token under localStorage key 'admin_token' and timestamp under 'admin_token_ts', (2) navigate via Tools menu (data-testid=tools-menu-button) to Backtester -> bt-exec-manage for LocalWorkerPanel, or to Strategie-Optimizer for DynamicPanel + Werkbank chips.",
+  "rca of the issue": "Iter34 root cause (payload shape mismatch between local worker v1.17.0 and FE LocalWorkerPanel) was fixed by adding a normalizer in backend/services/local_exec.py ui_data_info() that (a) exposes 'dir' alias in addition to 'data_dir', (b) expands 'symbols' into full objects {symbol, candles, first_ts, last_ts, bytes, updated, mtime} instead of bare strings, and (c) adds 'total_bytes'. Verified via curl and via UI: LocalWorkerPanel now renders the HYPEUSDT row with lw-data-repair-HYPEUSDT and repair completes successfully with RepairSummary rendered."
+}
