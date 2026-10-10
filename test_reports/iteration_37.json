@@ -1,0 +1,34 @@
+{
+  "summary": "Iter 37: Verified Regime-Risk-Shadow (backend + UI), Lesson-Impact regime control basis, Autopilot warmstart wiring, and Manifest-Anchor bugfix. Ran 52 pytest cases across the 4 requested backend test files – 52/52 passed. Live-preview endpoints /api/ai/regime-risk/shadow and /api/ai/lessons/impact return the required shape with correct clamping (days: 1→7, 9999→365) and the shadow response includes trades/scaled_trades/pnl/shadow_pnl/delta/rows[{regime,trades,avg_reward,pnl,shadow_pnl,factor_now}]/verdict/note. Frontend: after admin login the Verlauf panel in AITradingPanel renders regime-risk-shadow with summary, verdict='würde helfen' and full 4-row regime table (strukturell seitwärts / unbekannt / bulle / bär, factors ×1/×1/×1.25/×0.5). RegimeAutopilot has data-testid autopilot-warm-start checkbox.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/regime-lab/autopilot", "issue": "Cannot smoke-test end-to-end from preview because a long-running 'analysis' job is already active on this env (guard rejects with 'Es läuft bereits ein Regime-Lab-Job (analysis)'). Warm_start wiring is verified via code review (routers/regime_lab.py:382-385 calls regime_warmstart.collect_seeds) and unit tests test_warmstart_rank_prefers_same_coins_and_dedupes / test_warm_seeds_filters_detectors_and_start."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_manifest_anchor_0110.py",
+    "/app/backend/tests/test_mm_verlauf_regime_copilot_0110.py",
+    "/app/backend/tests/test_regime_calibration_history_and_shadow.py",
+    "/app/backend/tests/test_worker_restart_and_autopilot_chain.py",
+    "/app/test_reports/pytest/iter37_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/regime_lab.py start_autopilot builds params dict from AUTOPILOT_PARAM_KEYS before injecting seed_configs – ok, but the seeded body is not persisted into job params (only seed_configs on body); harmless, but the UI Verlauf/warmstart status relies solely on result.warmstart set by run_autopilot – confirm the run consumes body['seed_configs'] correctly (unit tests cover the ranking layer, not the run integration).",
+    "services/candle_cache.get_candles new optional start_ms plumbed through backtester.fetch_history and regime_lab._load – covered by test_manifest_anchor_0110.py; ensure history_sources providers respect start_ms (test uses mock; verify a real provider covers the ≥365d anchor path if kept)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None – used existing seed data (119 KI-Trader trades over 90d visible in Verlauf/shadow panel).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 4 review items green. Backend: 52 pytest cases pass. Regime-Risk-Shadow shape validated: rows keys={regime,trades,avg_reward,pnl,shadow_pnl,factor_now}; verdict transitions among 'würde helfen'|'neutral'|'sammelt'; days clamped 7..365. Lessons/impact still exposes rows/totals/flags/counterfactual (returned 0 attributed rows on the current seed – expected because trades have no attributed lessons; control_basis logic covered by test_lesson_control_matches_structural_regime). Autopilot warm_start wired at routers/regime_lab.py:382-385 (seed_configs from regime_warmstart.collect_seeds when warm_start=True and no seed_configs passed). Frontend Verlauf panel opens via KI Trader tab → edit-strategy-params-btn gear → Admin login modal (2 inputs, first=user, second=password) → 'Verlauf' tab button. RegimeRiskShadow shows testids: regime-risk-shadow, regime-risk-shadow-toggle, regime-risk-shadow-summary, regime-risk-shadow-verdict, regime-risk-shadow-table. Note: a background 'analysis' job is running on preview env → autopilot POST is guarded; do not start heavy jobs.",
+  "rca of the issue": "N/A – no new bugs. Manifest-cap bug (HYPEUSDT candle mismatch) is fixed via start_ms anchor propagation through candle_cache/backtester/regime_lab; regression covered by test_manifest_anchor_0110.py (both tests pass)."
+}

@@ -1,0 +1,31 @@
+{
+  "summary": "Full regression of iter62 improvements: regime-correlation (GET/POST/DELETE + runs persistence), /api/jobs/paused shape, autopilot run delete, job pause/resume with concurrent backtest on local worker, Backtester trail-mode UI, Regime-Lab correlation UI (Assets wording, matrix, saved runs with show/delete), autopilot history 'Regime suchen' button, and mobile paused-jobs badge/menu with 1-decimal percentage + variant count. All backend tests pass (7/7). All UI acceptance criteria met.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iter62_improvements.py",
+    "/app/backend/tests/test_iter62_pause_e2e.py",
+    "/app/test_reports/pytest/iter62_improvements.xml",
+    "/app/test_reports/pytest/iter62_pause_e2e.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "regime_lab.py: GET /api/regime-correlation now returns {job,result,runs}; result includes id/requested/symbols/perfect/missing_reasons as required. DELETE run endpoint correctly 401s without admin and 200s with admin.",
+    "job_overview.py /api/jobs/paused: returns {jobs, count} with resume_path+cancel_path for each entry; worker frees slot on pause (verified by concurrent local backtest completing).",
+    "Backtester.js: bt-cfg-trailmode-<id> select exposes 4 options (Standard/tp1/profit_pct/crv); selecting profit_pct reveals bt-cfg-trailpct and bt-cfg-trailbe; crv reveals bt-cfg-trailcrv.",
+    "PausedJobsBadge: shows 'N pausiert' only when a job is paused; menu lists Fortsetzen+Abbrechen and the entry text includes progress with 1 decimal and 'Kombination x/y' variant counter.",
+    "Autopilot history: autopilot-run-analyze-<id> button present and triggers regime analysis (toast seen); DELETE /api/regime-lab/autopilot/runs/aptest_btc2 worked and aptest_btc1 preserved.",
+    "Minor obs: on wide-desktop Regime-Lab the correlation-missing block is only rendered when there are missing symbols (3/3 case had none) — expected."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter62_improvements.py (new)",
+    "/app/backend/tests/test_iter62_pause_e2e.py (new)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (all required flows verified)"},
+  "test_credentials": "Admin / Dean06Greif!/Admin (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Live correlation run executed via POST /api/regime-correlation (BTC/ETH/SOL 1h 30d) — added to persisted runs. aptest_btc2 autopilot run was deleted per instructions; aptest_btc1 kept.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression files: test_iter62_improvements.py (6 fast tests) and test_iter62_pause_e2e.py (slow, uses live local worker pod-test; requires no other optimizer running). Mobile paused badge test flow: POST /api/optimizer/run with execution=local -> wait ~15s -> POST /api/optimizer/pause/{id} -> reload UI -> data-testid='paused-jobs-toggle' appears with 'N pausiert', menu has paused-job-resume-{id}/paused-job-cancel-{id}. The Backtester trail config is only visible after clicking data-testid='bt-cfg-toggle-{strategy_id}'. For Regime-Lab correlation 'ansehen'/delete, use data-testid regime-correlation-run-show-{id}/regime-correlation-run-delete-{id}. Non-crypto correlation runs (GOLD etc.) are slow — avoid unless 300s+ timeout acceptable.",
+  "rca of the issue": "N/A — no bugs found this iteration."
+}
