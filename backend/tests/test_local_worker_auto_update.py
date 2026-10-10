@@ -110,3 +110,29 @@ def test_server_data_update_job_still_uploads_with_skipped(worker, monkeypatch):
     (jid, p), = uploads
     assert jid == "lj_server1" and p["status"] == "done"
     assert p["summary"]["symbols"] == ["BTCUSDT"] and p["summary"]["skipped"][0]["symbol"] == "OLDSYM"
+
+
+
+def test_flush_pending_results_deletes_leftover_auto_files(worker, monkeypatch, tmp_path):
+    """Altlast älterer Worker-Versionen: pending auto-*.json.gz Dateien dürfen
+    NICHT zum Server hochgeladen werden (der kennt die Job-IDs nicht), sondern
+    müssen beim nächsten flush_pending_results gelöscht werden. Nicht-auto Jobs
+    werden wie bisher hochgeladen."""
+    pending_dir = worker._pending_dir()
+    pending_dir.mkdir(parents=True, exist_ok=True)
+    auto_file = pending_dir / "auto-deadbeef.json.gz"
+    auto_file.write_bytes(b"legacy-garbage")
+    server_file = pending_dir / "lj_srv42.json.gz"
+    server_file.write_bytes(b"real-payload")
+
+    uploaded = []
+    def fake_try_upload(job_id, raw):
+        uploaded.append((job_id, raw))
+        return True
+    monkeypatch.setattr(worker, "_try_upload", fake_try_upload)
+
+    worker.flush_pending_results()
+
+    assert not auto_file.exists(), "auto-*.json.gz muss gelöscht werden (Server kennt den Job nicht)"
+    assert not server_file.exists(), "erfolgreich hochgeladene Server-Jobs werden entfernt"
+    assert uploaded == [("lj_srv42", b"real-payload")], "nur Nicht-auto Jobs werden hochgeladen"

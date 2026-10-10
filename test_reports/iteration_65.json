@@ -1,0 +1,38 @@
+{
+  "summary": "Backend-only regression + targeted testing for (a) local_worker auto-update bug, (b) new history_fallbacks chain, (c) full unit-suite regression vs baseline, (d) optional live read-only probe. All targeted tests pass (30/30 initially; added 1 new test for flush_pending_results => 31/31). Full `pytest -m unit -q -n 4` run: 22 failed + 25 errors + 2469 passed + 12 skipped. After normalizing node ids and diffing against /root/fail_base.txt (37 baseline failures/errors): NO new failures introduced. Two baseline failures are even gone (test_review_16_8_fees_and_computed.py ERROR and test_iter50_free_tier_protection::test_paid_models_are_openrouter_only_and_in_catalog). Live read-only probe: FXCM GBPUSD 60d -> 8 weekly blocks / 57357 rows in 2.5s; fetch_head GOLD now-365d..now-236d -> 185760 rows across 130 distinct days, aborted=False (both well above spec). No writes to Mongo/Supabase triggered.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_local_worker_auto_update.py",
+    "/app/backend/tests/test_history_fallbacks.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "flush_pending_results correctly deletes legacy pending auto-*.json.gz files instead of uploading them (worker.py L436-454). Confirmed by new unit test.",
+    "_update_all_symbols isolates per-symbol errors; JobCancelledLocal still propagates (tests cover both paths).",
+    "run_data_job routes auto- jobs away from upload_result and emits exactly the specified German log lines ('Auto-Update der Kerzendaten fertig: N Symbol(e) aktuell[, M übersprungen ...]' + per-symbol lines).",
+    "Server-issued data_update jobs still upload with summary {symbols, skipped} (test_server_data_update_job_still_uploads_with_skipped).",
+    "history_fallbacks fetch_head returns (matrix, aborted); live GOLD call via PAXGUSDT -> Dukascopy chain works, aborted=False.",
+    "history_fallbacks live FXCM weekly download for GBPUSD is fast (~2.5s for 60d) and non-abortive on consecutive weeks."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_local_worker_auto_update.py (added test_flush_pending_results_deletes_leftover_auto_files)"
+  ],
+  "success_rate": {
+    "backend": "100% targeted (31/31); unit regression matches baseline exactly (no new failures, 2 baseline failures resolved)",
+    "frontend": "N/A (not in scope)"
+  },
+  "test_credentials": "None used (no auth paths touched)",
+  "seed_data_creation": "None. Only a fake pending_results/auto-deadbeef.json.gz written inside pytest tmp_path (auto-cleaned).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Baseline failure list at /root/fail_base.txt is still the correct reference. Normalise current pytest FAILED/ERROR lines by stripping ' - ...' suffix before diffing. New tests of interest: tests/test_local_worker_auto_update.py (6 tests) and tests/test_history_fallbacks.py (24 tests). Live probe script at /tmp/live_check.py (read-only, network, no DB writes).",
+  "rca of the issue": "Original bug ('Job auto-...: fertig (error) – Ergebnis hochgeladen'): run_data_job treated auto-generated hourly jobs identically to server-dispatched jobs; a single symbol failure in _update_all_symbols propagated as an error status that was then uploaded to the server (which has no record of auto- job ids). Fix (verified via tests): per-symbol try/except in _update_all_symbols aggregates `skipped`, run_data_job detects AUTO_JOB_PREFIX and logs locally without calling upload_result, and flush_pending_results deletes any leftover auto-*.json.gz from older worker versions so no retry on next startup."
+}

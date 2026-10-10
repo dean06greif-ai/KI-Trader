@@ -37,9 +37,26 @@ Sperren: harte Risiko-Guards bleiben, weiche -> Hinweise/gemessen (Default, Frag
 - UI: KI-Labor > Adaptiv > Signal-Broker-Karte; Quelle-Tag in der Entscheidungsliste
 - Doku: KI_TRADER_SIGNAL_BROKER_1010.md; Tests: tests/test_signal_broker.py
 
+## Iteration 10.10.2026 (b) – Historien-Lücken, Doku-Aufräumen, Worker-Auto-Update (Branch conflict_101026_1546)
+Auftrag (Nutzer): Datenhinweise „GBPUSD: 14 von 365 Tagen (Quelle (ibkr) liefert nicht mehr)“, „QQQUSDT/SPYUSDT/GOLD/OIL:
+… ab Kontrakt-Listing“ fixen; veraltete Pläne/Analysen löschen; Worker-Meldung „Job auto-…: fertig (error) – Ergebnis hochgeladen“ entfernen.
+User Choices: Ersatzquelle automatisch; Tage vor Listing mit Basiswert füllen; nur eindeutig veraltete Doku löschen;
+Save to GitHub; nur lesende Abrufe externer Quellen, keine Schreibzugriffe auf Prod.
+- Ursachen: Dukascopy drosselt Cloud-IPs (503/Timeout) -> Backup leer + 24 h Sperre; IBKR-Gateway 503/429 wurde als „leeres Fenster“ gezählt -> Abbruch nach ~14 Tagen
+- NEU services/history_fallbacks.py: Kette je Symbol (Forex FXCM -> Dukascopy -> Yahoo; GOLD Binance PAXG -> Dukascopy; OIL/SILVER/QQQ/SPY Dukascopy),
+  füllt Kopf + Lücken > 4 Tage, Naht-Skalierung; candle_cache._backup_head + history_sources.fetch_secondary nutzen sie
+- IBKR: Fehler je 48h-Fenster mit Backoff wiederholt (_ibkr_chunk), Abbruch nur bei Dauerfehler; Dukascopy-Abbruch -> 30-min-IP-Pause, Kopf-Suche dann 30 min statt 24 h
+- Datenhinweis nennt die Ersatzquellen; Yahoo hat 1m nur ~30 Tage (für Vor-Listing-Historie ungeeignet)
+- Worker: Auto-Update isoliert Fehler je Symbol, Auto-Jobs nur lokal protokolliert (kein Upload), Altlast-Pending-Dateien auto-* werden gelöscht
+- Gelöscht: archive/, ARCHIV_KATALOG.md, PLAN_REGIME_BRUECKE_LAB_KI_TRADER.md, FORTSCHRITT_UMSETZUNG.md, UMSETZUNGSPLAN_LIVE_QUALITAET.md,
+  ANALYSE_LEKTIONEN_UND_REGIME_LAB.md, KI_TRADER_SETTINGS_CHECK.md, STRATEGIEN_BEWERTUNG.md, REGIME_LAB_KLARHEIT_UND_KALIBRIERUNG.md,
+  REGIME_LAB_PRUEFBERICHT_2309/2409/2509.md, REGIME_DYNAMIK_PRUEFBERICHT_3009.md
+- Tests: tests/test_history_fallbacks.py (24), tests/test_local_worker_auto_update.py (7); Unit-Suite ohne neue Fehler ggü. Ausgangsstand; iteration_65 (100 %)
+
 ## Backlog
 - P0 (Nutzer-Einstellung): Analyst-Hauptmodell gemini-3.5-flash statt :free; live_gate_bypass AUS; fee_guard_mult 6
 - P1: Partial Pooling (Gruppen-Modell + Coin-Skalen), Regime-Wahrscheinlichkeiten, BTC-Kontext für Alts
 - P1: Nach 2 Wochen Broker-Daten: Fenster je Setup aus Timing-Bilanz automatisch nachführen
 - P2: Kalibrierte Konfidenz für Positionsgröße nutzen, sobald `informative` = true
 - Prod-Override retention_config.overrides.regime_analyses.keep_last=15 nach Deploy optional entfernen
+- P1: Alternative 1m-Quelle für OIL/SILVER/QQQ/SPY (bisher nur Dukascopy, auf Render stark gedrosselt)
