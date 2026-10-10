@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="8" failures="0" skipped="2" tests="10" time="10.313" timestamp="2026-10-02T12:29:10.612499+00:00" hostname="agent-env-59cf3217-2757-45f2-9dda-e99d783ae673"><testcase classname="" name="tests.test_ai_fixes_iter2" time="0.000"><error message="collection failure">ImportError while importing test module '/app/backend/tests/test_ai_fixes_iter2.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_ai_fixes_iter2.py:12: in &lt;module&gt;
+    from tests.test_position_watchdog import FakeCollection
+E   ModuleNotFoundError: No module named 'tests.test_position_watchdog'</error></testcase><testcase classname="" name="tests.test_bugreport_fixes" time="0.000"><error message="collection failure">ImportError while importing test module '/app/backend/tests/test_bugreport_fixes.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_bugreport_fixes.py:16: in &lt;module&gt;
+    from tests.test_position_watchdog import FakeDB
+E   ModuleNotFoundError: No module named 'tests.test_position_watchdog'</error></testcase><testcase classname="" name="tests.test_dynamic_backup" time="0.000"><error message="collection failure">ImportError while importing test module '/app/backend/tests/test_dynamic_backup.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_dynamic_backup.py:7: in &lt;module&gt;
+    from tests.test_autopilot_history_import import _Db, _analysis
+E   ModuleNotFoundError: No module named 'tests.test_autopilot_history_import'</error></testcase><testcase classname="" name="tests.test_edges_api" time="0.000"><skipped message="collection skipped">('/app/backend/tests/test_edges_api.py', 14, 'Skipped: Keine Admin-Zugangsdaten (ADMIN_PASSWORD) gesetzt')</skipped></testcase><testcase classname="" name="tests.test_iter_ai_supervisor_auto" time="0.000"><error message="collection failure">ImportError while importing test module '/app/backend/tests/test_iter_ai_supervisor_auto.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_iter_ai_supervisor_auto.py:18: in &lt;module&gt;
+    from tests.test_iter_ai_supervisor_autonomy import FakeCollection, FakeDB
+E   ModuleNotFoundError: No module named 'tests.test_iter_ai_supervisor_autonomy'</error></testcase><testcase classname="" name="tests.test_nnfx" time="0.000"><error message="collection failure">ImportError while importing test module '/app/backend/tests/test_nnfx.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_nnfx.py:9: in &lt;module&gt;
+    from tests.test_regime_engine import make_candles, range_series, series
+E   ModuleNotFoundError: No module named 'tests.test_regime_engine'</error></testcase><testcase classname="" name="tests.test_phase5_ml_gate_api" time="0.000"><skipped message="collection skipped">('/app/backend/tests/test_phase5_ml_gate_api.py', 30, 'Skipped: Zu wenig ML-Gate-Daten in dieser Umgebung (Prod-Regressionstests)')</skipped></testcase><testcase classname="" name="tests.test_policy_promotion" time="0.000"><error message="collection failure">ImportError while importing test module '/app/backend/tests/test_policy_promotion.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_policy_promotion.py:8: in &lt;module&gt;
+    from tests.test_policy_lab import FakeDB, FakeEngine
+E   ModuleNotFoundError: No module named 'tests.test_policy_lab'</error></testcase><testcase classname="" name="tests.test_regime_extras" time="0.000"><error message="collection failure">ImportError while importing test module '/app/backend/tests/test_regime_extras.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_regime_extras.py:10: in &lt;module&gt;
+    from tests.test_regime_engine import labels_for, make_candles, series
+E   ModuleNotFoundError: No module named 'tests.test_regime_engine'</error></testcase><testcase classname="" name="tests.test_stale_regime_api" time="0.000"><error message="collection failure">tests/test_stale_regime_api.py:20: in &lt;module&gt;
+    ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen os&gt;:679: in __getitem__
+    ???
+E   KeyError: 'ADMIN_PASSWORD'</error></testcase></testsuite></testsuites>
