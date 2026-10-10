@@ -23,7 +23,12 @@ const TOPICS = [
     + 'als die aktive Kalibrierung. Schlechtere Ergebnisse bleiben im Verlauf und können dort bewusst übernommen werden.'],
   ['Freigabe: Shadow → Wirksam', 'Shadow („Beobachten“) braucht: behaltene Regime mit ≥5 Abschnitten, Kalibrierung + Ablation mit gleichen '
     + 'Coins/Timeframe. Im Shadow schreibt der KI-Trader je Trade das Struktur-Regime mit – ohne Wirkung. Du musst nichts tun außer den '
-    + 'KI-Trader laufen lassen. „Wirksam“ wird frei bei ≥30 Shadow-Trades je Struktur-Regime und ≥0,25 R Ø-Reward-Unterschied.'],
+    + 'KI-Trader laufen lassen. „Wirksam“ wird frei bei ≥ 0,25 R Ø-Reward-Unterschied und genug Shadow-Trades je Struktur-Regime – '
+    + 'je nach Note der Erkennung 10 (sehr gut), 15 (gut), 25 (mittel) bzw. 30 (schwach/unbewertet).'],
+  ['Partial Pooling', 'Mitte zwischen „kombiniert“ (ein Modell für alle) und „je Coin“ (überangepasst): Struktur aus dem Gruppen-Modell, '
+    + 'je Coin nur EIN Skalen-Faktor auf die Schwellen – nur auf dem Training gesucht und Richtung Gruppe geschrumpft '
+    + '(Gewicht = Phasen / (Phasen + 40)). Ergebnis ist eine eigene Analyse „… · Pooling“; ob sie besser ist, entscheidet der faire '
+    + 'Champion-Vergleich im Holdout. Karte „Partial Pooling“ über dem Champion-Vergleich, mit Schritt-für-Schritt-Anleitung.'],
   ['Live=Final', 'Die zentrale Kennzahl: wie oft sieht die Live-Erkennung (ohne Zukunftswissen) dieselbe Richtung wie die '
     + 'finale Rückschau. ≥65 % gut · ≥50 % mittel · darunter schwach.'],
   ['Holdout / Out-of-Sample / Walk-Forward', 'Training X % der Kerzen wird zum Einstellen genutzt, der Rest bleibt unangetastet '

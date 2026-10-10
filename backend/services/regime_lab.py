@@ -546,6 +546,8 @@ async def run_analysis(job_id: str, body: Dict, db):
             if body.get("auto_adapt") is not None:
                 engine_config["auto_adapt"] = bool(body["auto_adapt"])
         with_ideal = bool(body.get("with_ideal", True))
+        # Partial Pooling (services/regime_pooling): je Coin nur Skalen-Werte überschreiben
+        per_symbol_config = body.get("per_symbol_config") or {}
 
         skipped: Dict[str, Dict] = {}
         histories = await fetch_histories(symbols, days, timeframe, job, skipped=skipped)
@@ -617,7 +619,8 @@ async def run_analysis(job_id: str, body: Dict, db):
                 model_s = await asyncio.to_thread(
                     rg.detect_regimes, {sym: train_hist[sym]}, timeframe,
                     max_regimes, lookback_days, min_share,
-                    engine=engine, engine_config=engine_config)
+                    engine=engine,
+                    engine_config={**engine_config, **(per_symbol_config.get(sym) or {})})
                 if not model_s:
                     per_coin[sym] = {"error": "Zu wenig Daten für dieses Coin-Modell"}
                     continue
@@ -654,8 +657,10 @@ async def run_analysis(job_id: str, body: Dict, db):
                             "regime_mode": (eng.norm_mode(
                                 engine_config.get("regime_mode",
                                                   eng.DEFAULT_REGIME_MODE))
-                                if engine == "v2" else None)},
+                                if engine == "v2" else None),
+                            **({"pooling": body["pooling"]} if body.get("pooling") else {})},
                "bounds": bounds,
+               **({"pooled_from": body["pooling"].get("source_id")} if body.get("pooling") else {}),
                # AP05/R06: unveränderliches Datensatz-Manifest (Anker + Checksum)
                "dataset": research_dataset.dataset_manifest(
                    histories, timeframe,

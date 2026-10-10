@@ -34,6 +34,7 @@ import AnalysisRename from './AnalysisRename';
 import { workerField, useWorkerTarget } from '../lib/workerTarget';
 import WorkerTargetSelect from './WorkerTargetSelect';
 import RegimeChampions from './RegimeChampions';
+import RegimePooling from './RegimePooling';
 
 const JOB_KIND_LABEL = {
   analysis: 'Analyse', regime_opt: 'Regime-Optimierung', walkforward: 'Walk-Forward',
@@ -1295,6 +1296,8 @@ export default function RegimeLab({ onClose }) {
           activeJob={job} lastResult={autopilotResult} onAnalyzeWith={analyzeWith}
           onStarted={(id, kind) => attachPoll(id, kind)}
           onQueued={() => setQueueRefresh(k => k + 1)} />
+
+        <RegimePooling />
 
         <RegimeChampions selCoins={selCoins} />
 

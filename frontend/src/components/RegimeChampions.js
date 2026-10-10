@@ -15,7 +15,8 @@ const DECISION = {
   recommend: { l: 'Empfehlung', c: '#00E5A0' }, none: { l: 'kein robuster Kandidat', c: '#FFB020' },
 };
 const fmt = (v, d = 1) => (v == null ? '–' : Number(v).toFixed(d));
-const candLabel = (c) => (c ? `${c.name || c.aid} · ${c.timeframe} · ${c.scope === 'per_coin' ? 'Coin' : 'kombi'}${c.regime_mode ? ` · ${c.regime_mode}er` : ''}` : '–');
+const scopeLabel = (c) => (c.scope !== 'per_coin' ? 'kombi' : (c.pooled ? `Pooling ${Math.round((c.pool_weight || 0) * 100)} %` : 'Coin'));
+const candLabel = (c) => (c ? `${c.name || c.aid} · ${c.timeframe} · ${scopeLabel(c)}${c.regime_mode ? ` · ${c.regime_mode}er` : ''}` : '–');
 
 /** Regime-Champion je Asset: robuster Vergleich aller gespeicherten Erkennungen (OOS, Anti-Overfitting). */
 export default function RegimeChampions({ selCoins }) {

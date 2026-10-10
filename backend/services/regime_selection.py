@@ -57,6 +57,7 @@ def candidate_rows(doc: Dict, symbol: str, bars_per_day: float) -> List[Dict]:
     if coin and not coin.get("error"):
         sources.append(("per_coin", coin, f"coin:{symbol}"))
     st = doc.get("settings") or {}
+    pool = ((st.get("pooling") or {}).get("coins") or {}).get(symbol)
     for scope, entry, wf_key in sources:
         ref = entry.get("reference") or {}
         wf = research_validation.walkforward_status_for(doc, wf_key)["passed"]
@@ -70,7 +71,9 @@ def candidate_rows(doc: Dict, symbol: str, bars_per_day: float) -> List[Dict]:
             "train_f1": _f(ref.get("train_f1_pct")), "holdout_kappa": _f(ref.get("holdout_kappa_pct")),
             "holdout_bars": int(ref.get("holdout_bars") or 0), "bars_per_day": float(bars_per_day or 1.0),
             "walkforward_passed": wf, "stage": (doc.get("release") or {}).get("stage") or "none",
-            "created_at": doc.get("created_at")})
+            "created_at": doc.get("created_at"),
+            **({"pooled": True, "pool_weight": float(pool.get("weight") or 0.0)}
+               if pool and scope == "per_coin" else {})})
     return out
 
 
@@ -103,7 +106,12 @@ def evaluate(row: Dict) -> Dict:
         why.append(f"fair: gleicher Zeitraum, Teilfenster {'/'.join(f'{w:.0f}' for w in wins)}")
     elif i is None:
         why.append("keine innere Validierung – nur 1 Fenster")
-    if row.get("scope") == "per_coin":
+    if row.get("scope") == "per_coin" and row.get("pooled"):
+        # Partial Pooling: Abschlag nur im Umfang der Coin-Anpassung (Gewicht w)
+        pen = round(PER_COIN_PENALTY * float(row.get("pool_weight") or 0.0), 2)
+        score -= pen
+        why.append(f"Pooling-Modell (Coin-Gewicht {float(row.get('pool_weight') or 0) * 100:.0f} %, −{pen:g})")
+    elif row.get("scope") == "per_coin":
         score -= PER_COIN_PENALTY
         why.append(f"Coin-Modell (−{PER_COIN_PENALTY:g})")
     wf = row.get("walkforward_passed")
