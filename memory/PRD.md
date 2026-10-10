@@ -53,9 +53,20 @@ Save to GitHub; nur lesende Abrufe externer Quellen, keine Schreibzugriffe auf P
   REGIME_LAB_PRUEFBERICHT_2309/2409/2509.md, REGIME_DYNAMIK_PRUEFBERICHT_3009.md
 - Tests: tests/test_history_fallbacks.py (24), tests/test_local_worker_auto_update.py (7); Unit-Suite ohne neue Fehler ggü. Ausgangsstand; iteration_65 (100 %)
 
+## Iteration 10.10.2026 (c) – Regime-Anleitung geprüft + Partial Pooling
+Auftrag: REGIME_ANLEITUNG_1010.md gegen den Code prüfen, Partial Pooling mit Infos/Tooltips/Anleitung einbauen.
+- Anleitung korrigiert: Referenz-Note „gut“ ab 65 % (nicht 60), Active-Freigabe 10/15/25/30 Shadow-Trades je Note + ≥ 0,25 R,
+  „40 Phasen“ als Faustregel markiert, Nutzen-Horizonte 1/3 Tage; neuer Abschnitt 5 Partial Pooling; RegimeLabHelp-Freigabetext korrigiert
+- NEU services/regime_pooling.py + routers/regime_pooling.py (GET/POST /api/regime-lab/pooling): Gruppen-Struktur fix
+  (Detektor, Profil), je Coin EIN Skalen-Faktor auf die Schwellen, Suche nur im Training, Shrinkage w = Phasen/(Phasen+Prior),
+  Ergebnis = Analyse „… · Pooling“ (per_coin, settings.pooling, pooled_from); run_analysis kennt per_symbol_config
+- Champion je Asset: Pooling-Abschlag 1,5 × w statt 1,5; Label „Pooling NN %“
+- UI: Karte „Partial Pooling“ über dem Champion-Vergleich (6-Schritte-Anleitung, Tooltips, Eignungs-Prüfung, Prior-Wahl, Ergebnis-Tabelle, Verlauf)
+- Tests: tests/test_regime_pooling.py (9, inkl. End-to-End), tests/test_regime_pooling_api.py (6); iteration_66 (100 %); Real-Daten-Lauf BTC/ETH/SOL 1h 400 T ok
+
 ## Backlog
 - P0 (Nutzer-Einstellung): Analyst-Hauptmodell gemini-3.5-flash statt :free; live_gate_bypass AUS; fee_guard_mult 6
-- P1: Partial Pooling (Gruppen-Modell + Coin-Skalen), Regime-Wahrscheinlichkeiten, BTC-Kontext für Alts
+- P1: Partial Pooling auch auf dem lokalen Worker rechnen (bisher nur Cloud); Regime-Wahrscheinlichkeiten, BTC-Kontext für Alts
 - P1: Nach 2 Wochen Broker-Daten: Fenster je Setup aus Timing-Bilanz automatisch nachführen
 - P2: Kalibrierte Konfidenz für Positionsgröße nutzen, sobald `informative` = true
 - Prod-Override retention_config.overrides.regime_analyses.keep_last=15 nach Deploy optional entfernen

@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 66 – Partial Pooling (10/2026). Verified backend service rules + router validation + full frontend wiring on the live preview URL. 9/9 pure-logic unit tests pass (test_regime_pooling.py). 6/6 API tests pass (test_regime_pooling_api.py: overview shape incl. prior_phases=40 & prior_choices=[20,40,80], admin-guard 401, 400 for <3 coins / already-pooled / train_pct=100 / prior_phases not in choices). UI (desktop + mobile 390px): regime-pooling card renders ABOVE regime-champions, 6 guide steps, tooltips (what, prior) with hover popovers, source select labels prefixed ✓/✗, prior options [80,40,20], SourceCheck shows green ok / red reasons / amber warnings, start button disabled unless admin+OK source and enabled with proper login (admin_token key), RegimeLabHelp glossary contains 'Partial Pooling'. No horizontal overflow on 390px (scrollWidth==clientWidth==362<=390). No new unit-test regressions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_regime_pooling.py",
+    "/app/backend/tests/test_regime_pooling_api.py",
+    "/app/test_reports/pytest/pooling.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "regime_pooling.py and routers/regime_pooling.py are tight, async-correct, use env/state.db, exclude _id, and return proper 400s with German reasons. Rules match guide (prior 40, choices [20,40,80], MIN_SYMBOLS=3, MIN_GAIN_PP=1).",
+    "RegimePooling.js disabled logic correctly gates on isAdmin() + src.check.ok + !running; tooltips use InfoTip with -pop suffix testids as spec'd.",
+    "No duplication, files well under 700 lines each."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_regime_pooling_api.py (new API regression test)"
+  ],
+  "success_rate": {"backend": "100% (9/9 unit + 6/6 API)", "frontend": "100% (all required testids + order + mobile)"},
+  "test_credentials": "Admin / admin (preview)",
+  "seed_data_creation": "Temporarily inserted 2 docs in test_database.regime_analyses (ra_uitest_ok, ra_uitest_bad) to drive UI check/enable states; cleaned up afterwards.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Full end-to-end pooling job run on live Binance history was NOT executed (would take many minutes and requires a real combined analysis first – the backend end-to-end path is already covered by test_run_pooling_end_to_end with synthetic candles). If a user wants a full real-data smoke test, create a combined analysis via POST /api/regime-lab/analyze (3+ coins, train_pct 75, scope both, engine v2) and then POST /api/regime-lab/pooling with its id. Only one Regime-Lab job may run at a time (409).",
+  "rca of the issue": "n/a"
+}

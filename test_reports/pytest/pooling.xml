@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="0.742" timestamp="2026-10-10T16:47:54.503619+00:00" hostname="agent-env-f23e2bb8-dbc2-46c9-90cd-664a19f34ded"><testcase classname="" name="tests.test_regime_pooling" time="0.000"><error message="collection failure">ImportError while importing test module '/app/backend/tests/test_regime_pooling.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/tests/test_regime_pooling.py:10: in &lt;module&gt;
+    from services import regime_lab as lab
+E   ModuleNotFoundError: No module named 'services'</error></testcase></testsuite></testsuites>
