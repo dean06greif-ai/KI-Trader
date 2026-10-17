@@ -73,7 +73,7 @@ export default function DynamicAnalysisAdvice({ advice, selectedId, onSelect, st
         </div>
       )}
       {!cur && recs.length === 0 && (
-        <div className="opt-small" style={{ marginTop: 6, opacity: 0.8 }} data-testid="dwb-advice-none">
+        <div className="dyn-verdict warn opt-small" style={{ marginTop: 6 }} data-testid="dwb-advice-none">
           Keine Regime-Erkennung ist derzeit klar für dynamische Strategien empfohlen (Note, Holdout, Phasendauer) –
           nach der Auswahl siehst du die Gründe. Tipp: im Regime-Lab eine Analyse mit Holdout und guter Note erstellen.
         </div>

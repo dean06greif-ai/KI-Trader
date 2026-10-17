@@ -619,6 +619,14 @@ def _scored_current(analysis: Dict, scope: str, symbol, objective: str, min_trad
 WB_SUBSET_WORKER = (1, 18, 0)
 
 
+def _int_ids(values, field: str = "regime_ids") -> list:
+    """Regime-IDs als int – ungültige Eingaben ergeben 400 statt 500."""
+    try:
+        return [int(v) for v in values]
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{field}: Regime-IDs müssen Zahlen sein")
+
+
 def _match_candidates(raw) -> list:
     """Strategien für „Beste Strategie je Phase“: gewählte (gültig, nicht dynamisch,
     nicht KI-Trader) – ohne Auswahl alle; gedeckelt (services/dynamic_matcher)."""
@@ -674,7 +682,8 @@ async def workbench_start(body: Dict, _: bool = Depends(require_admin)):
         raise HTTPException(status_code=400, detail="mode muss params|discovery|combo sein")
     # Optional je Phase eigener Such-Modus, z.B. eine Phase nur Parameter, eine
     # andere komplett neue Strategie (Discovery) – in EINEM Lauf
-    regime_modes = {str(int(k)): v for k, v in (body.get("regime_modes") or {}).items() if v}
+    regime_modes = {str(k): v for k, v in zip(_int_ids((body.get("regime_modes") or {}).keys(), "regime_modes"),
+                                               (body.get("regime_modes") or {}).values()) if v}
     if any(v not in ("params", "discovery", "combo") for v in regime_modes.values()):
         raise HTTPException(status_code=400, detail="regime_modes: params|discovery|combo je Regime")
     if kind == "refine":
@@ -685,8 +694,8 @@ async def workbench_start(body: Dict, _: bool = Depends(require_admin)):
                                 detail="Diese dynamische Strategie stammt nicht aus dem Regime-Lab "
                                        "(keine Regime-Analyse verknüpft) – bitte im Regime-Lab neu erstellen")
         scope, symbol = wb.scope_of(doc)
-        rids = [int(r) for r in (body.get("regime_ids") or
-                                 [r["id"] for r in (doc.get("model") or {}).get("regimes") or []])]
+        rids = _int_ids(body.get("regime_ids") or
+                        [r["id"] for r in (doc.get("model") or {}).get("regimes") or []])
         p.update({"analysis_id": aid, "scope": scope, "symbol": symbol, "dynamic_id": doc["id"],
                   "targets": {str(k): v for k, v in
                               wb.targets_for_refine(doc, rids, mode, regime_modes).items()},
@@ -708,20 +717,23 @@ async def workbench_start(body: Dict, _: bool = Depends(require_admin)):
             cands = _match_candidates(body.get("candidates"))
             if not cands:
                 raise HTTPException(status_code=400, detail="Mindestens 1 Strategie zum Vergleichen wählen")
-            try:
-                p["targets"] = {str(int(r)): {"mode": "params", "candidates": cands}
-                                for r in (body.get("regime_ids") or [])}
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=400, detail="regime_ids müssen Zahlen sein")
+            p["targets"] = {str(r): {"mode": "params", "candidates": cands}
+                            for r in _int_ids(body.get("regime_ids") or [])}
             if not p["targets"]:
                 raise HTTPException(status_code=400, detail="Mindestens 1 Regime auswählen")
         else:
-            p["targets"] = {str(int(r)): {"mode": regime_modes.get(str(int(r))) or mode}
-                            for r in (body.get("regime_ids") or [])}
+            p["targets"] = {str(r): {"mode": regime_modes.get(str(r)) or mode}
+                            for r in _int_ids(body.get("regime_ids") or [])}
     analysis = await state.db.regime_analyses.find_one({"id": p["analysis_id"]},
                                                        {"chart": 0, "chart_emas": 0})
     if not analysis:
         raise HTTPException(status_code=404, detail="Regime-Analyse nicht gefunden")
+    from services import regime_lab as _lab
+    known = {int(r["id"]) for r in (_lab.model_for(analysis, p["scope"], p.get("symbol")) or {})
+             .get("regimes") or []}
+    unknown = [k for k in p["targets"] if known and int(k) not in known]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Regime {', '.join(unknown)} gibt es in dieser Analyse nicht")
     # Asset-Auswahl (nur gemeinsame Erkennung): None = alle Assets der Analyse
     p["symbols"] = None
     if p["scope"] != "per_coin":

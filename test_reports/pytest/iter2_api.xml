@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="7" time="24.774" timestamp="2026-10-17T18:12:45.872229+00:00" hostname="agent-env-22309910-3bc0-4598-98f2-dbc08606cc3d"><testcase classname="tests.test_dwb_api_retest_iter2" name="test_match_non_numeric_regime_ids_400[rids0]" time="24.335" /><testcase classname="tests.test_dwb_api_retest_iter2" name="test_match_non_numeric_regime_ids_400[rids1]" time="0.071" /><testcase classname="tests.test_dwb_api_retest_iter2" name="test_match_non_numeric_regime_ids_400[rids2]" time="0.037" /><testcase classname="tests.test_dwb_api_retest_iter2" name="test_discover_non_numeric_regime_ids_400" time="0.052"><failure message="AssertionError: 500 Internal Server Error&#10;assert 500 == 400&#10; +  where 500 = &lt;Response [500]&gt;.status_code">s = &lt;requests.sessions.Session object at 0xf8221274cf10&gt;
+
+    def test_discover_non_numeric_regime_ids_400(s):
+        r = _start(s, {"kind": "discover", "analysis_id": AID, "regime_ids": ["abc"]})
+&gt;       assert r.status_code == 400, f"{r.status_code} {r.text[:200]}"
+E       AssertionError: 500 Internal Server Error
+E       assert 500 == 400
+E        +  where 500 = &lt;Response [500]&gt;.status_code
+
+tests/test_dwb_api_retest_iter2.py:37: AssertionError</failure></testcase><testcase classname="tests.test_dwb_api_retest_iter2" name="test_create_non_numeric_regime_modes_400" time="0.024"><failure message="AssertionError: 500 Internal Server Error&#10;assert 500 == 400&#10; +  where 500 = &lt;Response [500]&gt;.status_code">s = &lt;requests.sessions.Session object at 0xf8221274cf10&gt;
+
+    def test_create_non_numeric_regime_modes_400(s):
+        r = _start(s, {"kind": "discover", "analysis_id": AID, "regime_ids": [0], "regime_modes": {"x": "params"}})
+&gt;       assert r.status_code == 400, f"{r.status_code} {r.text[:200]}"
+E       AssertionError: 500 Internal Server Error
+E       assert 500 == 400
+E        +  where 500 = &lt;Response [500]&gt;.status_code
+
+tests/test_dwb_api_retest_iter2.py:42: AssertionError</failure></testcase><testcase classname="tests.test_dwb_api_retest_iter2" name="test_match_invalid_candidates_400" time="0.062" /><testcase classname="tests.test_dwb_api_retest_iter2" name="test_history_and_run" time="0.089" /></testsuite></testsuites>

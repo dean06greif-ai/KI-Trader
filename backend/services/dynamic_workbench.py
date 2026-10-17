@@ -112,7 +112,7 @@ def candidate_rank(entry: Optional[Dict]) -> tuple:
     verbessert. Robust = Walk-Forward positiv UND Training nicht negativ UND
     Gewinn hängt nicht an 1-2 Ausreißer-Trades (services/regime_outliers)."""
     if not entry:
-        return (-1, -1, -1e9)
+        return (-1, -1, -1, -1, -1e9)
     # Overfitting-Schutz: zu wenige Trades (Training/Walk-Forward) oder große
     # Training->Test-Lücke zählen erst danach (fehlende Felder = unverändert).
     # Drawdown-Filter (optional): durchgefallene Kandidaten zählen erst danach
@@ -141,6 +141,13 @@ def candidate_from_result(res: Dict, entry: Dict, job_id: str) -> Dict:
             "tf_options": res.get("tf_options"),
             **{k: entry[k] for k in ("dd_pass", "dd_ratio_pct", "trade_sufficient", "overfit",
                                      "coin_report") if k in entry}}
+
+
+def has_edge(cand: Optional[Dict]) -> bool:
+    """Robust validiert oder im Training im Plus – sonst keine neue Strategie
+    (Beste-Strategie-Suche: lauter Verlierer ergeben 'keine Verbesserung')."""
+    return bool(cand) and (regime_outliers.robust_validated(cand)
+                           or float((cand.get("metrics") or {}).get("pnl") or 0) > 0)
 
 
 def coins_summary(cand: Optional[Dict]) -> Optional[Dict]:
@@ -666,7 +673,8 @@ async def run(job_id: str, p: Dict, deps: Dict):
             hint = last_errors[0] if last_errors else None
             raise RuntimeError("Kein verwertbares Ergebnis – kein Regime hat eine Strategie"
                                + (f" (zuletzt: {hint})" if hint else ""))
-        if kind in ("refine", "match") and not improved:
+        if (kind == "refine" and not improved) or (kind == "match" and not any(
+                has_edge(best.get(rid)) for rid in improved)):
             # Keine echte Verbesserung: KEINE neue (identische) Version anlegen –
             # die bestehende dynamische Strategie bleibt wie sie ist.
             job["result"] = {"dynamic_id": None, "no_improvement": True, "analysis_id": aid,

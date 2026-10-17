@@ -332,7 +332,34 @@ def test_rank_overfit_does_not_favor_losers():
     assert wb.candidate_rank(trained) > wb.candidate_rank(loser)
 
 
-def test_start_body_none_keys_dropped():
-    import inspect
+def test_int_ids_rejects_garbage():
+    import pytest
+    from fastapi import HTTPException
     from routers import dynamic
-    assert "if v is not None" in inspect.getsource(dynamic.workbench_start)
+    assert dynamic._int_ids(["1", 2]) == [1, 2]
+    with pytest.raises(HTTPException) as e:
+        dynamic._int_ids(["x"])
+    assert e.value.status_code == 400
+
+
+def test_match_all_losers_gives_no_improvement(monkeypatch):
+    async def fake_run_lab(job, kind_fn, body, analysis_doc, deps):
+        sid = body.get("strategy_id")
+        return {"mode": "params", "strategy_id": sid, "strategy_name": sid, "top5": [
+            {"score": -5.0, "validation_passed": False, "metrics": {"pnl": -5, "trades": 20},
+             "validation": {"pnl": -3, "trades": 8}}]}
+
+    built = []
+
+    async def fake_build(aid, body):
+        built.append(body)
+        return {"id": "dyn_l"}
+
+    monkeypatch.setattr(wb, "_run_lab", fake_run_lab)
+    p = {"analysis_id": "ra1", "scope": "combined", "rounds": 1, "iterations": 20, "walkforward": False,
+         "result_backtest": False, "targets": {"0": {"mode": "params", "candidates": ["s1", "s2"]}}}
+    jid = wb.create_job("match", p)
+    asyncio.run(wb.run(jid, p, {"db": _DB(_analysis()), "registry": _Reg(), "build": fake_build}))
+    job = wb.JOBS[jid]
+    assert job["status"] == "done" and job["result"]["no_improvement"] and not built
+    assert "kein Edge" in job["regimes"]["0"]["edge_note"]
