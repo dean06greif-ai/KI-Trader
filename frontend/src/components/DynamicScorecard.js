@@ -139,7 +139,7 @@ export default function DynamicScorecard({ card, onReoptimize }) {
       {card.baseline && card.test_metrics && (
         <div className="opt-compare" data-testid="dwb-card-compare">
           <div className="opt-card">
-            <div className="opt-card-title">BESTE EINZEL-STRATEGIE · {card.baseline.label || card.baseline.strategy_name} (Holdout)</div>
+            <div className="opt-card-title">BESTE EINZEL-STRATEGIE (Holdout) · Strategie der Phase „{card.baseline.label || card.baseline.strategy_name}“ allein</div>
             <div className="opt-metrics"><MetricsRow m={card.baseline.metrics} /></div>
           </div>
           <div className="opt-card best">

@@ -117,7 +117,9 @@ function SearchStats({ s }) {
  *  anderen Optimizer-Modi: Verdict, Holdout-Vergleich, Aufschlüsselung je Regime. */
 export default function DynamicWorkbenchResult({ result, regimes, kindLabel, runId, onReoptimize }) {
   if (!result) return null;
-  const searched = result.regimes || regimes || {};
+  // applied_rank (Kandidat übernommen) steht auch am Lauf – beides zusammenführen
+  const searched = Object.fromEntries(Object.entries(result.regimes || regimes || {}).map(([k, v]) => (
+    [k, { ...v, ...(regimes?.[k]?.applied_rank ? { applied_rank: regimes[k].applied_rank } : {}) }])));
   return (
     <div className="opt-result" data-testid="dwb-result">
       <div className="opt-section-title">

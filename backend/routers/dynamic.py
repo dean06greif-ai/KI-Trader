@@ -873,6 +873,8 @@ async def workbench_apply_candidate(body: Dict, _: bool = Depends(require_admin)
     if not analysis:
         raise HTTPException(status_code=404, detail="Regime-Analyse nicht gefunden")
     scope, symbol = wb.scope_of(doc)
+    # Ausgangsstand VOR der Zuordnung sichern (sonst mischt Version 1 alt/neu)
+    await dv.ensure_initial(state.db, doc, strategy_registry, await _optimized_by_regime(doc))
     await wb._assign(state.db, aid, scope, symbol, rid, cand, lab.model_for(analysis, scope, symbol) or {},
                      wb.subset_of(doc))
     opt_map = await _optimized_by_regime(doc)
@@ -883,9 +885,13 @@ async def workbench_apply_candidate(body: Dict, _: bool = Depends(require_admin)
         raise HTTPException(status_code=400, detail=str(e))
     await dynamic_runtime.reload(did)
     await state.db[wb.RUNS_COLLECTION].update_one(
-        {"id": jid}, {"$set": {f"regimes.{rid}.applied_rank": rank}})
+        {"id": jid}, {"$set": {f"regimes.{rid}.applied_rank": rank,
+                               f"result.regimes.{rid}.applied_rank": rank}})
     if jid in wb.JOBS:
-        wb.JOBS[jid]["regimes"].setdefault(str(rid), {})["applied_rank"] = rank
+        j = wb.JOBS[jid]
+        for regs in (j.get("regimes"), (j.get("result") or {}).get("regimes")):
+            if isinstance(regs, dict):
+                regs.setdefault(str(rid), {})["applied_rank"] = rank
     return {"status": "success", "version": res["version"]["version"], "rank": rank}
 
 

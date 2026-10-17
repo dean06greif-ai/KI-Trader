@@ -42,3 +42,13 @@ Das Regime-Lab rechnet auf kurzen Regime-Abschnitten – daher dort kein Absturz
 
 ## Tests
 `backend/tests/test_workbench_dynamic_1206.py`, `backend/tests/test_array_lru_budget_iter.py`.
+
+## 3. Ergebnis-Ansicht wie in der Parameter-Optimierung (Aussehen + Umfang)
+- `services/dynamic_scorecard.py` (neu): Ergebnis-Bewertung der fertigen dynamischen Strategie mit denselben
+  Prüfungen wie die Top-Ergebnisse der Parameter-Optimierung – Empfehlung (Ampel), WF-Score + Übereinstimmung,
+  DD/PnL, Monte-Carlo (Gesamt + Holdout), Kosten-Stress, Konstanz, Breite über Coins, Mindest-Trades,
+  Vergleich mit bester Einzel-Strategie, Begründung, Training/Test/Gesamt-Kennzahlen, PnL je Regime/Coin,
+  Ausreißer-Variante (ohne Ausreißer-Coins → „neu optimieren“). Nur aus vorhandenen Trades, keine neue Simulation.
+- Such-Verlauf (jede übernommene Verbesserung) wie „SUCH-VERLAUF“ im Optimizer.
+- Top 5 Kandidaten je Regime (wie „TOP 5“) inkl. „Für Phase übernehmen“
+  (`POST /api/dynamic-workbench/apply-candidate`, legt eine neue Version an, zurückholbar).

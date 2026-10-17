@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { MetricsRow } from './DynamicScorecard';
+import { authHeaders, isAdmin } from '../auth';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -71,8 +72,13 @@ function TopCandidates({ rid, r, runId, canApply, testPrefix }) {
     } catch (e) { setMsg(String(e.message || e)); } finally { setBusy(false); }
   };
   const current = applied || 1;
+  const admin = canApply && isAdmin();
   return (
     <div className="opt-top5" style={{ margin: '4px 0 8px' }} data-testid={`${testPrefix}-top-${rid}`}>
+      <div className="opt-small" style={{ marginBottom: 4 }}>
+        Rang wie in der Suche: robust validiert und genug Trades zuerst, dann Score.
+        {canApply && !admin && ' Zum Übernehmen als Admin anmelden.'}
+      </div>
       {r.top.map(t => (
         <div key={t.rank} className={`opt-top5-card ${t.rank === current ? 'sel' : ''} ${t.robust ? '' : 'failed'}`} data-testid={`${testPrefix}-top-${rid}-${t.rank}`}>
           <div className="opt-top5-head">
@@ -81,7 +87,7 @@ function TopCandidates({ rid, r, runId, canApply, testPrefix }) {
             <StatusBadges r={{ validation_passed: t.robust, trade_sufficient: t.trade_sufficient, overfit: t.overfit, flags: t.flags }} />
             {t.dd_ratio_pct != null && <span className="opt-badge ok">DD/PnL {Number(t.dd_ratio_pct).toFixed(0)}%</span>}
             {t.rank === current && <span className="opt-badge sel">{applied ? 'Übernommen ✓' : 'Aktiv ✓'}</span>}
-            {canApply && t.rank !== current && (
+            {admin && t.rank !== current && (
               <button className="bt-exec-btn" disabled={busy} onClick={() => apply(t.rank)} data-testid={`${testPrefix}-apply-${rid}-${t.rank}`}>
                 Für Phase übernehmen
               </button>
@@ -101,11 +107,6 @@ function TopCandidates({ rid, r, runId, canApply, testPrefix }) {
     </div>
   );
 }
-
-const authHeaders = () => {
-  const t = localStorage.getItem('admin_token');
-  return t ? { Authorization: `Bearer ${t}` } : {};
-};
 
 /** Ergebnis der Suche je Regime: Training vs. Out-of-Sample-Test, Robustheit,
  *  Ausreißer-/Edge-Coins und (Beste Strategie je Phase) der Vergleich. */

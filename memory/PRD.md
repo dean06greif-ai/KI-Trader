@@ -20,6 +20,10 @@ FastAPI backend (backend/routers, services), React (CRA/craco) frontend, MongoDB
 - Frontend: DynamicAnalysisAdvice, DynamicWorkbenchRegimeTable, DynamicWorkbenchHistory, DynamicStrategyCandidates, Avoid-Liste im Asset-Vorschlag, Reiter „Beste Strategie je Phase“, Multi-TF-Schalter, Fix "00"-Text
 - Tests: backend/tests/test_workbench_dynamic_1206.py (+ test_array_lru_budget_iter.py, test_dwb_retest_iter2.py); 2389 Unit-Tests grün, 5 vorbestehende Fehler unverändert
 
+## Implemented (12.06.2026, Teil 2)
+- Werkbank-Ergebnis im Umfang der Optimizer-Top-Ergebnisse: services/dynamic_scorecard.py, DynamicScorecard.js
+- Such-Verlauf, Top-5 je Regime + apply-candidate Endpoint (neue Version)
+
 ## Backlog
 - P1: Strategie-Timeframe je Phase (erfordert Live-Engine-Änderung)
 - P1: Worker-Paket-Version im Dashboard als „Update empfohlen“ markieren

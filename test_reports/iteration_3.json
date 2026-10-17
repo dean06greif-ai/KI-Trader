@@ -1,0 +1,43 @@
+{
+  "summary": "Tested the Dynamik-Werkbank scorecard, search history, Top-5 candidates and apply-candidate. The requested suites pass (33/33). New live API tests pass (11/11, file test_dwb_scorecard_api_iter3.py): the scorecard has every requested field and 8 checks; search_stats is consistent; regimes['2'].top has 5 complete candidates; apply-candidate validation returns 400/404/401 as expected; applying rank 2 returns 200, creates a version, persists applied_rank=2, and the phase params now equal the rank-2 candidate. In the UI, all requested scorecard elements render (rec, WF, MC, MC-test, 8 check chips, reason, fails, regimes, coins, compare, search stats) with no page errors. Top 5 opens, the confirm dialog appears, and applying via the UI shows 'Übernommen ✓ (Version 3)' and then 'Version 4'. Run wb_bcb3ad8b9a has no outlier_variant, so I injected one via a Playwright route mock. The outlier box rendered, and 'Ohne XRP neu optimieren' switched to the refine tab with source dyn_959f0bf9 and XRP deselected; no job started. Two bugs found: (1) after a reload the UI ignores the persisted applied_rank; (2) the 'Ausgangsstand' version snapshot is inconsistent.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/dynamic-workbench/apply-candidate", "issue": "Version 1 ('Ausgangsstand (vor der ersten Phasen-Anpassung)') is snapshotted AFTER wb._assign has already written the new candidate into the analysis. Its summary for regime 2 therefore mixes the OLD strategy_params/trade_params (rsi_period 21, rank 1) with the NEW metrics/score (pnl 68.07, score 71.474, from rank 2). Restoring v1 would show wrong metrics. Fix: create the baseline snapshot (or call change_phase's baseline logic) before _assign, or snapshot from the pre-assign doc."},
+      {"endpoint": "POST /api/dynamic-workbench/apply-candidate", "issue": "applied_rank is written only to the top-level job regimes.{rid}. It is not written to result.regimes.{rid}, which is what the UI reads (see the integration issue)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DynamicWorkbenchRegimeTable TopCandidates", "issue": "After a reload, the persisted applied_rank is ignored. Repro: the API showed regimes['2'].applied_rank == 2, but the UI marked #1 as 'Aktiv ✓' and showed no apply button on #1. Cause: DynamicWorkbenchResult passes `result.regimes || regimes`, and result.regimes has no applied_rank. Fix: merge the job-level regimes[rid].applied_rank, or also set result.regimes.{rid}.applied_rank in the backend.", "selector": "[data-testid=dwb-result-search-top-2-1]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "Apply candidate as non-admin", "issue": "canApply is just !!result.dynamic_id, so 'Für Phase übernehmen' buttons show for non-admin users and the click fails with 'Admin-Login erforderlich'. Use isAdmin() from src/auth.js. The component also defines its own authHeaders that bypasses the 1-day expiry check in auth.js (getToken). Import authHeaders from '../auth' instead.", "affected_selectors": ["dwb-result-search-apply-2-<rank>"]}
+    ],
+    "design_issues": [
+      {"screen": "Werkbank result: compare cards", "issues": ["The MetricsRow wraps inside the half-width compare cards, so 'DD 83.3%' drops to a second line by itself."]},
+      {"screen": "Top 5 candidates", "issues": ["Cards are ordered robust-first, so #1 (Score 38.5) appears above #2 (Score 71.5). This is confusing without a hint such as 'Rang: robust zuerst, dann Score'.", "The DD/PnL badge never shows on the candidates because dd_ratio_pct is null for every top candidate."]},
+      {"screen": "Scorecard compare", "issues": ["'BESTE EINZEL-STRATEGIE · Leichter Aufwärtstrend' shows a regime label, not a strategy name. Better wording: 'Strategie der Phase Leichter Aufwärtstrend allein'."]},
+      {"screen": "Reoptimize without outliers", "issues": ["window.scrollTo does not scroll the modal container. After the click the user lands mid-form instead of at the refine header."]},
+      {"screen": "Scorecard after apply-candidate", "issues": ["The scorecard and backtest still show the original run's numbers after another candidate is applied. There is no hint that they are stale."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_workbench_dynamic_1206.py", "/app/backend/tests/test_dwb_retest_iter2.py", "/app/backend/tests/test_dwb_scorecard_api_iter3.py", "/app/test_reports/pytest/iter3_api.xml"],
+  "action_items": [
+    "Make TopCandidates use the persisted applied_rank. Either set result.regimes.{rid}.applied_rank in workbench_apply_candidate (DB and JOBS), or merge job.regimes into result.regimes in DynamicWorkbenchResult.",
+    "Create the 'Ausgangsstand' baseline version before wb._assign mutates the analysis assignment, so v1 metrics match its params.",
+    "Gate the apply buttons with isAdmin() and reuse authHeaders from src/auth.js (DRY, expiry check).",
+    "Optional: explain the robust-first ranking in the Top-5 list; fix the wording of the compare-card baseline label; scroll the modal container on reoptimize; mark the scorecard as 'Stand des Laufs' after an apply."
+  ],
+  "critical_code_review_comments": [
+    "routers/dynamic.py (948 lines) and services/dynamic_workbench.py (899 lines) exceed 700 lines. Consider splitting the workbench routes into their own router.",
+    "DynamicWorkbenchRegimeTable.js duplicates authHeaders from src/auth.js.",
+    "apply-candidate: the phase override is now 'optimized' even after re-applying rank 1. The doc is not byte-identical to its original state (acceptable; versions document it)."
+  ],
+  "updated_files": ["/app/backend/tests/test_dwb_scorecard_api_iter3.py"],
+  "success_rate": {"backend": "100% (33/33 required + 11/11 new live tests); 2 minor logic issues found by inspection", "frontend": "~90%: all requested elements and flows work; the persisted applied_rank is not reflected after a reload"},
+  "seed_data_creation": "Applying candidates created versions v1-v4 of dyn_959f0bf9 (rank 2 via API, then rank 3 and rank 1 via UI). Regime 2 has been restored to the rank-1 candidate params; applied_rank is now 1.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "For a UI admin login, set BOTH localStorage admin_token and admin_token_ts=Date.now(); otherwise auth.js getToken clears the token. Run wb_bcb3ad8b9a has no outlier_variant; to test dwb-card-outliers, use page.route to inject scorecard.outlier_variant into /api/dynamic-workbench/active. Regime 3 has no top candidates (rejected). The dyn_959f0bf9 versions endpoint is GET /api/dynamic/{did}/versions -> {versions:[...]}."
+}
