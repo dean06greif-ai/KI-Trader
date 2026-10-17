@@ -1,0 +1,19 @@
+.info-tip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 4px; }
+.info-tip-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; padding: 0; border-radius: 50%;
+  border: 1px solid #2E3A46; background: #121820; color: #8FA3B5; cursor: help;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.info-tip-btn:hover, .info-tip-btn:focus-visible { color: #00D68F; border-color: #00D68F; outline: none; }
+.info-tip-pop {
+  position: fixed; z-index: 10000; display: block;
+  max-height: 70vh; overflow-y: auto; padding: 10px 12px; border-radius: 8px;
+  background: #0E141B; border: 1px solid #2A3644; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  color: #D5DEE7; font-size: 12px; font-weight: 400; line-height: 1.45; text-transform: none;
+  letter-spacing: 0; white-space: normal; text-align: left;
+}
+.info-tip-pop b { color: #F2F5F7; }
+.info-tip-pop ul { margin: 4px 0 6px; padding-left: 16px; }
+.info-tip-pop li { margin: 2px 0; }
+.info-tip-pop .info-tip-rec { margin-top: 6px; padding-top: 6px; border-top: 1px solid #222D38; }
