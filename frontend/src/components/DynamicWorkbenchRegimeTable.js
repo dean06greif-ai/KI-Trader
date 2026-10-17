@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { MetricsRow } from './DynamicScorecard';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const fmt = (v, d = 2) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
 const short = (s) => String(s || '').replace('USDT', '');
@@ -50,10 +53,65 @@ function ComparisonTable({ rows, rid }) {
   );
 }
 
+/** Top-Kandidaten einer Regime-Suche (wie Optimizer „TOP 5“) – optional für die Phase übernehmen. */
+function TopCandidates({ rid, r, runId, canApply, testPrefix }) {
+  const [busy, setBusy] = useState(false);
+  const [applied, setApplied] = useState(r.applied_rank);
+  const [msg, setMsg] = useState('');
+  const apply = async (rank) => {
+    if (!window.confirm(`Kandidat #${rank} für die Phase „${r.label}“ übernehmen? Es entsteht eine neue Version der dynamischen Strategie (zurückholbar im Versionsverlauf).`)) return;
+    setBusy(true); setMsg('');
+    try {
+      const res = await fetch(`${API_URL}/api/dynamic-workbench/apply-candidate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ run_id: runId, regime_id: Number(rid), rank, confirm: true }) });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.detail || 'Fehler');
+      setApplied(rank); setMsg(`Übernommen ✓ (Version ${d.version})`);
+    } catch (e) { setMsg(String(e.message || e)); } finally { setBusy(false); }
+  };
+  const current = applied || 1;
+  return (
+    <div className="opt-top5" style={{ margin: '4px 0 8px' }} data-testid={`${testPrefix}-top-${rid}`}>
+      {r.top.map(t => (
+        <div key={t.rank} className={`opt-top5-card ${t.rank === current ? 'sel' : ''} ${t.robust ? '' : 'failed'}`} data-testid={`${testPrefix}-top-${rid}-${t.rank}`}>
+          <div className="opt-top5-head">
+            <span className="opt-top5-rank">#{t.rank}</span>
+            <span className="opt-top5-score">Score {Number(t.score ?? 0).toFixed(1)}</span>
+            <StatusBadges r={{ validation_passed: t.robust, trade_sufficient: t.trade_sufficient, overfit: t.overfit, flags: t.flags }} />
+            {t.dd_ratio_pct != null && <span className="opt-badge ok">DD/PnL {Number(t.dd_ratio_pct).toFixed(0)}%</span>}
+            {t.rank === current && <span className="opt-badge sel">{applied ? 'Übernommen ✓' : 'Aktiv ✓'}</span>}
+            {canApply && t.rank !== current && (
+              <button className="bt-exec-btn" disabled={busy} onClick={() => apply(t.rank)} data-testid={`${testPrefix}-apply-${rid}-${t.rank}`}>
+                Für Phase übernehmen
+              </button>
+            )}
+          </div>
+          <div className="opt-metrics"><span className="opt-small">Training:</span><MetricsRow m={t.metrics} /></div>
+          {t.test_metrics && <div className="opt-metrics"><span className="opt-small">Test (Walk-Forward je Regime):</span><MetricsRow m={t.test_metrics} /></div>}
+          <div className="opt-params-list">
+            <span className="opt-param-pill">{t.strategy_name}</span>
+            {Object.entries(t.params || {}).map(([k, v]) => <span key={k} className="opt-param-pill">{k}: <b>{String(v)}</b></span>)}
+            {Object.entries(t.trade_params || {}).map(([k, v]) => <span key={k} className="opt-param-pill trade">{k}: <b>{String(v)}</b></span>)}
+            {(t.rules || []).slice(0, 6).map((x, i) => <span key={`r${i}`} className="opt-param-pill">{typeof x === 'string' ? x : JSON.stringify(x)}</span>)}
+          </div>
+        </div>
+      ))}
+      {msg && <div className="opt-small" data-testid={`${testPrefix}-apply-msg-${rid}`}>{msg}</div>}
+    </div>
+  );
+}
+
+const authHeaders = () => {
+  const t = localStorage.getItem('admin_token');
+  return t ? { Authorization: `Bearer ${t}` } : {};
+};
+
 /** Ergebnis der Suche je Regime: Training vs. Out-of-Sample-Test, Robustheit,
  *  Ausreißer-/Edge-Coins und (Beste Strategie je Phase) der Vergleich. */
-export default function DynamicWorkbenchRegimeTable({ regimes, title, testPrefix = 'dwb-regime-table' }) {
+export default function DynamicWorkbenchRegimeTable({ regimes, title, testPrefix = 'dwb-regime-table', runId, canApply }) {
   const [open, setOpen] = useState(null);
+  const [openTop, setOpenTop] = useState(null);
   const rows = Object.entries(regimes || {});
   if (!rows.length) return null;
   return (
@@ -76,6 +134,11 @@ export default function DynamicWorkbenchRegimeTable({ regimes, title, testPrefix
                       {open === rid ? 'Vergleich ausblenden' : `Vergleich (${r.comparison.length})`}
                     </button>
                   )}
+                  {r.top?.length > 0 && (
+                    <button className="bt-exec-btn" onClick={() => setOpenTop(openTop === rid ? null : rid)} data-testid={`${testPrefix}-topbtn-${rid}`}>
+                      {openTop === rid ? 'Top ausblenden' : `Top ${r.top.length}`}
+                    </button>
+                  )}
                 </td>
                 <td>{r.trades ?? '–'}</td><td className={`mono ${cls(r.pnl)}`}>{fmt(r.pnl)}</td>
                 <td>{r.test_trades ?? '–'}</td><td className={`mono ${cls(r.test_pnl)}`}>{fmt(r.test_pnl)}</td>
@@ -83,6 +146,7 @@ export default function DynamicWorkbenchRegimeTable({ regimes, title, testPrefix
                 <td><RegimeCoins coins={r.coins} testId={`${testPrefix}-coins-${rid}`} /></td>
               </tr>
               {open === rid && <tr><td colSpan={8}><ComparisonTable rows={r.comparison} rid={rid} /></td></tr>}
+              {openTop === rid && <tr><td colSpan={8}><TopCandidates rid={rid} r={r} runId={runId} canApply={canApply} testPrefix={testPrefix} /></td></tr>}
             </React.Fragment>
           ))}</tbody>
         </table>

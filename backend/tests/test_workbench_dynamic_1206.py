@@ -363,3 +363,52 @@ def test_match_all_losers_gives_no_improvement(monkeypatch):
     job = wb.JOBS[jid]
     assert job["status"] == "done" and job["result"]["no_improvement"] and not built
     assert "kein Edge" in job["regimes"]["0"]["edge_note"]
+
+
+# ---------------- Ergebnis-Karte (Optimizer-Umfang) ----------------
+def _pts(n, start_day, pnl_fn, syms=("BTCUSDT", "ETHUSDT", "SOLUSDT")):
+    from datetime import datetime, timedelta, timezone
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return [{"t": (base + timedelta(days=start_day + i * 0.5)).isoformat(), "pnl": pnl_fn(i),
+             "symbol": syms[i % len(syms)], "regime": i % 2} for i in range(n)]
+
+
+def test_scorecard_has_optimizer_scope():
+    from services import dynamic_scorecard as dsc
+    from services.dynamic_strategy import metrics_from_rows
+    pts = _pts(80, 0, lambda i: 2.0 if i % 3 else -1.0)
+    rows = [{"closed": p["t"], "pnl": p["pnl"]} for p in pts]
+    total = {**metrics_from_rows(rows, 100), "fees": 5.0}
+    bt = {"total": total, "points": pts, "config": {"max_capital": 100},
+          "regimes": [{"regime": 0, "label": "A", "traded": True, "metrics": {"pnl": 30, "trades": 40}}]}
+    wf = {"points": pts[60:], "dynamic_test": metrics_from_rows(rows[60:], 100),
+          "best_single": {"label": "rsi", "metrics": {"pnl": 1, "trades": 5}},
+          "verdict": {"dynamic_better": True, "recommendation": "ok"}}
+    c = dsc.build(bt, wf)
+    for k in ("wf", "monte_carlo", "monte_carlo_test", "stress", "constancy", "dd_ratio_pct", "per_symbol",
+              "positive_symbols_pct", "checks", "recommendation", "rank_reason", "train_metrics", "test_metrics"):
+        assert k in c, k
+    assert c["train_metrics"]["trades"] == 60 and c["test_metrics"]["trades"] == 20
+    assert {x["id"] for x in c["checks"]} >= {"wf", "dd", "mc", "stress", "ct", "breadth", "trades", "vs_single"}
+    assert c["recommendation"]["level"] in ("recommended", "recommended_ex", "usable", "rejected")
+    assert dsc.build({"error": "x"}, None) is None
+
+
+def test_scorecard_outlier_variant():
+    from services import dynamic_scorecard as dsc
+    rows = [{"closed": f"2026-01-{1 + i % 28:02d}T00:00:00", "pnl": 1.0, "symbol": s}
+            for i in range(10) for s in ("A", "B", "C", "D")]
+    rows += [{"closed": "2026-01-02T00:00:00", "pnl": -30.0, "symbol": "E"} for _ in range(5)]
+    ov = dsc.outlier_variant(rows, [], 100)
+    assert ov and "E" in ov["excluded"] and ov["pnl_gain"] > 0
+
+
+def test_top_candidates_and_improvement_step():
+    res = {"mode": "params", "strategy_id": "s1", "strategy_name": "S1", "_lab_job_id": "j",
+           "top5": [{"score": 3, "metrics": {"pnl": 5, "trades": 20}, "validation": {"pnl": 2, "trades": 8},
+                     "trade_params": {"tp": 1}, "strategy_params": {"p": 2}, "coin_report": {"no_edge": []}}] * 7}
+    tops = wb.top_candidates(res)
+    assert len(tops) == wb.TOP_KEEP and tops[0]["rank"] == 1 and tops[0]["candidate"]["strategy_id"] == "s1"
+    assert "coin_report" not in tops[0]["candidate"]
+    step = wb.improvement_step(2, "Bulle", tops[0]["candidate"])
+    assert step["round"] == 2 and step["test_pnl"] == 2

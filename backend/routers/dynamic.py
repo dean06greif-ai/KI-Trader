@@ -846,6 +846,49 @@ async def workbench_run(jid: str):
     return {"job": _stored_job(doc)}
 
 
+@router.post("/api/dynamic-workbench/apply-candidate")
+async def workbench_apply_candidate(body: Dict, _: bool = Depends(require_admin)):
+    """Anderen Top-Kandidaten einer Regime-Suche für die Phase übernehmen (wie
+    „Top-Ergebnis auswählen“ im Optimizer): {run_id, regime_id, rank, confirm: true}.
+    Setzt die Regime-Zuordnung der Analyse und legt eine neue Version an."""
+    from services import dynamic_versions as dv
+    from services import dynamic_workbench as wb
+    from services import regime_lab as lab
+    if body.get("confirm") is not True:
+        raise HTTPException(status_code=400, detail="Bestätigung erforderlich (confirm: true)")
+    rid = _int_ids([body.get("regime_id")], "regime_id")[0]
+    rank = _int_ids([body.get("rank")], "rank")[0]
+    jid = str(body.get("run_id") or "")
+    run = wb.JOBS.get(jid) or await state.db[wb.RUNS_COLLECTION].find_one({"id": jid}, {"_id": 0})
+    if not run:
+        raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+    did = (run.get("result") or {}).get("dynamic_id")
+    tops = ((run.get("regimes") or {}).get(str(rid)) or {}).get("top") or []
+    cand = next((t.get("candidate") for t in tops if t.get("rank") == rank), None)
+    if not did or not cand:
+        raise HTTPException(status_code=404, detail="Kandidat oder dynamische Strategie nicht gefunden")
+    doc = _clean(await _get_doc(did))
+    aid = (doc.get("settings") or {}).get("analysis_id")
+    analysis = await state.db.regime_analyses.find_one({"id": aid}, {"chart": 0, "chart_emas": 0})
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Regime-Analyse nicht gefunden")
+    scope, symbol = wb.scope_of(doc)
+    await wb._assign(state.db, aid, scope, symbol, rid, cand, lab.model_for(analysis, scope, symbol) or {},
+                     wb.subset_of(doc))
+    opt_map = await _optimized_by_regime(doc)
+    try:
+        res = await dv.change_phase(state.db, doc, strategy_registry, rid, "optimized", None,
+                                    opt_map.get(rid), False, False, optimized_map=opt_map)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await dynamic_runtime.reload(did)
+    await state.db[wb.RUNS_COLLECTION].update_one(
+        {"id": jid}, {"$set": {f"regimes.{rid}.applied_rank": rank}})
+    if jid in wb.JOBS:
+        wb.JOBS[jid]["regimes"].setdefault(str(rid), {})["applied_rank"] = rank
+    return {"status": "success", "version": res["version"]["version"], "rank": rank}
+
+
 _ADVICE_CACHE: Dict[str, Dict] = {}
 
 

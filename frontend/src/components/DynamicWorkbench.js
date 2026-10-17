@@ -350,7 +350,15 @@ export default function DynamicWorkbench({ lwOnline, onManageLocal, onContext })
       {jobOnThisTab && running && <DynamicWorkbenchRegimeTable regimes={job.regimes} testPrefix="dwb-live-table"
         title="ZWISCHENSTAND JE REGIME · TRAINING VS. OUT-OF-SAMPLE-TEST" />}
       {jobOnThisTab && job.status === 'done' && (
-        <DynamicWorkbenchResult result={job.result} regimes={job.regimes} kindLabel={TABS.find(t => t.id === job.kind)?.title} />
+        <DynamicWorkbenchResult result={job.result} regimes={job.regimes} runId={job.id}
+          kindLabel={TABS.find(t => t.id === job.kind)?.title}
+          onReoptimize={(did, kept) => {
+            // wie „Ohne Ausreißer neu optimieren“ im Optimizer: Reiter Optimieren mit den übrigen Coins
+            setTab('refine');
+            const ids = (dyns.find(d => d.id === did)?.dynamic?.regimes || []).map(r => r.id);
+            setSel(s => ({ ...s, refine: { ...s.refine, source: did, regimes: ids, modes: {}, symbols: kept } }));
+            window.scrollTo?.({ top: 0, behavior: 'smooth' });
+          }} />
       )}
       <DynamicWorkbenchHistory refreshKey={`${job?.id}:${job?.status}`} activeId={job?.id}
         onOpen={(j) => {

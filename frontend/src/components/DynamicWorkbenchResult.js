@@ -3,6 +3,7 @@ import { Trophy } from '@phosphor-icons/react';
 import { DynBadge } from './DynamicTradeTag';
 import DynamicRegimeBreakdown from './DynamicRegimeBreakdown';
 import DynamicWorkbenchRegimeTable from './DynamicWorkbenchRegimeTable';
+import DynamicScorecard from './DynamicScorecard';
 
 const fmt = (v, d = 2) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
 
@@ -95,9 +96,26 @@ function RobustnessBox({ rb }) {
   );
 }
 
+/** Such-Verlauf (wie Optimizer „SUCH-VERLAUF“): jede übernommene Verbesserung. */
+function SearchStats({ s }) {
+  if (!s || !(s.improvements || []).length) return null;
+  return (
+    <div className="opt-steps" data-testid="dwb-search-stats">
+      <div className="opt-label">SUCH-VERLAUF · {s.improved_n} Verbesserungen in {s.rounds} Runde{s.rounds === 1 ? '' : 'n'} · {s.iterations} Iterationen</div>
+      {s.improvements.map((x, i) => (
+        <div key={i} className="opt-step">
+          <span className="opt-step-round">Runde {x.round}</span>
+          <span>{x.regime}: neuer Bestwert Score {fmt(x.score, 1)} · {x.trades} Trades · {fmt(x.win_rate, 1)}% WR · {fmt(x.pnl)} PnL
+            {x.test_pnl != null && <> · Test <b className={x.test_pnl >= 0 ? 'pos' : 'neg'}>{fmt(x.test_pnl)}</b></>} · {x.strategy}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Ergebnis eines Werkbank-Laufs – gleicher Aufbau wie die Ergebnisse der
  *  anderen Optimizer-Modi: Verdict, Holdout-Vergleich, Aufschlüsselung je Regime. */
-export default function DynamicWorkbenchResult({ result, regimes, kindLabel }) {
+export default function DynamicWorkbenchResult({ result, regimes, kindLabel, runId, onReoptimize }) {
   if (!result) return null;
   const searched = result.regimes || regimes || {};
   return (
@@ -117,7 +135,9 @@ export default function DynamicWorkbenchResult({ result, regimes, kindLabel }) {
           {result.subset ? ' (Teilmenge der Analyse – eigene Zuordnungen, die Gesamt-Menge bleibt unberührt)' : ' (alle Assets der Analyse)'}
         </div>
       )}
-      <DynamicWorkbenchRegimeTable regimes={searched} testPrefix="dwb-result-search" />
+      <DynamicScorecard card={result.scorecard} onReoptimize={result.dynamic_id && onReoptimize ? (kept) => onReoptimize(result.dynamic_id, kept) : null} />
+      <DynamicWorkbenchRegimeTable regimes={searched} testPrefix="dwb-result-search" runId={runId} canApply={!!result.dynamic_id} />
+      <SearchStats s={result.search_stats} />
       {result.no_improvement && (
         <div className="dyn-verdict warn" data-testid="dwb-result-no-improvement">
           <b>Keine robuste Verbesserung gefunden</b>

@@ -143,6 +143,37 @@ def candidate_from_result(res: Dict, entry: Dict, job_id: str) -> Dict:
                                      "coin_report") if k in entry}}
 
 
+TOP_KEEP = 5
+
+
+def top_candidates(res: Dict) -> List[Dict]:
+    """Top-Kandidaten einer Regime-Suche (wie Optimizer „TOP 5“) – vollständig,
+    damit ein anderer Kandidat später für die Phase übernommen werden kann (rein)."""
+    out = []
+    for i, e in enumerate((res.get("top5") or [])[:TOP_KEEP]):
+        c = candidate_from_result(res, e, res.get("_lab_job_id") or "")
+        c.pop("coin_report", None)
+        m, v = c.get("metrics") or {}, c.get("validation") or {}
+        out.append({"rank": i + 1, "score": c.get("score"),
+                    "robust": regime_outliers.robust_validated(c),
+                    "trade_sufficient": c.get("trade_sufficient") is not False,
+                    "overfit": bool(c.get("overfit")), "dd_ratio_pct": c.get("dd_ratio_pct"),
+                    "flags": regime_outliers.flag_texts(regime_outliers.candidate_flags(c)),
+                    "metrics": m, "test_metrics": v or None,
+                    "params": c.get("strategy_params") or {}, "trade_params": c.get("trade_params") or {},
+                    "rules": c.get("rules") or [], "strategy_name": c.get("strategy_name") or "Eigene Regeln",
+                    "candidate": c})
+    return out
+
+
+def improvement_step(round_no: int, label: str, cand: Dict) -> Dict:
+    """Ein Eintrag im Such-Verlauf (wie Optimizer „SUCH-VERLAUF“) – rein."""
+    m, v = cand.get("metrics") or {}, cand.get("validation") or {}
+    return {"round": round_no, "regime": label, "score": cand.get("score"),
+            "trades": m.get("trades"), "win_rate": m.get("win_rate"), "pnl": m.get("pnl"),
+            "test_pnl": v.get("pnl") if v else None, "strategy": cand.get("strategy_name") or "Eigene Regeln"}
+
+
 def has_edge(cand: Optional[Dict]) -> bool:
     """Robust validiert oder im Training im Plus – sonst keine neue Strategie
     (Beste-Strategie-Suche: lauter Verlierer ergeben 'keine Verbesserung')."""
@@ -608,10 +639,10 @@ async def run(job_id: str, p: Dict, deps: Dict):
                     if retry:
                         st["variant"] = variant + 1
                     job["progress"] = round((i / max(len(runnable), 1)) * 100, 1) if not endless else job["progress"]
+                    body = _search_body(p, aid, rid, mode, sid, round_no, variant)
+                    job["search_iterations"] = int(job.get("search_iterations") or 0) + int(body.get("iterations") or 0)
                     try:
-                        res = await _run_lab(job, "regime_opt",
-                                             _search_body(p, aid, rid, mode, sid, round_no, variant),
-                                             analysis, deps)
+                        res = await _run_lab(job, "regime_opt", body, analysis, deps)
                     except RuntimeError as e:
                         # Ein Regime ohne Daten (z.B. auf den gewählten Assets) oder mit
                         # fehlgeschlagener Suche bricht nicht mehr den ganzen Lauf ab.
@@ -637,7 +668,9 @@ async def run(job_id: str, p: Dict, deps: Dict):
                         prev_entry = job["regimes"].get(str(rid)) or {}
                         job["regimes"][str(rid)] = {
                             **regime_entry(label, cand, mode, round_no),
-                            **{k: prev_entry[k] for k in ("comparison", "winner", "edge_note") if k in prev_entry}}
+                            **{k: prev_entry[k] for k in ("comparison", "winner", "edge_note") if k in prev_entry},
+                            "top": top_candidates(res)}
+                        job.setdefault("improvements", []).append(improvement_step(round_no, label, cand))
                     else:
                         st["stale"] += 1
                         if cand and (str(rid) not in job["regimes"]
@@ -744,8 +777,18 @@ async def run(job_id: str, p: Dict, deps: Dict):
                          "rounds": job["round"], "source_dynamic_id": p.get("dynamic_id"),
                          "symbols": list(subset) if subset else list(analysis.get("symbols") or []),
                          "subset": bool(subset), "search_state": job.get("search_state")}
+        job["result"]["search_stats"] = {"rounds": job["round"], "iterations": job.get("search_iterations") or 0,
+                                         "improvements": job.get("improvements") or [],
+                                         "improved_n": len(job.get("improvements") or [])}
         if p.get("result_backtest", True) and built.get("id"):
             job["result"]["backtest"] = await _result_backtest(job, built["id"], p, deps)
+            # Ergebnis-Karte im Umfang der Optimizer-Top-Ergebnisse (services/dynamic_scorecard)
+            from services import dynamic_scorecard
+            try:
+                job["result"]["scorecard"] = dynamic_scorecard.build(
+                    job["result"]["backtest"], wf, p.get("robustness"))
+            except Exception as e:  # noqa: BLE001 – Karte ist Zusatz, nie Abbruchgrund
+                logger.warning(f"workbench scorecard: {e}")
         job["status"] = "done"
         job["progress"] = 100
         _log(job, "Fertig – neue dynamische Strategie angelegt")
