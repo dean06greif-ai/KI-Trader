@@ -24,6 +24,9 @@ FastAPI backend (backend/routers, services), React (CRA/craco) frontend, MongoDB
 - Werkbank-Ergebnis im Umfang der Optimizer-Top-Ergebnisse: services/dynamic_scorecard.py, DynamicScorecard.js
 - Such-Verlauf, Top-5 je Regime + apply-candidate Endpoint (neue Version)
 
+## Implemented (12.06.2026, Teil 3)
+- Endlos-Suche (deep_explore): TP/SL-Suche, Rettungs-Verfeinerung, Konsistenz (Test besser = ok), adaptive Kombi-Größe, Wiederholung statt Abbruch, Diagnose; tests/test_deep_explore_1206.py
+
 ## Backlog
 - P1: Strategie-Timeframe je Phase (erfordert Live-Engine-Änderung)
 - P1: Worker-Paket-Version im Dashboard als „Update empfohlen“ markieren

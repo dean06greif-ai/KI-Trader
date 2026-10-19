@@ -1373,7 +1373,7 @@ export default function Optimizer({ onClose }) {
                   Laufzeit {Math.round((result.explore_report.elapsed_seconds || 0) / 60 * 10) / 10} min ·{' '}
                   {result.explore_report.combos_per_min} Kombis/min ·{' '}
                   Suchraum: {result.explore_report.total_space?.toLocaleString?.('de-DE') || result.explore_report.total_space} mögliche Kombis
-                  ({result.explore_report.space_seen_pct}% erkundet)
+                  ({Number(result.explore_report.space_seen_pct || 0).toLocaleString('de-DE', { maximumFractionDigits: 2 })}% erkundet)
                 </div>
                 <div className="opt-small" style={{ marginTop: 4 }}>
                   Stop-Grund: <b>{{

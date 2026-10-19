@@ -1,0 +1,33 @@
+{
+  "summary": "Endlos-Suche (explore) fix verified. Unit: test_deep_explore_1206.py + test_deep_explore.py = 13/13 passed. Live API run (job 18a2ccfa90c7, 4 coins, 1h, 120d, max_rules 4, tpsl): phase text showed '15 verfeinert', '1/5 Champions', '75 % mit genug Trades', 'Trade-Einstellungen x/10'; finished with stop_reason=target_reached, champions_found=5 (search part 22s, total ~2 min incl. data loading). Report fields valid_pct=78.85, rescue_refined=0, trade_tuned=34, revisits=0, indicator_stats (12 items), total_space, space_seen_pct are all present. result.trade_params == champions[0].trade_params. UI: tools-menu -> optimizer -> opt-mode-explore shows the explore-report block with explore-report-stats, explore-report-diagnose and indicator hit rates (Trefferquote je Indikator), near misses, and the stop reason 'Champions-Ziel erreicht'. No page errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/optimizer/run (mode=explore)", "issue": "Champion trade_params is often {} (4 of 5 champions, 3 of 5 top5). This happens because _optimize_trade_settings returns {} when no random TP/SL combo beats the default one. That behaviour is correct, but the review expected non-empty trade_params. Because of this, result.trade_params was {} (champion #1 used the defaults) and the UI shows no TP/SL pills for these champions. Suggestion: save the defaults that were actually used (or a 'defaults: true' marker) so the user can see which TP/SL the champion ran with."},
+      {"endpoint": "tests/test_worker_package.py", "issue": "2 failures that are older and not related to this change: the local_worker file has VERSION 1.9.0 but the server requires 1.13.0 (test_worker_version_matches_server_requirement, test_package_zip_contains_required_files)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Optimizer explore-report", "issues": ["Near-miss text reads 'nur 1 Test-Trades' (wrong German plural for 1, cosmetic)", "space_seen_pct shows 4 decimals, e.g. '52.2665% erkundet', and uses a '.' decimal separator inside a German UI"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_deep_explore_1206.py", "/app/backend/tests/test_deep_explore.py", "/app/backend/tests/live_explore_run.py"],
+  "action_items": [
+    "Optional: when TP/SL tuning finds no improvement, store the default trade settings that were used in the champion's trade_params so the UI can show them",
+    "Optional: format space_seen_pct with 1-2 decimals and German locale; fix the singular 'Test-Trade'",
+    "Unrelated: bump local_worker VERSION to match the server's required_version (test_worker_package failures)"
+  ],
+  "critical_code_review_comments": [
+    "deep_explore.refine_and_test runs _optimize_trade_settings for every refined candidate (iterations//2, min 10). This is fine, but it is the main per-candidate cost when running with many workers",
+    "tests/test_deep_explore.py is a live test against localhost:8001. It creates days=2 explore jobs that become the 'last result' in /api/optimizer/results, so the UI then shows the small test job instead of the user's last real run"
+  ],
+  "updated_files": ["/app/backend/tests/live_explore_run.py (new helper script, not a pytest)"],
+  "success_rate": {"backend": "100% for explore features (13/13 unit + live run)", "frontend": "100%"},
+  "seed_data_creation": "Explore job 18a2ccfa90c7 (120d, 4 coins) plus two days=2 jobs created by test_deep_explore.py",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the live check with: export REACT_APP_BACKEND_URL=...; python3 backend/tests/live_explore_run.py (writes /tmp/explore_result.json). Empty trade_params in a champion means the default TP/SL won."
+}

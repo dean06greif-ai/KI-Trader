@@ -52,3 +52,13 @@ Das Regime-Lab rechnet auf kurzen Regime-Abschnitten – daher dort kein Absturz
 - Such-Verlauf (jede übernommene Verbesserung) wie „SUCH-VERLAUF“ im Optimizer.
 - Top 5 Kandidaten je Regime (wie „TOP 5“) inkl. „Für Phase übernehmen“
   (`POST /api/dynamic-workbench/apply-candidate`, legt eine neue Version an, zurückholbar).
+
+## 4. Endlos-Suche (Strategie-Optimizer) findet wieder Champions
+Ursachen (services/deep_explore.py): nur Kombis, die schon mit Standard-TP/SL im Plus lagen, wurden verfeinert
+(→ „0 verfeinert“ trotz 100.000+ Kombis); TP/SL wurden in der Endlos-Suche nie gesucht; die Konsistenz-Prüfung
+ließ Kandidaten durchfallen, die im Test BESSER als im Training waren; viele 4–6-Regel-Kombis feuern kaum;
+bei ausgeschöpftem Kombi-Raum endete die Suche sofort.
+Fix: TP/SL & Trade-Einstellungen je verfeinertem Kandidaten (Schalter „TP/SL mitoptimieren“), Rettungs-Verfeinerung
+der besten knapp negativen Kombi je Batch, „im Test besser“ zählt als konsistent, Kombi-Größen nach Trade-Anteil
+gewichtet, max. eine Regel je Indikator-Familie, Wiederholungs-Verfeinerung statt Abbruch, Diagnose
+(„x % mit genug Trades“ + Tipp) im Status und in der Auswertung. Test: 5 Champions in ~3 min (vorher 0).

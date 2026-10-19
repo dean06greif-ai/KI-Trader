@@ -256,7 +256,9 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
         test_m = (await ev([d2], test_hist, fs_test, tp))[0]
         wf_checked += 1
         wf = robustness.walk_forward_eval(m_fin, test_m, train_days, test_days)
-        entry = {"labels": list(cand["labels"]), "definition": d2, "trade_params": dict(tp or {}),
+        # Ohne bessere Variante: die tatsächlich genutzten Standard-Werte zeigen
+        used_tp = dict(tp) if tp else {k: cfg[k] for k in (trade_space or {}) if k in cfg}
+        entry = {"labels": list(cand["labels"]), "definition": d2, "trade_params": used_tp,
                  "metrics": m_fin, "test_metrics": test_m, "wf": wf,
                  "score": round(sc2, 3), "rules": opt._labels(d2),
                  "found_at": datetime.now(timezone.utc).isoformat()}
@@ -273,7 +275,7 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
                 "consistency_pct": wf["consistency_pct"],
                 "reason": ("Test-PnL negativ"
                            if float(test_m.get("pnl") or 0) <= 0
-                           else f"nur {test_trades} Test-Trades (< {min_test_trades})"
+                           else f"nur {test_trades} Test-Trade{'' if test_trades == 1 else 's'} (< {min_test_trades})"
                            if test_trades < min_test_trades
                            else "Drawdown im Test über Limit" if not test_dd_ok
                            else f"Konsistenz {wf['consistency_pct']}% < {min_consistency}%")})
