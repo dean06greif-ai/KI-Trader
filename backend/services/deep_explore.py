@@ -32,6 +32,34 @@ logger = logging.getLogger(__name__)
 MAX_SEEN = 250000          # Sicherheitsdeckel für das Duplikat-Gedächtnis
 REFINE_PER_BATCH = 3       # wie viele Positive je Batch verfeinert werden
 EPSILON = 0.35             # Anteil rein zufälliger Kombis (Exploration)
+REVISIT_KEEP = 40          # vielversprechende Kombis für erneute Verfeinerung
+REVISIT_PASSES = 3         # so oft wird der Pool nach Ausschöpfung neu verfeinert
+LOW_VALID_PCT = 5.0        # darunter: Hinweis "zu wenige Trades je Kombi"
+
+
+def size_weights(sizes: List[int], valid: Dict[int, List[int]]) -> List[float]:
+    """Kombi-Größen nach Anteil Kombis mit genug Trades gewichten (rein): viele
+    UND-Regeln feuern selten – dann öfter kleinere Kombis ziehen."""
+    out = []
+    for k in sizes:
+        n, ok = valid.get(k, [0, 0])
+        out.append(0.15 + (ok / n if n >= 20 else 0.5))
+    return out
+
+
+def consistent_wf(wf: Dict, min_consistency: float) -> bool:
+    """Übereinstimmung Training↔Test – ein im Test BESSERES Ergebnis ist kein
+    Overfitting und darf nicht durchfallen (Konsistenz = min/max misst beide
+    Richtungen gleich, das sortierte gute Kandidaten aus)."""
+    if float(wf.get("test_quality") or 0) >= float(wf.get("train_quality") or 0) > 0:
+        return True
+    return float(wf.get("consistency_pct") or 0) >= min_consistency
+
+
+def one_per_indicator(combo: List[str], ind_of: Dict[str, str]) -> bool:
+    """Nicht zweimal dieselbe Indikator-Familie (z.B. RSI<25 UND RSI<35) – rein."""
+    inds = [ind_of.get(l, l) for l in combo]
+    return len(set(inds)) == len(inds)
 
 
 def _def_with(base: Dict, cands: List[Dict]) -> Dict:
@@ -45,7 +73,7 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
               min_trades, max_rules, allowed, progress, iterations,
               fs_map, fs_test, should_stop, pool, workers, dd_max_pct,
               train_days, test_days, explore_cfg, base_definition=None,
-              tf_options=None):
+              tf_options=None, trade_space=None):
     """Rückgabe: (champions_top5, report). `opt` = optimizer-Modul."""
     cands = opt.build_candidates(allowed, tf_options)
     if len(cands) < 2:
@@ -90,14 +118,15 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
     test_share = (test_days / train_days) if train_days else 0.0
     min_test_trades = max(3, int(round(min_trades * test_share * 0.5)))
 
-    async def ev(defs, hists, fsm):
+    async def ev(defs, hists, fsm, tp=None):
         out = []
         chunk = max(int(workers), 1)
+        run_cfg = {**cfg, **(tp or {})}
         for i in range(0, len(defs), chunk):
             if should_stop and should_stop():
                 raise JobCancelled()
             part = defs[i:i + chunk]
-            items = [(opt._mk_strategy(d), settings, cfg) for d in part]
+            items = [(opt._mk_strategy(d), settings, run_cfg) for d in part]
             out.extend(await opt._evaluate_batch(job, pool, items, hists, fsm,
                                                  should_stop))
         return out
@@ -107,14 +136,20 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
     champions: List[Dict] = []
     near_misses: List[Dict] = []
     tested = refined = wf_checked = 0
+    valid_n = rescued = tuned = revisits = 0
+    valid_by_k: Dict[int, List[int]] = {}
+    ind_of = {c["label"]: c["ind"] for c in cands}
+    revisit_pool: List[Dict] = []     # beste gültige Kombis (für Ausschöpfung)
+    revisit_idx = 0
     t0 = time.time()
     stop_reason = None
     total_space = sum(math.comb(len(cands), k)
                       for k in range(2, max_rules + 1))
 
     def sample_combo():
+        weights = size_weights(sizes, valid_by_k)
         for _ in range(60):
-            k = min(rng.choice(sizes), len(cands))
+            k = min(rng.choices(sizes, weights=weights)[0], len(cands))
             if rng.random() < EPSILON:
                 combo = rng.sample(labels, k)
             else:
@@ -129,6 +164,8 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
                     pick = rng.choices(range(len(pool_l)), weights=pool_w)[0]
                     combo.append(pool_l.pop(pick))
                     pool_w.pop(pick)
+            if len(set(ind_of.values())) >= k and not one_per_indicator(combo, ind_of):
+                continue
             key = tuple(sorted(combo))
             if key not in seen:
                 seen.add(key)
@@ -144,9 +181,13 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
         # er bewusst bei 10 %: der Zähler hier zeigt, dass die Suche arbeitet.
         prog_txt = (" · Balken = Zeitlimit" if max_minutes
                     else " · Balken = Champions/Ziel")
+        vp = valid_n / tested * 100 if tested else 100.0
+        hint = (f" · nur {vp:.1f} % mit ≥{min_trades} Trades (weniger Regeln/Indikatoren oder Min-Trades senken)"
+                if tested >= 200 and vp < LOW_VALID_PCT else f" · {vp:.0f} % mit genug Trades")
+        rev = f" · Wiederholung {revisits}" if revisits else ""
         return (f"Endlos-Suche · {tested} Kombis · {refined} verfeinert · "
                 f"{len(champions)}/{target} Champions{best_txt} · "
-                f"{rate:.0f} Kombis/min{prog_txt}")
+                f"{rate:.0f} Kombis/min{hint}{rev}{prog_txt}")
 
     def pct():
         if max_minutes:
@@ -171,10 +212,74 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
         del champions[10:]
         job["best"] = {"rules": entry["rules"], "metrics": entry["metrics"],
                        "definition": entry.get("definition"),
-                       "trade_params": entry.get("trade_params"),
+                       "trade_params": entry.get("trade_params") or {},
                        "explore": {"champions": len(champions),
                                    "wf_score": entry["wf"]["wf_score"],
                                    "test_pnl": (entry["test_metrics"] or {}).get("pnl")}}
+
+    def remember(cand):
+        """Vielversprechende gültige Kombi für spätere Wiederholungs-Verfeinerung."""
+        revisit_pool.append(cand)
+        revisit_pool.sort(key=lambda x: -x["score"])
+        del revisit_pool[REVISIT_KEEP:]
+
+    def consistent(wf):
+        return consistent_wf(wf, min_consistency)
+
+    async def refine_and_test(cand):
+        """Schwellen verfeinern, ggf. Trade-Einstellungen (TP/SL …) suchen, dann
+        Walk-Forward auf dem Holdout – Champion oder Beinahe-Treffer."""
+        nonlocal refined, wf_checked, tuned
+
+        def sub_prog(done, total, phase):
+            progress(pct(), f"{phase_txt()} · {phase}")
+
+        d2, m2, _log = await opt._refine(
+            job, cand["definition"], cand["score"], cand["metrics"],
+            histories, settings, cfg, objective, min_trades, iterations,
+            sub_prog, fs_map, should_stop, dd_max_pct, None)
+        refined += 1
+        m_fin = m2 or cand["metrics"]
+        sc2 = score(m_fin)
+        tp = {}
+        if trade_space and sc2 > -9e8:
+            # Feste Standard-TP/SL machen viele Kombis künstlich unprofitabel
+            tp, m3, sc3 = await opt._optimize_trade_settings(
+                job, d2, sc2, m_fin, histories, settings, cfg, objective, min_trades,
+                max(iterations // 2, 10), trade_space, sub_prog, fs_map, should_stop,
+                pool, workers, dd_max_pct, None)
+            tuned += 1
+            if tp:
+                m_fin, sc2 = m3, sc3
+        if not profitable(m_fin, sc2):
+            return
+        test_m = (await ev([d2], test_hist, fs_test, tp))[0]
+        wf_checked += 1
+        wf = robustness.walk_forward_eval(m_fin, test_m, train_days, test_days)
+        entry = {"labels": list(cand["labels"]), "definition": d2, "trade_params": dict(tp or {}),
+                 "metrics": m_fin, "test_metrics": test_m, "wf": wf,
+                 "score": round(sc2, 3), "rules": opt._labels(d2),
+                 "found_at": datetime.now(timezone.utc).isoformat()}
+        test_trades = int(test_m.get("trades") or 0)
+        test_dd_ok = (dd_max_pct is None
+                      or robustness.dd_check(test_m, dd_max_pct)[0])
+        if float(test_m.get("pnl") or 0) > 0 and test_trades >= min_test_trades \
+                and test_dd_ok and consistent(wf):
+            add_champion(entry)
+        else:
+            near_misses.append({
+                "labels": entry["labels"], "score": entry["score"],
+                "train_pnl": m_fin.get("pnl"), "test_pnl": test_m.get("pnl"),
+                "consistency_pct": wf["consistency_pct"],
+                "reason": ("Test-PnL negativ"
+                           if float(test_m.get("pnl") or 0) <= 0
+                           else f"nur {test_trades} Test-Trades (< {min_test_trades})"
+                           if test_trades < min_test_trades
+                           else "Drawdown im Test über Limit" if not test_dd_ok
+                           else f"Konsistenz {wf['consistency_pct']}% < {min_consistency}%")})
+            near_misses.sort(key=lambda x: -x["score"])
+            del near_misses[5:]
+        progress(pct(), phase_txt())
 
     batch_n = max(int(workers) * 2, 8)
     while True:
@@ -188,14 +293,28 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
                 break
             combos.append(c)
             defs.append(_def_with(base, [by_label[l] for l in c]))
-        if not combos:
-            stop_reason = "space_exhausted"
-            break
+        if not combos or len(seen) >= MAX_SEEN:
+            # Kombi-Raum ausgeschöpft: statt aufzuhören die vielversprechendsten
+            # Kombis erneut verfeinern (neue Zufalls-Schwellen + TP/SL)
+            if not revisit_pool or revisits >= REVISIT_PASSES * len(revisit_pool):
+                stop_reason = "space_exhausted"
+                break
+            cand = revisit_pool[revisit_idx % len(revisit_pool)]
+            revisit_idx += 1
+            revisits += 1
+            await refine_and_test(cand)
+            continue
         ms = await ev(defs, histories, fs_map)
-        positives = []
+        positives, valid = [], []
         for combo, d, m in zip(combos, defs, ms):
             tested += 1
             sc = score(m)
+            ok_trades = int(m.get("trades") or 0) >= min_trades
+            vk = valid_by_k.setdefault(len(combo), [0, 0])
+            vk[0] += 1
+            if ok_trades:
+                vk[1] += 1
+                valid_n += 1
             for lab in combo:
                 s = stats[lab]
                 s["n"] += 1
@@ -203,58 +322,27 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
                     s["pos"] += 1
                 if sc > s["best"]:
                     s["best"] = sc
+            item = {"labels": combo, "definition": d, "metrics": m, "score": sc}
             if profitable(m, sc):
-                positives.append({"labels": combo, "definition": d,
-                                  "metrics": m, "score": sc})
+                positives.append(item)
+            elif sc > -4e8:
+                valid.append(item)
         progress(pct(), phase_txt())
 
         positives.sort(key=lambda x: -x["score"])
-        for cand in positives[:REFINE_PER_BATCH]:
+        valid.sort(key=lambda x: -x["score"])
+        for cand in positives[:REFINE_PER_BATCH] + valid[:1]:
+            remember(cand)
+        todo = positives[:REFINE_PER_BATCH]
+        if not todo and valid:
+            # Kein Positiver im Batch: die beste gültige Kombi (genug Trades,
+            # knapp im Minus) trotzdem verfeinern – Schwellen/TP-SL drehen oft ins Plus
+            todo = valid[:1]
+            rescued += 1
+        for cand in todo:
             if stopping():
                 break
-
-            def sub_prog(done, total, phase):
-                progress(pct(), f"{phase_txt()} · {phase}")
-
-            d2, m2, _log = await opt._refine(
-                job, cand["definition"], cand["score"], cand["metrics"],
-                histories, settings, cfg, objective, min_trades, iterations,
-                sub_prog, fs_map, should_stop, dd_max_pct, None)
-            refined += 1
-            m_fin = m2 or cand["metrics"]
-            sc2 = score(m_fin)
-            if not profitable(m_fin, sc2):
-                continue
-            test_m = (await ev([d2], test_hist, fs_test))[0]
-            wf_checked += 1
-            wf = robustness.walk_forward_eval(m_fin, test_m, train_days, test_days)
-            entry = {"labels": list(cand["labels"]), "definition": d2,
-                     "metrics": m_fin, "test_metrics": test_m, "wf": wf,
-                     "score": round(sc2, 3), "rules": opt._labels(d2),
-                     "found_at": datetime.now(timezone.utc).isoformat()}
-            test_trades = int(test_m.get("trades") or 0)
-            test_dd_ok = (dd_max_pct is None
-                          or robustness.dd_check(test_m, dd_max_pct)[0])
-            if float(test_m.get("pnl") or 0) > 0 and test_trades >= min_test_trades \
-                    and test_dd_ok and wf["consistency_pct"] >= min_consistency:
-                add_champion(entry)
-            else:
-                near_misses.append({
-                    "labels": entry["labels"], "score": entry["score"],
-                    "train_pnl": m_fin.get("pnl"), "test_pnl": test_m.get("pnl"),
-                    "consistency_pct": wf["consistency_pct"],
-                    "reason": ("Test-PnL negativ"
-                               if float(test_m.get("pnl") or 0) <= 0
-                               else f"nur {test_trades} Test-Trades (< {min_test_trades})"
-                               if test_trades < min_test_trades
-                               else "Drawdown im Test über Limit" if not test_dd_ok
-                               else f"Konsistenz {wf['consistency_pct']}% < {min_consistency}%")})
-                near_misses.sort(key=lambda x: -x["score"])
-                del near_misses[5:]
-            progress(pct(), phase_txt())
-        if len(seen) >= MAX_SEEN:
-            stop_reason = "space_exhausted"
-            break
+            await refine_and_test(cand)
 
     elapsed = max(time.time() - t0, 1e-6)
     ind_stats = sorted(
@@ -272,6 +360,9 @@ async def run(opt, job, histories, test_hist, settings, cfg, objective,
         "stop_reason": stop_reason, "target_champions": target,
         "max_minutes": max_minutes, "min_consistency_pct": min_consistency,
         "min_test_trades": min_test_trades,
+        "indicator_stats": ind_stats,
+        "valid_pct": round(valid_n / tested * 100, 2) if tested else 0.0,
+        "rescue_refined": rescued, "trade_tuned": tuned, "revisits": revisits,
         "candidates": len(cands), "total_space": total_space,
         "space_seen_pct": round(len(seen) / total_space * 100, 4) if total_space else 0.0,
         "evaluations": (job.get("_bench") or {}).get("evaluations"),

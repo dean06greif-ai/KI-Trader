@@ -1528,14 +1528,15 @@ async def run_optimizer(job_id: str, body: Dict, registry, settings: Dict,
                 objective, min_trades, max_rules, allowed, prog_e, iterations,
                 fs_map, fs_test, cancelled, pool, workers, dd_max,
                 train_days, test_days, body.get("explore") or {}, base_definition,
-                tf_options=rtf_options or None)
+                tf_options=rtf_options or None, trade_space=trade_space)
             result.update({"explore": True, "explore_report": explore_report,
                            "steps": [], "refine_log": [], "trade_params": {}})
             if champions:
                 result.update({"definition": champions[0]["definition"],
                                "rules": _labels(champions[0]["definition"]),
-                               "metrics": champions[0]["metrics"]})
-            candidates = [{"definition": c["definition"], "trade_params": {},
+                               "metrics": champions[0]["metrics"],
+                               "trade_params": champions[0].get("trade_params") or {}})
+            candidates = [{"definition": c["definition"], "trade_params": c.get("trade_params") or {},
                            "metrics": c["metrics"], "score": c["score"]}
                           for c in champions]
             strategy_obj = None

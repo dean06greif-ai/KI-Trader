@@ -1382,8 +1382,22 @@ export default function Optimizer({ onClose }) {
                     time_limit: 'Zeitlimit erreicht',
                     space_exhausted: 'Suchraum vollständig erkundet',
                   }[result.explore_report.stop_reason] || result.explore_report.stop_reason || '–'}</b>
-                  {' '}· Champion-Kriterium: Training positiv + Test positiv + Konsistenz ≥ {result.explore_report.min_consistency_pct}%
+                  {' '}· Champion-Kriterium: Training positiv + Test positiv (≥ {result.explore_report.min_test_trades} Trades) + Konsistenz ≥ {result.explore_report.min_consistency_pct}% (im Test besser zählt als bestanden)
                 </div>
+                {result.explore_report.valid_pct !== undefined && (
+                  <div className="opt-small" style={{ marginTop: 4 }} data-testid="explore-report-diagnose">
+                    <b>{result.explore_report.valid_pct}%</b> der Kombis hatten genug Trades ·{' '}
+                    {result.explore_report.rescue_refined} knapp negative Kombis gerettet-verfeinert ·{' '}
+                    {result.explore_report.trade_tuned}× TP/SL & Trade-Einstellungen gesucht ·{' '}
+                    {result.explore_report.revisits} Wiederholungs-Verfeinerungen
+                    {result.explore_report.valid_pct < 5 && (
+                      <div className="neg" data-testid="explore-report-hint">
+                        Fast alle Kombis machen zu wenige Trades: weniger Indikatoren auswählen, „Max. Regeln“ auf 2–3 senken,
+                        Min-Trades reduzieren oder mehr Tage/Coins nehmen.
+                      </div>
+                    )}
+                  </div>
+                )}
                 {(result.explore_report.indicator_stats || []).length > 0 && (
                   <div className="opt-small" style={{ marginTop: 4 }}>
                     Trefferquote je Indikator:{' '}
