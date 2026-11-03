@@ -1,0 +1,37 @@
+{
+  "summary": "Tested recommended-settings, edge-weekly report and Live-Freigabe-Check (edge_readiness) backend + UI. Unit tests: 36/36 pass. New API suite tests/test_recommended_weekly_api.py: 9/10 pass (only failure: non-numeric hour -> 500). UI (1920): diag-edge-readiness shows '5/60 Trades ... Noch nicht bereit: 55 Trades fehlen' with seeded trades, weekly-send button visible for admin and toast 'Bericht erstellt – Telegram aus/nicht konfiguriert', 6 diag-rec-<key> rows, apply shows confirm listing 4 diffs, after accept all rows diag-row-ok + diag-rec-all-ok + success toast. Regression: Edge-Filter selects present (5 ai-edge-filter* controls), no new console errors (only pre-existing 401s before login and visual-editor <span> in <option> warning). 390px: no document overflow; recommended table fits.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/ai/edge-weekly/config", "issue": "Body {hour:'abc'} (or weekday non-numeric) -> 500 Internal Server Error: int() ValueError in edge_weekly.set_config not caught. Should return 400 (or use a Pydantic model)."},
+      {"endpoint": "POST /api/ai/edge-weekly/send", "issue": "Manual send writes last_sent (and even when sent=false). is_due() uses last_sent with MIN_GAP_HOURS, so a manual send shortly before Sunday 19:00 suppresses the scheduled weekly report. Store manual sends in a separate field (e.g. last_manual_sent) or only set last_sent for trigger='schedule'."},
+      {"endpoint": "GET /api/ai/diagnosis edge / weekly report", "issue": "Labeling inconsistency: by_edge_filter row 'Edge-Filter: besteht nicht' is computed retroactively via bucket_of_trade(config) while Live-Freigabe-Check counts trades marked edge_filter.ok at entry. With seeded trades marked ok:true (no daily_bias), the table shows '5 Trades besteht nicht' right above '5/60 Trades „Edge-Filter besteht“'. Consider preferring trade.edge_filter.ok when present, or renaming the retroactive row (e.g. 'Edge-Filter (rückwirkend)')."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Diagnosis panel @390px", "issues": ["Panel content scrollWidth 344 vs clientWidth 322 – the 'EDGE IN R' table (TP1/nötig column) and SETUP-KATALOG table are clipped at the right edge (pre-existing tables, not the new recommended table). Wrap these tables in overflow-x:auto container."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_recommended_weekly_api.py", "/app/backend/tests/seed_edge_ui.py", "/app/test_reports/pytest/pytest_iter6.xml"],
+  "action_items": [
+    "Validate hour/weekday in POST /api/ai/edge-weekly/config (return 400 instead of 500)",
+    "Do not let manual edge-weekly send update last_sent used by the scheduler (or document the behaviour)",
+    "Resolve 'besteht nicht' (retroactive) vs 'besteht' (entry marker) labeling mismatch in edge table/weekly report",
+    "Optional: overflow-x:auto for diagnosis tables on mobile"
+  ],
+  "critical_code_review_comments": [
+    "edge_weekly.set_config: int() on raw input without try/except -> 500",
+    "edge_weekly.send_report sets last_sent for manual trigger and when Telegram not sent – interacts with is_due gap check",
+    "ai_recommended_settings.apply: unknown/invalid values silently ignored by update_config (e.g. maker_policy 'off') – fine, but apply response 'applied' reports intended values not verified ones; after-diff in response covers it"
+  ],
+  "updated_files": ["/app/backend/tests/test_recommended_weekly_api.py", "/app/backend/tests/seed_edge_ui.py"],
+  "success_rate": {"backend": "98% (45/46 incl. unit)", "frontend": "100%"},
+  "seed_data_creation": "Seeded TEST_ ai_trader closed trades in local test_database.auto_trades (test_tag field) – all deleted. AI config restored to original (fee_guard_mult 2.5, fee_guard_atr_mult 2.5, guard_autotune_enabled true, maker_policy setup, live_gate_bypass_enabled false, edge_filter_enabled true). settings._id=edge_weekly doc (created by tests) deleted -> defaults Sun 19:00.",
+  "test_credentials": "Admin / admin (from /app/memory/test_credentials.md)",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run REACT_APP_BACKEND_URL=... pytest -n 0 tests/test_recommended_weekly_api.py (it records & restores AI config, seeds/cleans trades). The test_apply_and_verify forces diffs first. For UI seed: python tests/seed_edge_ui.py seed|clean. Diagnosis panel: strategy-tab-ai_trader -> edit-strategy-params-btn -> ai-diagnosis-toggle. Delete settings _id=edge_weekly after send tests to reset last_sent."
+}

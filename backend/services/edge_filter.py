@@ -93,6 +93,9 @@ def bucket_of_trade(t: Dict, ai_cfg: Optional[Dict] = None) -> Optional[str]:
         return None
     if risk <= 0:
         return None
+    marked = (t.get("edge_filter") or {}).get("ok")
+    if marked is not None:  # Urteil beim Einstieg hat Vorrang (gleich wie Live-Freigabe-Check)
+        return "besteht" if marked else "besteht nicht"
     from services.setup_asset_class import asset_class_of
     feats = (t.get("entry_market_snapshot") or {}).get("features") or {}
     v = evaluate(ai_cfg, side=t.get("side"), asset_class=asset_class_of(t.get("symbol")),

@@ -50,3 +50,10 @@ Backlog:
 - P0 (User-Einstellungen): Live-Bypass AUS, Fee-Faktor 8, ATR-Faktor 4; 3–4 Wochen Paper-Beweis (≥ 60 Trades „besteht“, ≥ +0,10 R).
 - P1: Signale auf 15m/1h-Struktur, Maker-Einstieg Standard, LLM nur als Veto.
 - P2: Edge-Filter-Block-Zähler in Diagnose; Policy-Fingerprint um edge_filter_* erweitern.
+
+### Session 03.11.2026 (2) – freie Verbesserungen
+- Live-Freigabe-Check (`edge_filter.readiness`) + Bilanz geblockter Live-Einstiege im Edge-Bericht/Diagnose.
+- Empfohlene Einstellungen (`services/ai_recommended_settings.py`, `GET/POST /api/ai/recommended-settings[/apply]`), Übernahme nur per Klick.
+- Wochen-Edge per Telegram (`services/edge_weekly.py`, So 19:00, ohne LLM), `GET /api/ai/edge-weekly`, `/config`, `/send`.
+- Edge-Filter-Keys im Policy-Fingerprint; Edge-Tabelle nutzt Einstiegs-Urteil; Diagnose-Tabellen mobil scrollbar.
+- Tests: `tests/test_edge_readiness_and_recommended.py`, `tests/test_recommended_weekly_api.py`.

@@ -202,7 +202,7 @@ async def build(db, config: Dict, cutoff: str) -> Dict:
         {"_id": 0, "setup": 1, "mode": 1, "data_collection": 1, "realized_pnl": 1, "fees_paid": 1,
          "risk_usdt": 1, "tp1_hit": 1, "ai_confidence": 1, "opened_at": 1, "closed_at": 1,
          "decision_id": 1, "side": 1, "symbol": 1,
-         "entry_market_snapshot.features.daily_bias": 1}).to_list(8000)
+         "entry_market_snapshot.features.daily_bias": 1, "edge_filter.ok": 1}).to_list(8000)
     ids = [r["decision_id"] for r in rows if r.get("decision_id")]
     decisions: Dict[str, Dict] = {}
     if ids:

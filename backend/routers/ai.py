@@ -367,7 +367,10 @@ async def ai_edge_weekly_status():
 @router.post("/api/ai/edge-weekly/config")
 async def ai_edge_weekly_config(body: Dict, _: bool = Depends(require_admin)):
     from services import edge_weekly
-    return await edge_weekly.set_config(ai_engine.db, body or {})
+    try:
+        return await edge_weekly.set_config(ai_engine.db, body or {})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/api/ai/edge-weekly/send")

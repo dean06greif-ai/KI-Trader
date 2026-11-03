@@ -84,3 +84,49 @@ def test_weekly_defaults_and_catalog():
 def test_policy_fingerprint_tracks_edge_filter():
     from services import policy_fingerprint as pf
     assert "edge_filter_enabled" in pf.POLICY_CONFIG_KEYS
+
+
+def test_bucket_prefers_entry_marker():
+    t = {"risk_usdt": 10, "fees_paid": 5, "side": "LONG", "symbol": "OIL", "edge_filter": {"ok": True}}
+    assert ef.bucket_of_trade(t) == "besteht"
+    t["edge_filter"] = {"ok": False}
+    assert ef.bucket_of_trade(t) == "besteht nicht"
+
+
+def test_weekly_set_config_rejects_garbage():
+    import pytest
+
+    class _DB:
+        class settings:  # noqa: N801
+            @staticmethod
+            async def update_one(*a, **k):
+                return None
+
+            @staticmethod
+            async def find_one(*a, **k):
+                return {}
+    with pytest.raises(ValueError):
+        asyncio.run(ew.set_config(_DB, {"hour": "abc"}))
+
+
+def test_manual_send_does_not_touch_schedule_stamp(monkeypatch):
+    seen = {}
+
+    class _Settings:
+        @staticmethod
+        async def update_one(q, upd, upsert=False):
+            seen.update(upd["$set"])
+
+    class _DB:
+        settings = _Settings
+
+    async def fake_text(db, cfg):
+        return "x"
+
+    async def fake_notify(*a, **k):
+        return False
+    monkeypatch.setattr(ew, "build_text", fake_text)
+    from services import notifications
+    monkeypatch.setattr(notifications, "telegram_notify", fake_notify)
+    asyncio.run(ew.send_report(_DB, {}, trigger="manual"))
+    assert "last_manual_sent" in seen and "last_sent" not in seen

@@ -53,3 +53,5 @@
 .diag-action-btn:disabled { opacity: 0.5; cursor: default; }
 .diag-action-ghost { border-color: rgba(255,255,255,0.15); background: transparent; color: #cde; }
 .diag-action-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.06); }
+/* Breite Tabellen auf dem Handy horizontal scrollbar statt abgeschnitten */
+.diag-block { overflow-x: auto; }

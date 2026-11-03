@@ -53,18 +53,22 @@ async def get_config(db) -> Dict:
     doc = await db.settings.find_one({"_id": SETTINGS_ID}) or {}
     cfg = {k: doc.get(k, v) for k, v in DEFAULTS.items()}
     cfg["last_sent"] = doc.get("last_sent")
+    cfg["last_manual_sent"] = doc.get("last_manual_sent")
     cfg["last_error"] = doc.get("last_error")
     return cfg
 
 
 async def set_config(db, updates: Dict) -> Dict:
+    """ValueError bei ungültigen Zahlen (Router -> 400)."""
     clean: Dict = {}
     if "enabled" in updates:
         clean["enabled"] = bool(updates["enabled"])
-    if "weekday" in updates:
-        clean["weekday"] = max(0, min(6, int(updates["weekday"])))
-    if "hour" in updates:
-        clean["hour"] = max(0, min(23, int(updates["hour"])))
+    for key, hi in (("weekday", 6), ("hour", 23)):
+        if key in updates:
+            try:
+                clean[key] = max(0, min(hi, int(updates[key])))
+            except (TypeError, ValueError):
+                raise ValueError(f"{key} muss eine Zahl 0–{hi} sein")
     if clean:
         await db.settings.update_one({"_id": SETTINGS_ID}, {"$set": clean}, upsert=True)
     return await get_config(db)
@@ -83,8 +87,10 @@ async def send_report(db, config: Dict, trigger: str = "schedule") -> Dict:
     text = await build_text(db, config)
     sent = await notifications.telegram_notify(db, state.telegram, "edge_weekly", text)
     now = datetime.now(timezone.utc).isoformat()
+    # Manuelle Sends zählen nicht für den Zeitplan (sonst unterdrückt is_due den Sonntags-Bericht)
+    stamp = {"last_sent": now} if trigger == "schedule" else {"last_manual_sent": now}
     await db.settings.update_one({"_id": SETTINGS_ID},
-                                 {"$set": {"last_sent": now, "last_error": None, "last_trigger": trigger}},
+                                 {"$set": {**stamp, "last_error": None, "last_trigger": trigger}},
                                  upsert=True)
     return {"sent": bool(sent), "report": text, "sent_at": now, "trigger": trigger}
 
