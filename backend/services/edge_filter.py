@@ -98,3 +98,50 @@ def bucket_of_trade(t: Dict, ai_cfg: Optional[Dict] = None) -> Optional[str]:
     v = evaluate(ai_cfg, side=t.get("side"), asset_class=asset_class_of(t.get("symbol")),
                  fee_r_est=fees / risk, bias=feats.get("daily_bias"))
     return "besteht" if v["ok"] else "besteht nicht"
+
+
+# ---- Live-Freigabe-Check (Rettungsplan Phase 1) ----
+READY_MIN_TRADES = 60
+READY_MIN_R = 0.10
+
+
+def _r(t: Dict) -> Optional[float]:
+    try:
+        risk = float(t.get("risk_usdt") or 0)
+        return float(t.get("realized_pnl") or 0) / risk if risk > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def readiness(rows: List[Dict]) -> Dict:
+    """Out-of-sample-Beweis (rein): nur Trades, die beim Einstieg als
+    „besteht“ markiert wurden (`trade.edge_filter.ok`). Bereit für Live, wenn
+    ≥ 60 Trades, netto ≥ +0,10 R und auch die jüngere Hälfte > 0 R."""
+    xs = sorted((t for t in rows if (t.get("edge_filter") or {}).get("ok") and _r(t) is not None),
+                key=lambda t: str(t.get("opened_at") or ""))
+    rs = [_r(t) for t in xs]
+    n = len(rs)
+    out = {"trades": n, "min_trades": READY_MIN_TRADES, "min_r": READY_MIN_R,
+           "exp_r": None, "recent_half_r": None, "ready": False,
+           "since": xs[0].get("opened_at") if xs else None}
+    if not n:
+        out["text"] = "Noch keine markierten Trades – der Beweis startet ab jetzt automatisch."
+        return out
+    exp = sum(rs) / n
+    half = rs[n // 2:]
+    rec = sum(half) / len(half)
+    out.update(exp_r=round(exp, 3), recent_half_r=round(rec, 3))
+    out["ready"] = n >= READY_MIN_TRADES and exp >= READY_MIN_R and rec > 0
+    if out["ready"]:
+        out["text"] = (f"Bereit: {n} Trades mit {exp:+.2f} R (jüngere Hälfte {rec:+.2f} R) – "
+                       "Live mit kleinem Risiko (0,5 %) vertretbar.")
+    else:
+        miss = []
+        if n < READY_MIN_TRADES:
+            miss.append(f"{READY_MIN_TRADES - n} Trades fehlen")
+        if exp < READY_MIN_R:
+            miss.append(f"Ø {exp:+.2f} R < {READY_MIN_R:+.2f} R")
+        if rec <= 0:
+            miss.append(f"jüngere Hälfte {rec:+.2f} R")
+        out["text"] = "Noch nicht bereit: " + ", ".join(miss) + "."
+    return out

@@ -216,12 +216,20 @@ async def build(db, config: Dict, cutoff: str) -> Dict:
     by_source = group_r(rows, lambda t: source_key(t, decisions))
     by_conf = _ordered(group_r(rows, conf_key), CONF_BUCKETS)
     by_hold = _ordered(group_r(rows, hold_key), HOLD_BUCKETS)
-    from services.edge_filter import bucket_of_trade
+    from services.edge_filter import bucket_of_trade, readiness
     by_edge = group_r(rows, lambda t: bucket_of_trade(t, config))
+    ready_rows = await db.auto_trades.find(
+        {"strategy_id": "ai_trader", "status": "closed", "edge_filter.ok": True},
+        {"_id": 0, "realized_pnl": 1, "risk_usdt": 1, "opened_at": 1, "edge_filter.ok": 1}
+    ).sort("opened_at", -1).to_list(3000)
+    shadow_rows = await db.auto_trades.find(
+        {"strategy_id": "ai_trader", "status": "closed", "guard_shadow.guard": "edge_filter"},
+        {"_id": 0, "realized_pnl": 1, "risk_usdt": 1, "fees_paid": 1, "tp1_hit": 1}).to_list(3000)
     return {"overall": overall, "live": agg_r(live), "by_setup": by_setup, "by_source": by_source,
             "by_confidence": by_conf, "by_hold": by_hold,
             "by_cost": _ordered(group_r(rows, cost_key), COST_BUCKETS),
             "by_bias": group_r(rows, bias_key), "by_asset_class": group_r(rows, asset_key),
             "by_edge_filter": by_edge, "analyst_model": analyst_model,
+            "edge_readiness": readiness(ready_rows), "edge_filter_blocks": agg_r(shadow_rows),
             "findings": edge_findings(overall, by_setup, by_source, by_conf, by_hold, config,
                                       analyst_model, by_edge)}

@@ -29,6 +29,8 @@ POLICY_CONFIG_KEYS = (
     "live_gate_bypass_enabled",
     "min_sl_rule_enabled", "min_sl_pct_by_class", "min_sl_apply_collection",
     "crv_min", "max_same_direction",
+    "edge_filter_enabled", "edge_filter_max_fee_r", "edge_filter_require_bias",
+    "edge_filter_crypto_only", "edge_filter_apply_paper",
 )
 
 # Einzelteile des Fingerprints (Reihenfolge = Anzeige-/Hash-Reihenfolge)

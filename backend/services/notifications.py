@@ -62,6 +62,7 @@ NOTIFY_CATALOG = [
     ("setup_review", "KI & System", "Setup-Review (Setup rück-/hochgestuft)", True),
     ("policy_lab", "KI & System", "Policy-Labor (Kandidat bewertet/befördert)", True),
     ("copilot_weekly", "KI & System", "Wochenbericht des Strategie-Copiloten", True),
+    ("edge_weekly", "KI & System", "Wochen-Edge des KI-Traders in R + Live-Freigabe-Check", True),
     # Labor & Berichte
     ("backtest_done", "Labor & Berichte", "Backtest fertig", True),
     ("optimizer_done", "Labor & Berichte", "Optimizer fertig", True),

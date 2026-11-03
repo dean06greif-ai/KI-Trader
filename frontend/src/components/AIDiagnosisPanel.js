@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Heartbeat, ArrowsClockwise } from '@phosphor-icons/react';
 import './AIDiagnosisPanel.css';
 import AIEdgeTable from './AIEdgeTable';
+import AIEdgeActions from './AIEdgeActions';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -98,6 +99,7 @@ const AIDiagnosisPanel = () => {
           ))}
 
           <AIEdgeTable edge={data.edge} />
+          <AIEdgeActions edge={data.edge} onChanged={() => load(days)} />
 
           {(data.setups || []).length > 0 && (
             <div className="diag-block">

@@ -343,6 +343,39 @@ async def ai_config(updates: Dict, _: bool = Depends(require_admin)):
     return {"status": "success", "config": cfg}
 
 
+@router.get("/api/ai/recommended-settings")
+async def ai_recommended_settings():
+    """Rettungsplan Phase 0: empfohlene Werte vs. aktuelle Config (nur lesen)."""
+    from services import ai_recommended_settings as rec
+    return {"items": rec.diff(ai_engine.config or {})}
+
+
+@router.post("/api/ai/recommended-settings/apply")
+async def ai_recommended_settings_apply(request: Request, _: bool = Depends(require_admin)):
+    from services import ai_recommended_settings as rec
+    res = await rec.apply(ai_engine)
+    await log_action(request, "ai_recommended_settings_apply", {"applied": res["applied"]})
+    return res
+
+
+@router.get("/api/ai/edge-weekly")
+async def ai_edge_weekly_status():
+    from services import edge_weekly
+    return await edge_weekly.get_config(ai_engine.db)
+
+
+@router.post("/api/ai/edge-weekly/config")
+async def ai_edge_weekly_config(body: Dict, _: bool = Depends(require_admin)):
+    from services import edge_weekly
+    return await edge_weekly.set_config(ai_engine.db, body or {})
+
+
+@router.post("/api/ai/edge-weekly/send")
+async def ai_edge_weekly_send(_: bool = Depends(require_admin)):
+    from services import edge_weekly
+    return await edge_weekly.send_report(ai_engine.db, ai_engine.config or {}, trigger="manual")
+
+
 @router.post("/api/ai/analyze")
 async def ai_analyze_now(_: bool = Depends(require_admin)):
     result = await ai_engine.run_analysis(manual=True)

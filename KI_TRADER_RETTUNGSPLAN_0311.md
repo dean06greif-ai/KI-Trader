@@ -59,6 +59,13 @@ Einziger Lichtblick bei der Quelle: `ki_geprueft` (Regel-Signal, das die KI gepr
    *Tagestrend*, *Anlageklasse* + automatischer Befund.
 3. Tests: `backend/tests/test_edge_filter.py`, `backend/tests/test_edge_filter_pipeline.py`.
 4. Strategie-Namen im Verlauf/Performance-Liste brechen jetzt um statt mit „…“ abgeschnitten zu werden.
+5. **Live-Freigabe-Check** (`edge_filter.readiness`, Diagnose): zählt nur Trades, die beim Einstieg „besteht“ markiert
+   wurden – bereit bei ≥ 60 Trades, Ø ≥ +0,10 R und jüngerer Hälfte > 0. Dazu Bilanz der geblockten Live-Einstiege (Schatten).
+6. **Empfohlene Einstellungen** (`services/ai_recommended_settings.py`, `GET/POST /api/ai/recommended-settings[/apply]`):
+   Abweichungen sichtbar, Übernahme nur per Klick (Admin, Audit-Log).
+7. **Wochen-Edge per Telegram** (`services/edge_weekly.py`, ohne LLM → keine KI-Kosten), Toggle „edge_weekly“ in den
+   Benachrichtigungen, manuell: Diagnose → *Wochen-Edge jetzt senden*.
+8. Edge-Filter-Einstellungen zählen zum Policy-Fingerprint (Änderung = neue Policy-Version, sauber vergleichbar).
 
 Nicht automatisch geändert (deine Entscheidung, Prod-DB bleibt unberührt): alle Einstellungen unten.
 
@@ -67,10 +74,14 @@ Nicht automatisch geändert (deine Entscheidung, Prod-DB bleibt unberührt): all
 **Phase 0 – sofort, nur Einstellungen (Geld schützen)**
 - KI-Setup: `Live-Bypass` **AUS**.
 - Edge-Filter **an** lassen (Standard nach Deploy).
-- Fee-Wächter-Faktor **3,5 → 8** (Gebühren ≤ 12,5 % des Risikos), ATR-Faktor **3 → 4**.
+- Fee-Wächter-Faktor **3,5 → 6** (Gebühren ≤ 17 % des Risikos), ATR-Faktor **3 → 4**, Fee-Wächter-Autotune **AUS**
+  (das Autotune hält den Faktor sonst bei Baseline ± 1,5 und lockert nach einzelnen Gewinner-Schattentrades).
+- Maker-Einstieg für **alle** Setups (`maker_policy: all`).
+- **Alles mit einem Klick:** Diagnose → „Empfohlene Einstellungen“ → *Empfehlungen übernehmen* (zeigt vorher jede Änderung).
 - Rohstoffe/FX/Indizes: nur noch Paper (Edge-Filter erledigt das live automatisch).
 
 **Phase 1 – 3 bis 4 Wochen Paper-Beweis (nichts live)**
+- Der **Live-Freigabe-Check** in der Diagnose und der **Wochen-Edge per Telegram** (sonntags 19:00) zählen das automatisch mit.
 - Trader im Paper-Modus laufen lassen. Im Edge-Bericht nur auf die Zeile **„Edge-Filter: besteht“** schauen.
 - Ziel-Kriterium für Live: **≥ 60 Trades „besteht“ mit netto ≥ +0,10 R** und die 2. Hälfte davon ebenfalls > 0.
 - Wird das nicht erreicht → aufhören, Geld nachzuschießen (siehe Phase 4).

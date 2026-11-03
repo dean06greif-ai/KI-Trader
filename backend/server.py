@@ -463,6 +463,10 @@ async def lifespan(app: FastAPI):
     from services import copilot_weekly
     asyncio.create_task(copilot_weekly.weekly_loop(state.db))
 
+    # Wöchentlicher Edge-Bericht des KI-Traders (Telegram, deterministisch)
+    from services import edge_weekly
+    asyncio.create_task(edge_weekly.weekly_loop(state.db, lambda: ai_engine.config))
+
     # initial analyze so rule-states are populated immediately
     for symbol in ALL_SYMBOLS:
         try:
