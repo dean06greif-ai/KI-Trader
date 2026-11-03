@@ -1,0 +1,24 @@
+{
+  "summary": "Tested the Edge-Filter (KI-Trader) and the strategy-name wrap fix. Unit tests: 21/21 pass (test_edge_filter, test_edge_filter_pipeline, test_ai_edge_report). API: admin login, POST /api/ai/config edge_filter_* persists (checked via GET /api/ai/status), clamp to 0.5 works, 401 without a token, reset to defaults OK, GET /api/ai/diagnosis returns 200. UI: after admin login, KI Trader tab -> gear (edit-strategy-params-btn) -> Setup shows the 5 new selects in order right after the Mindest-SL selects. Changed values (max fee 15 %, Live nur Krypto aus) persisted after reload. Turning Edge-Filter off hides the sub-selects. Values were reset afterwards. Trades view: a seeded long strategy_name wraps (white-space normal, no ellipsis, multi-line) at 1920px and 390px. No console errors from the changed components.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "KI Trader Setup", "issues": ["ai-edge-filter-max-fee-select only offers 0/5/8/10/15/20/30 %, but the backend accepts any value from 0 to 0.5. A value set through the API, e.g. 0.12 or 0.5, has no matching option, so the select shows the wrong value (minor)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_edge_filter_api.py", "/app/test_reports/pytest/edge_api.xml"],
+  "action_items": ["Optional: make the max-fee select options match the backend range (0-0.5), or add a dynamic option for the current value."],
+  "critical_code_review_comments": [
+    "_edge_filter_step fails open on exceptions, runs only for ai_trader, blocks only live trades by default, marks paper and collection trades, and saves the edge_filter verdict on the trade. This matches the backward-compatibility intent.",
+    "With require_bias=True, live entries are blocked when daily_bias is missing (observer and compute_features both return nothing). This is intended to be conservative, but if the feeds are unreliable it could stop live trading without any notice. Worth showing the block count in the diagnosis."
+  ],
+  "updated_files": ["/app/backend/tests/test_edge_filter_api.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin/admin (ADMIN_USER/ADMIN_PASSWORD defaults in core/auth.py). /app/memory/test_credentials.md is EMPTY; please fill it in.",
+  "seed_data_creation": "Seeded auto_trades id TEST_wrap_trade_1 (closed, BTCUSDT, scalping_4_rules, long name) and deleted it afterwards. The edge_filter config was reset to defaults.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "AITradingPanel opens via strategy-tab-ai_trader then edit-strategy-params-btn (gear), after admin login (admin-lock-button, admin-username, admin-password, admin-login-submit). Then click ai-setup-toggle. The AI config is read from GET /api/ai/status (config key). The console error about <span> inside <option> comes from the preview visual-editor instrumentation (AITradingPanel line 1561), not from the app. 401 console errors on the public page come from admin-only endpoints before login (existing behaviour)."
+}

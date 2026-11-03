@@ -25,7 +25,7 @@ export const EdgeFilterSettings = ({ cfg, updateConfig }) => {
           <label title="Höchster Gebührenanteil am riskierten Betrag (Roundtrip-Fees ÷ SL-Abstand). 10 % bei 0,06 % Taker-Fee heißt: SL mindestens ~1,2 % vom Einstieg.">
             <span>Max. Gebühren je Risiko</span>
             <select value={cfg.edge_filter_max_fee_r ?? 0.1} onChange={e => updateConfig({ edge_filter_max_fee_r: Number(e.target.value) })} data-testid="ai-edge-filter-max-fee-select">
-              {[0, 0.05, 0.08, 0.1, 0.15, 0.2, 0.3].map(v => <option key={v} value={v}>{v === 0 ? 'aus' : `${Math.round(v * 100)} %`}</option>)}
+              {[...new Set([0, 0.05, 0.08, 0.1, 0.15, 0.2, 0.3, cfg.edge_filter_max_fee_r ?? 0.1])].sort((a, b) => a - b).map(v => <option key={v} value={v}>{v === 0 ? 'aus' : `${Math.round(v * 100)} %`}</option>)}
             </select>
           </label>
           <Toggle k="edge_filter_require_bias" label="Nur mit Tagestrend" cfg={cfg} updateConfig={updateConfig}

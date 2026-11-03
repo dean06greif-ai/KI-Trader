@@ -31,3 +31,22 @@ FastAPI backend (backend/routers, services), React (CRA/craco) frontend, MongoDB
 - P1: Strategie-Timeframe je Phase (erfordert Live-Engine-Änderung)
 - P1: Worker-Paket-Version im Dashboard als „Update empfohlen“ markieren
 - P2: Equity-Kurve je Regime im Werkbank-Ergebnis
+
+
+---
+## Session 03.11.2026 – Strategie-Namen umbrechen + KI-Trader Deep-Analyse
+Aufgabe: Namen im Verlauf umbrechen statt „…“; KI-Trader (stark negativ) analysieren, Rettungsplan, erste Verbesserungen.
+User-Entscheidungen: Prod-DB nur lesend · Analyse + Plan + erste Verbesserungen · Live/Paper je Einstellung.
+
+Umgesetzt:
+- Analyse 1676 KI-Trades: netto −0,23 R, brutto −0,06 R, Gebühren 0,17 R → `KI_TRADER_RETTUNGSPLAN_0311.md`.
+- Read-only Skripte `scripts/prod_ki_trader_deep_probe.py`, `scripts/prod_ki_trader_filter_sim.py`.
+- Edge-Filter `services/edge_filter.py` + `AutoTradeManager._edge_filter_step` (blockt nur Live; Paper/Sammel nur markiert; Schattentrades), Keys `edge_filter_*`, UI `EdgeFilterSettings.js`.
+- Edge-Bericht: Gruppen Edge-Filter / Gebühren je Risiko / Tagestrend / Anlageklasse.
+- CSS `.tdc-strat-name`, `.strat-perf-name` umbrechen.
+- Tests `tests/test_edge_filter.py`, `test_edge_filter_pipeline.py`, `test_edge_filter_api.py`.
+
+Backlog:
+- P0 (User-Einstellungen): Live-Bypass AUS, Fee-Faktor 8, ATR-Faktor 4; 3–4 Wochen Paper-Beweis (≥ 60 Trades „besteht“, ≥ +0,10 R).
+- P1: Signale auf 15m/1h-Struktur, Maker-Einstieg Standard, LLM nur als Veto.
+- P2: Edge-Filter-Block-Zähler in Diagnose; Policy-Fingerprint um edge_filter_* erweitern.
