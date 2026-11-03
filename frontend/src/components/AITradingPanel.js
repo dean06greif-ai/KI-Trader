@@ -127,6 +127,8 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
   const [proposals, setProposals] = useState([]);
   // Aktueller Status als Ref, damit loadProposals (Intervall) den Autonomie-Modus kennt
   const statusRef = useRef(null);
+  const cfgSeqRef = useRef(0);
+
   const [insights, setInsights] = useState(null);
   const [feeGuardStats, setFeeGuardStats] = useState(null);
   const [guardStats, setGuardStats] = useState(null);
@@ -298,10 +300,13 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
     // Polling hängen nie mehr minutenlang an einer offenen Verbindung.
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 10000);
+    const seq = cfgSeqRef.current;
     try {
       const data = await fetch(`${API_URL}/api/ai/status`, { signal: ctrl.signal })
         .then(r => r.json());
-      const val = data && typeof data === 'object' ? data : null;
+      let val = data && typeof data === 'object' ? data : null;
+      // Während des Ladens gespeicherte Einstellungen nicht mit älterem Stand überschreiben
+      if (val && seq !== cfgSeqRef.current && statusRef.current?.config) val = { ...val, config: statusRef.current.config };
       statusRef.current = val;
       setStatus(val);
     } catch (e) { /* silent – letzter Status bleibt erhalten */ }
@@ -555,6 +560,8 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
       });
       if (!res.ok) { toast.error('Nicht autorisiert'); return; }
       const data = await res.json();
+      cfgSeqRef.current += 1;
+      if (statusRef.current) statusRef.current = { ...statusRef.current, config: data.config };
       setStatus(prev => ({ ...prev, config: data.config }));
       if ('enabled' in updates) toast.success(`KI Trader ${updates.enabled ? 'AKTIVIERT' : 'gestoppt'}`);
     } catch (e) { toast.error('Verbindungsfehler'); }

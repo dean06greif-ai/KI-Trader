@@ -57,3 +57,13 @@ Backlog:
 - Wochen-Edge per Telegram (`services/edge_weekly.py`, So 19:00, ohne LLM), `GET /api/ai/edge-weekly`, `/config`, `/send`.
 - Edge-Filter-Keys im Policy-Fingerprint; Edge-Tabelle nutzt Einstiegs-Urteil; Diagnose-Tabellen mobil scrollbar.
 - Tests: `tests/test_edge_readiness_and_recommended.py`, `tests/test_recommended_weekly_api.py`.
+
+### Session 03.11.2026 (3) – Sicherheit, Prüfer-Hinweis, Regime-Empfehlungen
+- Zugangsdaten-Check: `VERBESSERUNGEN_1010_*.md` und Git-Historie aller .md ohne Secrets; `backend/.env` (inkl. PROD_MONGO_URL) ist gitignored.
+- KI-Setup: Hinweis + Knopf „Broker einschalten“, wenn Rolle „Prüfer“ und Signal-Broker aus (`AIRoleStructureSettings.js`).
+- Regime-Nutzen-Gate (`services/regime_evidence.py`): Walk-Forward liefert `regime_evidence`; `verdict.regime_evidence_ok=False` → Release bleibt Entwurf; Beweispaket blockt bei < 30 Holdout-Trades/Regime oder negativem Ø; Struktur-Warnungen (9er-Modell, Regime-TF < 4h).
+- Test-Reste archivieren (`services/dynamic_cleanup.py`, `GET /api/dynamic/test-leftovers`, `POST .../archive`, Knopf im Dynamik-Panel).
+- Race-Fix: Status-Polling überschreibt frisch gespeicherte KI-Config nicht mehr (`cfgSeqRef`).
+- Tests: `tests/test_regime_evidence_cleanup.py`, Iteration 8 (100 %).
+
+Backlog: Kalibrierung direkt auf R-Spreizung optimieren (P2); Regime-Modell 5er/4h als Standard für neue Analysen (P2).
