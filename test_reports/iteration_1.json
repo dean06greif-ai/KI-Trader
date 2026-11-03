@@ -1,0 +1,49 @@
+{
+  "summary": "Tested the KI-Trader Dynamik-Werkbank changes against the live app. Backend: the 21 required unit tests in test_workbench_dynamic_1206.py pass. I added 11 API regression tests (all pass) and 3 tests for the ArrayLRU memory cap and importing core/config without dotenv (all pass). I ran ONE real cloud match run (wb_7bf34112de, about 2.5 min, named TEST_match_run). During the run /active showed comparison rows, a second start returned 409, and the run ended 'done' and appears in /history and /run. UI: all listed flows were checked and work: 4 tabs, the analysis-select suitability tag, the advice verdict with its reasons toggle, the timeframe hint whose apply button sets the select to 15m, the tf-variation checkbox (checked by default on discover), candidate chips and the 'alle' button, the mode select hidden on match, the asset suggestion block, the history table and opening a run (switches to the match tab), comparison expand, 'kein Edge' coins, and the result-elsewhere hint and button. No page errors. Problems found are business logic in the match ranking and API defaults, not crashes.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "services/dynamic_matcher.compare_stage + dynamic_workbench.candidate_rank", "issue": "The overfitting protection picks a consistently losing strategy as the phase winner. candidate_rank puts 'overfit' before score, so a strategy that loses in training AND test beats a strategy that is profitable in training and loses less in test but is flagged overfit. Run wb_7bf34112de, regime 2: winner rsi_only (train -70.9, test -48.3, score -56.7) over bollinger_reversion (train +43.35, test -21.17, score 48.3, overfit). In stored run wb_c512e147db, macd_rsi_momentum (train -280.6) was also ranked above bollinger. The Regime breakdown then itself recommends 'besser mit Bollinger Mean Reversion'.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/dynamic-workbench/start", "issue": "p = {k: body.get(k)} stores None for omitted keys, so p.get('walkforward', True), p.get('result_backtest', True) and p.get('skip_losing', True) all become None (off). An API-started run without these keys silently skips the final Holdout walk-forward and the result backtest (wb_7bf34112de: walkforward=null). The UI always sends them, so only API clients are affected."},
+      {"endpoint": "kind=match finish", "issue": "When stage 2 improves nothing (log 'Runde 1 fertig · 0 Regime verbessert'), a new dynamic strategy is still built (dyn_c882d0dd) and the UI says 'neue dynamische Strategie angelegt'. There is no no_improvement guard like the one kind=refine has."},
+      {"endpoint": "dynamic_matcher.compare_stage edge_note", "issue": "The note says 'keine Strategie mit Gewinn in diesem Regime' only because the chosen winner has pnl<=0, even though another candidate made +43.35 in training. It should check all candidates."},
+      {"endpoint": "dynamic_matcher.compare_stage regime entry", "issue": "When the comparison winner is adopted, the entry has only score/pnl/trades: no test_pnl/test_trades/coins (coin_report=False). Result rows show '–' for Test and Coins (e.g. regime 3 'Leichter Aufwärtstrend' in wb_c512e147db, although its comparison row has test 3 trades / +24.96). When it is not adopted, the row shows the winner name with all metrics '–'."},
+      {"endpoint": "POST /api/dynamic-workbench/start kind=match", "issue": "regime_ids with non-numeric values make int() raise, so the endpoint returns 500 instead of 400."},
+      {"endpoint": "services/fast_sim.py FastSeries._get (line ~184) with ArrayLRU", "issue": "Race window: 'if key in self._cache: return self._cache[key]', and multi-key sets followed by return self._cache[key], can raise KeyError if another thread (asyncio.to_thread jobs running in parallel) evicts the entry in between. Use a single get() / keep a local reference to the computed array."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "History -> open stored run", "issue": "Switching to the run's tab does not preselect the run's analysis in dwb-analysis-select; it stays '– wählen –'.", "affected_selectors": ["dwb-history-open-<id>", "dwb-analysis-select"]}
+    ],
+    "design_issues": [
+      {"screen": "Workbench match tab settings", "issues": ["Stray small '00' text under the Zeitraum select ('gesamt') when no analysis is selected"]},
+      {"screen": "Analysis advice", "issues": ["With only 'bedingt' or 'ungeeignet' analyses and none selected, dwb-analysis-advice renders empty (no rec buttons, no warning). Expected with the current data, but there is no hint that no recommended detection exists."]}
+    ]
+  },
+  "test_report_links": ["/app/ki-trader/backend/tests/test_dwb_api_iter_match.py", "/app/ki-trader/backend/tests/test_array_lru_budget_iter.py", "/app/ki-trader/backend/tests/manual_match_run.py", "/app/test_reports/pytest/dwb_api.xml"],
+  "action_items": [
+    "Rework candidate_rank / match winner selection so 'not overfit' never ranks a strategy that is negative in train and test above a better one. E.g. apply the overfit/trade penalties only between candidates with positive test or train PnL, or rank by test PnL inside the same robustness tier.",
+    "Make edge_note check all comparison candidates, not just the winner.",
+    "In start, default walkforward/result_backtest/skip_losing to True when they are missing (do not store None).",
+    "For kind=match with no improvement, do not build a new identical dynamic strategy (same no_improvement guard as refine), or label the result clearly.",
+    "Copy test_pnl/test_trades (and coins if available) into the regime entry from compare_stage.",
+    "Return 400 for non-int regime_ids.",
+    "Harden the FastSeries cache lookups against concurrent eviction."
+  ],
+  "critical_code_review_comments": [
+    "routers/dynamic.py (888 lines) and services/dynamic_workbench.py (844 lines) are over the 700-line guideline.",
+    "array_lru._evict runs list(OrderedDict.keys(cache))[-MIN_KEEP:] on every eviction step. This is O(n) per eviction and fine for now, but can get expensive with large caches.",
+    "ArrayLRU does not override pop/__delitem__/clear. If future code uses them, the global byte bookkeeping drifts."
+  ],
+  "updated_files": ["/app/ki-trader/backend/tests/test_dwb_api_iter_match.py", "/app/ki-trader/backend/tests/test_array_lru_budget_iter.py", "/app/ki-trader/backend/tests/manual_match_run.py"],
+  "success_rate": {"backend": "100% of tests pass (35/35); 1 high-priority logic issue plus minor issues", "frontend": "100% of listed UI flows work; minor UX items"},
+  "test_credentials": "admin / TestAdmin123! (from /app/memory/test_credentials.md) - worked",
+  "seed_data_creation": "One cloud match run wb_7bf34112de (name TEST_match_run) created dynamic strategy dyn_c882d0dd and rewrote the assignment of regime 2 in analysis ra_192997c0.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend: uvicorn from /app/ki-trader/backend (not supervisor). Two match runs exist: wb_c512e147db (with walkforward) and wb_7bf34112de (walkforward null because the API body omitted walkforward). Run tests with: cd /app/ki-trader/backend && python3 -m pytest -p no:cacheprovider -n0 tests/test_dwb_api_iter_match.py tests/test_workbench_dynamic_1206.py. A cloud match run takes about 2.5-4 min.",
+  "rca of the issue": "Match winner: candidate_rank tuple = (robust, trade_sufficient, not overfit, dd_pass, score). regime_outliers flags overfit when the walk-forward is much weaker than training. A strategy that loses in both has no 'gap', so it is never overfit and wins the tier above any profitable-but-gappy candidate. Walkforward null: routers/dynamic.py builds p via body.get(k), which stores None, and dynamic_workbench uses p.get('walkforward', True), which returns that None."
+}

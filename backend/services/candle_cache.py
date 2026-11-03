@@ -1,0 +1,549 @@
+"""
+Hybrid-Kerzen-Cache: In-Memory (spaltenbasiert, numpy) + Disk-Cache.
+
+Historie wird als CandleArray gehalten (48 Byte/Kerze statt ~450 Byte als Dict).
+Dadurch passen auch 5400 Tage 1m-Kerzen (7,8 Mio.) mit ~370 MB in den RAM –
+vorher waren das >3 GB und der lokale Worker ist beim Laden abgestürzt.
+
+Disk-Format: `<symbol>.npy` (rohes float64-Array, memmap-fähig, Laden in
+Millisekunden). Alte `<symbol>.pkl.gz`-Dateien werden beim ersten Zugriff
+automatisch konvertiert.
+
+Öffentliche API:
+    await get_candles(session, symbol, days, job=None) -> CandleArray
+"""
+import asyncio
+import gzip
+import logging
+import os
+import pickle
+import time
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
+import numpy as np
+
+from services import candle_archive
+from services.candles import CandleArray
+
+logger = logging.getLogger(__name__)
+
+CACHE_DIR = os.environ.get("CANDLE_CACHE_DIR", "/tmp/candle_cache")
+# Kerzen sind spaltenbasiert -> ~48 Byte statt ~450 Byte pro Kerze.
+# Server-Default adaptiv: 500k Kerzen (~24 MB) auf 512-MB-Instanzen,
+# 2 Mio (~96 MB) ab ~1,5 GB (Render Pro) – weniger Disk-Nachladen, mehr
+# Historie im RAM. Env CANDLE_CACHE_MAX_CANDLES überschreibt immer (Worker!).
+# Ältere Symbole werden auf Disk (.npy) ausgelagert und in Millisekunden
+# nachgeladen – kein Leistungsverlust. Der lokale Worker setzt sich sein
+# Budget selbst anhand des echten RAMs (siehe local_worker/worker.py).
+def _default_max_candles() -> int:
+    try:
+        from services.ram_guard import is_big_ram
+        return 2_000_000 if is_big_ram() else 500_000
+    except Exception:  # noqa: BLE001
+        return 500_000
+
+
+MAX_CANDLES_IN_MEMORY = (int(os.environ.get("CANDLE_CACHE_MAX_CANDLES", "0") or 0)
+                         or _default_max_candles())
+DISK_ENABLED = os.environ.get("CANDLE_CACHE_DISK", "1") != "0"
+TAIL_TTL_SEC = int(os.environ.get("CANDLE_CACHE_TAIL_TTL", "45"))
+
+_MEM: Dict[str, Dict] = {}  # symbol -> {"candles": CandleArray, "last_refresh", "used_at"}
+_LOCK = asyncio.Lock()
+# symbol -> Zeitpunkt, an dem die Quelle vor dem Cache-Anfang NICHTS mehr lieferte
+_HEAD_EXHAUSTED: Dict[str, float] = {}
+HEAD_RETRY_SEC = 24 * 3600
+# Ersatzquelle nur gedrosselt/nicht erreichbar (nicht Historien-Ende) -> früher erneut
+HEAD_THROTTLED_RETRY_SEC = 30 * 60
+_HEAD_ABORTED: Dict[str, bool] = {}
+
+
+def _mark_head_exhausted(symbol: str, now_ts: float):
+    """Kopf-Suche pausieren: 24 h bei echtem Historien-Ende, 30 min bei Drosselung."""
+    wait = HEAD_THROTTLED_RETRY_SEC if _HEAD_ABORTED.pop(symbol, False) else HEAD_RETRY_SEC
+    _HEAD_EXHAUSTED[symbol] = now_ts - (HEAD_RETRY_SEC - wait)
+
+
+def _head_exhausted(symbol: str, now_ts: float) -> bool:
+    """True, wenn die Quelle kürzlich keine ältere Historie mehr hatte (rein, testbar)."""
+    at = _HEAD_EXHAUSTED.get(symbol)
+    return at is not None and (now_ts - at) < HEAD_RETRY_SEC
+
+
+def _npy_path(symbol: str) -> str:
+    return os.path.join(CACHE_DIR, f"{symbol}.npy")
+
+
+def _legacy_path(symbol: str) -> str:
+    return os.path.join(CACHE_DIR, f"{symbol}.pkl.gz")
+
+
+def _ensure_dir():
+    if DISK_ENABLED:
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+        except OSError as e:
+            logger.warning(f"candle_cache: cannot create {CACHE_DIR}: {e}")
+
+
+def _load_disk(symbol: str) -> Optional[CandleArray]:
+    """Lädt `<symbol>.npy`; migriert einmalig ein altes `.pkl.gz`."""
+    if not DISK_ENABLED:
+        return None
+    path = _npy_path(symbol)
+    if os.path.exists(path):
+        try:
+            m = np.load(path, allow_pickle=False)
+            if m.ndim == 2 and m.shape[0] and m.shape[1] >= 6:
+                return CandleArray.from_matrix(m[:, :6])
+            logger.warning(f"candle_cache: {path} hat unerwartete Form {m.shape}")
+        except (OSError, ValueError) as e:
+            logger.warning(f"candle_cache disk load failed {symbol}: {e}")
+        return None
+    legacy = _legacy_path(symbol)
+    if os.path.exists(legacy):
+        try:
+            with gzip.open(legacy, "rb") as f:
+                data = pickle.load(f)
+            if isinstance(data, CandleArray) and len(data):
+                _save_disk(symbol, data)
+                return data
+            if isinstance(data, list) and data:
+                ca = CandleArray.from_dicts(data)
+                del data
+                _save_disk(symbol, ca)
+                logger.info(f"candle_cache: {symbol} von .pkl.gz nach .npy migriert "
+                            f"({len(ca)} Kerzen)")
+                return ca
+        except (OSError, pickle.UnpicklingError, EOFError, MemoryError) as e:
+            logger.warning(f"candle_cache legacy load failed {symbol}: {e}")
+    return None
+
+
+def _save_disk(symbol: str, candles: CandleArray):
+    if not DISK_ENABLED or candles is None or not len(candles):
+        return
+    _ensure_dir()
+    path = _npy_path(symbol)
+    tmp = path + ".tmp.npy"
+    try:
+        np.save(tmp, candles.matrix(), allow_pickle=False)
+        os.replace(tmp, path)
+        legacy = _legacy_path(symbol)
+        if os.path.exists(legacy):
+            try:
+                os.remove(legacy)
+            except OSError:
+                pass
+    except OSError as e:
+        logger.warning(f"candle_cache disk save failed {symbol}: {e}")
+
+
+def _total_candles() -> int:
+    return sum(len(v["candles"]) for v in _MEM.values())
+
+
+async def _evict_if_needed_async(keep: Optional[str] = None):
+    """Älteste Symbole auf Disk auslagern, bis das RAM-Budget passt. `keep` (das
+    gerade angefragte Symbol) bleibt immer im RAM."""
+    while _total_candles() > MAX_CANDLES_IN_MEMORY and len(_MEM) > (1 if keep in _MEM else 0):
+        oldest = min((k for k in _MEM if k != keep), key=lambda k: _MEM[k]["used_at"])
+        entry = _MEM.pop(oldest)
+        if DISK_ENABLED:
+            await asyncio.to_thread(_save_disk, oldest, entry["candles"])
+        logger.info(f"candle_cache: evicted {oldest} ({len(entry['candles'])} candles)")
+
+
+def _merge_tail(existing: CandleArray, new_tail: CandleArray) -> CandleArray:
+    """Neue Kerzen anhängen; überlappende Zeitstempel werden ersetzt."""
+    if existing is None or not len(existing):
+        return new_tail
+    if new_tail is None or not len(new_tail):
+        return existing
+    cut = int(np.searchsorted(existing.ts, new_tail.ts[0], side="left"))
+    return CandleArray.concat([existing[:cut], new_tail])
+
+
+async def _fetch_range(session, symbol: str, start_ms: int, end_ms: int,
+                       job: Dict = None, pace: float = None) -> CandleArray:
+    """Direkt-Fetch der zuständigen Historien-Quelle (nur fehlender Bereich).
+
+    Welche Quelle für ein Symbol zuständig ist (Binance/Bitunix/Yahoo), steht in
+    ``core.instruments`` und wird von ``services.history_sources`` aufgelöst.
+    """
+    from services import history_sources
+
+    t0 = time.perf_counter()
+    blocks = await history_sources.fetch_blocks(session, symbol, start_ms, end_ms,
+                                                job=job, pace=pace)
+    total = sum(int(b.shape[0]) for b in blocks)
+    DOWNLOAD_STATS["candles"] += total
+    DOWNLOAD_STATS["seconds"] += time.perf_counter() - t0
+    if not blocks:
+        return CandleArray.empty()
+    return CandleArray.from_matrix(np.concatenate(blocks)).dedup_sorted()
+
+
+async def _fetch_range_parallel(session, symbol: str, start_ms: int, end_ms: int,
+                                job: Dict = None, workers: int = 0) -> CandleArray:
+    """Großen Zeitraum in Teilbereiche splitten und parallel laden.
+    Die Parallelität wächst mit dem Zeitraum (bis 6 Ströme); das Tempo wird so
+    gedrosselt, dass die API-Ratelimits eingehalten werden. Quellen ohne
+    Bereichs-Paging (Yahoo) laden sequenziell."""
+    from services import history_sources
+    span = end_ms - start_ms
+    days = span / 86400000.0
+    if workers <= 0:
+        workers = int(min(4, max(2, days // 400)))
+    if not history_sources.supports_parallel(symbol):
+        workers = 1
+    if span <= 2 * 86400 * 1000 or workers <= 1:
+        return await _fetch_range(session, symbol, start_ms, end_ms, job=job)
+    pace = history_sources.pace_for(symbol, workers)
+    chunk = span // workers
+    bounds = [(start_ms + i * chunk,
+               end_ms if i == workers - 1 else start_ms + (i + 1) * chunk)
+              for i in range(workers)]
+    parts = await asyncio.gather(
+        *[_fetch_range(session, symbol, a, b, job=job, pace=pace)
+          for a, b in bounds])
+    return CandleArray.concat(parts).dedup_sorted()
+
+
+async def _backup_head(session, symbol: str, start_ms: int, before_ms: int,
+                       anchor_price: float, job: Dict = None) -> CandleArray:
+    """Ältere Historie aus der Ersatzquellen-Kette (services.history_fallbacks:
+    FXCM / Binance PAXG / Dukascopy / Yahoo) vor den vorhandenen Anfang hängen –
+    auf das Preisniveau der Primärquelle skaliert (nahtloser Übergang). Ohne
+    Ersatzquelle oder bei Fehlern: leeres Ergebnis (Verhalten wie bisher)."""
+    from services import history_fallbacks, history_sources
+    _HEAD_ABORTED.pop(symbol, None)
+    if not history_sources.has_backup(symbol) or before_ms - start_ms < 86400000:
+        return CandleArray.empty()
+    try:
+        m, aborted = await history_fallbacks.fetch_head(session, symbol, start_ms, before_ms,
+                                                        anchor_price, job=job)
+    except Exception as e:  # noqa: BLE001
+        from services.backtester import JobCancelled
+        if isinstance(e, JobCancelled):
+            raise
+        logger.warning(f"candle_cache: Backup-Historie {symbol} fehlgeschlagen: {e}")
+        _HEAD_ABORTED[symbol] = True
+        return CandleArray.empty()
+    _HEAD_ABORTED[symbol] = aborted
+    if m is None:
+        return CandleArray.empty()
+    ca = CandleArray.from_matrix(m).dedup_sorted()
+    ca = ca[:int(np.searchsorted(ca.ts, np.int64(before_ms), side="left"))]
+    if len(ca):
+        logger.info(f"candle_cache BACKUP-HEAD {symbol} +{len(ca)} "
+                    f"({history_fallbacks.chain_label(symbol)})")
+    return ca
+
+
+async def get_candles(session, symbol: str, days: int, job: Dict = None,
+                      start_ms: Optional[int] = None) -> CandleArray:
+    """1-Minuten-Kerzen der letzten `days` Tage – nutzt Cache aggressiv.
+    `start_ms` (optional): fixierter Fenster-Anfang einer gespeicherten Analyse –
+    der Tages-Deckel (days_cap, ab JETZT gerechnet) darf ihn nicht abschneiden."""
+    from services import history_sources
+    # Nicht mehr Historie anfordern als die Quelle hergibt, sonst wird bei jedem
+    # Lauf erneut ein nie vorhandener Kopf-Bereich gesucht.
+    days = history_sources.days_cap(symbol, days)
+    end = int(time.time() * 1000)
+    start = end - days * 86400 * 1000
+    if start_ms:
+        start = min(start, int(start_ms))
+    async with _LOCK:
+        entry = _MEM.get(symbol)
+        if entry is None:
+            disk = await asyncio.to_thread(_load_disk, symbol)
+            if disk is None or not len(disk):
+                # Render-Disk ist flüchtig: dauerhaftes Archiv (Supabase) als Rückfall
+                disk = await candle_archive.download(symbol)
+                if disk is not None and len(disk):
+                    await asyncio.to_thread(_save_disk, symbol, disk)
+            if disk is not None and len(disk):
+                entry = {"candles": disk, "last_refresh": 0, "used_at": time.time()}
+                _MEM[symbol] = entry
+                logger.info(f"candle_cache: hydrated {symbol} from disk ({len(disk)})")
+                # Vorher fehlte hier die Auslagerung: Disk-/Archiv-Hydrierung
+                # (Boot-Backfill, Charts, Nachanalyse) ließ den Cache über sein Budget wachsen
+                await _evict_if_needed_async(keep=symbol)
+
+    if entry is None:
+        logger.info(f"candle_cache MISS {symbol} days={days}")
+        candles = await _fetch_range_parallel(session, symbol, start, end, job=job)
+        if not len(candles) and history_sources.source_of(symbol) in ("yahoo", "ibkr") \
+                and not _head_exhausted(symbol, time.time()):
+            # Forex: Yahoo/IBKR liefern gar nichts (z.B. Ratelimit, Gateway nicht
+            # eingeloggt) -> komplette Historie aus Dukascopy (echte FX-Kurse,
+            # keine Skalierung nötig) statt „ohne Daten“.
+            candles = await _backup_head(session, symbol, start, end, 0.0, job=job)
+        # Primärquelle deckt den Anfang nicht ab (z.B. Bitunix ab Listing) ->
+        # ältere Kerzen aus der Backup-Quelle davorhängen.
+        if len(candles) and int(candles.ts[0]) > start + 86400000 \
+                and not _head_exhausted(symbol, time.time()):
+            extra = await _backup_head(session, symbol, start, int(candles.ts[0]),
+                                       float(candles.op[0]), job=job)
+            if len(extra):
+                candles = CandleArray.concat([extra, candles])
+            else:
+                _mark_head_exhausted(symbol, time.time())
+        async with _LOCK:
+            _MEM[symbol] = {"candles": candles, "last_refresh": time.time(),
+                            "used_at": time.time()}
+            await _evict_if_needed_async(keep=symbol)
+        return candles.slice_from_ts(start)
+
+    cached: CandleArray = entry["candles"]
+    cached_start = int(cached.ts[0]) if len(cached) else end
+    cached_end = int(cached.ts[-1]) if len(cached) else start
+    now_ts = time.time()
+    needs_head = start < cached_start - 60000 and not _head_exhausted(symbol, now_ts)
+    needs_tail = end > cached_end + 60000 and (now_ts - entry["last_refresh"]) > TAIL_TTL_SEC
+
+    if not needs_head and not needs_tail:
+        entry["used_at"] = now_ts
+        logger.info(f"candle_cache HIT {symbol} days={days} "
+                    f"(cache_span={round((cached_end - cached_start) / 86400000, 1)}d)")
+        return cached.slice_from_ts(start)
+
+    if needs_head:
+        head = await _fetch_range_parallel(session, symbol, start, cached_start, job=job)
+        if len(head):
+            head = head[:int(np.searchsorted(head.ts, cached.ts[0], side="left"))]
+        # Lücke vor dem ältesten Primär-Kerzenstand > 1 Tag -> Backup-Quelle
+        # (Dukascopy) füllt den Kopf weiter zurück auf.
+        anchor_ts = int(head.ts[0]) if len(head) else int(cached.ts[0])
+        anchor_open = float(head.op[0]) if len(head) else float(cached.op[0])
+        if anchor_ts > start + 86400000:
+            extra = await _backup_head(session, symbol, start, anchor_ts,
+                                       anchor_open, job=job)
+            if len(extra):
+                head = CandleArray.concat([extra, head]) if len(head) else extra
+        if len(head):
+            cached = CandleArray.concat([head, cached])
+            logger.info(f"candle_cache EXTEND-HEAD {symbol} +{len(head)}")
+        else:
+            # Weder Primär- noch Backup-Quelle haben vor dem Cache-Anfang etwas:
+            # bis morgen (bei Drosselung: in 30 min) nicht erneut ins Leere fragen
+            _mark_head_exhausted(symbol, now_ts)
+            logger.info(f"candle_cache: {symbol} keine ältere Historie bei der Quelle "
+                        f"(Anfang {datetime.fromtimestamp(cached_start / 1000, timezone.utc):%d.%m.%Y})")
+
+    if needs_tail:
+        # R14: überlappend nachladen – die letzte gecachte 1m-Kerze kann beim
+        # Cachen noch offen gewesen sein; ihr endgültiger Stand wird erneut
+        # angefordert und ersetzt das eingefrorene Zwischenergebnis.
+        overlap_ms = 3 * 60000
+        tail_start = (max(int(cached.ts[-1]) - overlap_ms, int(cached.ts[0]))
+                      if len(cached) else start)
+        tail = await _fetch_range(session, symbol, tail_start, end, job=job)
+        cached = _merge_tail(cached, tail)
+        logger.info(f"candle_cache EXTEND-TAIL {symbol} +{len(tail)}")
+
+    async with _LOCK:
+        entry["candles"] = cached
+        entry["last_refresh"] = now_ts
+        entry["used_at"] = now_ts
+        await _evict_if_needed_async(keep=symbol)
+    return cached.slice_from_ts(start)
+
+
+async def _fetch_secondary_range(session, symbol: str, a: int, b: int, cached: CandleArray,
+                                 job: Dict = None) -> CandleArray:
+    """Lücke [a, b] aus der ZWEITEN Quelle; Dukascopy-Serien werden auf das
+    Preisniveau der Primärquelle direkt nach der Lücke skaliert (Index-Perps)."""
+    from services import history_sources as hs
+    blocks = await hs.fetch_secondary(session, symbol, a, b, job=job)
+    if not blocks:
+        return CandleArray.empty()
+    m = np.concatenate(blocks)
+    if hs.secondary_source(symbol) == "dukascopy":
+        after = cached.slice_range(b + 1, None)
+        if len(after):
+            m = m[m[:, 0] <= b]
+            if m.shape[0]:
+                m = hs.scale_to_anchor(m, float(after.cl[0]))
+    return CandleArray.from_matrix(m).dedup_sorted().slice_range(a, b)
+
+
+def gap_stats(symbol: str, min_gap_ms: int = 5 * 60000) -> Dict:
+    """Interne Lücken im gecachten 1m-Bestand (Anzahl, fehlende Minuten)."""
+    entry = _MEM.get(symbol)
+    if entry is None or len(entry["candles"]) < 2:
+        return {"gaps": 0, "missing_minutes": 0}
+    d = np.diff(entry["candles"].ts)
+    big = d[d > min_gap_ms]
+    return {"gaps": int(len(big)), "missing_minutes": int((big // 60000 - 1).sum())}
+
+
+async def repair_gaps(session, symbol: str, start_ms: int, end_ms: int,
+                      min_gap_ms: int = 5 * 60000, max_gaps: int = 60,
+                      job: Dict = None, source: str = "primary") -> int:
+    """Interne Lücken im gecachten 1m-Bestand [start, end] gezielt nachladen.
+    Der Cache wird sonst nur an Kopf/Ende erweitert – eine Lücke mittendrin (z.B.
+    abgebrochener Download beim lokalen Worker) blieb dauerhaft. Rückgabe: Anzahl
+    neu eingefügter Kerzen (0 = keine Lücke oder Quelle hat dort selbst nichts).
+    source="secondary": aus der zweiten Quelle (history_sources.secondary_source)."""
+    entry = _MEM.get(symbol)
+    if entry is None or not len(entry["candles"]):
+        return 0
+    cached: CandleArray = entry["candles"]
+    seg = cached.slice_range(start_ms, end_ms)
+    if not len(seg):
+        return 0
+    edges = np.concatenate([[start_ms - 60000], seg.ts, [end_ms + 60000]])
+    idx = np.where(np.diff(edges) > min_gap_ms)[0][:max_gaps]
+    if not len(idx):
+        return 0
+    parts = []
+    for n, i in enumerate(idx):
+        a, b = int(edges[i]) + 60000, int(edges[i + 1]) - 60000
+        if b >= a:
+            if job is not None:
+                job["phase"] = f"{symbol}: Lücke {n + 1}/{len(idx)} ({'zweite Quelle' if source == 'secondary' else 'Primärquelle'})"
+            got = (await _fetch_secondary_range(session, symbol, a, b, cached, job=job)
+                   if source == "secondary" else await _fetch_range(session, symbol, a, b, job=job))
+            if len(got):
+                parts.append(got)
+    if not parts:
+        return 0
+    merged = CandleArray.concat([cached, *parts]).dedup_sorted()
+    added = len(merged) - len(cached)
+    async with _LOCK:
+        entry["candles"] = merged
+        entry["used_at"] = time.time()
+    if added > 0:
+        await asyncio.to_thread(_save_disk, symbol, merged)
+        logger.info(f"candle_cache REPAIR {symbol}: {len(idx)} Lücke(n), +{added} Kerzen")
+    return max(added, 0)
+
+
+async def repair_symbol(session, symbol: str, job: Dict = None) -> Dict:
+    """Lücken-Reparatur für EIN Symbol (lokaler Worker, Knopf „Lücken reparieren“):
+    erst Primärquelle erneut, dann die zweite Quelle für das, was fehlt."""
+    from services import history_sources as hs
+    now_ms = int(time.time() * 1000)
+    first = (disk_meta(symbol) or {}).get("first_ts") or now_ms
+    days = max(int((now_ms - first) / 86400000) + 1, 2)
+    if job is not None:
+        job["phase"] = f"{symbol}: lade lokale Kerzen"
+    await get_candles(session, symbol, days, job=job)
+    entry = _MEM.get(symbol)
+    if entry is None or not len(entry["candles"]):
+        raise RuntimeError(f"{symbol}: keine lokalen Kerzen vorhanden")
+    start, end = int(entry["candles"].ts[0]), int(entry["candles"].ts[-1])
+    before = gap_stats(symbol)
+    added_p = await repair_gaps(session, symbol, start, end, max_gaps=500, job=job)
+    second = hs.secondary_source(symbol)
+    added_s = 0
+    if second:
+        added_s = await repair_gaps(session, symbol, start, end, max_gaps=500, job=job,
+                                    source="secondary")
+    return {"symbol": symbol, "before": before, "after": gap_stats(symbol),
+            "added_primary": added_p, "added_secondary": added_s,
+            "primary_source": hs.source_of(symbol), "secondary_source": second}
+
+
+def stats() -> Dict:
+    return {
+        "symbols": len(_MEM),
+        "total_candles": _total_candles(),
+        "per_symbol": {k: len(v["candles"]) for k, v in _MEM.items()},
+        "ram_mb": round(sum(v["candles"].nbytes() for v in _MEM.values()) / 1e6, 1),
+        "disk_enabled": DISK_ENABLED,
+        "cache_dir": CACHE_DIR,
+        "max_candles": MAX_CANDLES_IN_MEMORY,
+    }
+
+
+def clear():
+    _MEM.clear()
+
+
+DOWNLOAD_STATS = {"candles": 0, "seconds": 0.0}
+
+
+def download_stats() -> Dict:
+    return dict(DOWNLOAD_STATS)
+
+
+# ---- Public Helfer für Daten-Verwaltung (lokaler Worker & Server) ----
+async def peek(symbol: str) -> Optional[CandleArray]:
+    """Bereits vorhandene Kerzen (RAM -> Disk -> Archiv) OHNE Börsen-Download –
+    für schnelle Zusatz-Auswertungen (z.B. Asset-Vorschlag der Werkbank)."""
+    entry = _MEM.get(symbol)
+    if entry is not None and len(entry["candles"]):
+        entry["used_at"] = time.time()
+        return entry["candles"]
+    disk = await asyncio.to_thread(_load_disk, symbol)
+    if disk is None or not len(disk):
+        disk = await candle_archive.download(symbol)
+    return disk if disk is not None and len(disk) else None
+
+
+def disk_meta(symbol: str) -> Optional[Dict]:
+    """Metadaten direkt von Platte lesen – ohne die Daten in den RAM zu holen."""
+    path = _npy_path(symbol)
+    if not os.path.exists(path):
+        return None
+    try:
+        m = np.load(path, mmap_mode="r", allow_pickle=False)
+        if m.ndim != 2 or not m.shape[0]:
+            return None
+        return {"candles": int(m.shape[0]), "first_ts": int(m[0, 0]),
+                "last_ts": int(m[-1, 0])}
+    except (OSError, ValueError):
+        return None
+
+
+async def persist_symbol_async(symbol: str) -> bool:
+    entry = _MEM.get(symbol)
+    if not entry or not len(entry["candles"]):
+        return False
+    await asyncio.to_thread(_save_disk, symbol, entry["candles"])
+    # Dauerhaft sichern (Supabase-Archiv, gedrosselt) – überlebt Render-Deploys
+    try:
+        await candle_archive.upload(symbol, entry["candles"])
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"candle_archive upload {symbol}: {e}")
+    return True
+
+
+def remove_symbol(symbol: str):
+    _MEM.pop(symbol, None)
+    for path in (_npy_path(symbol), _legacy_path(symbol)):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError as e:
+            logger.warning(f"candle_cache remove {symbol}: {e}")
+
+
+def list_disk_symbols() -> List[Dict]:
+    """Alle auf Platte gespeicherten Symbole (neues .npy und altes .pkl.gz)."""
+    out: Dict[str, Dict] = {}
+    if not os.path.isdir(CACHE_DIR):
+        return []
+    for fn in sorted(os.listdir(CACHE_DIR)):
+        if fn.endswith(".tmp.npy"):
+            continue
+        if fn.endswith(".npy"):
+            sym, prio = fn[:-4], 1
+        elif fn.endswith(".pkl.gz"):
+            sym, prio = fn[:-7], 0
+        else:
+            continue
+        p = os.path.join(CACHE_DIR, fn)
+        try:
+            row = {"symbol": sym, "bytes": os.path.getsize(p),
+                   "mtime": os.path.getmtime(p), "_prio": prio}
+        except OSError:
+            continue
+        if sym not in out or prio > out[sym]["_prio"]:
+            out[sym] = row
+    return [{k: v for k, v in r.items() if k != "_prio"}
+            for r in sorted(out.values(), key=lambda r: r["symbol"])]
