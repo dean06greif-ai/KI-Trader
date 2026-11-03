@@ -12,6 +12,7 @@ const STOP_TITLE = 'Struktur-Stop: SL hinter das letzte Swing-Tief/-Hoch der hö
 
 export const AIRoleStructureSettings = ({ cfg, updateConfig }) => {
   const st = !!cfg.structure_stop_enabled;
+  const brokerOff = cfg.ai_role === 'pruefer' && cfg.signal_broker_enabled === false;
   return (
     <>
       <label title={ROLE_TITLE}>
@@ -21,6 +22,15 @@ export const AIRoleStructureSettings = ({ cfg, updateConfig }) => {
           <option value="pruefer">Prüfer (nur Detektor-Signale) – empfohlen</option>
         </select>
       </label>
+      {brokerOff && (
+        <div className="ai-role-broker-hint" data-testid="ai-role-broker-hint"
+          style={{ gridColumn: '1 / -1', color: '#FFB74D', fontSize: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>⚠ „Prüfer“ wirkt erst mit aktivem Signal-Broker – aktuell läuft die KI weiter wie „frei“.</span>
+          <button type="button" className="ai-action-btn" onClick={() => updateConfig({ signal_broker_enabled: true })} data-testid="ai-role-enable-broker-btn">
+            Broker einschalten
+          </button>
+        </div>
+      )}
       <label title={STOP_TITLE}>
         <span>Struktur-Stop</span>
         <select value={st ? 'on' : 'off'} onChange={e => updateConfig({ structure_stop_enabled: e.target.value === 'on' })} data-testid="ai-structure-stop-select">

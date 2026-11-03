@@ -462,6 +462,15 @@ function BuildAndTest({ analysis, scope, symbol, strategies, jobBlocked, executi
             </div>
           </div>
           <WalkForwardExplain wf={wf} scope={scope} />
+          {wf.regime_evidence && (
+            <div className={`opt-small ${wf.regime_evidence.ok ? 'pos' : ''}`} style={{ margin: '6px 0', color: wf.regime_evidence.ok ? undefined : '#FFB74D' }}
+              data-testid={`regime-wf-evidence-${scope}`}
+              title={`Live-Freigabe nur, wenn jedes gehandelte Regime ≥ ${wf.regime_evidence.min_trades} Holdout-Trades und einen positiven Erwartungswert zeigt. Spreizung = bestes − schwächstes Regime (Ø PnL/Trade).`}>
+              Regime-Nutzen: <b>{wf.regime_evidence.ok ? 'belegt' : 'nicht belegt'}</b>
+              {wf.regime_evidence.spread_avg_pnl != null && <> · Spreizung Ø/Trade <b>{fmt(wf.regime_evidence.spread_avg_pnl, 3)}</b></>}
+              {(wf.regime_evidence.reasons || []).map((r, i) => <span key={i}> · {r}</span>)}
+            </div>
+          )}
           {(wf.per_regime || []).length > 0 && (
             <div className="opt-small" style={{ margin: '6px 0' }}>
               Je Regime im Holdout: {wf.per_regime.map(p => (

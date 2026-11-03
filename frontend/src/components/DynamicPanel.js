@@ -8,6 +8,7 @@ import { fmtDate, fmtDateTime } from '../lib/time';
 import NumInput from './NumInput';
 import DynamicRegimePerformance from './DynamicRegimePerformance';
 import { DynamicCardBackup, DynamicImportButton } from './DynamicBackupActions';
+import { DynamicTestCleanupButton } from './DynamicTestCleanupButton';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 const fmt = (v, d = 2) => (v === null || v === undefined ? '–' : Number(v).toFixed(d));
@@ -271,6 +272,7 @@ export default function DynamicPanel() {
               {[10, 20, 30, 60, 90].map(d => <option key={d} value={d}>{`${d} Tage`}</option>)}
             </select>
             <span style={{ flex: 1 }} />
+            <DynamicTestCleanupButton onChanged={load} />
             <DynamicImportButton onChanged={load} />
           </div>
           {list === null && <div className="opt-small">Lade...</div>}
@@ -458,6 +460,9 @@ export default function DynamicPanel() {
                     </div>
                     {(evidence[s.id].blockers || []).map((b, i) => (
                       <div key={i} className="opt-small neg" style={{ margin: '2px 0' }}>• {b}</div>
+                    ))}
+                    {(evidence[s.id].warnings || []).map((w, i) => (
+                      <div key={`w${i}`} className="opt-small" style={{ margin: '2px 0', color: '#FFB74D' }} data-testid={`dyn-evidence-warning-${s.id}-${i}`}>⚠ {w}</div>
                     ))}
                     <div className="opt-small" style={{ color: '#8A8FA3', marginTop: 3 }}>
                       Release: <b>{evidence[s.id].release?.status}</b> (Rev. {evidence[s.id].release?.revision ?? '–'})

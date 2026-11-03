@@ -10,6 +10,7 @@
 - GET  /api/dynamic/{id}/log        Wechsel-Protokoll
 - GET  /api/learning/summary        Lern-Gedächtnis (Robustheit je Marktphase)
 - DELETE /api/dynamic/{id}
+- GET/POST /api/dynamic/test-leftovers[/archive]  Test-Reste erkennen/archivieren
 """
 import logging
 import uuid
@@ -21,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core import state
 from core.auth import require_admin
 from core.utils import _clean
-from services import dynamic_live, dynamic_runtime, learning, strategy_release
+from services import dynamic_cleanup, dynamic_live, dynamic_runtime, learning, strategy_release
 from strategies.registry import registry as strategy_registry
 
 logger = logging.getLogger(__name__)
@@ -103,6 +104,29 @@ async def dynamic_list():
     return {"strategies": out}
 
 
+@router.get("/api/dynamic/test-leftovers")
+async def dynamic_test_leftovers():
+    """Vorschau: als Test-Rest erkannte dynamische Strategien (services/dynamic_cleanup)."""
+    return await _test_leftovers()
+
+
+@router.post("/api/dynamic/test-leftovers/archive")
+async def dynamic_test_leftovers_archive(_: bool = Depends(require_admin)):
+    res = await _test_leftovers()
+    for row in res["archive"]:
+        doc = await state.db.dynamic_strategies.find_one({"id": row["id"]})
+        if doc:
+            await _archive_doc(doc)
+    return {"status": "success", "archived": res["archive"], "skipped": res["skipped"]}
+
+
+async def _test_leftovers() -> Dict:
+    from core.state import scanner
+    docs = await state.db.dynamic_strategies.find(
+        {"archived": {"$ne": True}}, {"_id": 0, "id": 1, "name": 1, "release": 1}).to_list(500)
+    return dynamic_cleanup.classify(docs, scanner.settings.get("enabled_strategies", []))
+
+
 @router.delete("/api/dynamic/{did}")
 async def dynamic_delete(did: str, _: bool = Depends(require_admin)):
     """AP04/R13: Löschen = Archivieren mit scoped Unapply. Eigene Coin-Overrides
@@ -111,6 +135,12 @@ async def dynamic_delete(did: str, _: bool = Depends(require_admin)):
     doc = await state.db.dynamic_strategies.find_one({"id": did})
     if not doc:
         raise HTTPException(status_code=404, detail="Nicht gefunden")
+    unapplied = await _archive_doc(doc)
+    return {"status": "deleted", "archived": True, "unapplied": unapplied}
+
+
+async def _archive_doc(doc: Dict) -> Dict:
+    did = doc["id"]
     try:
         unapplied = await dynamic_live.unapply_dynamic(doc)
     except Exception as e:  # noqa: BLE001 – Archivieren nicht am Unapply scheitern lassen
@@ -125,7 +155,7 @@ async def dynamic_delete(did: str, _: bool = Depends(require_admin)):
     from core.state import scanner
     enabled = [s for s in scanner.settings.get("enabled_strategies", []) if s != did]
     await scanner.save_settings({"enabled_strategies": enabled})
-    return {"status": "deleted", "archived": True, "unapplied": unapplied}
+    return unapplied
 
 
 async def _get_doc(did: str) -> Dict:

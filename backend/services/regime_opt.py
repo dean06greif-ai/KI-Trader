@@ -18,6 +18,7 @@ from services import dynamic_strategy as dyn
 from services import job_control
 from services import regime as rg
 from services import regime_lab as lab
+from services import regime_evidence
 from services import regime_outliers
 from services import research_validation
 from services.backtester import JobCancelled
@@ -777,6 +778,8 @@ async def run_walkforward(job_id: str, body: Dict, registry, settings: Dict,
                          "label": (assignments.get(rid) or {}).get("regime_label"),
                          "metrics": dyn.metrics_from_rows(rs, cfg.get("max_capital", 100))}
                         for rid, rs in sorted(per_regime.items())]
+        regime_ev = regime_evidence.evaluate(per_regime_m)
+        verdict["regime_evidence_ok"] = regime_ev["ok"]
 
         result = {"kind": "walkforward", "analysis_id": doc["id"], "scope": scope,
                   # AP07/R05: Holdout wird ausschließlich mit KAUSALEN
@@ -789,6 +792,7 @@ async def run_walkforward(job_id: str, body: Dict, registry, settings: Dict,
                   "untraded_bars": untraded_bars,
                   "singles": singles, "best_single": best_single,
                   "per_regime": per_regime_m, "verdict": verdict,
+                  "regime_evidence": regime_ev,
                   # AP07/R10: jede Wiederverwendung dieses sichtbaren Holdouts
                   # wird gezählt und am Ergebnis ausgewiesen.
                   "attempt_no": await research_validation.register_attempt(

@@ -49,7 +49,10 @@ def initial_release(doc: Dict, verdict: Optional[Dict],
     """Release-Metadaten beim Erzeugen (Save/Build). Ein bestandener, noch
     gültiger Walkforward-Verdict validiert die Revision; sonst Entwurf."""
     fp = definition_fingerprint(doc)
-    validated = bool((verdict or {}).get("dynamic_better")) and not verdict_stale
+    v = verdict or {}
+    # Regime-Nutzen (services/regime_evidence): alte Verdicts ohne Flag unverändert
+    validated = (bool(v.get("dynamic_better")) and v.get("regime_evidence_ok") is not False
+                 and not verdict_stale)
     return {"status": "validated" if validated else "draft",
             "revision": 1, "fingerprint": fp,
             "verdict_stale": bool(verdict_stale) or None}
@@ -155,7 +158,7 @@ def evidence_bundle(doc: Dict, analysis: Optional[Dict] = None,
     benennt Blocker in Klartext. `ready_for_live` ist eine EMPFEHLUNG für die
     menschliche Freigabe, kein automatischer Schalter; ein guter Profitfaktor
     allein genügt bewusst nicht (Blocker-Liste muss leer sein)."""
-    from services import research_dataset, research_validation
+    from services import regime_evidence, research_dataset, research_validation
     status = effective_status(doc)
     blockers = []
     if status == "draft":
@@ -189,6 +192,10 @@ def evidence_bundle(doc: Dict, analysis: Optional[Dict] = None,
             blockers.append("Walk-Forward nicht bestanden (Benchmark war besser)")
         if wf_state.get("stale"):
             blockers.append("Walk-Forward veraltet – Zuordnungen wurden danach geändert")
+    regime_ev = (regime_evidence.evaluate(wf.get("per_regime"))
+                 if wf is not None and wf.get("per_regime") is not None else None)
+    if regime_ev is not None and not regime_ev["ok"]:
+        blockers.append("Regime-Nutzen nicht belegt – " + "; ".join(regime_ev["reasons"]))
 
     app = doc.get("application_status") or {}
     if app.get("status") == "failed":
@@ -204,6 +211,7 @@ def evidence_bundle(doc: Dict, analysis: Optional[Dict] = None,
         warnings.append("Sicherheitsstatus unbekannt – Runtime-Health nicht belegt")
     elif level == "critical":
         blockers.append("Sicherheitsstatus CRITICAL – Runtime-Health nicht abnahmefähig")
+    warnings.extend(regime_evidence.structure_warnings(doc))
 
     rel_doc = doc.get("release") or {}
     if rel_doc.get("approved_without_evidence"):
@@ -226,7 +234,8 @@ def evidence_bundle(doc: Dict, analysis: Optional[Dict] = None,
                            "attempt_no": (wf or {}).get("attempt_no"),
                            "tested_at": (wf or {}).get("created_at"),
                            "dynamic_test": (wf or {}).get("dynamic_test"),
-                           "best_single": ((wf or {}).get("best_single") or {}).get("label")},
+                           "best_single": ((wf or {}).get("best_single") or {}).get("label"),
+                           "regime_evidence": regime_ev},
             "application": app or None,
             "runtime_health": {"level": level} if safety else {"level": "unknown"},
             "ready_for_live": not blockers,

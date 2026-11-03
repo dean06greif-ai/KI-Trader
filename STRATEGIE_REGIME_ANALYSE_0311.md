@@ -24,9 +24,11 @@ Datenbasis (Prod-DB, nur lesend): 533 geschlossene Nicht-KI-Trades, 27 dynamisch
 | drift_normal | 17 | **−0,59 R** |
 
 Empfehlungen:
-1. **Regime-Filter für TrendFolge2** (bestehender Regime-Filter `regime_filter_enabled` / Sperrliste): `trend_up_volatil`,
-   `breakout_volatil`, `drift_normal` sperren. In-sample hätte das ~120 Trades mit Ø −0,37 R vermieden und TF2 von −0,01 R
-   auf ≈ +0,15 R gehoben. **Zuerst 2–3 Wochen Paper** (Stichproben je Regime 17–86 Trades).
+1. **Kurzfrist-Regime-Filter für TrendFolge2** (neu eingebaut: Strategie → Auto-Trade-Einstellungen →
+   *Kurzfrist-Regime-Filter*, Knopf „Empfehlung TrendFolge2“): `trend_up_volatil`, `breakout_volatil`, `drift_normal`
+   sperren. In-sample hätte das ~120 Trades mit Ø −0,37 R vermieden und TF2 von −0,01 R auf ≈ +0,15 R gehoben.
+   **Zuerst 2–3 Wochen Paper** (Stichproben je Regime 17–86 Trades). Code: `services/context_regime_filter.py`,
+   Prüfung in `entry_guard.check_entry` (leer = aus, Sammel-Trades unberührt, fail-open).
 2. **Gebühren halbieren**: TF2 verliert brutto +0,08 R → netto −0,01 R nur durch Gebühren. Maker-Einstieg (Limit am
    Signalpreis) würde ihn ins Plus drehen.
 3. **Keine weiteren Remastered-Varianten je Coin-Liste** – jede Variante mit 3–20 Trades ist Rauschen
