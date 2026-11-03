@@ -136,12 +136,16 @@ async def refresh(doc: Dict) -> Dict:
                                                  with_performance=False)
     old = STATE.get(doc["id"]) or {}
     switched = []
+    from services import regime_dwell
+    eff: Dict = {}
     for sym, st in (new_state.get("per_symbol") or {}).items():
         if st.get("error") or st.get("regime") is None:
             continue
         prev = old.get(sym)
-        if prev and prev.get("regime") is not None and prev["regime"] != st["regime"]:
-            switched.append((sym, prev, st))
+        eff[sym], did_switch = regime_dwell.decide(prev, st, s)
+        if did_switch:
+            switched.append((sym, prev, eff[sym]))
+    new_state["per_symbol"] = {**(new_state.get("per_symbol") or {}), **eff}
     STATE[doc["id"]] = {sym: st for sym, st in (new_state.get("per_symbol") or {}).items()
                         if not st.get("error")}
     await state.db.dynamic_strategies.update_one(

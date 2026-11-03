@@ -48,6 +48,7 @@ const DEFAULT_CFG = {
   auto_lev_max: 50,
   regime_filter_enabled: false,
   regime_block_phases: ['seitwärts'],
+  context_regime_block: [],
   regime_gate_source: 'auto',
 };
 
@@ -667,6 +668,34 @@ export default function StrategyAutoTradeModal({ strategyId, strategyName, symbo
               )}
             </div>
             )}
+
+            {/* Kurzfrist-Regime-Filter (services/context_regime_filter.py) */}
+            <div className="at-block" data-testid="sat-context-regime-block">
+              <div className="at-block-title">KURZFRIST-REGIME-FILTER (MARKTZUSTAND BEIM EINSTIEG)</div>
+              <div className="at-possize" style={{ marginTop: 0 }}>
+                Gesperrte Zustände (⛔) eröffnen keine neuen Trades. Erkennung aus 1m-Kerzen (Trend × Volatilität), wie beim KI-Trader.
+                Auswertung TrendFolge2: Abwärtstrend volatil +0,27 R, Aufwärtstrend volatil −0,32 R, Ausbruch volatil −0,36 R, Drift normal −0,59 R.
+              </div>
+              <div className="at-seg" style={{ marginTop: 6, flexWrap: 'wrap' }}>
+                {['trend_up', 'trend_down', 'range', 'drift', 'breakout'].flatMap(b => ['ruhig', 'normal', 'volatil'].map(v => `${b}_${v}`)).map(k => {
+                  const list = cfg.context_regime_block || [];
+                  const on = list.includes(k);
+                  return (
+                    <button key={k} className={on ? 'active off' : ''} data-testid={`sat-ctx-regime-${k}`}
+                      onClick={() => update('context_regime_block', on ? list.filter(x => x !== k) : [...list, k])}>
+                      {on ? '⛔ ' : ''}{k.replace('_', ' ')}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="at-seg" style={{ marginTop: 6 }}>
+                <button onClick={() => update('context_regime_block', ['trend_up_volatil', 'breakout_volatil', 'drift_normal'])}
+                  title="Sperrt die drei Zustände, in denen TrendFolge2 klar verloren hat (erst Paper testen)" data-testid="sat-ctx-regime-preset-tf2">
+                  Empfehlung TrendFolge2
+                </button>
+                <button onClick={() => update('context_regime_block', [])} data-testid="sat-ctx-regime-clear">alle erlauben</button>
+              </div>
+            </div>
 
             {/* Marktphasen-Filter (Regime-Gate) */}
             <div className="at-block">

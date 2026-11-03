@@ -3,7 +3,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from core import state
 from core.auth import require_admin
@@ -120,6 +120,34 @@ async def set_min_trade_config(body: Dict, _: bool = Depends(require_admin)):
 @router.post("/api/telegram/notify-config")
 async def set_telegram_notify_config(body: Dict, _: bool = Depends(require_admin)):
     return await notifications.update_config(state.db, body)
+
+
+@router.get("/api/telegram/notify-stats")
+async def get_telegram_notify_stats(days: int = 7):
+    """Gesendete Telegram-Meldungen je Typ (letzte N Tage) – zeigt, was „viel“ ist."""
+    days = max(1, min(31, int(days)))
+    return {"days": days, "counts": await notifications.send_counts(state.db, days)}
+
+
+@router.get("/api/telegram/quiet")
+async def get_telegram_quiet():
+    return {**await notifications.get_quiet(state.db), "critical": list(notifications.CRITICAL)}
+
+
+@router.post("/api/telegram/quiet")
+async def set_telegram_quiet(body: Dict, _: bool = Depends(require_admin)):
+    try:
+        return await notifications.set_quiet(state.db, body or {})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/api/telegram/notify-preset")
+async def set_telegram_notify_preset(body: Dict, _: bool = Depends(require_admin)):
+    name = str((body or {}).get("preset") or "")
+    if name not in notifications.PRESETS:
+        raise HTTPException(status_code=400, detail="Preset unbekannt (wichtig | standard | alles)")
+    return await notifications.update_config(state.db, notifications.preset_config(name))
 
 
 @router.get("/api/trade-guard")

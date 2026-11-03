@@ -42,6 +42,8 @@ from services import range_analysis
 from services import vwap_context
 from services import min_sl_rule
 from services import edge_filter
+from services import ai_role
+from services import structure_stop
 from services import runner_policy
 from services.technical_indicators import TechnicalIndicators
 from services.news_feed import news_feed
@@ -199,6 +201,9 @@ DEFAULT_AI_CONFIG = {
     # Gebühren ≤ 10 % des Risikos, mit Tages-Bias und nur Krypto. Paper/Sammel
     # wird nur markiert (Out-of-sample-Vergleich im Edge-Bericht).
     **edge_filter.DEFAULTS,
+    # Rolle der KI (services/ai_role.py) + Struktur-Stop (services/structure_stop.py)
+    **ai_role.DEFAULTS,
+    **structure_stop.DEFAULTS,
     # Mindest-SL je Anlageklasse (services/min_sl_rule.py) – feste Regel
     "min_sl_rule_enabled": True,
     "min_sl_pct_by_class": dict(min_sl_rule.DEFAULT_MIN_SL_PCT),
@@ -906,6 +911,8 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                   "edge_filter_apply_paper"):
             if k in updates:
                 self.config[k] = bool(updates[k])
+        ai_role.clamp_updates(updates, self.config)
+        structure_stop.clamp_updates(updates, self.config)
         if "edge_filter_max_fee_r" in updates:
             try:
                 self.config["edge_filter_max_fee_r"] = max(0.0, min(0.5, float(updates["edge_filter_max_fee_r"])))
@@ -1903,6 +1910,10 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                     if _broker_on:
                         if action in ("LONG", "SHORT"):
                             signal_broker.attach(dec, d.get("signal_id"), self.config)
+                            if ai_role.veto_free(dec, self.config):
+                                dec["reasoning"] = ("[Prüfer-Modus: ohne Detektor-Signal kein Einstieg] "
+                                                    + str(dec.get("reasoning") or ""))[:600]
+                                dec["action"] = action = "HOLD"
                             setup = dec.get("setup")
                             _cal = confidence_calibration.lookup(
                                 confidence_calibration.cached(), dec["confidence"])
@@ -3156,7 +3167,10 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                     # RAM-Bremse: Zyklus verschieben statt OOM zu riskieren
                     from services import ram_queue
                     await ram_queue.wait_for_ram(110, 600, "ki-analyse")
-                    await self.run_analysis()
+                    if ai_role.skip_cycle(self.config):
+                        logger.info("AI Analyse-Zyklus übersprungen (Prüfer-Modus: nur Detektor-Signale)")
+                    else:
+                        await self.run_analysis()
                 else:
                     # Zwischen den Zyklen: Sweep-Trigger (lokal, ohne LLM) – feuert
                     # bei Wick-Sweep eine gezielte Einzel-Symbol-Analyse (Budget).

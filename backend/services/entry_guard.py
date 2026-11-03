@@ -74,6 +74,13 @@ async def check_entry(db, signal: Dict, cfg: Dict, mode: str, timeframe: str,
         checks.record("regime_gate", ok, reason)
         if not ok:
             return False, reason
+    if cfg.get("context_regime_block") and not collection:
+        from services import context_regime_filter as crf
+        reg = crf.current_regime(signal.get("symbol"))
+        ok, reason = crf.check(cfg, reg)
+        checks.record("context_regime", ok, reason or f"Regime {reg or 'unbekannt'} erlaubt")
+        if not ok:
+            return False, reason
     return True, ""
 
 

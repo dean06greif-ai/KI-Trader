@@ -31,6 +31,7 @@ POLICY_CONFIG_KEYS = (
     "crv_min", "max_same_direction",
     "edge_filter_enabled", "edge_filter_max_fee_r", "edge_filter_require_bias",
     "edge_filter_crypto_only", "edge_filter_apply_paper",
+    "ai_role", "structure_stop_enabled", "structure_tf", "structure_min_pct", "structure_max_pct",
 )
 
 # Einzelteile des Fingerprints (Reihenfolge = Anzeige-/Hash-Reihenfolge)

@@ -177,10 +177,121 @@ async def website_notify(db, ntype: str, title: str, message: str,
         return False
 
 
+# ---- Nachtruhe, Versand-Zähler, Presets (11/2026: „zu viele Meldungen“) ----
+QUIET_ID = "telegram_quiet"
+COUNTS_ID = "telegram_send_counts"
+QUIET_DEFAULTS = {"enabled": False, "from_h": 23, "to_h": 7}
+# kommen auch in der Nachtruhe durch (Geld/Sicherheit)
+CRITICAL = ("kill_switch", "watchdog", "order_rejected", "ibkr_gateway", "funding_guard", "key_credits")
+PRESETS = {
+    "wichtig": set(CRITICAL) | {"trade_opened", "trade_opened_live", "trade_closed", "trade_closed_live",
+                                "ai_failure", "daily_summary", "edge_weekly"},
+    "standard": None,   # alle Standardwerte des Katalogs
+    "alles": "all",
+}
+_quiet_cache: Optional[Dict] = None
+_quiet_ts = 0.0
+
+
+def quiet_active(q: Dict, hour: int) -> bool:
+    """Rein: liegt `hour` (Berlin) im Ruhefenster? Fenster darf über Mitternacht gehen."""
+    if not q.get("enabled"):
+        return False
+    a, b = int(q.get("from_h", 23)) % 24, int(q.get("to_h", 7)) % 24
+    if a == b:
+        return False
+    return (a <= hour < b) if a < b else (hour >= a or hour < b)
+
+
+def allowed_in_quiet(ntype: str, sub: Optional[str]) -> bool:
+    return ntype in CRITICAL or bool(sub and str(sub).endswith("_live"))
+
+
+def preset_config(name: str) -> Dict:
+    """Rein: komplette Schalter-Belegung eines Presets."""
+    p = PRESETS.get(name)
+    if p is None:
+        return dict(DEFAULT_CONFIG)
+    if p == "all":
+        return {k: True for k in DEFAULT_CONFIG}
+    return {k: (k in p) for k in DEFAULT_CONFIG}
+
+
+async def get_quiet(db) -> Dict:
+    global _quiet_cache, _quiet_ts
+    if _quiet_cache is not None and time.time() - _quiet_ts < 30:
+        return _quiet_cache
+    doc = {}
+    try:
+        doc = await db.settings.find_one({"_id": QUIET_ID}) or {}
+    except Exception as e:
+        logger.warning(f"quiet config load failed: {e}")
+    _quiet_cache = {k: doc.get(k, v) for k, v in QUIET_DEFAULTS.items()}
+    _quiet_ts = time.time()
+    return _quiet_cache
+
+
+async def set_quiet(db, updates: Dict) -> Dict:
+    global _quiet_cache
+    clean: Dict = {}
+    if "enabled" in (updates or {}):
+        clean["enabled"] = bool(updates["enabled"])
+    for k in ("from_h", "to_h"):
+        if k in (updates or {}):
+            try:
+                clean[k] = max(0, min(23, int(updates[k])))
+            except (TypeError, ValueError):
+                raise ValueError(f"{k} muss eine Stunde 0–23 sein")
+    if clean:
+        await db.settings.update_one({"_id": QUIET_ID}, {"$set": clean}, upsert=True)
+    _quiet_cache = None
+    return await get_quiet(db)
+
+
+async def record_sent(db, ntype: str) -> None:
+    """Versand-Zähler je Tag × Meldungstyp (für „wie viele bekomme ich?“). Fail-safe."""
+    try:
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        await db.settings.update_one({"_id": COUNTS_ID}, {"$inc": {f"d.{day}.{ntype}": 1}}, upsert=True)
+    except Exception as e:
+        logger.debug(f"telegram count failed: {e}")
+
+
+def sum_counts(days_doc: Dict, days: int, today: Optional[datetime] = None) -> Dict[str, int]:
+    """Rein: Summe je Typ über die letzten `days` Tage."""
+    from datetime import timedelta
+    today = today or datetime.now(timezone.utc)
+    keep = {(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days)}
+    out: Dict[str, int] = {}
+    for day, per in (days_doc or {}).items():
+        if day in keep and isinstance(per, dict):
+            for k, n in per.items():
+                out[k] = out.get(k, 0) + int(n or 0)
+    return out
+
+
+async def send_counts(db, days: int = 7) -> Dict[str, int]:
+    doc = await db.settings.find_one({"_id": COUNTS_ID}) or {}
+    days_doc = doc.get("d") or {}
+    old = sorted(days_doc)[:-31]
+    if old:  # nur die letzten 31 Tage aufbewahren
+        await db.settings.update_one({"_id": COUNTS_ID}, {"$unset": {f"d.{k}": "" for k in old}})
+    return sum_counts(days_doc, days)
+
+
 async def enabled(db, ntype: str, sub: Optional[str] = None) -> bool:
-    """Haupt-Toggle `ntype` (und optionaler Unter-Toggle `sub`) an?"""
+    """Haupt-Toggle `ntype` (und optionaler Unter-Toggle `sub`) an – und nicht in der Nachtruhe?"""
     cfg = await get_config(db)
-    return bool(cfg.get(ntype, True)) and (not sub or bool(cfg.get(sub, True)))
+    if not (bool(cfg.get(ntype, True)) and (not sub or bool(cfg.get(sub, True)))):
+        return False
+    try:
+        from zoneinfo import ZoneInfo
+        q = await get_quiet(db)
+        if quiet_active(q, datetime.now(ZoneInfo("Europe/Berlin")).hour) and not allowed_in_quiet(ntype, sub):
+            return False
+    except Exception:
+        pass
+    return True
 
 
 async def telegram_notify(db, telegram, ntype: str, text: str,
@@ -203,6 +314,7 @@ async def telegram_notify(db, telegram, ntype: str, text: str,
     try:
         await bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown",
                                disable_web_page_preview=True)
+        await record_sent(db, ntype)
         return True
     except Exception as e:
         logger.warning(f"telegram notify ({ntype}) failed: {e}")

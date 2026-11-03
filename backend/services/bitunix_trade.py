@@ -1023,6 +1023,9 @@ DEFAULT_COIN_CFG = {
     # Quelle der Phase (regime_gate.gate_source): `auto` = eine Regime-Wahrheit
     # (Lab/Champion, Rückfall eigene Erkennung) | `lab` | `own_only`
     "regime_gate_source": "auto",
+    # Kurzfrist-Regime-Filter (services/context_regime_filter.py): Liste gesperrter
+    # Setup-Kontext-Regime (z.B. trend_up_volatil); leer = aus.
+    "context_regime_block": [],
     # --- Gewinnsicherung: SL in den Gewinn ziehen + Marge freisetzen ---
     "profit_secure_enabled": False,
     "profit_secure_trigger_pct": 30.0,   # ab X% Gewinn auf die Marge
@@ -1619,8 +1622,9 @@ class AutoTradeManager:
             if not await notifications.enabled(
                     self.db, "order_rejected", "order_rejected_internal" if internal else None):
                 return
-            await self.telegram.send_rejection(symbol, side, reason,
-                                               **({"internal": True} if internal else {}))
+            if await self.telegram.send_rejection(symbol, side, reason,
+                                                  **({"internal": True} if internal else {})):
+                await notifications.record_sent(self.db, "order_rejected")
         except Exception as e:
             logger.error(f"telegram reject notify failed: {e}")
 
@@ -2148,6 +2152,29 @@ class AutoTradeManager:
                     risk = abs(entry - sl) or risk
             except (TypeError, ValueError):
                 pass
+
+        # ---- Struktur-Stop (services/structure_stop.py): SL hinter 15m/1h-Swing,
+        # TPs mit gleichem CRV; Default AUS. Läuft vor dem Fee-Wächter.
+        if strategy_id == "ai_trader" and (ai_cfg or {}).get("structure_stop_enabled"):
+            from services import structure_stop
+            from services.timeframes import aggregate_candles
+            st_tf = structure_stop.settings(ai_cfg)["structure_tf"]
+            try:
+                lv, why = structure_stop.compute(side, entry, sl, tp1, tpf,
+                                                 aggregate_candles(candles, st_tf, drop_partial=True), ai_cfg)
+            except Exception as e:  # noqa: BLE001 – fail-open: bisherige Levels
+                lv, why = None, ""
+                logger.warning(f"{symbol}: Struktur-Stop übersprungen: {e}")
+            if lv:
+                sl, tp1, tpf = lv
+                risk = abs(entry - sl) or risk
+                signal["structure_stop"] = why
+                checks.record("structure_stop", True, why)
+            elif why.startswith("Struktur-Stop"):
+                checks.record("structure_stop", False, why)
+                logger.info(f"AutoTrade blockiert {symbol} {side}: {why}")
+                signal["_reject_reason"] = why
+                return None
 
         # ---- Fee-Wächter (nur KI-Trader): Physik-Grenze statt Stil-Vorgabe.
         # Der finale SL steht erst HIER fest (Coin-Config oder use_ai_levels) –
@@ -3153,6 +3180,8 @@ class AutoTradeManager:
                                  "sub_strategy_id", "sub_strategy_name", "own_rules")}
         if isinstance(signal.get("edge_filter"), dict):
             trade["edge_filter"] = dict(signal["edge_filter"])
+        if signal.get("structure_stop"):
+            trade["structure_stop"] = signal["structure_stop"]
         if collection:
             trade["data_collection"] = True
             if signal.get("collection_reason"):

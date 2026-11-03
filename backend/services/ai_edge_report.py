@@ -201,7 +201,7 @@ async def build(db, config: Dict, cutoff: str) -> Dict:
         {"strategy_id": "ai_trader", "status": "closed", "opened_at": {"$gte": cutoff}},
         {"_id": 0, "setup": 1, "mode": 1, "data_collection": 1, "realized_pnl": 1, "fees_paid": 1,
          "risk_usdt": 1, "tp1_hit": 1, "ai_confidence": 1, "opened_at": 1, "closed_at": 1,
-         "decision_id": 1, "side": 1, "symbol": 1,
+         "decision_id": 1, "side": 1, "symbol": 1, "signal_source": 1,
          "entry_market_snapshot.features.daily_bias": 1, "edge_filter.ok": 1}).to_list(8000)
     ids = [r["decision_id"] for r in rows if r.get("decision_id")]
     decisions: Dict[str, Dict] = {}
@@ -228,7 +228,8 @@ async def build(db, config: Dict, cutoff: str) -> Dict:
     return {"overall": overall, "live": agg_r(live), "by_setup": by_setup, "by_source": by_source,
             "by_confidence": by_conf, "by_hold": by_hold,
             "by_cost": _ordered(group_r(rows, cost_key), COST_BUCKETS),
-            "by_bias": group_r(rows, bias_key), "by_asset_class": group_r(rows, asset_key),
+            "by_bias": group_r(rows, bias_key),
+            "by_signal_source": group_r(rows, lambda t: t.get("signal_source") or None), "by_asset_class": group_r(rows, asset_key),
             "by_edge_filter": by_edge, "analyst_model": analyst_model,
             "edge_readiness": readiness(ready_rows), "edge_filter_blocks": agg_r(shadow_rows),
             "findings": edge_findings(overall, by_setup, by_source, by_conf, by_hold, config,

@@ -38,7 +38,8 @@ def test_recommended_diff_and_updates():
     assert not d["fee_guard_atr_mult"]["differs"]                   # 4 == 4.0
     upd = rec.updates(cfg)
     assert upd == {"live_gate_bypass_enabled": False, "fee_guard_mult": 6.0,
-                   "guard_autotune_enabled": False, "maker_policy": "all"}
+                   "guard_autotune_enabled": False, "maker_policy": "all",
+                   "ai_role": "pruefer", "structure_stop_enabled": True}
 
 
 def test_recommended_values_survive_engine_validation():

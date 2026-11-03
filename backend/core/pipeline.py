@@ -117,7 +117,8 @@ async def process_signal(signal: Dict, candles: List[Dict]):
                 from services import notifications as _nfc
                 if conf.get("new_event") and conf.get("notify") \
                         and await _nfc.enabled(state.db, "confluence"):
-                    await confluence.notify(telegram, conf["event"])
+                    if await confluence.notify(telegram, conf["event"]):
+                        await _nfc.record_sent(state.db, "confluence")
         except Exception as e:
             logger.warning(f"Confluence-Check fehlgeschlagen ({symbol}): {e}")
     # Manuelle Website-Trades laufen zwar durch die Pipeline (Guards, Kapital,
@@ -223,6 +224,7 @@ async def _notify_signal(signal: Dict, trade, notify: bool, strategy_enabled: bo
             msg_signal["_no_trade_reason"] = signal.get("_reject_reason") or "kein Auto-Trade für diese Strategie/Coin"
         sent = await telegram.send_signal(msg_signal)
         if sent:
+            await _nf.record_sent(state.db, "signals")
             logger.info(f"Telegram notification sent for {symbol} {signal['type']}")
         else:
             # Vorher wurde hier fälschlich "sent" geloggt, obwohl der

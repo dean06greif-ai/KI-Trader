@@ -28,6 +28,7 @@ import { GuardShadowPanel } from './GuardShadowPanel';
 import RegimeCockpit from './RegimeCockpit';
 import { MinSlRuleSettings } from './MinSlRuleSettings';
 import { EdgeFilterSettings } from './EdgeFilterSettings';
+import { AIRoleStructureSettings } from './AIRoleStructureSettings';
 import { DecisionTradeTags } from './DecisionTradeTags';
 import AIOrderPolicyTable from './AIOrderPolicyTable';
 
@@ -1702,6 +1703,7 @@ const AITradingPanel = ({ onClose, selectedCoin = 'BTCUSDT' }) => {
             </label>
             <MinSlRuleSettings cfg={cfg} updateConfig={updateConfig} />
             <EdgeFilterSettings cfg={cfg} updateConfig={updateConfig} />
+            <AIRoleStructureSettings cfg={cfg} updateConfig={updateConfig} />
             <label title="Stale-Price-Guard: blockt KI-Einstiege, wenn die letzte Kurskerze des Coins älter ist als das Limit (hängender Datenfeed, z.B. Forex-Feed am Wochenende). 0 = aus.">
               <span>Preis-Frische (min)</span>
               <select value={cfg.stale_price_max_min ?? 10} onChange={e => updateConfig({ stale_price_max_min: Number(e.target.value) })} data-testid="ai-stale-price-select">

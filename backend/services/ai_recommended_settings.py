@@ -17,6 +17,10 @@ RECOMMENDED: List[Dict] = [
      "why": "Trades < 15 min verloren −0,58 R – Stops lagen im Rauschen."},
     {"key": "guard_autotune_enabled", "value": False, "label": "Fee-Wächter-Autotune",
      "why": "Autotune lockert den Wächter nach einzelnen Gewinner-Schattentrades und zieht ihn auf ≤ Baseline + 1,5 zurück."},
+    {"key": "ai_role", "value": "pruefer", "label": "Rolle der KI",
+     "why": "KI-geprüfte Detektor-Signale +0,32 R vs. KI-frei −0,13 R; spart den periodischen LLM-Zyklus."},
+    {"key": "structure_stop_enabled", "value": True, "label": "Struktur-Stop (15m)",
+     "why": "SL 0,4–0,7 % lag bei −0,34 R, SL ≥ 1 % bei −0,03 R – Stop hinter die 15m-Struktur (1–3 %)."},
     {"key": "maker_policy", "value": "all", "label": "Maker-Einstieg",
      "why": "Maker-Trades −0,13 R vs. Market −0,23 R; halbe Gebühren = +0,11 R je Trade."},
 ]
