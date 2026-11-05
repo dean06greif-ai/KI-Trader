@@ -41,8 +41,8 @@ ALLOWED_MODELS = {
     "openrouter": [
         "nvidia/nemotron-3.5-lightning:free",
         "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "nvidia/nemotron-3-super-120b-a12b:free",
         "google/gemma-4-31b-it:free",
+        # 11/2026 tot (Modell-Wächter): nvidia/nemotron-3-super-120b-a12b:free -> MODEL_MIGRATIONS.
         # 09/2026 entfernt (OpenRouter: "unavailable for free"): openai/gpt-oss-20b:free,
         # nvidia/nemotron-nano-9b-v2:free -> MODEL_MIGRATIONS (gleiches Modell auf Groq).
         # Bezahlt, extrem günstig / stark (OpenRouter-Credits nötig, KEIN
@@ -52,6 +52,9 @@ ALLOWED_MODELS = {
         "z-ai/glm-5.2",
         "qwen/qwen3.7-flash",
         "x-ai/grok-4.20",
+        # 11/2026 Aufgaben-Team: im Prod-Modell-Wächter bestätigt, sehr günstig
+        "openai/gpt-6-luna-pro",
+        "deepseek/deepseek-v4.1-flash",
     ],
     "mistral": [
         "mistral-small-latest",
@@ -121,7 +124,9 @@ MODEL_MIGRATIONS = {
     # 10/2026: Groq hat Qwen 3.6 27B durch 3.8 27B ersetzt (Modell-Wächter: toter Slug)
     "qwen/qwen3.6-27b": ("groq", "qwen/qwen3.8-27b"),
     "deepseek/deepseek-r1:free": ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),
-    "qwen/qwen3-235b-a22b:free": ("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
+    "qwen/qwen3-235b-a22b:free": ("openrouter", "nvidia/nemotron-3.5-lightning:free"),
+    # 11/2026: bei OpenRouter entfernt (Modell-Wächter: toter Slug)
+    "nvidia/nemotron-3-super-120b-a12b:free": ("openrouter", "nvidia/nemotron-3.5-lightning:free"),
     "open-mistral-nemo": ("mistral", "ministral-8b-latest"),
     "llama-3.3-70b": ("cerebras", "gpt-oss-120b"),
     "qwen-3-32b": ("cerebras", "gemma-4-31b"),
@@ -143,7 +148,8 @@ MODEL_MIGRATIONS = {
 # Fallback-Kette: sie werden nur genutzt, wenn explizit ausgewählt – ein
 # Rate-Limit darf nie unbemerkt auf ein kostenpflichtiges Modell ausweichen.
 PAID_MODELS_NO_FALLBACK = {"deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro-0813",
-                           "z-ai/glm-5.2", "qwen/qwen3.7-flash", "x-ai/grok-4.20"}
+                           "z-ai/glm-5.2", "qwen/qwen3.7-flash", "x-ai/grok-4.20",
+                           "openai/gpt-6-luna-pro", "deepseek/deepseek-v4.1-flash"}
 
 # Bezahlte Modelle (Guthaben vorhanden): ein 429 ist dort fast immer ein
 # TRANSIENTES Minuten-Limit des Anbieters, KEIN Tages-Kontingent. Statt sofort
@@ -158,7 +164,6 @@ FALLBACK_ORDER = {
     "openrouter": [
         "nvidia/nemotron-3.5-lightning:free",
         "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "nvidia/nemotron-3-super-120b-a12b:free",
         "google/gemma-4-31b-it:free",
     ],
     "mistral": ["mistral-small-latest", "ministral-8b-latest"],
@@ -196,6 +201,8 @@ MODEL_WEIGHTS = {
     "z-ai/glm-5.2": 3,
     "qwen/qwen3.7-flash": 2,
     "x-ai/grok-4.20": 3,
+    "openai/gpt-6-luna-pro": 3,
+    "deepseek/deepseek-v4.1-flash": 3,
     "google/gemma-4-31b-it:free": 2,
     "openai/gpt-oss-20b:free": 1,
     "nvidia/nemotron-nano-9b-v2:free": 1,

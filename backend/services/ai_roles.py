@@ -45,50 +45,58 @@ ROLE_LABELS = {
 # bestehenden Katalog (services/ai_providers.ALLOWED_MODELS) inkl. Fallback-KI.
 # Im UI jederzeit änderbar – eine eigene Auswahl überschreibt die Voreinstellung.
 ROLE_PRESETS: Dict[str, Dict] = {
-    # Läuft am häufigsten, Prompts 10–20k Tokens (Gruppen-Analyse): Groq-Free-
-    # Modelle haben nur ~7k Input-Budget und würden übersprungen -> großer
-    # Kontext primär, Gemini als Fallback, Groq nur als letzte Stufe.
-    # (Cerebras taucht in keiner Voreinstellung mehr auf: Free-Tier seit 17.08.2026
-    # eingestellt, alle Keys liefern 402 – siehe boot_migrations.migrate_cerebras_shutdown.)
-    "analyst": {"provider": "openrouter", "model": "nvidia/nemotron-3-super-120b-a12b:free",
+    # Aufgaben-Team 11/2026 (Prod-Auswertung 03.11.): Geld-Entscheidungen auf
+    # günstigen Bezahl-Modellen, Dauerläufer gratis; jede Kette mischt Provider,
+    # damit ein Anbieter-Ausfall/Guthaben-Ende nie die ganze Rolle stoppt.
+    # Tot seit 10/2026: nvidia/nemotron-3-super-120b-a12b:free (nicht mehr verwenden).
+    # Prüfer der Detektor-Signale (Geld): GPT-6 Luna Pro (0,1/0,5 $/1M) lag mit
+    # KI-eigenen Trades bei +0,27 R; Gemini Flash (anderer Provider) + Nemotron gratis.
+    "analyst": {"provider": "openrouter", "model": "openai/gpt-6-luna-pro",
                 "fallback_provider": "gemini", "fallback_model": "gemini-3.5-flash",
                 "fallback2_provider": "openrouter",
                 "fallback2_model": "nvidia/nemotron-3.5-lightning:free"},
-    # Wenige Läufe pro Tag -> stärkstes verifiziertes Free-Reasoning-Modell
+    # Wenige Läufe pro Tag, läuft stabil (≈ 500 Läufe/60 T) -> unverändert
     "deep_analyst": {"provider": "openrouter",
                      "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
-                     "fallback_provider": "gemini", "fallback_model": "gemini-3.6-flash",
-                     "fallback2_provider": "openrouter",
-                     "fallback2_model": "nvidia/nemotron-3-super-120b-a12b:free"},
-    # Muss große Datenmengen sauber auswerten -> starkes Modell mit hohem Kontext
-    "research_analyst": {"provider": "openrouter",
-                         "model": "nvidia/nemotron-3-super-120b-a12b:free",
-                         "fallback_provider": "gemini", "fallback_model": "gemini-3.5-flash",
-                         "fallback2_provider": "openrouter",
-                         "fallback2_model": "nvidia/nemotron-3.5-lightning:free"},
-    # Reine Datensammlung, LLM nur optional -> günstigstes Modell
+                     "fallback_provider": "openrouter", "fallback_model": "deepseek/deepseek-v4-pro-0813",
+                     "fallback2_provider": "gemini", "fallback2_model": "gemini-3.6-flash"},
+    # Große Auswertungen, DeepSeek bewährt (≈ 4.000 Läufe/60 T)
+    "research_analyst": {"provider": "openrouter", "model": "deepseek/deepseek-v4-flash",
+                         "fallback_provider": "openrouter",
+                         "fallback_model": "nvidia/nemotron-3.5-lightning:free",
+                         "fallback2_provider": "gemini", "fallback2_model": "gemini-3.5-flash"},
+    # Reine Datensammlung -> gratis, schnell
     "market_observer": {"provider": "groq", "model": "openai/gpt-oss-20b",
-                        "fallback_provider": "gemini", "fallback_model": "gemini-3.1-flash-lite"},
-    # KRITISCH: muss zuverlässig rechnen -> starkes Gratis-Modell + 2 Fallbacks
-    "trade_manager": {"provider": "groq", "model": "openai/gpt-oss-120b",
-                      "fallback_provider": "gemini", "fallback_model": "gemini-3.5-flash",
-                      "fallback2_provider": "openrouter",
-                      "fallback2_model": "nvidia/nemotron-3-super-120b-a12b:free"},
-    # 24/7-Betrieb -> billigstes Modell (gratis), günstige Fallbacks
-    "news_watcher": {"provider": "groq", "model": "openai/gpt-oss-20b",
-                     "fallback_provider": "gemini", "fallback_model": "gemini-3.1-flash-lite",
-                     "fallback2_provider": "mistral", "fallback2_model": "ministral-8b-latest"},
-    "chat": {"provider": "groq", "model": "openai/gpt-oss-120b",
-             "fallback_provider": "gemini", "fallback_model": "gemini-3.5-flash"},
-    # KRITISCH: Lektionen wirken dauerhaft -> starkes Gratis-Reasoning primär,
-    # Qualitäts-Fallback auf Gemini Pro (selten -> Cent-Beträge)
-    "learner": {"provider": "groq", "model": "openai/gpt-oss-120b",
-                "fallback_provider": "gemini", "fallback_model": "gemini-3.1-pro-preview",
-                "fallback2_provider": "openrouter",
-                "fallback2_model": "nvidia/nemotron-3-ultra-550b-a55b:free"},
+                        "fallback_provider": "gemini", "fallback_model": "gemini-3.1-flash-lite",
+                        "fallback2_provider": "openrouter",
+                        "fallback2_model": "google/gemma-4-31b-it:free"},
+    # KRITISCH (SL/TP, Teil-Close): DeepSeek bewährt; Groq + Gemini als Fallback
+    "trade_manager": {"provider": "openrouter", "model": "deepseek/deepseek-v4-flash",
+                      "fallback_provider": "groq", "fallback_model": "openai/gpt-oss-120b",
+                      "fallback2_provider": "gemini", "fallback2_model": "gemini-3.5-flash"},
+    # 24/7 -> gratis; Fallback bewusst NICHT Mistral (geteiltes 1-Request/s-Limit)
+    "news_watcher": {"provider": "mistral", "model": "ministral-8b-latest",
+                     "fallback_provider": "groq", "fallback_model": "openai/gpt-oss-20b",
+                     "fallback2_provider": "gemini", "fallback2_model": "gemini-3.1-flash-lite"},
+    "chat": {"provider": "gemini", "model": "gemini-3.5-flash-lite",
+             "fallback_provider": "groq", "fallback_model": "openai/gpt-oss-120b",
+             "fallback2_provider": "openrouter", "fallback2_model": "google/gemma-4-31b-it:free"},
+    # KRITISCH: Lektionen wirken dauerhaft -> DeepSeek bewährt, starke Fallbacks
+    "learner": {"provider": "openrouter", "model": "deepseek/deepseek-v4-flash",
+                "fallback_provider": "openrouter",
+                "fallback_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "fallback2_provider": "gemini", "fallback2_model": "gemini-3.1-pro-preview"},
+    # 1×/Tag; in Prod lief faktisch Gemini Flash-Lite (Mistral scheiterte) -> primär
     "summarizer": {"provider": "gemini", "model": "gemini-3.1-flash-lite",
-                   "fallback_provider": "mistral", "fallback_model": "mistral-small-latest"},
+                   "fallback_provider": "mistral", "fallback_model": "mistral-small-latest",
+                   "fallback2_provider": "gemini", "fallback2_model": "gemini-3.5-flash-lite"},
 }
+
+# Einmalige Übernahme des Aufgaben-Teams als neuer Standard (Trader-Wunsch
+# 03.11.2026): setzt nur die Modell-Slots; Ein/Aus, Zeiten, Intervalle bleiben.
+TASK_TEAM_MARKER = "_task_team_v1"
+MODEL_SLOTS = ("provider", "model", "fallback_provider", "fallback_model",
+               "fallback2_provider", "fallback2_model")
 
 # Rollen, die dauerhaft laufen oder Geld bewegen: hier muss IMMER eine zweite
 # Fallback-Stufe gesetzt sein. Fehlt sie in einer vom Trader konfigurierten
@@ -104,7 +112,6 @@ SMALL_BUDGET_PROVIDER = "groq"
 LARGE_CONTEXT_CANDIDATES = (
     ("gemini", "gemini-3.5-flash"),
     ("openrouter", "nvidia/nemotron-3.5-lightning:free"),
-    ("openrouter", "nvidia/nemotron-3-super-120b-a12b:free"),
     ("gemini", "gemini-3.6-flash"),
     ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),
     ("gemini", "gemini-3.5-flash-lite"),
@@ -201,6 +208,7 @@ class AIRoleManager:
                         self.config[role]["enabled"] = bool(cfg["enabled"])
                 payload = {r: dict(c) for r, c in self.config.items()}
                 payload["_cost_migration_v1"] = True
+                payload[TASK_TEAM_MARKER] = True
                 await db.settings.update_one(
                     {"_id": "ai_roles_config"}, {"$set": payload}, upsert=True)
                 logger.info("KI-Rollen: einmalige Kosten-Migration auf "
@@ -209,6 +217,7 @@ class AIRoleManager:
             if doc:
                 doc.pop("_id", None)
                 doc.pop("_cost_migration_v1", None)
+                team_done = bool(doc.pop(TASK_TEAM_MARKER, False))
                 migrated: List[str] = []
                 for role, cfg in doc.items():
                     if role not in self.config or not isinstance(cfg, dict):
@@ -238,17 +247,38 @@ class AIRoleManager:
                             clean.pop(k, None)
                     clean["user_configured"] = owned
                     self.config[role].update(clean)
+                teamed = list(ROLE_PRESETS) if not team_done else []
+                if teamed:
+                    self._apply_task_team()
                 filled = self._fill_missing_fallback2()
                 swapped = self._replace_small_budget_models()
-                changed = sorted(set(filled) | set(migrated) | set(swapped))
+                changed = sorted(set(filled) | set(migrated) | set(swapped) | set(teamed))
                 if changed:
                     await db.settings.update_one(
                         {"_id": "ai_roles_config"},
-                        {"$set": {r: dict(self.config[r]) for r in changed}}, upsert=True)
+                        {"$set": {**{r: dict(self.config[r]) for r in changed if r in self.config},
+                                  **({TASK_TEAM_MARKER: True} if teamed else {})}}, upsert=True)
                     if filled:
                         logger.info(f"KI-Rollen: fehlende Fallback-2-Stufe ergänzt: {filled}")
         except Exception as e:
             logger.warning(f"AI roles load failed: {e}")
+
+    def _apply_task_team(self) -> List[str]:
+        """Aufgaben-Team (ROLE_PRESETS) einmalig als Standard übernehmen – nur
+        Modell-Slots; danach gelten eigene Änderungen im UI wieder (user_configured)."""
+        changed: List[str] = []
+        for role, preset in ROLE_PRESETS.items():
+            cfg = self.config.get(role)
+            if cfg is None:
+                continue
+            new = {k: preset.get(k) for k in MODEL_SLOTS}
+            if any(cfg.get(k) != v for k, v in new.items()):
+                cfg.update(new)
+                changed.append(role)
+            cfg["user_configured"] = True
+        if changed:
+            logger.info(f"KI-Rollen: Aufgaben-Team als Standard übernommen: {changed}")
+        return changed
 
     def _replace_small_budget_models(self) -> List[str]:
         """Rollen mit großen Prompts (Analyst & Co., 10–20k Tokens): Groq-Free-
@@ -372,7 +402,8 @@ class AIRoleManager:
                 self.config[role].update(clean)
         await db.settings.update_one(
             {"_id": "ai_roles_config"},
-            {"$set": {r: dict(c) for r, c in self.config.items()}}, upsert=True)
+            {"$set": {**{r: dict(c) for r, c in self.config.items()}, TASK_TEAM_MARKER: True}},
+            upsert=True)
         return self.snapshot()
 
     async def reset_role(self, db, role: str) -> Dict:
@@ -381,7 +412,7 @@ class AIRoleManager:
             self.config[role] = dict(DEFAULT_ROLES_CONFIG[role])
             await db.settings.update_one(
                 {"_id": "ai_roles_config"},
-                {"$set": {role: dict(self.config[role])}}, upsert=True)
+                {"$set": {role: dict(self.config[role]), TASK_TEAM_MARKER: True}}, upsert=True)
         return self.snapshot()
 
     def snapshot(self) -> Dict:

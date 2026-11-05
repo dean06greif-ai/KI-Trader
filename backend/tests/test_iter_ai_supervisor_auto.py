@@ -118,7 +118,8 @@ def test_auto_switch_falls_back_to_suggested_model():
     _reset_roles()
     s = _sup()
     s.settings["auto_switch"] = True
-    role_manager.config["chat"].update({"fallback_provider": None, "fallback_model": None})
+    role_manager.config["chat"].update({"fallback_provider": None, "fallback_model": None,
+                                        "fallback2_provider": None, "fallback2_model": None})
     roles = [{"role": "chat", "verdict": "schwach", "reason": "ungenau",
               "suggested_provider": "mistral", "suggested_model": "mistral-small-latest"}]
     switches = asyncio.run(s._auto_switch(roles))
@@ -135,7 +136,8 @@ def test_auto_switch_also_on_explicit_recommendation():
     s.settings["auto_switch"] = True
     role_manager.config["summarizer"].update({
         "provider": "gemini", "model": "gemini-3.5-flash",
-        "fallback_provider": None, "fallback_model": None})
+        "fallback_provider": None, "fallback_model": None,
+        "fallback2_provider": None, "fallback2_model": None})
     roles = [{"role": "summarizer", "verdict": "inaktiv", "action": "modell_wechseln",
               "reason": "503-Fehler beim Provider",
               "suggested_provider": "groq", "suggested_model": "openai/gpt-oss-120b"}]

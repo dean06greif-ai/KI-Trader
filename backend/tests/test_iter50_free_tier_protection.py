@@ -24,12 +24,19 @@ def test_no_paid_model_in_fallback_orders():
     assert leak == [], f"Paid-Modell in automatischer Fallback-Kette: {leak}"
 
 
+PAID_OK_ROLES = {"analyst", "deep_analyst", "research_analyst", "trade_manager", "learner"}
+
+
 def test_role_preset_chains_never_contain_paid_models():
+    """Aufgaben-Team 11/2026 (Trader-Wunsch): günstige Bezahl-Modelle nur als
+    ausdrücklich gewählte Slots wichtiger Rollen – nie in der automatischen
+    Not-Kette und nie in Dauerläufer-Rollen."""
     rm = AIRoleManager()
     leak = []
     for role in ROLE_PRESETS:
+        chosen = {m for _, m in rm.configured_models(role, ENGINE_CFG)}
         for p, m in rm.chain(role, ENGINE_CFG):
-            if m in ap.PAID_MODELS_NO_FALLBACK:
+            if m in ap.PAID_MODELS_NO_FALLBACK and (role not in PAID_OK_ROLES or m not in chosen):
                 leak.append((role, p, m))
     assert leak == [], f"Rollen-Kette würde ungefragt Guthaben verbrauchen: {leak}"
 
@@ -47,7 +54,8 @@ def test_explicit_paid_selection_still_works():
     bleibt in der Kette – nur automatisches Ausweichen darauf ist verboten."""
     rm = AIRoleManager()
     rm.config["deep_analyst"].update({
-        "provider": "openrouter", "model": "deepseek/deepseek-v4-flash"})
+        "provider": "openrouter", "model": "deepseek/deepseek-v4-flash",
+        "fallback_provider": "gemini", "fallback_model": "gemini-3.6-flash"})
     chain = rm.chain("deep_analyst", ENGINE_CFG)
     assert chain[0] == ("openrouter", "deepseek/deepseek-v4-flash")
     # und dahinter ausschließlich Free-Fallbacks

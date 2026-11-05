@@ -195,18 +195,23 @@ def source_key(t: Dict, decisions: Dict[str, Dict]) -> str:
     return "Regel-Trigger" if d.get("source") == "setup_trigger" else "LLM"
 
 
+def model_key(t: Dict, decisions: Dict[str, Dict]) -> Optional[str]:
+    """KI-Modell der Entscheidung (Trade-Feld ab 11/2026, sonst aus der Decision)."""
+    return t.get("ai_model") or (decisions.get(str(t.get("decision_id"))) or {}).get("model") or None
+
+
 async def build(db, config: Dict, cutoff: str) -> Dict:
     """Edge-Bericht für alle geschlossenen KI-Trades seit `cutoff`."""
     rows = await db.auto_trades.find(
         {"strategy_id": "ai_trader", "status": "closed", "opened_at": {"$gte": cutoff}},
         {"_id": 0, "setup": 1, "mode": 1, "data_collection": 1, "realized_pnl": 1, "fees_paid": 1,
          "risk_usdt": 1, "tp1_hit": 1, "ai_confidence": 1, "opened_at": 1, "closed_at": 1,
-         "decision_id": 1, "side": 1, "symbol": 1, "signal_source": 1,
+         "decision_id": 1, "side": 1, "symbol": 1, "signal_source": 1, "ai_model": 1,
          "entry_market_snapshot.features.daily_bias": 1, "edge_filter.ok": 1}).to_list(8000)
     ids = [r["decision_id"] for r in rows if r.get("decision_id")]
     decisions: Dict[str, Dict] = {}
     if ids:
-        async for d in db.ai_decisions.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "source": 1}):
+        async for d in db.ai_decisions.find({"id": {"$in": ids}}, {"_id": 0, "id": 1, "source": 1, "model": 1}):
             decisions[str(d["id"])] = d
     roles = await db.settings.find_one({"_id": "ai_roles_config"}, {"analyst.model": 1}) or {}
     analyst_model = (roles.get("analyst") or {}).get("model")
@@ -230,6 +235,7 @@ async def build(db, config: Dict, cutoff: str) -> Dict:
             "by_cost": _ordered(group_r(rows, cost_key), COST_BUCKETS),
             "by_bias": group_r(rows, bias_key),
             "by_signal_source": group_r(rows, lambda t: t.get("signal_source") or None), "by_asset_class": group_r(rows, asset_key),
+            "by_model": group_r(rows, lambda t: model_key(t, decisions)),
             "by_edge_filter": by_edge, "analyst_model": analyst_model,
             "edge_readiness": readiness(ready_rows), "edge_filter_blocks": agg_r(shadow_rows),
             "findings": edge_findings(overall, by_setup, by_source, by_conf, by_hold, config,

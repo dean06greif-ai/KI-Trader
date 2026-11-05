@@ -259,7 +259,7 @@ def test_load_keeps_preset_when_user_never_configured():
 
 def test_load_respects_user_choice():
     mgr = ai_roles.AIRoleManager()
-    stored = {"_cost_migration_v1": True,
+    stored = {"_cost_migration_v1": True, ai_roles.TASK_TEAM_MARKER: True,
               "analyst": {"provider": "mistral", "model": "mistral-small-latest",
                           "user_configured": True}}
     asyncio.run(mgr.load(_FakeDB(stored)))

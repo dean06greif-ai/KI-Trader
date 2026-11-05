@@ -203,7 +203,6 @@ Einstellungen wünscht; nur die Felder angeben, die sich ändern sollen."""
 # probiert deshalb SCHNELLE Free-Modelle zuerst und bricht langsame Modelle
 # hart ab, statt (wie der KI-Trader im Hintergrund) minutenlang zu warten.
 FAST_MODEL_ORDER = [
-    "nvidia/nemotron-3-super-120b-a12b:free",
     "google/gemma-4-31b-it:free",
     "nvidia/nemotron-3.5-lightning:free",
     "nvidia/nemotron-3-ultra-550b-a55b:free",

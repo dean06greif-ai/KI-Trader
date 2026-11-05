@@ -3,6 +3,7 @@ import React from 'react';
 const GROUPS = [
   ['by_edge_filter', 'Edge-Filter'],
   ['by_signal_source', 'Signal-Quelle'],
+  ['by_model', 'KI-Modell'],
   ['by_cost', 'Gebühren je Risiko'],
   ['by_bias', 'Tagestrend'],
   ['by_asset_class', 'Anlageklasse'],
