@@ -67,3 +67,10 @@ Backlog:
 - Tests: `tests/test_regime_evidence_cleanup.py`, Iteration 8 (100 %).
 
 Backlog: Kalibrierung direkt auf R-Spreizung optimieren (P2); Regime-Modell 5er/4h als Standard für neue Analysen (P2).
+
+### Session 03.11.2026 (4) – KI-Modelle je Aufgabe + Abschluss-Check
+- Prod-Auswertung (nur lesend): `scripts/prod_ki_model_probe.py`, `prod_ki_model_outcome_probe.py`, `prod_ki_readiness_probe.py`.
+- Aufgaben-Team als neuer Standard (`ai_roles.ROLE_PRESETS` + einmalige Migration `_task_team_v1`): Prüfer/Analyst = GPT-6 Luna Pro (bezahlt, günstig) → Gemini 3.5 Flash → Nemotron Lightning gratis; toter Fallback nemotron-3-super ersetzt (MODEL_MIGRATIONS).
+- Jeder KI-Trade speichert `ai_model`; Edge-Report hat neue Gruppe „KI-Modell“.
+- Durchspiel-Test `tests/test_pruefer_flow_e2e.py` (echter run_analysis-Pfad, LLM ersetzt): Signal → Prüfung → Einstieg ok, freie Idee im Prüfer-Modus geblockt.
+- Prod-Befund: neue Funktionen noch nicht veröffentlicht; KI-Trader aus; alle 8 Empfehlungen offen (u. a. live_gate_bypass an), Risiko 2 %/Trade.
