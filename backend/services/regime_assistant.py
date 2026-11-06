@@ -51,7 +51,7 @@ async def load_config(db) -> Dict:
         if doc:
             _config["fallback_enabled"] = bool(doc.get("fallback_enabled"))
         async for run in db.regime_assistant_runs.find({}, {"_id": 0, "results": 0}).sort(
-                "created_at", -1).limit(KEEP_RUNS):
+                "created_at", -1).limit(KEEP_RUNS * 4):
             _latest.setdefault(run["asset_class"], run)
     except Exception as e:  # noqa: BLE001 – fail-soft
         logger.warning(f"regime_assistant laden: {e}")
@@ -134,6 +134,19 @@ def create_job(params: Dict) -> str:
     return jid
 
 
+COOLDOWN_S = 30
+
+
+def recently_finished(asset_class: str) -> bool:
+    """Doppel-Klick-Schutz: derselbe Klassen-Lauf erst nach COOLDOWN_S erneut."""
+    now = datetime.now(timezone.utc)
+    for j in JOBS.values():
+        if j["params"].get("asset_class") == asset_class and j.get("finished_at"):
+            if (now - datetime.fromisoformat(j["finished_at"])).total_seconds() < COOLDOWN_S:
+                return True
+    return False
+
+
 def running() -> Optional[Dict]:
     return next((j for j in JOBS.values() if j["status"] == "running"), None)
 
@@ -175,17 +188,19 @@ async def run(job_id: str, db) -> None:
         doc = {"id": job_id, "asset_class": cls, "created_at": _now(), "days": days,
                "recipe": rh.public_recipe(cls), "summary": summary, "results": rows}
         await db.regime_assistant_runs.insert_one(dict(doc))
-        old = await db.regime_assistant_runs.find({}, {"_id": 0, "id": 1}).sort(
+        old = await db.regime_assistant_runs.find({"asset_class": cls}, {"_id": 0, "id": 1}).sort(
             "created_at", -1).skip(KEEP_RUNS).to_list(100)
         if old:
             await db.regime_assistant_runs.delete_many({"id": {"$in": [o["id"] for o in old]}})
         _latest[cls] = {k: v for k, v in doc.items() if k != "results"}
         from services import structural_regime
         structural_regime.invalidate()
-        job.update({"status": "done", "progress": 100, "phase": "Fertig", "result": doc})
+        job.update({"status": "done", "progress": 100, "phase": "Fertig", "result": doc,
+                    "finished_at": _now()})
     except Exception as e:  # noqa: BLE001
         logger.exception("regime_assistant run")
-        job.update({"status": "error", "error": str(e)[:300], "phase": "Fehler"})
+        job.update({"status": "error", "error": str(e)[:300], "phase": "Fehler",
+                    "finished_at": _now()})
 
 
 # ---------------- Struktur-Fallback für den KI-Trader ----------------

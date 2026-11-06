@@ -43,7 +43,7 @@ export default function RegimeAssistantResult({ run }) {
   const s = run.summary || {};
   return (
     <div data-testid="ra-result">
-      <div className="at-warn" style={{ borderLeft: `4px solid ${lightColor(s.light)}`, margin: '8px 0' }} data-testid="ra-summary">
+      <div style={{ borderLeft: `4px solid ${lightColor(s.light)}`, margin: '8px 0', padding: '6px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, fontSize: 12, lineHeight: 1.5 }} data-testid="ra-summary">
         <b style={{ color: lightColor(s.light) }}>Ampel: {s.light} ({s.grade})</b> · beste Variante: {s.best_label || '–'}
         {' '}· Noten (Median) kombiniert {fmt(s.scores?.combined)} / Haupt {fmt(s.scores?.primary)} / Makro {fmt(s.scores?.macro)}
         <div>{s.recommendation}</div>

@@ -44,8 +44,13 @@ async def run(body: Dict, _: bool = Depends(require_admin)):
     allowed = set(ac.symbols_of(cls))
     syms = [s for s in (body.get("symbols") or []) if s in allowed] or None
     days = body.get("days")
-    params = {"asset_class": cls, "symbols": syms,
-              "days": int(min(max(int(days), 120), 1500)) if days else None}
+    try:
+        days = int(min(max(int(days), 120), 1500)) if days else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="days muss eine Zahl sein")
+    if ra.recently_finished(cls):
+        raise HTTPException(status_code=429, detail="Gerade erst geprüft – bitte kurz warten")
+    params = {"asset_class": cls, "symbols": syms, "days": days}
     jid = ra.create_job(params)
     asyncio.create_task(ra.run(jid, _db()))
     return {"job_id": jid}

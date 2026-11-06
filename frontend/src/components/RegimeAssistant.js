@@ -57,6 +57,7 @@ export default function RegimeAssistant() {
   const [ov, setOv] = useState(null);
   const [cls, setCls] = useState('crypto');
   const [run, setRun] = useState(null);
+  const [quick, setQuick] = useState(true);
   const loadRun = useCallback(async (c) => {
     const d = await getJson(`/api/regime-assistant/runs/latest?asset_class=${c}`);
     setRun(d?.run || null);
@@ -72,7 +73,8 @@ export default function RegimeAssistant() {
   const running = job?.status === 'running';
   const start = async () => {
     if (!isAdmin()) { toast.error('Admin-Login erforderlich'); return; }
-    try { const d = await postJson('/api/regime-assistant/run', { asset_class: cls }); toast.success('Assistent gestartet'); poll(d.job_id); }
+    const body = quick ? { asset_class: cls, symbols: info.symbols.slice(0, 3), days: 365 } : { asset_class: cls };
+    try { const d = await postJson('/api/regime-assistant/run', body); toast.success('Assistent gestartet'); poll(d.job_id); }
     catch (e) { toast.error(e.message); }
   };
   if (!ov) return null;
@@ -98,6 +100,10 @@ export default function RegimeAssistant() {
         <button className="opt-chip" onClick={start} disabled={running} data-testid="ra-run-button" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <Play size={13} weight="bold" /> {running ? 'läuft …' : `${info?.label || ''} prüfen`}
         </button>
+        <select value={quick ? 'quick' : 'full'} onChange={e => setQuick(e.target.value === 'quick')} disabled={running} data-testid="ra-run-mode" style={{ fontSize: 12, padding: '3px 6px' }}>
+          <option value="quick">Schnell: 3 Assets · 365 Tage (~3–5 Min.)</option>
+          <option value="full">Vollständig: bis 8 Assets · {rc?.days} Tage (15–30 Min.)</option>
+        </select>
         {running && <span className="opt-small" data-testid="ra-job-phase">{job.progress} % · {job.phase} (dauert einige Minuten)</span>}
       </div>
       <RegimeAssistantResult run={run} />

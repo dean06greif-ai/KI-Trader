@@ -123,8 +123,8 @@ def evaluate(close: Sequence, direction: Sequence, bpd: float, start: int = 0) -
         hz.append(r)
     stab = stability(d[start:], bpd)
     sc = score(hz, stab)
-    few = bool(sc is not None and (stab.get("phases") or 0) < MIN_PHASES)
-    if few:
+    few = (stab.get("phases") or 0) < MIN_PHASES
+    if few and sc is not None:
         sc = min(sc, GRADE_GOOD - 0.1)
     known = d[start:] != -9
     share = {name: round(float(np.mean(d[start:][known] == v)) * 100, 1) if known.any() else None

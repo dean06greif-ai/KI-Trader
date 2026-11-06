@@ -1,0 +1,41 @@
+{
+  "summary": "Tested Regime-Assistant / Research-Mode feature (06/2026) end-to-end. Backend: 33/33 unit tests pass (test_evidence_robust_0626 + test_regime_hierarchy_assistant_0626). New API regression file with 9 tests all pass: overview (4 classes, crypto 1d x 8h, indices 1w x 1d, forex 1d x 4h, fallback_enabled false, research_mode robust/time), run auth (401/403), invalid class 400, job 404, job lifecycle running->done, 409 on concurrent run (verified when candles not cached), runs/latest with summary.light + variants combined/primary/macro, live/BTCUSDT combined fields, research-mode roundtrip incl. invalid values ignored + restore, config fallback roundtrip persisted in overview. Frontend: admin login -> tools menu -> Regime-Lab shows regime-assistant section with all required data-testids; tab switching updates recipe text correctly; research-mode select shows toast 'Bewertung gespeichert' and persists after reload; fallback toggle persists after reload; all settings restored to defaults (robust/time/fallback off). No page errors / crash. Dynamic-strategy settings (macro_filter_enabled, transition_guard_min_conf) NOT tested via API: no dynamic_strategies in local DB (code reviewed only; clamp 0..95 present in routers/dynamic.py). UI run button NOT clicked (it runs full class: 8 symbols x 720 days without symbol/days params -> would take very long); run flow verified via API instead.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/regime-assistant/run", "issue": "Non-numeric days (e.g. {\"days\":\"abc\"}) -> 500 Internal Server Error (int() ValueError uncaught in routers/regime_assistant.py line 48). Should return 400 or ignore."},
+      {"endpoint": "POST /api/regime-assistant/run", "issue": "When candles are cached a job finishes in ~150ms, so the 409 guard only protects slow runs; repeated clicks create many duplicate runs in DB (I produced 12 duplicates during testing, cleaned up). Consider a short cooldown/dedup."},
+      {"endpoint": "services/regime_assistant.run (pruning)", "issue": "KEEP_RUNS=20 pruning is global across all asset classes (find({}) .skip(20)), so 20 crypto runs would delete the only indices/forex/resources run. Prune per asset_class."},
+      {"endpoint": "services/regime_assistant (_latest cache)", "issue": "_latest is in-memory only and never reconciled; overview class-tab light can differ from /runs/latest if runs are removed (cosmetic)."},
+      {"endpoint": "GET /api/regime-assistant/runs/latest (stored run df10a7214643)", "issue": "Macro variant score is null ('zu wenig Daten') for both BTC and ETH with 300 days: macro 1d regime is ~100% sideways (BTC: 1 phase) yet few_phases=False for 1 phase. Summary therefore reports 'Makro –' and combined size_factor 0.5. Expected with short history, but few_phases flag looks inconsistent; recipe default 720 days is fine."},
+      {"endpoint": "GET /api/regime-assistant/live/{symbol}", "issue": "First uncached call takes ~60s (candle download) - frontend/consumers should tolerate; no timeout guard."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Regime-Assistant run button", "issue": "Button posts only {asset_class} -> full recipe (all 8 crypto symbols x 720 days, 1080 days for indices) with no days/symbol choice or ETA; can run 10-20+ minutes. Not a bug but consider showing estimated duration / allowing a quick mode.", "affected_selectors": ["[data-testid='ra-run-button']"]}
+    ],
+    "design_issues": [
+      {"screen": "Regime-Lab > Regime-Assistent result", "issues": ["Summary line 'Ampel: grün (gut)' wraps into 3 lines in a narrow column; layout is cramped but readable", "Esc does not close Regime-Lab modal (pre-existing, minor)"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_regime_assistant_api_0626.py", "/app/backend/tests/test_evidence_robust_0626.py", "/app/backend/tests/test_regime_hierarchy_assistant_0626.py", "/app/test_reports/pytest/regime_assistant.xml"],
+  "action_items": [
+    "Validate 'days' in POST /api/regime-assistant/run (return 400 instead of 500 for non-numeric)",
+    "Prune regime_assistant_runs per asset_class instead of globally",
+    "Optional: review few_phases flag when a variant has only 1 phase; consider dedup/cooldown for repeated runs"
+  ],
+  "critical_code_review_comments": [
+    "routers/regime_assistant.py: int(days) unguarded -> 500",
+    "services/regime_assistant.py run(): global KEEP_RUNS pruning can delete other classes' latest run",
+    "JOBS/_latest are process-local in-memory state; fine for --workers 1, breaks if scaled to multiple workers (409 guard and job polling would fail across workers)",
+    "routers use raw Dict bodies instead of Pydantic models (consistent with existing code, but no input validation)"
+  ],
+  "updated_files": ["/app/backend/tests/test_regime_assistant_api_0626.py"],
+  "success_rate": {"backend": "100% (42/42 tests; 1 minor 500 on invalid input found by manual probe)", "frontend": "100% of requested checks"},
+  "seed_data_creation": "Test runs created via API were deleted by id (12 runs); the original crypto run df10a7214643 (BTC+ETH) remains as latest. Research mode and fallback config restored to robust/time/false. New test module has autouse teardown deleting only its own run ids.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=<frontend .env url> python -m pytest -q -n 0 -p no:cacheprovider tests/test_regime_assistant_api_0626.py (~70s when candle caches cold). No dynamic strategies exist in local DB, so dynamic guard settings/trade-plan untested via API. Do not click ra-run-button for full class unless you can wait 10+ minutes."
+}
