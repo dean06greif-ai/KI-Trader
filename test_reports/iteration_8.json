@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 8: tested the regime-utility gate, structure warnings, archiving of dynamic test leftovers and the hint shown when the AI role is 'Prüfer' but the signal broker is off. Everything requested passed. Backend: 13/13 unit tests in test_regime_evidence_cleanup.py and 5/5 new API tests. The API tests cover: the GET /api/dynamic/test-leftovers preview (tl-a archived, tl-b skipped as approved, 'Backtest Champion' left alone); POST archive returning 401 without admin and archiving with admin (DB archived:true, gone from /api/dynamic/list); DELETE /api/dynamic/{id} still archiving after the refactor (401/404/200 cases); evidence validation.regime_evidence being null without a walk-forward; and the warnings for 9 regimes plus a 15m timeframe, with no warnings for a 5-regime/4h doc. Frontend: with role Prüfer and the broker off, the hint ai-role-broker-hint appears. The 'Broker einschalten' button sent {signal_broker_enabled:true}, the hint disappeared and the backend stored pruefer/True. The dyn-test-cleanup-btn button showed the toast 'Keine Test-Reste gefunden' when there were no leftovers. With a seeded TEST_ui_cleanup doc, the confirm dialog listed it, the toast 'Test-Reste archiviert' appeared and the item left the list. The evidence panel showed 2 dyn-evidence-warning-* entries (9 regimes, 1h). All seeded docs were removed and the AI config was restored to frei / broker on.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "KI Trader Setup – role select", "issue": "Not reproduced reliably, observed in one run: changing ai-role-select right after the Setup panel opened did not seem to be stored, and a later change seemed to arrive out of order. Suspected cause: the periodic or initial loadStatus() response overwrites status.config from updateConfig with older data. The run that waited 2 seconds after the panel opened worked correctly.", "affected_selectors": ["[data-testid='ai-role-select']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter8_test_leftovers_api.py", "/app/backend/tests/test_regime_evidence_cleanup.py", "/app/test_reports/pytest/pytest_iter8.xml"],
+  "action_items": [
+    "Optional: guard AITradingPanel.loadStatus against stale responses (e.g. a request sequence counter) so a slower poll does not overwrite config just saved by updateConfig",
+    "Optional: the hint only appears when signal_broker_enabled === false. If the key is missing/undefined in an old config, no hint is shown; consider treating anything other than true as off"
+  ],
+  "critical_code_review_comments": [
+    "dynamic_cleanup regex also matches real user names such as 'Momentum Test' or 'test strategy'. Mitigated by the confirm dialog that lists the names; acceptable",
+    "_test_leftovers loads at most 500 docs (to_list(500)); fine for the current data volume",
+    "pytest.ini forces xdist; single API test files need -n0 to run serially. Run from the /app/backend directory, otherwise imports of the services package fail",
+    "The KI Trader setup does not contain signal-broker-enabled; the checkbox lives in KISignalBrokerCard (AdaptivePanel). The new hint button is the in-place fix"
+  ],
+  "updated_files": ["/app/backend/tests/test_iter8_test_leftovers_api.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Temporary dynamic_strategies docs tl-a..tl-e (API test fixture with teardown) and tl-ui-a/tl-ui-w (UI test). All deleted; ai config restored to ai_role=frei, signal_broker_enabled=true.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Admin login: POST /api/auth/login {username:'Admin', password:'admin'}. Token goes in localStorage admin_token + admin_token_ts. Navigation: tools-menu-button -> tools-menu-regime-lab -> dyn-panel-toggle. KI Trader: strategy-tab-ai_trader -> edit-strategy-params-btn -> ai-setup-toggle. Wait ~2 s after the panel opens before changing selects. The evidence response is wrapped: {evidence:{...}}. regime-wf-evidence-{scope} in RegimeLab was not UI-tested because there is no saved analysis or walk-forward in preview."
+}

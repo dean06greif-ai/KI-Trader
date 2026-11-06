@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="10" time="22.440" timestamp="2026-11-03T08:13:06.967445+00:00" hostname="agent-env-2c3bdc46-6265-482f-95bc-6eeb7e23c1ee"><testcase classname="tests.test_recommended_weekly_api" name="test_recommended_public" time="19.560" /><testcase classname="tests.test_recommended_weekly_api" name="test_apply_requires_admin" time="0.142" /><testcase classname="tests.test_recommended_weekly_api" name="test_apply_and_verify" time="1.009" /><testcase classname="tests.test_recommended_weekly_api" name="test_edge_weekly_get" time="0.117" /><testcase classname="tests.test_recommended_weekly_api" name="test_edge_weekly_config_requires_admin" time="0.220" /><testcase classname="tests.test_recommended_weekly_api" name="test_edge_weekly_config_persist" time="0.411" /><testcase classname="tests.test_recommended_weekly_api" name="test_edge_weekly_config_bad_input" time="0.059"><failure message="assert (500 != 500)&#10; +  where 500 = &lt;Response [500]&gt;.status_code">admin = &lt;requests.sessions.Session object at 0xfbcc489a7ad0&gt;
+
+    def test_edge_weekly_config_bad_input(admin):
+        r = admin.post(f"{BASE_URL}/api/ai/edge-weekly/config", json={"hour": "abc"}, timeout=20)
+        print("BAD INPUT status", r.status_code, r.text[:200])
+&gt;       assert r.status_code != 500 and r.status_code &lt; 500
+E       assert (500 != 500)
+E        +  where 500 = &lt;Response [500]&gt;.status_code
+
+tests/test_recommended_weekly_api.py:101: AssertionError</failure></testcase><testcase classname="tests.test_recommended_weekly_api" name="test_edge_weekly_send" time="0.066" /><testcase classname="tests.test_recommended_weekly_api" name="test_diagnosis_edge_readiness" time="0.179" /><testcase classname="tests.test_recommended_weekly_api" name="test_weekly_report_with_seed" time="0.506" /></testsuite></testsuites>

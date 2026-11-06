@@ -1,0 +1,45 @@
+{
+  "summary": "Retest of the 9 fixes from iteration_1. The required suites pass (test_workbench_dynamic_1206.py + test_array_lru_budget_iter.py: 26/26). I added mocked match-flow tests (6) and live API tests (7). Verified: (a) rank fix; (b) None keys dropped (code + source test); (d) edge_note only when all candidates lose; (e) an adopted compare winner carries test_trades/test_pnl and its comparison survives stage 2; (f) match: non-numeric regime_ids -> 400; (g) opening a run from history switches to the match tab and preselects ra_192997c0; (h) no stray '00'; (i) dwb-advice-none hint shows. UI smoke passes: advice verdict, Gruende toggle, tf hint, 24 candidate chips + 'alle', dwb-result-search, history table, comparison expand. No page errors. Still open: (c) is ineffective for kind=match, and (f) is only fixed in the match branch (discover/create/refine and regime_modes still return 500). The two stored runs were saved before the fixes, so their tables still show old data ('-' test metrics, edge_note despite a +43 training candidate). This is not a regression. I did NOT run a new full cloud job to confirm the fixes end-to-end; one start call accidentally began a job, which I cancelled after about 1 min and deleted from history.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "services/dynamic_workbench.run kind=match (no_improvement guard)", "issue": "Fix (c) is ineffective. For match, `best` starts empty (no p.current), so compare_stage always passes `rank(win) > rank(None)` and adds the regime to `improved`. The guard `kind in ('refine','match') and not improved` therefore never fires for match. Reproduced with mocks: all 3 candidates lose in training AND test, stage 2 logs '0 Regime verbessert', and build() is still called (new dyn strategy, no no_improvement). Same for the iteration_1 scenario. Suggested fix: track compare-stage adoptions separately and/or require a robust or positive candidate (e.g. robust_validated or pnl>0) before building a match strategy; otherwise return no_improvement.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/dynamic-workbench/start", "issue": "Fix (f) only covers the kind=match branch. These still raise ValueError -> 500: regime_modes with non-numeric keys (routers/dynamic.py:677, runs before the kind branch), discover/create regime_ids (line 719 `int(r)`), and refine regime_ids (line 688). Wrap all of them in the same try/except -> 400."},
+      {"endpoint": "POST /api/dynamic-workbench/start", "issue": "regime_ids are not validated against the analysis model. ra_192997c0 has ids 1-4; regime_ids [0] starts a job that loops through all candidates, each logging 'Regime nicht im Modell gefunden'. Reject unknown ids with 400."},
+      {"endpoint": "POST /api/dynamic-workbench/start kind=match", "issue": "candidates [] or omitted silently means ALL strategies (up to 20). This is by design, but an API client sending an empty list triggers a long job. Document it or require an explicit 'all'."},
+      {"endpoint": "GET /api/dynamic-workbench/history, /run/{jid}", "issue": "No require_admin dependency, unlike start/control. Stored run params/results are readable without auth."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Workbench match tab", "issues": ["The dwb-advice-none hint is small grey text at reduced opacity (0.8) on the dark background. Contrast is borderline."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_workbench_dynamic_1206.py",
+    "/app/backend/tests/test_array_lru_budget_iter.py",
+    "/app/backend/tests/test_dwb_retest_iter2.py",
+    "/app/backend/tests/test_dwb_api_retest_iter2.py",
+    "/app/test_reports/pytest/iter2_api.xml"
+  ],
+  "action_items": [
+    "Make the no_improvement guard work for kind=match: compare-stage adoption into an empty `best` must not count as an improvement by itself (see test_dwb_retest_iter2.py::test_match_all_losers_no_improvement)",
+    "Return 400 instead of 500 for non-numeric regime_modes keys and for regime_ids in the discover/create/refine branches",
+    "Validate regime_ids against the analysis model's regime ids",
+    "Optional: add require_admin to the workbench history/run endpoints"
+  ],
+  "critical_code_review_comments": [
+    "dynamic_workbench.candidate_rank(None) returns a 3-tuple while real entries return 5-tuples. This works, but it is fragile; return a 5-tuple sentinel.",
+    "test_start_body_none_keys_dropped only checks the source text (inspect.getsource). Replace it with a behavioural test.",
+    "There is no unit test for fixes (c), (d) or (e) in test_workbench_dynamic_1206.py; test_dwb_retest_iter2.py now covers them."
+  ],
+  "updated_files": ["/app/backend/tests/test_dwb_retest_iter2.py", "/app/backend/tests/test_dwb_api_retest_iter2.py"],
+  "success_rate": {"backend": "required suite 26/26; new tests 11/13 (2 fail = remaining 500s on non-match branches); fix (c) fails in the mocked match test", "frontend": "100% of the requested smoke flows"},
+  "seed_data_creation": "None kept. The accidental job wb_7fadb8279e was cancelled and deleted from dynamic_workbench_runs.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run the test files with -n0 (xdist is enabled by default) when you need print output. Valid regime ids for ra_192997c0 are 1-4. In kind=match, candidates [] means all strategies and STARTS A REAL JOB; use an invalid id like 'nope_x' to test the 400. The stored runs wb_7bf34112de and wb_c512e147db are from before the fixes. /run/{id} returns {job:{params, result, regimes, ...}}."
+}
