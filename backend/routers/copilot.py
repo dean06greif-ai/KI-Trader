@@ -39,6 +39,17 @@ async def copilot_status():
             "ready": bool(keys)}
 
 
+@router.get("/api/copilot/credits")
+async def copilot_credits():
+    """Guthaben der Keys, die der Copilot wirklich nutzt (eigene Copilot- oder geteilte OpenRouter-Keys)."""
+    from services import key_credits
+    snap = key_credits.snapshot()
+    if not snap.get("checked_at") and copilot_keys():
+        snap = await key_credits.check_once(state.db, state.telegram)
+    prefix = "Copilot" if copilot_key_source() == "copilot" else "OpenRouter"
+    return {"key_source": copilot_key_source(), **key_credits.view_for(prefix, snap)}
+
+
 @router.post("/api/copilot/context-preview")
 async def copilot_context_preview(body: Dict, _: bool = Depends(require_admin)):
     """Transparenz: genau der Prompt, den der Copilot für diese Frage bekäme (ohne LLM-Aufruf)."""

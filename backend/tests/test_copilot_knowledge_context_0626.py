@@ -116,7 +116,7 @@ class TestChat:
                           headers=H, timeout=90)
         if st.get("ready"):
             pytest.skip("keys present – LLM path")
-        assert r.status_code == 502, r.text[:300]
+        assert r.status_code == 503, r.text[:300]
         # NOTE: Cloudflare replaces the backend's JSON 502 body with an HTML page on the public URL
         if r.headers.get("content-type", "").startswith("application/json"):
             assert "Copilot nicht erreichbar" in r.json()["detail"]

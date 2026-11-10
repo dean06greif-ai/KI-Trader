@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Robot, PaperPlaneRight, CheckCircle, XCircle, Trash, CaretDown, CaretUp, Gear } from '@phosphor-icons/react';
 import { toast } from '../lib/toast';
 import { authHeaders, isAdmin } from '../auth';
+import CopilotCreditsBanner from './CopilotCreditsBanner';
 import './StrategyCopilot.css';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -92,6 +93,7 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
   const [appliedIds, setAppliedIds] = useState({});
   const [dismissedIds, setDismissedIds] = useState({});
   const [status, setStatus] = useState(null);
+  const [credits, setCredits] = useState(null);
   const [showCfg, setShowCfg] = useState(false);
   const [savingModel, setSavingModel] = useState(false);
   const [weekly, setWeekly] = useState(null);
@@ -105,6 +107,7 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
 
   const loadStatus = useCallback(() => {
     fetch(`${API_URL}/api/copilot/status`).then(r => r.json()).then(setStatus).catch(() => {});
+    fetch(`${API_URL}/api/copilot/credits`).then(r => r.json()).then(setCredits).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -208,6 +211,7 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
       }
       if (!d) { fail('Copilot-Antwort dauert zu lange – bitte erneut senden'); return; }
       setMessages(m => [...m, { id: d.id, role: 'assistant', content: d.reply, proposal: d.proposal, checks: d.checks, model: d.model }]);
+      if (d.notice) { toast.error(d.notice, { duration: 10000 }); loadStatus(); }
     } catch { fail('Verbindungsfehler zum Copilot'); }
     finally { setBusy(false); }
   };
@@ -339,6 +343,7 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
                 data-testid={`copilot-quick-${q.label.replace(/[^a-z]/gi, '-').toLowerCase()}`}>{q.label}</button>
             ))}
           </div>
+          <CopilotCreditsBanner credits={credits} />
           <div className="cp-body" ref={bodyRef} data-testid="copilot-messages">
             {messages.length === 0 && !busy && (
               <div className="cp-empty" data-testid="copilot-empty">{ui.empty}</div>

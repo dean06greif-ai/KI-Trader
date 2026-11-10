@@ -1032,6 +1032,7 @@ class StrategyCopilot:
         start = time.monotonic()
         text = model = None
         last_err: Optional[Exception] = None
+        payment_failed: List[str] = []
         for m in models:
             for ki, key in enumerate(keys):
                 remaining = deadline - (time.monotonic() - start)
@@ -1053,11 +1054,22 @@ class StrategyCopilot:
                     logger.info(f"Copilot: {m} (Key {ki + 1}/{len(keys)}) fehlgeschlagen: {str(e)[:150]}")
                     last_err = e
                     msg_l = str(e).lower()
+                    if ai_providers.is_payment_error(e):
+                        # 402 = Guthaben dieses Kontos leer -> nächster Key (anderes Konto)
+                        if m not in payment_failed:
+                            payment_failed.append(m)
+                        continue
                     if "429" not in msg_l and "rate" not in msg_l:
                         break  # kein Rate-Limit -> Key-Wechsel bringt nichts, nächstes Modell
             if text or (deadline - (time.monotonic() - start)) < 6:
                 break
+        if payment_failed:
+            await self._payment_alert(payment_failed, model)
         if not text:
+            if payment_failed:
+                raise RuntimeError(
+                    f"Bezahl-Guthaben leer ({', '.join(payment_failed)} -> 402) und kein Free-Modell "
+                    "erreichbar – Guthaben aufladen: openrouter.ai/settings/credits")
             raise RuntimeError(
                 f"Copilot-Modelle derzeit überlastet – bitte gleich erneut senden "
                 f"({str(last_err)[:120] if last_err else 'kein Modell erreichbar'})")
@@ -1068,6 +1080,11 @@ class StrategyCopilot:
         if not (isinstance(proposal, dict) and proposal.get("type") in PROPOSAL_TYPES):
             proposal = None
         checks = [str(c) for c in (data.get("checks") or []) if c][:10]
+        notice = None
+        if payment_failed:
+            notice = (f"Bezahl-Guthaben leer: {', '.join(payment_failed)} lieferte 402 – diese Antwort "
+                      f"kommt vom Free-Modell {model}. Aufladen: openrouter.ai/settings/credits")
+            checks = [f"💳 {notice}"] + checks
 
         # Nutzer-Nachricht erst NACH erfolgreichem LLM-Call speichern
         # (keine verwaisten Halb-Turns im Verlauf bei Timeout/Fehler)
@@ -1076,7 +1093,18 @@ class StrategyCopilot:
             "proposal": proposal, "checks": checks,
             "provider": provider, "model": model}, panel=panel)
         return {"reply": reply, "proposal": proposal, "checks": checks,
-                "provider": provider, "model": model, "id": msg["id"]}
+                "provider": provider, "model": model, "id": msg["id"], "notice": notice}
+
+    async def _payment_alert(self, models: List[str], fallback: Optional[str]) -> None:
+        """Telegram (Dedupe 6 h) + Guthaben-Snapshot sofort auffrischen – nie blockierend."""
+        try:
+            from core import state
+            from services import key_credits
+            await key_credits.notify_payment_error(self._db(), getattr(state, "telegram", None),
+                                                   "Strategie-/Regime-Copilot", ", ".join(models), fallback)
+            asyncio.create_task(key_credits.check_once(self._db(), getattr(state, "telegram", None)))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Copilot 402-Meldung: {e}")
 
 
 copilot = StrategyCopilot()

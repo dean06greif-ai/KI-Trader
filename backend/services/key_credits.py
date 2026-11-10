@@ -135,3 +135,47 @@ async def run_loop():
         except Exception as e:
             logger.error(f"key credits loop error: {e}")
         await asyncio.sleep(CHECK_EVERY_MIN * 60)
+
+
+# ---------------- Copilot (06/2026): Anzeige + Sofort-Meldung bei 402 ----------------
+PAYMENT_NOTIFY_COOLDOWN_H = 6
+
+
+def view_for(prefix: str, snap: Optional[Dict] = None) -> Dict:
+    """Ausschnitt des Snapshots für eine Key-Gruppe (rein): 'Copilot' oder 'OpenRouter'."""
+    snap = snap or _snapshot
+    order = {"critical": 3, "warning": 2, "ok": 1, "free": 0, "unknown": 0}
+    keys = [dict(k, empty=(k.get("remaining") is not None and k.get("total_credits", 0) > 0
+                           and float(k["remaining"]) <= 0.01))
+            for k in snap.get("keys") or [] if str(k.get("label", "")).startswith(prefix)]
+    worst = max((order.get(k["level"], 0) for k in keys), default=0)
+    level = {3: "critical", 2: "warning"}.get(worst, "ok")
+    return {"checked_at": snap.get("checked_at"), "keys": keys, "worst_level": level,
+            "any_empty": any(k["empty"] for k in keys),
+            "warn_below_usd": WARN_USD, "critical_below_usd": CRIT_USD}
+
+
+async def notify_payment_error(db, telegram, source: str, model: str, fallback: Optional[str]) -> bool:
+    """Sofort-Meldung, wenn ein Bezahl-Modell 402 liefert (Guthaben leer) – Dedupe je Quelle/Modell."""
+    if db is None:
+        return False
+    key = f"402:{source}:{model}"
+    try:
+        state = await db.settings.find_one({"_id": STATE_ID}) or {}
+        sent = state.get("sent") or {}
+        now = time.time()
+        if now - float(sent.get(key) or 0) < PAYMENT_NOTIFY_COOLDOWN_H * 3600:
+            return False
+        sent[key] = now
+        await db.settings.update_one({"_id": STATE_ID}, {"$set": {"sent": sent}}, upsert=True)
+        from services import notifications
+        alt = f" Antwort kam stattdessen vom Free-Modell {fallback}." if fallback else \
+            " Es konnte auch kein Free-Modell antworten."
+        await notifications.telegram_notify(
+            db, telegram, "key_credits",
+            f"💳 *BEZAHL-GUTHABEN LEER* ({source})\nModell {model} lieferte 402 (Payment Required)."
+            + alt + "\n\nGuthaben aufladen: openrouter.ai/settings/credits")
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"402-Meldung fehlgeschlagen: {e}")
+        return False

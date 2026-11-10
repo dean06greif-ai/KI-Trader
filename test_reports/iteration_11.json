@@ -1,0 +1,27 @@
+{
+  "summary": "Retest of the iteration_10 fixes. All 6 fixed items work. New API suite tests/test_copilot_retest_iter11.py: 11/11 passed. It runs a fresh crypto assistant run (BTCUSDT, 150 days) and then checks the context-preview for regime_lab and optimizer. Regression run of the previous suites (context_0626, sync_0626 unit, regime_lab isolation): 22/22 passed after one test was updated, which still expected 502 and now expects 503. UI checked as admin: in both the Regime-Lab copilot and the Optimizer copilot, sending a message without an OpenRouter key shows a red inline error bubble (copilot-error-message, border #FF5C7A) and puts the typed text back in the input. No '<span> cannot be a child of <option>' warning in the console.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "context-preview panel=optimizer", "issue": "Info only, not a bug: the static line 'grau = zu wenig Daten → mehr Tage' (assistant_knowledge_lines) is only in the regime_lab knowledge block. The optimizer prompt gets the grade text '(zu wenig Daten)' and the recommendation in the Krypto line, which is enough to explain a grey light."},
+      {"endpoint": "GET /api/regime-assistant/runs/latest", "issue": "Info only: the stored DB doc has the raw 'results' and no 'current'. The per-symbol 'current' is in memory only (overview.latest and copilot context) and is rebuilt on startup by load_config. Works as designed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_copilot_retest_iter11.py", "/app/backend/tests/test_copilot_knowledge_context_0626.py", "/app/test_reports/pytest/copilot_retest_iter11.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "strategy_copilot.py is still over 1000 lines. Splitting the prompts into their own module is still recommended.",
+    "routers/copilot.py /api/copilot/weekly/send still returns 502 for its own errors, so Cloudflare hides the body (same pattern as the old chat endpoint). Low priority."
+  ],
+  "updated_files": ["/app/backend/tests/test_copilot_retest_iter11.py (new)", "/app/backend/tests/test_copilot_knowledge_context_0626.py (502 changed to 503)"],
+  "success_rate": {"backend": "100% (11/11 new + 22/22 regression)", "frontend": "100%"},
+  "seed_data_creation": "One extra regime-assistant run (crypto, BTCUSDT, 150 days; light grey). The failed copilot sends were not stored in copilot_chat (0 TEST_ docs). Possibly some 'Fehler' notifications in the bell from the UI sends. Research mode was not changed (robust/time, fallback off). Live trading was not touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: PYTHONPATH=/app/backend REACT_APP_BACKEND_URL=... pytest -n 0 tests/test_copilot_retest_iter11.py tests/test_copilot_knowledge_context_0626.py tests/test_copilot_knowledge_sync_0626.py. The sync unit test needs PYTHONPATH. Right after a backend restart the first login can take more than 20 s. UI path: admin-lock-button > login > tools-menu-button > tools-menu-regime-lab or tools-menu-optimizer > copilot-toggle."
+}
