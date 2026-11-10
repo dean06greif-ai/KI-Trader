@@ -1,0 +1,34 @@
+{
+  "summary": "Tested the new Copilot paid-credits feature plus a quick regression. Backend: the existing unit tests (test_copilot_credits_0626.py, 3 tests) and the iter11 retest (11 tests) pass, 14/14. A new file, test_copilot_credits_iter12.py, passes 8/8. It covers the live GET /api/copilot/credits shape in preview (key_source 'none', worst_level 'ok', any_empty false, no crash), view_for edge cases, notify_payment_error with db None, and a 402 on every key with no other model answering, which raises 'Bezahl-Guthaben leer ... aufladen' and calls the alert with fallback None. It also checks that a chain without a 402 has no notice and no alert, and that _payment_alert passes the joined model list and fallback to notify_payment_error. Frontend: Playwright with route interception of /api/copilot/credits. On both Regime-Lab and Optimizer copilots, critical + any_empty shows the banner '🔴 Bezahl-Guthaben LEER (Copilot): Copilot Haupt 0.00 $ · Copilot Backup 1 0.73 $ …' (keys at ok level are correctly left out). Warning shows '🟡 Bezahl-Guthaben niedrig'. ok shows no banner. The banner sits above copilot-messages. Regression: copilot-error-message ('Kein OpenRouter-Key gefunden…') still appears when sending without a key. No console errors after login while opening the panels. AITradingPanel.js and the ai-key-credits-banner were not changed in the feature commit, and key_credits.py only got additions.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "strategy_copilot._run_chain notice", "issue": "The notice always says 'diese Antwort kommt vom Free-Modell {model}'. If the model that answers after a 402 is another paid model (for example a preferred paid model failed with 402 and a later model in the chain is paid), this is wrong. Also, if a free model returns 402 (negative OpenRouter balance), it ends up in payment_failed and the text calls it a paid model."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Reply with notice -> loadStatus() reload of credits (code review)", "issue": "_payment_alert starts key_credits.check_once as a background task (asyncio.create_task), and the frontend calls /api/copilot/credits right after the reply. That call probably gets the old snapshot, so the banner may not show until the panel is reopened. Also, the 402 error path where no model answers goes through fail() and never reloads credits.", "affected_selectors": ["copilot-credits-banner"]}
+    ],
+    "design_issues": [
+      {"screen": "CopilotCreditsBanner", "issues": ["The warning (low, not empty) variant also says 'Bezahl-Modelle antworten dann nicht' – that is only true when the credit is empty. Consider different text for the warning level.", "The label always says '(Copilot)', even when key_source is 'shared' and the listed keys are 'OpenRouter …' keys. Acceptable, but the wording could be clearer."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_copilot_credits_iter12.py", "/app/backend/tests/test_copilot_credits_0626.py", "/app/backend/tests/test_copilot_retest_iter11.py", "/app/test_reports/pytest/iter12.xml"],
+  "action_items": [
+    "Optional: await check_once inside _payment_alert (with a timeout), or have the frontend reload credits a few seconds after a notice, so the banner shows right after a 402.",
+    "Optional: reload credits in the fail() path too, when the error contains 'Bezahl-Guthaben'.",
+    "Optional: say 'Free-Modell' in the notice only when the answering model is not in PAID_MODELS_NO_FALLBACK; adjust the banner text for the warning level."
+  ],
+  "critical_code_review_comments": [
+    "The background check_once from create_task is not stored or tracked, and errors in it are only logged inside check_once. Acceptable.",
+    "The credits endpoint has no auth (same as /status). It exposes key labels and remaining $ to anyone. Low risk, but consider require_admin or redacting labels for public visitors."
+  ],
+  "updated_files": ["/app/backend/tests/test_copilot_credits_iter12.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None. Sent one 'TEST_ hallo' copilot message in the optimizer panel. It failed with no key, so nothing was stored.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && pytest -n 0 tests/test_copilot_credits_iter12.py tests/test_copilot_credits_0626.py tests/test_copilot_retest_iter11.py. UI path: admin-lock-button > login (Admin/PreviewAdmin2026) > tools-menu-button > tools-menu-regime-lab or tools-menu-optimizer > copilot-toggle. Mock **/api/copilot/credits with page.route to get the copilot-credits-banner."
+}

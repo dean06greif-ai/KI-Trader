@@ -21,6 +21,13 @@ Grundsatz: stabil, modular, rückwärtskompatibel, Regressionstests.
 - Forschungs-Modus `services/research_mode.py`, `/api/research-mode`
 - Tests: 33 neue Unit-Tests + API-Test (Testing-Agent), Regression 515 grün (1 vorbestehender Fehler)
 
+## Copilot-Prüfung (06.11.2026)
+- Regime-/Strategie-Copilot kennen jetzt Assistent, Makro×Haupt, Nutzen-Note, robuste Bewertung, Schutzfilter, Ist-Zustand je Asset
+- Antwortstil: erst direkte Antwort, Fachbegriffe erklärt, bis ~300 Wörter bei Erklärfragen; Verlauf 10 × 1000 Zeichen
+- Fehler im Chat sichtbar (rote Blase, Text bleibt), /api/copilot/context-preview (Admin) zeigt den exakten Prompt
+- Guthaben: Banner im Copilot (/api/copilot/credits), 402 -> nächster Key -> Free-Modell + Hinweis, Telegram sofort (Dedupe 6 h)
+- Offen: echte Antwortqualität mit echtem OpenRouter-Key prüfen (in der Vorschau kein Key)
+
 ## Backlog
 - P1: Makro-Filter auch im dynamischen Backtest/Walk-Forward (Backtest-Live-Gleichheit)
 - P1: Größen-Faktor optional automatisch auf die Positionsgröße anwenden (heute nur Anzeige)

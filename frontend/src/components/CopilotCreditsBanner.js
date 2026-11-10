@@ -10,9 +10,9 @@ export default function CopilotCreditsBanner({ credits }) {
       style={{ margin: '6px 10px', padding: '6px 10px', borderRadius: 6, fontSize: 12,
         border: `1px solid ${crit ? '#FF5C7A' : '#FFB020'}`, color: crit ? '#FFB3C0' : '#FFD58A',
         background: crit ? 'rgba(255,92,122,0.08)' : 'rgba(255,176,32,0.08)' }}>
-      {crit ? '🔴' : '🟡'} {credits.any_empty ? 'Bezahl-Guthaben LEER' : 'Bezahl-Guthaben niedrig'} (Copilot):{' '}
+      {crit ? '🔴' : '🟡'} {credits.any_empty ? 'Bezahl-Guthaben LEER' : 'Bezahl-Guthaben niedrig'} ({credits.key_source === 'copilot' ? 'Copilot-Keys' : 'geteilte OpenRouter-Keys'}):{' '}
       {low.map(k => `${k.label} ${Number(k.remaining || 0).toFixed(2)} $`).join(' · ')}
-      {' '}– Bezahl-Modelle antworten dann nicht, der Copilot weicht auf Free-Modelle aus. Aufladen: openrouter.ai/settings/credits
+      {' '}– {credits.any_empty ? 'Bezahl-Modelle antworten nicht mehr, der Copilot weicht auf Free-Modelle aus.' : 'bald aufladen, sonst antworten Bezahl-Modelle nicht mehr.'} Aufladen: openrouter.ai/settings/credits
     </div>
   );
 }

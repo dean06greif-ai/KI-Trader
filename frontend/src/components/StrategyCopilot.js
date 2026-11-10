@@ -179,6 +179,7 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
       toast.error(text, { duration: 8000 });
       setMessages(m => [...m, { id: `err_${Date.now()}`, role: 'assistant', error: true, content: `⚠ ${text}` }]);
       setInput(msg);
+      if (/Guthaben|402/.test(text)) loadStatus();
     };
     try {
       // Hintergrund-Job statt direktem Request: Render/Ingress kappt HTTP nach

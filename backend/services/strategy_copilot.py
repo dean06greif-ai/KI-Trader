@@ -1082,8 +1082,10 @@ class StrategyCopilot:
         checks = [str(c) for c in (data.get("checks") or []) if c][:10]
         notice = None
         if payment_failed:
-            notice = (f"Bezahl-Guthaben leer: {', '.join(payment_failed)} lieferte 402 – diese Antwort "
-                      f"kommt vom Free-Modell {model}. Aufladen: openrouter.ai/settings/credits")
+            from services import ai_providers as _ap
+            kind = "Bezahl-Modell" if model in _ap.PAID_MODELS_NO_FALLBACK else "Free-Modell"
+            notice = (f"Guthaben leer: {', '.join(payment_failed)} lieferte 402 – diese Antwort "
+                      f"kommt vom {kind} {model}. Aufladen: openrouter.ai/settings/credits")
             checks = [f"💳 {notice}"] + checks
 
         # Nutzer-Nachricht erst NACH erfolgreichem LLM-Call speichern
@@ -1102,7 +1104,8 @@ class StrategyCopilot:
             from services import key_credits
             await key_credits.notify_payment_error(self._db(), getattr(state, "telegram", None),
                                                    "Strategie-/Regime-Copilot", ", ".join(models), fallback)
-            asyncio.create_task(key_credits.check_once(self._db(), getattr(state, "telegram", None)))
+            # Snapshot gleich auffrischen, damit das Banner beim nächsten Abruf stimmt (max. 15 s)
+            await asyncio.wait_for(key_credits.check_once(self._db(), getattr(state, "telegram", None)), 15)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Copilot 402-Meldung: {e}")
 
