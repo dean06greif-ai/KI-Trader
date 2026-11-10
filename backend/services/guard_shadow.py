@@ -35,6 +35,7 @@ GUARD_LABELS = {"fee_guard": "Fee-Wächter", "edge_filter": "Edge-Filter (Kosten
 
 DEFAULTS = {
     "guard_shadow_enabled": True,        # geblockte Live-Trades als Schattentrade nachspielen
+    "guard_shadow_paper_enabled": True,  # 06/2026: auch geblockte PAPER-Einstiege nachspielen (Lernen im Paper-Betrieb)
     "guard_autotune_enabled": True,      # Fee-Wächter kalibriert sich autonom (Leitplanken)
     "guard_autotune_min_samples": 12,    # geschlossene Schattentrades je Wächter/Fenster
 }
@@ -165,6 +166,9 @@ async def maybe_open_shadow(mgr, signal: Dict, candles: List[Dict], guard: str,
             return None
         ai_cfg = await mgr.db.settings.find_one({"_id": "ai_trader_config"}) or {}
         if not _shadow_allowed(ai_cfg, signal, guard):
+            return None
+        if blocked_mode != "live" and not ai_cfg.get(
+                "guard_shadow_paper_enabled", DEFAULTS["guard_shadow_paper_enabled"]):
             return None
         n_open = await mgr.db.auto_trades.count_documents(
             {"status": "open", "guard_shadow.guard": {"$exists": True}})

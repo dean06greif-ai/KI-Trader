@@ -78,8 +78,37 @@ def is_strong_move(feats: Dict, asset_class: str, vol_mult: float) -> bool:
     return chg >= threshold
 
 
+def blocker_of(decision: Optional[Dict], trade: Optional[Dict], direction: Optional[str]) -> Optional[Dict]:
+    """Was hat den Trade in Bewegungsrichtung verhindert? (rein, Lern-Spur 06/2026)
+    kind: guard (Pipeline-Wächter) · gate (Setup nicht live-reif) · engine (Cooldown/Limits)
+          · hold (KI entschied HOLD) · wrong_side (Entscheidung gegen die Bewegung)
+          · low_conf (Signal unter Schwelle) · none."""
+    if trade and (trade.get("guard_shadow") or {}).get("guard"):
+        g = trade["guard_shadow"]
+        return {"kind": "guard", "name": g.get("guard"), "detail": str(g.get("reason") or "")[:160],
+                "shadow": True}
+    d = decision or {}
+    act = str(d.get("action") or "").upper()
+    if d.get("pipeline_reject"):
+        return {"kind": "guard", "name": "pipeline", "detail": d["pipeline_reject"][:160]}
+    if d.get("blocked_by"):
+        return {"kind": "engine", "name": "engine", "detail": str(d["blocked_by"])[:160]}
+    if d.get("live_gate"):
+        return {"kind": "gate", "name": "live_gate", "detail": str(d["live_gate"])[:160]}
+    if d.get("limit_reject"):
+        return {"kind": "engine", "name": "limit", "detail": str(d["limit_reject"])[:160]}
+    if act in ("LONG", "SHORT") and direction and act != direction:
+        return {"kind": "wrong_side", "name": "decision", "detail": f"KI entschied {act}"}
+    if act in ("LONG", "SHORT") and not d.get("signaled"):
+        return {"kind": "low_conf", "name": "confidence",
+                "detail": f"Konfidenz {d.get('confidence')} unter Schwelle"}
+    if act == "HOLD":
+        return {"kind": "hold", "name": "hold", "detail": str(d.get("reason") or "")[:160]}
+    return None if not d else {"kind": "none", "name": "-", "detail": ""}
+
+
 def classify(caught: bool, detector_hits: List[Dict], news_hit: bool,
-             direction: str) -> Dict:
+             direction: str, blocker: Optional[Dict] = None, wrong_side: bool = False) -> Dict:
     """Regelbasierte Vor-Einordnung einer Bewegung (rein, ohne LLM).
 
     Liefert cause/missed/missed_reason/setup_match/needs_llm:
@@ -96,14 +125,21 @@ def classify(caught: bool, detector_hits: List[Dict], news_hit: bool,
         return {"cause": "Bewegung vom KI Trader gehandelt", "missed": False,
                 "missed_reason": None, "setup_match": (same_dir[0]["setup"] if same_dir else None),
                 "kind": "caught", "needs_llm": False}
+    if wrong_side:
+        return {"cause": "KI Trader war GEGEN die Bewegung positioniert",
+                "missed": True, "missed_reason": "Trade in Gegenrichtung – Setup-/Richtungsfehler",
+                "setup_match": (same_dir[0]["setup"] if same_dir else None),
+                "kind": "wrong_side", "needs_llm": not same_dir, "blocker": blocker}
     if same_dir:
         setups = sorted({h["setup"] for h in same_dir})
+        why = (f"Blocker: {blocker['name']} – {blocker['detail']}" if blocker and blocker.get("detail")
+               else "kein Trade: Live-Gate/Konfidenz/Cooldown oder Setup nicht live-reif "
+                    "(Paper-Sammeltrade via Setup-Trigger)")
         return {"cause": f"Regelbasierte Detektoren hätten gefeuert: {', '.join(setups)}",
                 "missed": True,
-                "missed_reason": (f"Setup(s) {', '.join(setups)} haben die Bewegung erkannt – "
-                                  "kein Trade: Live-Gate/Konfidenz/Cooldown oder Setup nicht "
-                                  "live-reif (Paper-Sammeltrade via Setup-Trigger)"),
-                "setup_match": setups[0], "kind": "execution_gap", "needs_llm": False}
+                "missed_reason": f"Setup(s) {', '.join(setups)} haben die Bewegung erkannt – {why}",
+                "setup_match": setups[0], "kind": "execution_gap", "needs_llm": False,
+                "blocker": blocker}
     if news_hit:
         return {"cause": "News-getriebener Impuls (News-Wächter meldete Ereignis im Vorfeld)",
                 "missed": True,
@@ -164,17 +200,26 @@ class MoveScanner:
             self._llm_day, self._llm_used = day, 0
         return self._llm_used < max_per_day
 
-    async def _caught_check(self, symbol: str) -> Dict:
-        """Hat der KI Trader die Bewegung gehandelt (oder bewusst entschieden)?"""
+    async def _caught_check(self, symbol: str, direction: Optional[str] = None) -> Dict:
+        """Hat der KI Trader die Bewegung gehandelt (oder bewusst entschieden)?
+        06/2026: richtungsbewusst – ein Trade GEGEN die Bewegung gilt nicht als erwischt;
+        zusätzlich der letzte Blocker (Entscheidung/Guard) für die Lern-Spur."""
         cutoff = (datetime.now(timezone.utc)
                   - timedelta(minutes=LOOKBACK_CAUGHT_MIN)).isoformat()
         trade = await self.db.auto_trades.find_one(
             {"strategy_id": "ai_trader", "symbol": symbol, "opened_at": {"$gte": cutoff}},
-            {"_id": 0, "id": 1, "side": 1, "setup": 1, "mode": 1, "opened_at": 1})
+            {"_id": 0, "id": 1, "side": 1, "setup": 1, "mode": 1, "opened_at": 1,
+             "data_collection": 1, "guard_shadow": 1}, sort=[("opened_at", -1)])
         decision = await self.db.ai_decisions.find_one(
-            {"symbol": symbol, "ts": {"$gte": cutoff}, "action": {"$in": ["LONG", "SHORT"]}},
-            {"_id": 0, "action": 1, "confidence": 1, "setup": 1, "ts": 1})
-        return {"caught": bool(trade), "trade": trade, "decision": decision}
+            {"symbol": symbol, "ts": {"$gte": cutoff}},
+            {"_id": 0, "action": 1, "confidence": 1, "setup": 1, "ts": 1, "blocked_by": 1,
+             "live_gate": 1, "pipeline_reject": 1, "limit_reject": 1, "reason": 1,
+             "signaled": 1, "trade_opened": 1}, sort=[("ts", -1)])
+        side = str((trade or {}).get("side") or "").upper()
+        wrong_side = bool(trade and direction and side and side != direction)
+        return {"caught": bool(trade) and not wrong_side, "wrong_side": wrong_side,
+                "trade": trade, "decision": decision,
+                "blocker": blocker_of(decision, trade, direction)}
 
     async def _analyze(self, event: Dict) -> Optional[Dict]:
         """LLM-Analyse eines Moves; wendet revise/new_setup direkt an."""
@@ -298,8 +343,8 @@ class MoveScanner:
             if not is_strong_move(feats, cls, cfg["vol_mult"]):
                 continue
             self._cooldowns[sym] = now_mono + cfg["cooldown_min"] * 60
-            caught_info = await self._caught_check(sym)
             direction = "LONG" if float(feats.get("change_60m_pct") or 0) > 0 else "SHORT"
+            caught_info = await self._caught_check(sym, direction)
             hits, news_hit = [], False
             try:
                 from services.setup_trigger import setup_trigger
@@ -307,11 +352,14 @@ class MoveScanner:
                 news_hit = await setup_trigger._news_hit(sym)
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"Move-Scanner Detektor-Abgleich {sym}: {e}")
-            pre = classify(caught_info["caught"], hits, news_hit, direction)
+            pre = classify(caught_info["caught"], hits, news_hit, direction,
+                           blocker=caught_info.get("blocker"),
+                           wrong_side=bool(caught_info.get("wrong_side")))
             event = {"id": str(uuid.uuid4()), "ts": _now_iso(), "symbol": sym,
                      "asset_class": cls, "features": feats, "caught_info": caught_info,
                      "caught": caught_info["caught"], "detector_hits": hits[:10],
-                     "news_hit": news_hit, "kind": pre["kind"]}
+                     "news_hit": news_hit, "kind": pre["kind"], "direction": direction,
+                     "blocker": pre.get("blocker") or caught_info.get("blocker")}
             analysis = None
             if not pre["needs_llm"]:
                 # Regelbasiert erklärt -> kein LLM-Budget verbrauchen
@@ -346,7 +394,8 @@ class MoveScanner:
             .sort("ts", -1).limit(20).to_list(20)
         return {**cfg, "last_run": self.last_run, "last_error": self.last_error,
                 "llm_used_today": self._llm_used,
-                "class_min_move": CLASS_MIN_MOVE, "recent": recent}
+                "class_min_move": CLASS_MIN_MOVE, "recent": recent,
+                "summary_14d": await missed_summary(self.db, 14)}
 
     async def tick(self):
         if self.engine is None or self.db is None:
@@ -364,3 +413,53 @@ class MoveScanner:
 
 
 move_scanner = MoveScanner()
+
+
+# ---------------- Lern-Bilanz verpasster Bewegungen (06/2026) ----------------
+KIND_LABELS = {"caught": "erwischt", "wrong_side": "gegen die Bewegung",
+               "execution_gap": "Detektor feuerte, aber kein Trade", "news": "News-Impuls",
+               "setup_gap": "kein passendes Setup"}
+
+
+def summarize_moves(events: List[Dict]) -> Dict:
+    """Rein: Moves je Art, Blocker und Setup (Basis für KI-Kontext + Anzeige)."""
+    kinds: Dict[str, int] = {}
+    blockers: Dict[str, int] = {}
+    setups: Dict[str, int] = {}
+    for e in events or []:
+        k = str(e.get("kind") or "setup_gap")
+        kinds[k] = kinds.get(k, 0) + 1
+        if k in ("execution_gap", "wrong_side"):
+            b = e.get("blocker") or {}
+            name = str(b.get("name") or "unbekannt")
+            blockers[name] = blockers.get(name, 0) + 1
+            sm = ((e.get("analysis") or {}).get("setup_match")) or "-"
+            setups[sm] = setups.get(sm, 0) + 1
+    return {"total": sum(kinds.values()), "kinds": kinds,
+            "blockers": dict(sorted(blockers.items(), key=lambda kv: -kv[1])),
+            "setups": dict(sorted(setups.items(), key=lambda kv: -kv[1]))}
+
+
+def prompt_line(summary: Dict, days: int) -> str:
+    if not summary or not summary.get("total"):
+        return ""
+    k = summary["kinds"]
+    parts = [f"{KIND_LABELS.get(n, n)} {c}" for n, c in k.items()]
+    line = f"VERPASSTE BEWEGUNGEN ({days} T, Bewegungs-Scanner): {summary['total']} starke Moves · " + \
+        " · ".join(parts)
+    if summary["blockers"]:
+        line += " · Blocker: " + ", ".join(f"{n} {c}×" for n, c in list(summary["blockers"].items())[:5])
+    if summary["setups"]:
+        line += " · betroffene Setups: " + ", ".join(f"{n} {c}×" for n, c in list(summary["setups"].items())[:5])
+    line += (". Lerne daraus: häufiger Blocker = Regel/Schwelle prüfen (Wächter-Bilanz), „gegen die "
+             "Bewegung“ = Richtungsfilter/Regime des Setups prüfen, „kein Trade bei Detektor“ = "
+             "Konfidenz/Live-Reife des Setups prüfen.")
+    return line
+
+
+async def missed_summary(db, days: int = 14) -> Dict:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    events = await db.ai_move_events.find(
+        {"ts": {"$gte": cutoff}}, {"_id": 0, "kind": 1, "blocker": 1, "analysis.setup_match": 1}
+    ).to_list(2000)
+    return summarize_moves(events)

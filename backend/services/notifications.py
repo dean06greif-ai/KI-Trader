@@ -53,6 +53,7 @@ NOTIFY_CATALOG = [
     ("funding_guard", "Risiko & Sicherheit", "Funding-Wächter (hohe echte Funding-Kosten)", True),
     ("maker_mode", "Risiko & Sicherheit", "Maker-Modus ausgesetzt (zu wenige Fills)", True),
     ("ibkr_gateway", "Risiko & Sicherheit", "IBKR-Gateway: ausgeloggt / readyz > 5 Min rot (Forex-Live)", True),
+    ("website_ibkr_gateway", "Risiko & Sicherheit", "IBKR-Gateway zusätzlich als Website-Meldung (Glocke/Popup)", True),
     # KI & System
     ("ai_failure", "KI & System", "KI-Ausfall (Primär + Backup gescheitert, Fallback übernimmt)", True),
     ("website_ai_failure", "KI & System", "KI-Ausfall zusätzlich als Website-Meldung", True),

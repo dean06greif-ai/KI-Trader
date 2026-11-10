@@ -2759,6 +2759,11 @@ class AIEngine(AIEngineContextMixin, AIEngineGovernanceMixin,
                 dec["trade_opened"] = bool(signal.get("_trade_opened"))
                 if signal.get("trade_mode"):
                     dec["trade_mode"] = signal["trade_mode"]
+            # Lern-Spur (06/2026): Warum kam kein Trade zustande? (Guard/Limit/Kapital)
+            if not signal.get("_trade_opened") and signal.get("_reject_reason"):
+                dec["pipeline_reject"] = str(signal["_reject_reason"])[:300]
+            if signal.get("_shadow_trade_id"):
+                dec["shadow_trade_id"] = signal["_shadow_trade_id"]
             return bool(ok)
         except Exception as e:
             logger.error(f"AI signal emit failed for {sym}: {e}")

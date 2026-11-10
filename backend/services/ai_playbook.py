@@ -1887,6 +1887,12 @@ async def _status_uncached(db) -> Dict:
     g_variant_stats = {sid: {k: v[k] for k in ("trades", "wins", "pnl", "margin", "verdict")}
                        for sid, v in vg.items() if v.get("variant_since")}
     g_variant_labels = {sid: "aktive Variante (je Klasse)" for sid in g_variant_since}
+    # Gesamt-Tabelle: Welten direkt über ALLE Symbole zählen (wie die Hauptspalten) –
+    # die Summe der Klassen ließ Symbole außerhalb der Klassen-Listen weg (zeigte 0).
+    try:
+        worlds_global = await setup_world_stats.class_worlds(db, None, g_variant_since, LOOKBACK_DAYS)
+    except Exception as e:  # noqa: BLE001 – fail-open: Klassen-Summe
+        logger.debug(f"Setup-Reife je Welt (global) übersprungen: {e}")
     return {"setups": all_setups(), "stats": data["stats"], "disabled": data["disabled"],
             "live_blocked": data.get("live_blocked") or {},
             "live_stats": data.get("live_stats") or {},

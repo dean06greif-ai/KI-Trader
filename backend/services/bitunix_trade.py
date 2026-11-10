@@ -2131,7 +2131,7 @@ class AutoTradeManager:
             signal["_reject_reason"] = guard_reason
             # Wächter-Schattentrade: geblockten LIVE-Einstieg als Paper-Trade
             # nachspielen, damit der Block später bewertet werden kann.
-            if strategy_id == "ai_trader" and not collection and guard_mode == "live":
+            if strategy_id == "ai_trader" and not collection and guard_mode in ("live", "paper"):
                 from services import guard_shadow
                 failed = next((c["name"] for c in reversed(checks.items) if not c["ok"]), None)
                 if failed:
@@ -2256,7 +2256,7 @@ class AutoTradeManager:
                             "ts": datetime.now(timezone.utc).isoformat()})
                     except Exception:
                         pass
-                    if guard_mode == "live":
+                    if guard_mode in ("live", "paper"):
                         from services import guard_shadow
                         await guard_shadow.maybe_open_shadow(
                             self, signal, candles, "fee_guard", fg_reason,

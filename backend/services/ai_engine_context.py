@@ -785,11 +785,18 @@ class AIEngineContextMixin:
             g_lines = [f"{g['label']} {g['n']}× (Block richtig {g['right']}, falsch {g['wrong']})"
                        for g in gs.get("guards") or [] if g.get("n")]
             if g_lines:
-                parts.append("WÄCHTER-BILANZ (geblockte Live-Einstiege als Schattentrade nachgespielt, "
+                parts.append("WÄCHTER-BILANZ (geblockte Einstiege – live und paper – als Schattentrade nachgespielt, "
                              "14 T): " + " · ".join(g_lines) + ". Plane Trades so, dass sie die "
                              "harten Wächter bestehen (SL ausserhalb des Rauschens/Fee-Minimums).")
         except Exception as e:
             logger.debug(f"Wächter-Bilanz nicht verfügbar: {e}")
+        try:
+            from services import ai_move_scanner
+            ml = ai_move_scanner.prompt_line(await ai_move_scanner.missed_summary(self.db, 14), 14)
+            if ml:
+                parts.append(ml)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Bewegungs-Bilanz nicht verfügbar: {e}")
         return "\n".join(p for p in parts if p)
 
     async def _analysis_extra_blocks(self, purpose: str = "analysis",

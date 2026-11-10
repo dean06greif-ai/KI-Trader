@@ -476,7 +476,13 @@ async def _gateway_alerts(events: List[str], detail: str, readyz) -> None:
     if not events:
         return
     from core import state
-    from services.notifications import telegram_notify, website_notify
+    from services.notifications import get_config, telegram_notify, website_notify
+    try:
+        cfg = await get_config(state.db) if state.db is not None else {}
+    except Exception:  # noqa: BLE001
+        cfg = {}
+    # Website-Meldung nur, wenn IBKR-Gateway-Meldungen UND die Website-Variante an sind
+    web_on = bool(cfg.get("ibkr_gateway", True)) and bool(cfg.get("website_ibkr_gateway", True))
     for ev in events:
         tmpl, title = _GW_TEXT[ev]
         text = tmpl.format(detail=(detail or "-")[:200], readyz=readyz if readyz else "keine Antwort")
@@ -485,9 +491,10 @@ async def _gateway_alerts(events: List[str], detail: str, readyz) -> None:
             if state.db is not None:
                 await telegram_notify(state.db, getattr(state, "telegram", None),
                                       "ibkr_gateway", text)
-                await website_notify(state.db, "ibkr_gateway", title,
-                                     text.replace("*", "").replace("`", ""),
-                                     cooldown_min=15, source="IBKR-Monitor")
+                if web_on:
+                    await website_notify(state.db, "ibkr_gateway", title,
+                                         text.replace("*", "").replace("`", ""),
+                                         cooldown_min=15, source="IBKR-Monitor")
         except Exception as e:
             logger.debug(f"IBKR-Gateway-Alarm senden fehlgeschlagen: {e}")
 

@@ -57,10 +57,21 @@ const BtCell = ({ bt }) => {
   );
 };
 
+// Zeigt bei 0 in der gewählten Welt, wo die Trades stattdessen liegen (sonst wirkt alles „leer“)
+const OTHER_WORLDS = [['paper', 'Paper'], ['real', 'Echtgeld'], ['collection', 'Sammlung']];
+const otherWorldHint = (r, mode) => OTHER_WORLDS
+  .filter(([k]) => k !== mode && !(mode === 'live' && k !== 'collection') && (r.worlds?.[k]?.trades || 0) > 0)
+  .map(([k, l]) => `${l} ${r.worlds[k].trades}`).join(' · ');
+
 // Welten wie die Reiter oben im Verlauf (AIEquityPanel.MODES)
-const WorldCells = ({ r, ws, title, fmtDate }) => (
+const WorldCells = ({ r, ws, title, fmtDate, mode }) => {
+  const other = !ws.trades ? otherWorldHint(r, mode) : '';
+  return (
   <>
-    <td style={{ padding: '4px 6px' }} title={title} data-testid={`ai-maturity-trades-${r.setup}`}>{ws.trades || 0}</td>
+    <td style={{ padding: '4px 6px' }} title={title} data-testid={`ai-maturity-trades-${r.setup}`}>
+      {ws.trades || 0}
+      {other && <span data-testid={`ai-maturity-other-${r.setup}`} style={{ marginLeft: 4, fontSize: 9.5, opacity: 0.55 }}>({other})</span>}
+    </td>
     <td style={{ padding: '4px 6px' }} title={title} data-testid={`ai-maturity-winrate-${r.setup}`}>{ws.trades ? `${ws.winrate}%` : '—'}</td>
     <td style={{ padding: '4px 6px', color: (ws.pnl ?? 0) > 0 ? '#00FF66' : (ws.pnl ?? 0) < 0 ? '#FF3366' : undefined }}
       title={title} data-testid={`ai-maturity-pnl-${r.setup}`}>
@@ -73,7 +84,8 @@ const WorldCells = ({ r, ws, title, fmtDate }) => (
       )}
     </td>
   </>
-);
+  );
+};
 
 export const WORLD_LABELS = { real: 'Echtgeld', paper: 'Paper', live: 'Live-Logik gesamt', collection: 'Sammlung' };
 
@@ -110,6 +122,17 @@ export const SetupMaturityTable = ({ rows, showAssets, diagnosis, mode = 'real',
     Trades / Winrate / PnL = <b>{worldLabel}</b>{anyVariant ? ' – je Setup seit Start der aktiven Variante (Rückstufung, KI-Revision oder Profil-Version), sonst' : ' –'} letzte {lookbackDays} Tage.
     Urteil und Phase beruhen auf der Gesamtstatistik (Reife-Gate) – Details im Tooltip.
   </div>
+  {(() => {
+    const sum = (k) => rows.reduce((a, r) => a + (r.worlds?.[k]?.trades || 0), 0);
+    const here = rows.reduce((a, r) => a + (worldStats(r, mode).trades || 0), 0);
+    const others = OTHER_WORLDS.filter(([k]) => k !== mode && sum(k) > 0).map(([k, l]) => `${l}: ${sum(k)}`);
+    if (here > 0 || !others.length) return null;
+    return (
+      <div data-testid="ai-maturity-empty-world-hint" style={{ fontSize: 11, color: '#FFB020', margin: '0 0 6px' }}>
+        Keine {worldLabel}-Trades im Zeitfenster – Trades gibt es in {others.join(' · ')}. Oben im Verlauf die Welt wechseln.
+      </div>
+    );
+  })()}
   <table data-testid="ai-setup-maturity-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, whiteSpace: 'nowrap' }}>
     <thead>
       <tr style={{ opacity: 0.55, textAlign: 'left' }}>
@@ -132,7 +155,7 @@ export const SetupMaturityTable = ({ rows, showAssets, diagnosis, mode = 'real',
             {r.custom && <span data-testid={`ai-maturity-custom-${r.setup}`} style={{ marginLeft: 5, fontSize: 9.5, padding: '1px 4px', borderRadius: 3, background: '#2A2F45', color: '#8FB3FF' }}>KI</span>}
             {r.revision && <span data-testid={`ai-maturity-revision-${r.setup}`} title={`${r.revision.desc}\n${r.revision.reason || ''}`} style={{ marginLeft: 5, fontSize: 9.5, padding: '1px 4px', borderRadius: 3, background: '#1F3A2E', color: '#5EE1A0' }}>Rev.{r.revision.version}</span>}
           </td>
-          <WorldCells r={r} ws={worldStats(r, mode)} title={cellTitle(r)} fmtDate={fmtDate} />
+          <WorldCells r={r} ws={worldStats(r, mode)} title={cellTitle(r)} fmtDate={fmtDate} mode={mode} />
           <td style={{ padding: '4px 6px', opacity: 0.85 }}>
             {r.verdict}
             {r.uncertain && r.trades > 0 && (
