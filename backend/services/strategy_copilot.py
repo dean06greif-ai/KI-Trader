@@ -352,8 +352,10 @@ VORSCHLAGS-TYPEN (nur auf ausdrücklichen Wunsch des Nutzers):
                  "deep_depth": "deep|extreme", "indicators": ["rsi", "ema"],
                  "base_strategy_id": "<custom id|null>", "sessions": "09:00-17:00|''",
                  "execution": "cloud|local",
-                 "opt_groups": {"tpsl": true, "sl": true, "be": true, "trail": true,
-                                "profit_secure": false, "leverage": false, "sessions": false},
+                 "opt_groups": {"tpsl": true, "breakeven": true, "trail": true,
+                                "profit_secure": false, "leverage": false, "auto_leverage": false,
+                                "sessions": false, "time_exit": false, "entry_order": false,
+                                "direction": false},
                  "rule_timeframes": {"enabled": true, "min": "1m", "max": "4h"},
                  "walk_forward": {"enabled": true, "mode": "single|rolling|anchored",
                                   "windows": 4, "train_pct": 75},
@@ -829,8 +831,7 @@ class StrategyCopilot:
         # damit der Copilot Optimierungs-Tipps und Lücken-Analysen geben kann.
         # Regime-Lab: gekürzt (Token-Budget) – dort zählt der Regime-Stand.
         try:
-            overview = await self._strategies_overview(
-                max_lines=12 if panel == "regime_lab" else 40)
+            overview = await self._strategies_overview(max_lines=40)
             if overview:
                 parts.append("STRATEGIE-ÜBERSICHT (alle Strategien, Indikatoren, "
                              "echte Paper-/Live-Ergebnisse und Optimizer-Bestwerte):\n"

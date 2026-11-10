@@ -1,0 +1,41 @@
+{
+  "summary": "Tested the Regime-Lab copilot and Strategy copilot: prompt/context building, isolation, history window, the context-preview endpoint, the chat error path, and the assistant ampel in context. Also checked the UI panels. Unit tests: 42/42 passed. New API suite tests/test_copilot_knowledge_context_0626.py: 14/14 passed (test_status failed once, then passed on retry). History-window script: 12 TEST_ messages inserted, prompt kept the last 10, each cut at 1000 chars, all 12 messages deleted again by id. Everything requested works. Main gaps: a failed copilot answer shows no message in the chat, and the assistant context leaves out key facts (grey ampel meaning, reason, current regime).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "regime_copilot_knowledge.assistant_lines (context for both copilots)", "issue": "A grey ampel (summary.grade 'zu wenig Daten') shows up as 'Ampel grau · beste Variante – · Noten kombiniert None / Haupt None / Makro None'. The literal 'None' leaks into the prompt. grade and recommendation are not included. The knowledge block only defines grün/gelb/rot, never grau. So the copilot cannot explain why there is no rating or what to do next. Seen live after a crypto run with BTCUSDT and 150 days."},
+      {"endpoint": "regime_copilot_knowledge.assistant_lines", "issue": "Knowledge gap: the assistant run computes the current macro/primary direction, probability and combined label per symbol (e.g. BTC macro 1d sideways 84%, primary 8h sideways 77%, 'Seitwärtsmarkt – Range-Strategien', allow_long/short). None of this reaches the copilot context. Questions like 'In which regime is BTC right now?' can only be answered from the structural snapshot, which needs a Lab release."},
+      {"endpoint": "POST /api/copilot/chat (sync)", "issue": "The backend returns a clean JSON 502 ('Copilot nicht erreichbar: Kein OpenRouter-Key…'). On the public URL, Cloudflare swaps that body for its HTML 502 page, so API clients lose the detail. The frontend uses /chat/start plus polling and is not affected. Suggestion: use 503 or 424 for this failure."},
+      {"endpoint": "SYSTEM_PROMPT settings schema", "issue": "opt_groups in the prompt schema uses the keys tpsl/sl/be/trail/profit_secure/leverage/sessions. The frontend OPT_GROUPS keys are tpsl/breakeven/trail/profit_secure/leverage/auto_leverage/sessions/time_exit/entry_order/direction. 'sl' and 'be' do not exist, and Optimizer.js applySettings accepts any boolean key. A copilot proposal with be:true would silently do nothing. This existed before this change."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "StrategyCopilot.send (Regime-Lab and Optimizer)", "issue": "When the LLM fails (no key, models overloaded, job error), the chat shows nothing. toast.error in lib/toast.js only sends the error to the notification bell, and repeats are deduped for 5 minutes. The user's bubble stays in the chat with no answer and no error. The input is cleared and busy resets, but nothing explains what happened. In preview only the static no-key hint is visible. In production a transient 'Modelle überlastet' error would be invisible. Show an inline error message in the chat and restore the typed text.", "selector": "[data-testid='copilot-messages']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Regime-Lab > RegimeAssistant", "issues": ["React console warning: '<span> cannot be a child of <option>' at RegimeAssistant.js line 105 (option value='full' with a dynamic expression). Likely injected by the visual-edit tooling, but a template string as the option text would avoid it."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_copilot_knowledge_context_0626.py", "/app/backend/tests/_hist_window_check.py", "/app/test_reports/pytest/copilot_0626.xml"],
+  "action_items": [
+    "StrategyCopilot.js: show the chat/job error inline in the chat (e.g. a system bubble), not only in the bell, and restore the typed text",
+    "assistant_lines: for a grey ampel, print grade and recommendation instead of 'None' scores, and add 'grau = zu wenig Daten → längerer Zeitraum / mehr Assets' to assistant_knowledge_lines",
+    "assistant_lines: add the current macro/primary direction and combined label per symbol from the latest assistant run (short, e.g. 3 symbols per class)",
+    "SYSTEM_PROMPT: align the opt_groups schema keys with frontend OPT_GROUPS (breakeven, not be; drop sl; add auto_leverage/time_exit/entry_order/direction)",
+    "Optional: /api/copilot/chat should not use 502 for its own errors (Cloudflare masks the body)"
+  ],
+  "critical_code_review_comments": [
+    "strategy_copilot.py is over 1080 lines. Split the prompts (REGIME_LAB_SYSTEM_PROMPT, SYSTEM_PROMPT) into their own module",
+    "_context_block still has dead code `max_lines=12 if panel == 'regime_lab'`; the regime_lab panel returns earlier",
+    "SYSTEM_PROMPT hardcodes 15 test trades / 80 % / n/(n+20). These match the current constants (ROBUST_MIN_TEST_TRADES=15, ROBUST_MIN_PROB=0.8, PRIOR_TRADES=20), but unlike the Regime-Lab knowledge they are not built from the code, so they can drift",
+    "Other-panel digest: the optimizer prompt includes Regime-Lab chat snippets (intended; the isolation only goes one way)"
+  ],
+  "updated_files": ["/app/backend/tests/test_copilot_knowledge_context_0626.py", "/app/backend/tests/_hist_window_check.py"],
+  "success_rate": {"backend": "100% (14/14 API + 42/42 unit)", "frontend": "90% (both panels open and send; the error is not shown in the chat)"},
+  "seed_data_creation": "One regime-assistant run (crypto, BTCUSDT, 150 days; result grey, too little data). 12 TEST_ copilot_chat docs inserted and deleted by id. A few 'Fehler' notifications were created in the bell by the failed UI sends. Research mode was not changed (robust/time, fallback off).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: REACT_APP_BACKEND_URL=... pytest -n 0 tests/test_copilot_knowledge_context_0626.py. No LLM key in preview: test with context-preview. The UI copilot errors go only to the notification bell (lib/toast.js), not to a toast."
+}

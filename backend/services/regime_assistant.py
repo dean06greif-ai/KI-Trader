@@ -50,9 +50,11 @@ async def load_config(db) -> Dict:
         doc = await db.app_config.find_one({"id": CONFIG_ID}, {"_id": 0})
         if doc:
             _config["fallback_enabled"] = bool(doc.get("fallback_enabled"))
-        async for run in db.regime_assistant_runs.find({}, {"_id": 0, "results": 0}).sort(
+        async for run in db.regime_assistant_runs.find({}, {"_id": 0}).sort(
                 "created_at", -1).limit(KEEP_RUNS * 4):
-            _latest.setdefault(run["asset_class"], run)
+            if run["asset_class"] not in _latest:
+                rows = run.pop("results", None) or []
+                _latest[run["asset_class"]] = {**run, "current": current_states(rows)}
     except Exception as e:  # noqa: BLE001 – fail-soft
         logger.warning(f"regime_assistant laden: {e}")
     return config()
@@ -126,6 +128,24 @@ def summarize(rows: List[Dict]) -> Dict:
             "grade": ru.grade(best_v), "recommendation": rec}
 
 
+def current_states(rows: List[Dict]) -> List[Dict]:
+    """Kompakter Ist-Zustand je Asset (für Copilot/Übersicht, rein)."""
+    out = []
+    for r in rows:
+        if r.get("error"):
+            out.append({"symbol": r["symbol"], "error": r["error"][:80]})
+            continue
+        c, ma, pr = r.get("combined") or {}, r.get("macro") or {}, r.get("primary") or {}
+        sc = ((r.get("eval") or {}).get("variants") or {})
+        out.append({"symbol": r["symbol"], "macro": ma.get("direction"), "primary": pr.get("direction"),
+                    "primary_prob": pr.get("prob"), "label": c.get("label"),
+                    "allow_long": c.get("allow_long"), "allow_short": c.get("allow_short"),
+                    "size_factor": c.get("size_factor"),
+                    "score_primary": (sc.get("primary") or {}).get("score"),
+                    "score_combined": (sc.get("combined") or {}).get("score")})
+    return out
+
+
 # ---------------- Job ----------------
 def create_job(params: Dict) -> str:
     jid = uuid.uuid4().hex[:12]
@@ -192,7 +212,8 @@ async def run(job_id: str, db) -> None:
             "created_at", -1).skip(KEEP_RUNS).to_list(100)
         if old:
             await db.regime_assistant_runs.delete_many({"id": {"$in": [o["id"] for o in old]}})
-        _latest[cls] = {k: v for k, v in doc.items() if k != "results"}
+        _latest[cls] = {**{k: v for k, v in doc.items() if k != "results"},
+                        "current": current_states(rows)}
         from services import structural_regime
         structural_regime.invalidate()
         job.update({"status": "done", "progress": 100, "phase": "Fertig", "result": doc,

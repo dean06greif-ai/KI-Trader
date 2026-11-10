@@ -150,7 +150,8 @@ def assistant_knowledge_lines() -> List[str]:
         f"Abwärts-Regime, in Vola-Einheiten, Horizonte {', '.join(f'{h:g}' for h in ru.HORIZONS_DAYS)} Tage), "
         f"Vorzeichen-Treffer, Ø Phasendauer (Ziel ≥ {ru.TARGET_PHASE_DAYS:g} T) und Ping-Pong-Quote. "
         f"≥{ru.GRADE_GOOD:g} gut/grün, ≥{ru.GRADE_MID:g} mittel/gelb, sonst schwach/rot; < {ru.MIN_PHASES} Phasen "
-        "-> höchstens mittel. „zuletzt“ = Note auf den letzten 30 % (Drift-Check). Varianten: kombiniert, "
+        "-> höchstens mittel; grau = zu wenig Daten (Zeitraum zu kurz oder zu wenige Kerzen je "
+        "Richtung) -> Vollständig-Lauf mit mehr Tagen starten. „zuletzt“ = Note auf den letzten 30 % (Drift-Check). Varianten: kombiniert, "
         "nur Haupt, nur Makro – ist „nur Haupt“ besser, Makro nur als Größen-Faktor nutzen. Rot = in dieser "
         "Klasse lieber OHNE Regime-Filter handeln.",
         "WARUM NUTZEN-NOTE STATT TREFFERQUOTE: Live-Erkennung ist kausal und damit immer verzögert; "
@@ -279,10 +280,23 @@ def assistant_lines() -> List[str]:
         sc = sm.get("scores") or {}
         rc = run.get("recipe") or {}
         out.append(f"- {ac.LABELS.get(cls, cls)} ({rc.get('macro_tf')}×{rc.get('primary_tf')}, {run.get('days')} T, "
-                   f"{str(run.get('created_at') or '')[:10]}): Ampel {sm.get('light')} · beste Variante "
-                   f"{sm.get('best_label') or '–'} · Noten kombiniert {sc.get('combined')} / Haupt "
-                   f"{sc.get('primary')} / Makro {sc.get('macro')}")
+                   f"{str(run.get('created_at') or '')[:10]}): Ampel {sm.get('light')} ({sm.get('grade')}) · beste "
+                   f"Variante {sm.get('best_label') or '–'} · Noten kombiniert {_n(sc.get('combined'))} / Haupt "
+                   f"{_n(sc.get('primary'))} / Makro {_n(sc.get('macro'))} · Empfehlung: {sm.get('recommendation') or '–'}")
+        for c in (run.get("current") or [])[:8]:
+            if c.get("error"):
+                out.append(f"    {c['symbol']}: Fehler {c['error']}")
+                continue
+            prob = f" {c['primary_prob'] * 100:.0f} %" if c.get("primary_prob") is not None else ""
+            out.append(f"    {c['symbol']} jetzt: Makro {c.get('macro') or '–'} · Haupt {c.get('primary') or '–'}{prob}"
+                       f" → {c.get('label')} (Long {'ja' if c.get('allow_long') else 'nein'}, Short "
+                       f"{'ja' if c.get('allow_short') else 'nein'}, Größe ×{c.get('size_factor')}) · Note Haupt "
+                       f"{_n(c.get('score_primary'))}")
     return out
+
+
+def _n(v) -> str:
+    return "–" if v is None else f"{v:g}"
 
 
 def _cap(text: str, limit: int = MAX_SNAPSHOT_CHARS) -> str:

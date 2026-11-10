@@ -171,6 +171,12 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
     setInput('');
     setBusy(true);
     setMessages(m => [...m, { id: `local_${Date.now()}`, role: 'user', content: msg }]);
+    const fail = (text) => {
+      // Fehler sichtbar IM Chat (nicht nur Glocke) + Eingabe wiederherstellen
+      toast.error(text, { duration: 8000 });
+      setMessages(m => [...m, { id: `err_${Date.now()}`, role: 'assistant', error: true, content: `⚠ ${text}` }]);
+      setInput(msg);
+    };
     try {
       // Hintergrund-Job statt direktem Request: Render/Ingress kappt HTTP nach
       // ~60s – langsame Modelle (z.B. DeepSeek Flash) brachen dadurch ab.
@@ -182,7 +188,7 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
       });
       const start = await res.json().catch(() => null);
       if (!res.ok || !start?.job_id) {
-        toast.error(start?.detail || 'Copilot-Start fehlgeschlagen – bitte erneut senden', { duration: 8000 });
+        fail(start?.detail || 'Copilot-Start fehlgeschlagen – bitte erneut senden');
         return;
       }
       let d = null;
@@ -192,17 +198,17 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
         try {
           const pr = await fetch(`${API_URL}/api/copilot/chat/job/${start.job_id}`);
           j = await pr.json().catch(() => null);
-          if (!pr.ok) { toast.error(j?.detail || 'Copilot-Job verloren – bitte erneut senden'); return; }
+          if (!pr.ok) { fail(j?.detail || 'Copilot-Job verloren – bitte erneut senden'); return; }
         } catch { continue; /* kurzer Netzwerk-Schluckauf -> weiter pollen */ }
         if (j?.status === 'done') { d = j.result; break; }
         if (j?.status === 'error') {
-          toast.error(j.error || 'Copilot-Antwort fehlgeschlagen – bitte erneut senden', { duration: 8000 });
+          fail(j.error || 'Copilot-Antwort fehlgeschlagen – bitte erneut senden');
           return;
         }
       }
-      if (!d) { toast.error('Copilot-Antwort dauert zu lange – bitte erneut senden', { duration: 8000 }); return; }
+      if (!d) { fail('Copilot-Antwort dauert zu lange – bitte erneut senden'); return; }
       setMessages(m => [...m, { id: d.id, role: 'assistant', content: d.reply, proposal: d.proposal, checks: d.checks, model: d.model }]);
-    } catch { toast.error('Verbindungsfehler zum Copilot'); }
+    } catch { fail('Verbindungsfehler zum Copilot'); }
     finally { setBusy(false); }
   };
 
@@ -339,7 +345,8 @@ const StrategyCopilot = ({ panel, getContext, onApplied, onApplySettings }) => {
             )}
             {messages.map((m, i) => (
               <div key={m.id || i} className={`cp-msg ${m.role}`}>
-                <div className="cp-bubble">
+                <div className="cp-bubble" data-testid={m.error ? 'copilot-error-message' : undefined}
+                  style={m.error ? { border: '1px solid #FF5C7A', color: '#FFB3C0' } : undefined}>
                   {m.content}
                   {(m.checks || []).length > 0 && (
                     <ul className="cp-checks">{m.checks.map((c, j) => <li key={j}>⚠ {c}</li>)}</ul>

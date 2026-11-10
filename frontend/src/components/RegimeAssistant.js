@@ -102,7 +102,7 @@ export default function RegimeAssistant() {
         </button>
         <select value={quick ? 'quick' : 'full'} onChange={e => setQuick(e.target.value === 'quick')} disabled={running} data-testid="ra-run-mode" style={{ fontSize: 12, padding: '3px 6px' }}>
           <option value="quick">Schnell: 3 Assets · 365 Tage (~3–5 Min.)</option>
-          <option value="full">Vollständig: bis 8 Assets · {rc?.days} Tage (15–30 Min.)</option>
+          <option value="full">{`Vollständig: bis 8 Assets · ${rc?.days || ''} Tage (15–30 Min.)`}</option>
         </select>
         {running && <span className="opt-small" data-testid="ra-job-phase">{job.progress} % · {job.phase} (dauert einige Minuten)</span>}
       </div>

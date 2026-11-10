@@ -78,7 +78,7 @@ async def copilot_chat(body: Dict, _: bool = Depends(require_admin)):
         return await copilot.chat(message, body.get("context") or {})
     except Exception as e:
         logger.warning(f"Copilot-Chat fehlgeschlagen: {e}")
-        raise HTTPException(status_code=502, detail=f"Copilot nicht erreichbar: {str(e)[:200]}")
+        raise HTTPException(status_code=503, detail=f"Copilot nicht erreichbar: {str(e)[:200]}")
 
 
 # ---- Hintergrund-Chat (Fix: Render/Ingress kappt HTTP-Requests nach ~60s,
