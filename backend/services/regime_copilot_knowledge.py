@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-MAX_SNAPSHOT_CHARS = 2600
+MAX_SNAPSHOT_CHARS = 3800
 
 
 def _taxonomy_lines() -> List[str]:
@@ -123,7 +123,57 @@ def static_knowledge() -> str:
         "regimeabhängiges Risiko-Budget/Hebel, Setup-Freigabe je Regime, Übergangs-Filter "
         "(erste Tage nach Wechsel vorsichtig) – immer erst per Walk-Forward/Shadow belegen.",
     ]
+    parts += assistant_knowledge_lines()
     return "\n".join(parts)
+
+
+def assistant_knowledge_lines() -> List[str]:
+    """06/2026: Regime-Assistent, Makro × Haupt, Nutzen-Note, robuste Bewertung (aus Konstanten)."""
+    from services import dynamic_strategy as dyn
+    from services import evidence_stats as es
+    from services import regime_evidence as rev
+    from services import regime_hierarchy as rh
+    from services import regime_usefulness as ru
+    recipes = "; ".join(f"{r['label']}: Makro {r['macro_tf']} × Haupt {r['primary_tf']}, gehandelt "
+                        f"{r['trade_tfs']}, {r['days']} T" + (f", Leitmarkt {r['leader']}" if r.get("leader") else "")
+                        for r in rh.RECIPES.values())
+    matrix = "; ".join(f"{m}/{p} = {v[0].split(' – ')[0]} (Long {'ja' if v[1] else 'nein'}, "
+                       f"Short {'ja' if v[2] else 'nein'}, ×{v[3]:g})" for (m, p), v in rh.MATRIX.items())
+    k = es.PRIOR_TRADES
+    return [
+        "REGIME-ASSISTENT (Abschnitt 0 im Lab, empfohlener Start): EIN Knopf je Anlageklasse, festes "
+        "Rezept (Jump-Modell, KEINE Parameter-Suche -> kein Such-Overfitting). Rezepte: " + recipes + ".",
+        "MAKRO × HAUPT-MATRIX (Makro/Haupt): " + matrix + ". Haupt-Wahrscheinlichkeit < "
+        f"{rh.UNCERTAIN_PROB * 100:.0f} % = unsicherer Übergang -> Größe ×0.5; Altcoin gegen BTC-Makro -> ×0.5. "
+        "Volatilität ist KEIN eigenes Regime, sondern Größen-Faktor.",
+        f"NUTZEN-NOTE (0–100, maßgeblich im Assistenten): Trennschärfe der Rendite danach (Auf- vs. "
+        f"Abwärts-Regime, in Vola-Einheiten, Horizonte {', '.join(f'{h:g}' for h in ru.HORIZONS_DAYS)} Tage), "
+        f"Vorzeichen-Treffer, Ø Phasendauer (Ziel ≥ {ru.TARGET_PHASE_DAYS:g} T) und Ping-Pong-Quote. "
+        f"≥{ru.GRADE_GOOD:g} gut/grün, ≥{ru.GRADE_MID:g} mittel/gelb, sonst schwach/rot; < {ru.MIN_PHASES} Phasen "
+        "-> höchstens mittel. „zuletzt“ = Note auf den letzten 30 % (Drift-Check). Varianten: kombiniert, "
+        "nur Haupt, nur Makro – ist „nur Haupt“ besser, Makro nur als Größen-Faktor nutzen. Rot = in dieser "
+        "Klasse lieber OHNE Regime-Filter handeln.",
+        "WARUM NUTZEN-NOTE STATT TREFFERQUOTE: Live-Erkennung ist kausal und damit immer verzögert; "
+        "gegen eine Rückblick-Referenz landen fast alle Detektoren bei 45–55 %. Für den Handel zählt, "
+        "ob das erkannte Regime die Folge-Renditen/Strategie-Ergebnisse trennt und stabil bleibt. Ziel ist "
+        "das AKTUELLE Regime zu erkennen (Nowcasting), keine 24–72-h-Prognose.",
+        "KI-TRADER-RÜCKFALL (Schalter im Assistenten, Standard AUS): ohne Lab-Freigabe einer Klasse "
+        "liefert der Assistent bei Ampel grün/gelb das Struktur-Regime (Quelle regime_assistant, "
+        "Stufe assistant). Eine Lab-Freigabe hat immer Vorrang.",
+        f"BEWERTUNG NEUER LÄUFE (Forschungs-Modus, umschaltbar): robust = Validierung je Regime nur mit "
+        f"≥5 Trades UND Untergrenze Ø − 1 Standardfehler > 0; Urteil dynamisch>statisch erst ab "
+        f"{dyn.ROBUST_MIN_TEST_TRADES} Test-Trades und Bootstrap-Wahrscheinlichkeit ≥ {dyn.ROBUST_MIN_PROB * 100:.0f} %; "
+        f"Regime-Evidenz gewichtet: Glaubwürdigkeit n/(n+{k:g}) (10 T = 33 %, 30 T = 60 %), Ø je Regime Richtung "
+        f"Gesamt-Ø gezogen, zählt ab {rev.ROBUST_MIN_TRADES} Trades, Größen-Faktor = Glaubwürdigkeit (min "
+        f"{es.MIN_SIZE_FACTOR:g}). classic = Alt-Verhalten (3 Gewinn-Trades bestanden, {rev.MIN_TRADES} Trades je "
+        "Regime). Validierung time = gemeinsamer Zeitschnitt + Embargo (spätere Phasen), phase = Ende jeder Phase.",
+        "SCHUTZFILTER JE DYNAMISCHER STRATEGIE (Standard AUS): Makro-Filter (Signal-Seite muss zur Matrix "
+        "passen, wirkt nur LIVE – Backtests rechnen ihn nicht ein, daher erst Paper) und Übergangsschutz "
+        "(keine neuen Signale unter X % Regime-Sicherheit). Empfohlene Größe wird nur angezeigt.",
+        "OVERFITTING-LEITSATZ: wenige Phasen/Trades nie hart optimieren; jede weitere Suche auf demselben "
+        "Holdout verbraucht ihn; erst Assistent je Klasse, nur bei grün/gelb ins Lab, Ergebnisse 2–4 Wochen "
+        "im Paper/Shadow bestätigen.",
+    ]
 
 
 def _release_lines(rows: List[Dict], shadow: Dict[str, int]) -> List[str]:
@@ -157,8 +207,14 @@ def _dynamic_lines(rows: List[Dict], traded: List[str]) -> List[str]:
         now = ", ".join(f"{s}: {(v or {}).get('label') or (v or {}).get('regime')}"
                         for s, v in list(per.items())[:4] if not (v or {}).get("error"))
         s = d.get("settings") or {}
+        guards = []
+        if s.get("macro_filter_enabled"):
+            guards.append("Makro-Filter an")
+        if float(s.get("transition_guard_min_conf") or 0) > 0:
+            guards.append(f"Übergangsschutz ab {float(s['transition_guard_min_conf']):g} %")
         out.append(f"- {d.get('name')} [{d.get('id')}] · {'gehandelt' if d.get('id') in traded else 'nicht gehandelt'}"
                    f" · Analyse {s.get('analysis_id') or '–'} · on_switch {s.get('on_switch') or 'close'}"
+                   + (f" · {', '.join(guards)}" if guards else "")
                    + (f" · aktuell {now}" if now else ""))
     return out
 
@@ -195,9 +251,38 @@ async def live_snapshot(db) -> str:
             parts.append("DYNAMISCHE STRATEGIEN:\n" + "\n".join(lines))
     except Exception as e:  # noqa: BLE001
         logger.debug(f"Regime-Copilot: dynamische Strategien nicht lesbar: {e}")
+    try:
+        lines = assistant_lines()
+        if lines:
+            parts.insert(0, "REGIME-ASSISTENT & BEWERTUNGS-MODUS:\n" + "\n".join(lines))
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"Regime-Copilot: Assistent nicht lesbar: {e}")
     if not parts:
         return ""
     return _cap("=== REGIME-BRÜCKE IST-STAND (live aus der DB) ===\n" + "\n\n".join(parts))
+
+
+def assistant_lines() -> List[str]:
+    """Letzter Assistenten-Lauf je Klasse + Forschungs-Modus (In-Memory, rein lesend)."""
+    from services import regime_assistant as ra
+    from services import research_mode
+    from services import setup_asset_class as ac
+    rm = research_mode.current()
+    out = [f"- Bewertung neuer Läufe: {rm['evidence_mode']} · Validierung {rm['regime_val_mode']} · "
+           f"KI-Trader-Rückfall auf Assistent: {'AN' if ra.config().get('fallback_enabled') else 'aus'}"]
+    for cls in ac.CLASSES:
+        run = ra.latest_summary(cls)
+        if not run:
+            out.append(f"- {ac.LABELS.get(cls, cls)}: noch nicht geprüft")
+            continue
+        sm = run.get("summary") or {}
+        sc = sm.get("scores") or {}
+        rc = run.get("recipe") or {}
+        out.append(f"- {ac.LABELS.get(cls, cls)} ({rc.get('macro_tf')}×{rc.get('primary_tf')}, {run.get('days')} T, "
+                   f"{str(run.get('created_at') or '')[:10]}): Ampel {sm.get('light')} · beste Variante "
+                   f"{sm.get('best_label') or '–'} · Noten kombiniert {sc.get('combined')} / Haupt "
+                   f"{sc.get('primary')} / Makro {sc.get('macro')}")
+    return out
 
 
 def _cap(text: str, limit: int = MAX_SNAPSHOT_CHARS) -> str:

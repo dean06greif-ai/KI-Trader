@@ -39,6 +39,15 @@ async def copilot_status():
             "ready": bool(keys)}
 
 
+@router.post("/api/copilot/context-preview")
+async def copilot_context_preview(body: Dict, _: bool = Depends(require_admin)):
+    """Transparenz: genau der Prompt, den der Copilot für diese Frage bekäme (ohne LLM-Aufruf)."""
+    panel, system, prompt = await copilot.build_prompt(str(body.get("message") or "Frage"),
+                                                       body.get("context") or {})
+    return {"panel": panel, "system_chars": len(system), "prompt_chars": len(prompt),
+            "system": system, "prompt": prompt}
+
+
 @router.post("/api/copilot/model")
 async def copilot_set_model(body: Dict, _: bool = Depends(require_admin)):
     try:

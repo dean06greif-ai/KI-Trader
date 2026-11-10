@@ -36,7 +36,8 @@ KEY_ENV = "COPILOT_OPENROUTER_API_KEY"
 CONFIG_ID = "strategy_copilot_config"
 CHAT_COLLECTION = "copilot_chat"
 MAX_HISTORY_DOCS = 300
-HISTORY_FOR_PROMPT = 6
+HISTORY_FOR_PROMPT = 10
+HISTORY_CHARS = 1000
 PROPOSAL_TYPES = ("definition", "params", "settings")
 
 # ---- Reiter-Trennung: eigener Verlauf + Spezial-Prompt je Panel ------------
@@ -122,6 +123,11 @@ Iterationen, Objective oder Indikator-Regeln einzelner Strategien gehören in
 den Optimizer-Reiter – verweise dafür kurz dorthin und erfinde nichts.
 
 WORKFLOW IM REGIME-LAB (in dieser Reihenfolge):
+0 Regime-Assistent je Anlageklasse (empfohlener Start, Details siehe REGIME-ASSISTENT
+  im REGIME-WISSEN): Ampel rot -> diese Klasse ohne Regime-Filter handeln; gelb ->
+  nur als Filter/Größen-Faktor; grün -> optional KI-Trader-Rückfall einschalten und/oder
+  im Lab vertiefen. Für „taugt die Erkennung?“ zählt die NUTZEN-NOTE, nicht die
+  Trefferquote gegen die Rückblick-Referenz.
 1 Grundgerüst (Detektor) wählen: reactive = Umkehrpunkte (Standard), ema =
   EMA-Steigung (glatt, wenige Wechsel), kombi = beides, jump = statistisches
   Jump-Modell (Sprungkosten statt Schwellen), regression = alt. Dazu die
@@ -182,11 +188,15 @@ im REGIME-WISSEN, was heute passiert, und schlage Ausbauschritte vor, die
 nachweisgebunden bleiben (Shadow → Walk-Forward → Wirksam). Unterscheide
 immer Struktur-Regime (Lab) und Kurzfrist-Regime (Observer).
 
-ANTWORTSTIL: deutsch, knapp (max. ~120 Wörter; bei Architektur-/Implementierungs-
-fragen bis ~220 Wörter), Struktur
-„Bewertung“ → „Nächster Schritt“ → ggf. „Warum“. Beziehe dich konkret auf
-die Zahlen im Block REGIME-LAB-STAND. Erfinde keine Daten; fehlt etwas, sage
-kurz, welcher Schritt es liefert.
+ANTWORTSTIL: deutsch. Beantworte ZUERST genau die gestellte Frage (1–2 Sätze,
+konkrete Antwort/Empfehlung), dann „Nächster Schritt“ und ggf. „Warum“.
+Der Nutzer ist kein Quant-Experte: Fachbegriffe in einem Halbsatz erklären,
+klare Empfehlung statt Optionen-Liste. Länge: normal ~150 Wörter; bei
+Erklär-, Konzept- oder Architekturfragen bis ~300 Wörter. Beziehe dich konkret
+auf die Zahlen in REGIME-LAB-STAND bzw. REGIME-BRÜCKE IST-STAND (auch
+Assistenten-Ampeln). Erfinde keine Daten; fehlt etwas, sage kurz, welcher
+Schritt es liefert. Ist die Frage mehrdeutig, beantworte die wahrscheinlichste
+Lesart und stelle am Ende EINE kurze Rückfrage.
 
 ANTWORTFORMAT – antworte AUSSCHLIESSLICH mit einem JSON-Objekt:
 {
@@ -285,6 +295,19 @@ DEIN WISSEN ÜBER DIE SUCH-MODI (wann was empfehlen):
   Backtest, Zusatz-Tests). Erfinde dort nichts – fehlt ein Block, sag es.
 Empfiehl immer Walk-Forward/Robustheits-Checks, warne vor Overfitting
 (zu viele Regeln, zu wenig Trades, zu kurzer Zeitraum).
+- BEWERTUNG NEUER DYNAMIK-LÄUFE (Forschungs-Modus im Regime-Lab, Standard robust):
+  Validierung je Regime erst mit ≥5 Trades UND Untergrenze (Ø − 1 Standardfehler) > 0;
+  Urteil „dynamisch besser“ erst ab 15 Test-Trades und Bootstrap-Wahrscheinlichkeit
+  ≥ 80 % (Feld prob_dynamic_better); Regime-Evidenz gewichtet wenige Trades mit
+  Glaubwürdigkeit n/(n+20) statt harter 30er-Grenze (size_factor je Regime).
+  Validierung „time“ = spätere Phasen + Embargo (unabhängig), „phase“ = alt.
+  Steht im Verdict classic_dynamic_better=true aber dynamic_better=false, erkläre:
+  der Vorsprung ist nach alter Regel da, statistisch aber nicht abgesichert.
+- Schutzfilter je dynamischer Strategie (Standard aus): Makro-Filter (Makro × Haupt-
+  Regime, z.B. Krypto 1D × 8h; wirkt nur live, nicht im Backtest -> erst Paper) und
+  Übergangsschutz (keine neuen Signale unter X % Regime-Sicherheit).
+- Objective "robust" = PnL ohne die 2 besten Trades × Winrate – gegen Glückstreffer,
+  empfehlenswert bei wenigen Trades oder Ausreißer-Verdacht.
 
 OPTIMIEREN OHNE OVERFITTING (dein Leitfaden, kompakt):
 - Trades-Fundament: Der Kontext liefert "MIN-TRADES-EMPFEHLUNG" – deterministisch
@@ -323,7 +346,7 @@ VORSCHLAGS-TYPEN (nur auf ausdrücklichen Wunsch des Nutzers):
    {"type": "settings", "summary": "1 Satz was sich ändert und warum",
     "settings": {"mode": "params|discovery|combo|dynamic|explore",
                  "strategy_id": "<id>", "coins": ["BTCUSDT"], "days": 90,
-                 "timeframe": "5m", "objective": "combo|win_rate|pnl",
+                 "timeframe": "5m", "objective": "combo|win_rate|pnl|robust",
                  "iterations": 60, "min_trades": 20, "max_rules": 4,
                  "algorithm": "random|bayes", "deep_test": true,
                  "deep_depth": "deep|extreme", "indicators": ["rsi", "ema"],
@@ -373,8 +396,11 @@ REGELN:
   Drawdown, NICHT 1600 %. Nutze den Block "METRIKEN (mit Einheiten)" als
   Referenz und bewerte Drawdown IMMER relativ zum Startkapital (max_drawdown_pct).
 - proposal nur setzen, wenn du eine konkrete, vollständige Änderung vorschlägst.
-- KÜRZE: reply max. ~120 Wörter, keine Wiederholung des Kontexts, keine Floskeln;
-  Zahlen statt Prosa. Ausführlicher nur, wenn der Nutzer es verlangt."""
+- ANTWORT & KÜRZE: beantworte ZUERST genau die gestellte Frage (direkte Empfehlung), dann
+  Begründung mit Zahlen aus dem Kontext. Der Nutzer ist kein Quant-Experte:
+  Fachbegriffe kurz erklären, klare Empfehlung statt Optionen-Liste. Länge normal
+  ~150 Wörter, bei Erklär-/Konzeptfragen bis ~300; keine Wiederholung des Kontexts,
+  keine Floskeln. Mehrdeutig -> wahrscheinlichste Lesart beantworten + EINE Rückfrage."""
 
 
 # Metrik-Schlüssel -> (Label, Einheit). Grundlage der lesbaren Zusammenfassung
@@ -822,6 +848,13 @@ class StrategyCopilot:
         except Exception as e:  # noqa: BLE001
             logger.debug(f"Copilot: Dynamik-Kontext nicht verfügbar: {e}")
 
+        try:
+            from services import regime_copilot_knowledge as rck
+            parts.append("REGIME-ASSISTENT & BEWERTUNGS-MODUS (Ampel je Anlageklasse):\n"
+                         + "\n".join(rck.assistant_lines()))
+        except Exception as e:  # noqa: BLE001 – Zusatzwissen, nie Blocker
+            logger.debug(f"Copilot: Assistent nicht lesbar: {e}")
+
         sid = (ctx or {}).get("editing_strategy_id") or (ctx or {}).get("strategy_id")
         if sid:
             strat = registry.get(sid)
@@ -966,6 +999,13 @@ class StrategyCopilot:
                 f"Kein OpenRouter-Key gefunden: bitte {KEY_ENV} (eigene Copilot-Keys) "
                 f"oder {SHARED_KEY_ENV} in der .env setzen")
 
+        panel, system, prompt = await self.build_prompt(message, ctx)
+
+        models = self._chain((await self.config()).get("model"))
+        return await self._run_chain(message, panel, system, prompt, models, keys, deadline, per_call)
+
+    async def build_prompt(self, message: str, ctx: Optional[Dict] = None):
+        """(panel, system, prompt) – identisch für Chat und Kontext-Vorschau."""
         panel = normalize_panel((ctx or {}).get("panel"))
         if panel == "regime_lab":
             # Eigener Copilot: nur Regime-Lab-Wissen, kein Optimizer-Prompt,
@@ -975,7 +1015,7 @@ class StrategyCopilot:
             system = "\n\n".join([SYSTEM_PROMPT, PANEL_PROMPTS.get(panel, ""), PANEL_SHARED])
         history = await self.history(HISTORY_FOR_PROMPT, panel=panel)
         hist_txt = "\n".join(
-            f"{'NUTZER' if m['role'] == 'user' else 'COPILOT'}: {m['content'][:400]}"
+            f"{'NUTZER' if m['role'] == 'user' else 'COPILOT'}: {m['content'][:HISTORY_CHARS]}"
             for m in history) or "(kein Verlauf)"
         context = await self._context_block(ctx or {})
         digest = "" if panel == "regime_lab" else await self._other_panels_digest(panel)
@@ -983,8 +1023,9 @@ class StrategyCopilot:
                   + (f"{digest}\n\n" if digest else "")
                   + f"BISHERIGER CHAT ({PANEL_LABELS.get(panel, panel)}):\n{hist_txt}\n\n"
                   f"NUTZER: {message}\n\nAntworte als JSON gemäß Formatvorgabe.")
+        return panel, system, prompt
 
-        models = self._chain((await self.config()).get("model"))
+    async def _run_chain(self, message, panel, system, prompt, models, keys, deadline, per_call) -> Dict:
 
         # Hartes Zeitbudget: langsames Modell/Key abbrechen -> nächste Kombination
         start = time.monotonic()
